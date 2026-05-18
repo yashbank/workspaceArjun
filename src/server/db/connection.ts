@@ -1,5 +1,16 @@
 import type { PoolConfig } from 'pg';
 
+const SSL_QUERY_PARAMS = [
+  'sslmode',
+  'sslrootcert',
+  'sslcert',
+  'sslkey',
+  'sslcertmode',
+  'uselibpqcompat',
+] as const;
+
+export const RUNTIME_PG_SSL = { rejectUnauthorized: false as const };
+
 /** Runtime connection — session pooler on Vercel; CLI uses prisma.config.ts + DIRECT_URL. */
 export function getRuntimeDatabaseUrl(): string {
   return (
@@ -8,6 +19,45 @@ export function getRuntimeDatabaseUrl(): string {
     process.env.DATABASE_URL ||
     'postgresql://postgres:postgres@localhost:5432/arjun'
   );
+}
+
+/** Strip sslmode (and related) query params so node-postgres honors the explicit `ssl` object. */
+export function normalizeDatabaseUrlForPg(url: string): string {
+  if (!url?.trim()) return url;
+
+  const protocolMatch = url.match(/^(postgres(?:ql)?:\/\/)/i);
+  if (!protocolMatch) return url;
+
+  const protocol = protocolMatch[1].toLowerCase().startsWith('postgresql')
+    ? 'postgresql://'
+    : 'postgres://';
+
+  try {
+    const parsed = new URL(url.replace(/^postgres(ql)?:\/\//i, 'https://'));
+    for (const param of SSL_QUERY_PARAMS) {
+      parsed.searchParams.delete(param);
+    }
+
+    const search = parsed.searchParams.toString();
+    const userinfo =
+      parsed.username || parsed.password
+        ? `${parsed.username}${parsed.password ? `:${parsed.password}` : ''}@`
+        : '';
+    const port = parsed.port ? `:${parsed.port}` : '';
+    const path = parsed.pathname || '';
+    const query = search ? `?${search}` : '';
+
+    return `${protocol}${userinfo}${parsed.hostname}${port}${path}${query}`;
+  } catch {
+    let stripped = url;
+    for (const param of SSL_QUERY_PARAMS) {
+      stripped = stripped.replace(
+        new RegExp(`([?&])${param}=[^&]*&?`, 'gi'),
+        '$1',
+      );
+    }
+    return stripped.replace(/\?&/g, '?').replace(/[?&]$/g, '');
+  }
 }
 
 export function usesSupabaseSsl(connectionString: string): boolean {
@@ -21,17 +71,20 @@ export function usesSupabaseSsl(connectionString: string): boolean {
   return !lower.includes('localhost') && !lower.includes('127.0.0.1');
 }
 
+export function getRuntimeSslRejectUnauthorized(): false | null {
+  return usesSupabaseSsl(getRuntimeDatabaseUrl()) ? false : null;
+}
+
 export function createPoolConfig(connectionString: string): PoolConfig {
-  const ssl = usesSupabaseSsl(connectionString)
-    ? { rejectUnauthorized: false as const }
-    : undefined;
+  const normalizedUrl = normalizeDatabaseUrlForPg(connectionString);
+  const ssl = usesSupabaseSsl(normalizedUrl) ? RUNTIME_PG_SSL : undefined;
 
   return {
-    connectionString,
+    connectionString: normalizedUrl,
+    ssl,
     max: 1,
     idleTimeoutMillis: 10_000,
     connectionTimeoutMillis: 10_000,
-    ssl,
   };
 }
 
@@ -80,6 +133,7 @@ const CONNECTION_ERROR_CODES = new Set([
   'P1001',
   'P1002',
   'P1008',
+  'P1010',
   'P1011',
   'P1017',
   'ECONNREFUSED',
@@ -144,6 +198,7 @@ export function isDatabaseConnectionError(error: unknown): boolean {
     lower.includes('timeout') ||
     lower.includes('prepared statement') ||
     lower.includes('econnrefused') ||
-    lower.includes('enotfound')
+    lower.includes('enotfound') ||
+    lower.includes('certificate')
   );
 }

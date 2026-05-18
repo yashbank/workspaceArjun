@@ -1,7 +1,11 @@
 import { Pool } from 'pg';
 import { PrismaClient } from '@/generated/prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { createPoolConfig, getRuntimeDatabaseUrl } from './connection';
+import {
+  createPoolConfig,
+  getRuntimeDatabaseUrl,
+  normalizeDatabaseUrlForPg,
+} from './connection';
 
 const globalForDb = globalThis as unknown as {
   prisma: PrismaClient | undefined;
@@ -10,7 +14,7 @@ const globalForDb = globalThis as unknown as {
 
 function getPool(): Pool {
   if (!globalForDb.prismaPool) {
-    const connectionString = getRuntimeDatabaseUrl();
+    const connectionString = normalizeDatabaseUrlForPg(getRuntimeDatabaseUrl());
     globalForDb.prismaPool = new Pool(createPoolConfig(connectionString));
   }
   return globalForDb.prismaPool;
@@ -33,7 +37,10 @@ export {
   extractDatabaseError,
   getDatabaseEnvDiagnostics,
   getRuntimeDatabaseUrl,
+  getRuntimeSslRejectUnauthorized,
   isDatabaseConnectionError,
+  normalizeDatabaseUrlForPg,
+  RUNTIME_PG_SSL,
   sanitizeDatabaseErrorMessage,
   usesSupabaseSsl,
 } from './connection';

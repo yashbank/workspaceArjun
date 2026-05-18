@@ -1,5 +1,10 @@
 import { NextResponse } from 'next/server';
-import { db, extractDatabaseError, getDatabaseEnvDiagnostics } from '@/server/db';
+import {
+  db,
+  extractDatabaseError,
+  getDatabaseEnvDiagnostics,
+  getRuntimeSslRejectUnauthorized,
+} from '@/server/db';
 import { getStorageDriverName, isStorageConfigured } from '@/server/storage';
 
 export const dynamic = 'force-dynamic';
@@ -48,7 +53,8 @@ export async function GET() {
 
   return NextResponse.json(
     {
-      healthzVersion: 'runtime-db-diagnostics-v2',
+      healthzVersion: 'runtime-db-diagnostics-v3',
+      sslRejectUnauthorized: getRuntimeSslRejectUnauthorized(),
       status,
       timestamp: new Date().toISOString(),
       checks,
