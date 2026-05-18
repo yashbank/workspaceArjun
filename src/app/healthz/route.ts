@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server';
 import { db, extractDatabaseError, getDatabaseEnvDiagnostics } from '@/server/db';
 import { getStorageDriverName, isStorageConfigured } from '@/server/storage';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export async function GET() {
   const checks: Record<string, 'ok' | 'error'> = {
     app: 'ok',
@@ -9,15 +12,26 @@ export async function GET() {
     storage: 'error',
   };
 
-  const dbDiagnostics = getDatabaseEnvDiagnostics();
-  let databaseError: { code: string | null; message: string } | null = null;
+  const {
+    hasRuntimeDatabaseUrl,
+    hasDatabaseUrl,
+    hasDirectUrl,
+    dbHost,
+    dbPort,
+    dbUserPrefix,
+  } = getDatabaseEnvDiagnostics();
+
+  let errorCode: string | null = null;
+  let errorMessage: string | null = null;
 
   try {
     await db.$queryRaw`SELECT 1`;
     checks.database = 'ok';
   } catch (error) {
     checks.database = 'error';
-    databaseError = extractDatabaseError(error);
+    const dbError = extractDatabaseError(error);
+    errorCode = dbError.code;
+    errorMessage = dbError.message;
     if (process.env.NODE_ENV === 'development') {
       console.error('[healthz] database check failed:', error);
     }
@@ -34,14 +48,18 @@ export async function GET() {
 
   return NextResponse.json(
     {
+      healthzVersion: 'runtime-db-diagnostics-v2',
       status,
       timestamp: new Date().toISOString(),
       checks,
-      database: {
-        ...dbDiagnostics,
-        errorCode: databaseError?.code ?? null,
-        errorMessage: databaseError?.message ?? null,
-      },
+      hasRuntimeDatabaseUrl,
+      hasDatabaseUrl,
+      hasDirectUrl,
+      dbHost,
+      dbPort,
+      dbUserPrefix,
+      errorCode,
+      errorMessage,
       storage: {
         driver: getStorageDriverName(),
         configured: checks.storage === 'ok',
