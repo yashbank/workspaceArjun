@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/server/db';
+import { db, extractDatabaseError, getDatabaseEnvDiagnostics } from '@/server/db';
 import { getStorageDriverName, isStorageConfigured } from '@/server/storage';
 
 export async function GET() {
@@ -9,11 +9,18 @@ export async function GET() {
     storage: 'error',
   };
 
+  const dbDiagnostics = getDatabaseEnvDiagnostics();
+  let databaseError: { code: string | null; message: string } | null = null;
+
   try {
     await db.$queryRaw`SELECT 1`;
     checks.database = 'ok';
-  } catch {
+  } catch (error) {
     checks.database = 'error';
+    databaseError = extractDatabaseError(error);
+    if (process.env.NODE_ENV === 'development') {
+      console.error('[healthz] database check failed:', error);
+    }
   }
 
   try {
@@ -30,6 +37,11 @@ export async function GET() {
       status,
       timestamp: new Date().toISOString(),
       checks,
+      database: {
+        ...dbDiagnostics,
+        errorCode: databaseError?.code ?? null,
+        errorMessage: databaseError?.message ?? null,
+      },
       storage: {
         driver: getStorageDriverName(),
         configured: checks.storage === 'ok',

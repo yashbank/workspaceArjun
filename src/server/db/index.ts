@@ -1,27 +1,39 @@
+import { Pool } from 'pg';
 import { PrismaClient } from '@/generated/prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
+import { createPoolConfig, getRuntimeDatabaseUrl } from './connection';
 
-const globalForPrisma = globalThis as unknown as {
+const globalForDb = globalThis as unknown as {
   prisma: PrismaClient | undefined;
+  prismaPool: Pool | undefined;
 };
 
-function createClient() {
-  const connectionString =
-    process.env.DATABASE_URL ?? 'postgresql://postgres:postgres@localhost:5432/arjun';
+function getPool(): Pool {
+  if (!globalForDb.prismaPool) {
+    const connectionString = getRuntimeDatabaseUrl();
+    globalForDb.prismaPool = new Pool(createPoolConfig(connectionString));
+  }
+  return globalForDb.prismaPool;
+}
 
-  const isRemote =
-    !connectionString.includes('localhost') && !connectionString.includes('127.0.0.1');
-
-  const adapter = new PrismaPg({
-    connectionString,
-    ssl: isRemote ? { rejectUnauthorized: false } : undefined,
-  });
-
+function createPrismaClient(): PrismaClient {
+  const pool = getPool();
+  const adapter = new PrismaPg(pool);
   return new PrismaClient({ adapter });
 }
 
-export const db = globalForPrisma.prisma ?? createClient();
+export const db = globalForDb.prisma ?? createPrismaClient();
 
-if (process.env.NODE_ENV !== 'production') {
-  globalForPrisma.prisma = db;
+if (!globalForDb.prisma) {
+  globalForDb.prisma = db;
 }
+
+export {
+  createPoolConfig,
+  extractDatabaseError,
+  getDatabaseEnvDiagnostics,
+  getRuntimeDatabaseUrl,
+  isDatabaseConnectionError,
+  sanitizeDatabaseErrorMessage,
+  usesSupabaseSsl,
+} from './connection';

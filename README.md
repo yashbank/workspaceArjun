@@ -68,22 +68,23 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 ```
 
-From **Project Settings → Database** (use two connection strings):
+From **Project Settings → Database**:
 
 ```
-# Runtime — transaction pooler (port 6543, for Next.js / Vercel)
-DATABASE_URL=postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=1
+# Vercel / app runtime — session pooler (port 5432)
+RUNTIME_DATABASE_URL=postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres
 
-# Prisma CLI — session pooler (port 5432, for migrate / db pull / studio)
+# Prisma CLI — migrate / db pull / studio (same session URL locally)
 DIRECT_URL=postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres
 ```
 
-| Variable | Port | `pgbouncer` | Used by |
-|----------|------|-------------|---------|
-| `DATABASE_URL` | 6543 | `true` | App runtime (`src/server/db`) |
-| `DIRECT_URL` | 5432 | *(omit)* | Prisma CLI (`prisma.config.ts`) |
+| Variable | Port | Used by |
+|----------|------|---------|
+| `RUNTIME_DATABASE_URL` | 5432 | App runtime on Vercel (`src/server/db`) |
+| `DIRECT_URL` | 5432 | Prisma CLI (`prisma.config.ts`) |
+| `DATABASE_URL` | — | Fallback if `RUNTIME_DATABASE_URL` unset |
 
-Using the transaction pooler for Prisma CLI causes `prepared statement "s1" already exists` errors.
+Set env vars on **Production** and **Preview** in Vercel. Do not use the transaction pooler (6543) for runtime — it breaks prepared statements.
 
 ### 3. Create First Admin Account
 
@@ -517,7 +518,8 @@ See `.env.example` for local development and `.env.production.example` for Verce
 
 ### Supabase database connection split
 
-- **`DATABASE_URL`** — Supabase **transaction** pooler, port **6543**, include `?pgbouncer=true&connection_limit=1`. Used by the running app.
-- **`DIRECT_URL`** — Supabase **session** pooler (or direct), port **5432**, **no** `pgbouncer=true`. Used by Prisma CLI (`pnpm db:migrate`, `pnpm prisma db pull`, `pnpm db:studio`) via `prisma.config.ts`.
+- **`RUNTIME_DATABASE_URL`** — Session pooler, port **5432**. **Required on Vercel** for the running app (`src/server/db`).
+- **`DIRECT_URL`** — Same session URL for Prisma CLI (`pnpm db:migrate`, `pnpm prisma db pull`) via `prisma.config.ts`.
+- **`DATABASE_URL`** — Optional fallback if `RUNTIME_DATABASE_URL` is not set.
 
-On Vercel, set **`DATABASE_URL`** for production runtime. Set **`DIRECT_URL`** only if you run migrations/CLI against production from your machine or CI.
+Check `/healthz` after deploy: `checks.database` should be `"ok"` and `database.dbPort` should be `"5432"`.

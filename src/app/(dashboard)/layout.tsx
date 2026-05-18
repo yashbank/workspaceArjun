@@ -1,13 +1,26 @@
 import { getCurrentUser } from '@/server/auth';
+import { isDatabaseConnectionError } from '@/server/db';
 import { redirect } from 'next/navigation';
 import { Sidebar } from '@/components/shell/sidebar';
 import { Topbar } from '@/components/shell/topbar';
 import { KeyboardShortcuts } from '@/components/shell/keyboard-shortcuts';
 import { GlobalKeys } from '@/components/shell/global-keys';
 import { GuidedTour } from '@/components/shell/guided-tour';
+import { DbConnectionIssue } from '@/components/shell/db-connection-issue';
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const profile = await getCurrentUser();
+  let profile;
+  try {
+    profile = await getCurrentUser();
+  } catch (error) {
+    if (isDatabaseConnectionError(error)) {
+      if (process.env.NODE_ENV === 'development') {
+        console.error('[dashboard] database connection failed:', error);
+      }
+      return <DbConnectionIssue />;
+    }
+    throw error;
+  }
 
   if (!profile) {
     redirect('/login');
@@ -29,9 +42,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           userRole={profile.role}
         />
         <main className="flex-1 overflow-auto bg-muted/20 p-6">
-          <div className="animate-in content-reveal duration-300">
-            {children}
-          </div>
+          <div className="animate-in content-reveal duration-300">{children}</div>
         </main>
       </div>
       <KeyboardShortcuts />
