@@ -1,0 +1,834 @@
+'use client';
+
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { apiFetch } from '@/lib/api';
+import { useUpload } from '@/lib/use-upload';
+import { useToast } from '@/components/ui/toast';
+import { Breadcrumbs } from './breadcrumbs';
+import { FolderGrid } from './folder-grid';
+import { FileTable } from './file-table';
+import { FileGrid } from './file-grid';
+import type { FileItem } from './file-table';
+import { CreateFolderDialog } from './create-folder-dialog';
+import { RenameDialog } from './rename-dialog';
+import { NewVersionDialog } from './new-version-dialog';
+import { DropZone } from './drop-zone';
+import { UploadQueue } from './upload-queue';
+import { FolderImportDialog } from './folder-import-dialog';
+import { PreviewPanel } from './preview-panel';
+import { SearchBar } from './search-bar';
+import { DuplicateDialog, type DuplicateAction } from './duplicate-dialog';
+import { MoveDialog } from './move-dialog';
+import {
+  FolderPlus,
+  Upload,
+  FolderUp,
+  LayoutGrid,
+  LayoutList,
+  ArrowUpDown,
+  Trash2,
+  FolderInput,
+  Download,
+} from 'lucide-react';
+
+type Folder = {
+  id: string;
+  name: string;
+  parentId: string | null;
+  _count: { children: number; files: number };
+  createdAt: string;
+};
+
+type Crumb = { id: string; name: string };
+
+type SortOption = { by: string; dir: 'asc' | 'desc'; label: string };
+
+const SORT_OPTIONS: SortOption[] = [
+  { by: 'name', dir: 'asc', label: 'Name A–Z' },
+  { by: 'name', dir: 'desc', label: 'Name Z–A' },
+  { by: 'date', dir: 'desc', label: 'Newest first' },
+  { by: 'date', dir: 'asc', label: 'Oldest first' },
+  { by: 'size', dir: 'desc', label: 'Largest first' },
+  { by: 'size', dir: 'asc', label: 'Smallest first' },
+  { by: 'type', dir: 'asc', label: 'Type' },
+];
+
+export function FileBrowser() {
+  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [files, setFiles] = useState<FileItem[]>([]);
+  const [breadcrumbs, setBreadcrumbs] = useState<Crumb[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Always start with 'list' so server and client render identical HTML.
+  // Restore persisted preference after hydration via useEffect below.
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const [hydrated, setHydrated] = useState(false);
+  const [sortIdx, setSortIdx] = useState(0);
+  const [showSortMenu, setShowSortMenu] = useState(false);
+  const [, startTransition] = useTransition();
+
+  useEffect(() => {
+    const saved = localStorage.getItem('arjun-view');
+    if (saved === 'grid' || saved === 'list') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- hydration-safe: read localStorage after mount to avoid SSR mismatch
+      setViewMode(saved);
+    }
+    setHydrated(true);
+  }, []);
+
+  const [showCreateFolder, setShowCreateFolder] = useState(false);
+  const [renameTarget, setRenameTarget] = useState<{
+    type: 'folder' | 'file';
+    id: string;
+    name: string;
+  } | null>(null);
+  const [versionTarget, setVersionTarget] = useState<{ id: string; name: string } | null>(null);
+  const [previewFile, setPreviewFile] = useState<FileItem | null>(null);
+  const [folderImportFiles, setFolderImportFiles] = useState<File[] | null>(null);
+  const [moveTarget, setMoveTarget] = useState<{ id: string; name: string; type: 'file' | 'folder' } | null>(null);
+
+  // Bulk select
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
+
+  // Prevent double-submissions
+  const [busyAction, setBusyAction] = useState(false);
+
+  // Duplicate handling
+  const [duplicateInfo, setDuplicateInfo] = useState<{
+    file: File;
+    existingFileId: string;
+    remaining: File[];
+  } | null>(null);
+
+  const fileIds = useMemo(() => files.map((f) => f.id), [files]);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+
+  const { toast } = useToast();
+
+  const fetchIdRef = useRef(0);
+
+  const loadContents = useCallback(async (folderId: string | null) => {
+    const fetchId = ++fetchIdRef.current;
+    setLoading(true);
+    setError(null);
+    try {
+      const sort = SORT_OPTIONS[sortIdx];
+      const qs = folderId ? `?parentId=${folderId}` : '';
+      const fqs = folderId
+        ? `?folderId=${folderId}&sortBy=${sort.by}&sortDir=${sort.dir}`
+        : `?sortBy=${sort.by}&sortDir=${sort.dir}`;
+      const [folderData, fileData] = await Promise.all([
+        apiFetch<Folder[]>(`/api/folders${qs}`),
+        apiFetch<FileItem[]>(`/api/files${fqs}`),
+      ]);
+
+      // Discard stale responses from superseded fetches
+      if (fetchId !== fetchIdRef.current) return;
+
+      // Dedupe by id as a safety net against duplicate data
+      const seenFolders = new Set<string>();
+      const uniqueFolders = folderData.filter((f) => {
+        if (seenFolders.has(f.id)) return false;
+        seenFolders.add(f.id);
+        return true;
+      });
+      const seenFiles = new Set<string>();
+      const uniqueFiles = fileData.filter((f) => {
+        if (seenFiles.has(f.id)) return false;
+        seenFiles.add(f.id);
+        return true;
+      });
+
+      setFolders(uniqueFolders);
+      setFiles(uniqueFiles);
+
+      if (folderId) {
+        const res = await fetch(`/api/folders/breadcrumbs?folderId=${folderId}`);
+        if (res.ok && fetchId === fetchIdRef.current) {
+          setBreadcrumbs(await res.json());
+        }
+      } else {
+        setBreadcrumbs([]);
+      }
+    } catch (e: unknown) {
+      if (fetchId !== fetchIdRef.current) return;
+      setError(e instanceof Error ? e.message : 'Failed to load');
+    } finally {
+      if (fetchId === fetchIdRef.current) {
+        setLoading(false);
+      }
+    }
+  }, [sortIdx]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- data fetching on navigation
+    void loadContents(currentFolderId);
+  }, [currentFolderId, loadContents]);
+
+  // Load favorites
+  useEffect(() => {
+    apiFetch<Array<{ targetType: string; targetId: string }>>('/api/favorites')
+      .then((favs) => {
+        const ids = new Set(favs.filter((f) => f.targetType === 'file').map((f) => f.targetId));
+        setFavorites(ids);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Keyboard shortcuts for file browser
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      const isCmd = e.metaKey || e.ctrlKey;
+
+      if (e.key === 'u' && !isCmd) {
+        e.preventDefault();
+        fileInputRef.current?.click();
+        return;
+      }
+      if (e.key === 'n' && !isCmd) {
+        e.preventDefault();
+        setShowCreateFolder(true);
+        return;
+      }
+      if (e.key === 'v' && !isCmd) {
+        e.preventDefault();
+        setViewMode((m) => {
+          const next = m === 'list' ? 'grid' : 'list';
+          localStorage.setItem('arjun-view', next);
+          return next;
+        });
+        return;
+      }
+      if (e.key === 'a' && isCmd && files.length > 0) {
+        e.preventDefault();
+        setSelectedIds(new Set(files.map((f) => f.id)));
+        return;
+      }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.size > 0 && !isCmd) {
+        e.preventDefault();
+        handleBulkDelete();
+        return;
+      }
+    }
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [files, selectedIds]);
+
+  // Paste handling
+  useEffect(() => {
+    function handlePaste(e: ClipboardEvent) {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      const pastedFiles: File[] = [];
+      for (const item of Array.from(items)) {
+        if (item.kind === 'file') {
+          const f = item.getAsFile();
+          if (f) pastedFiles.push(f);
+        }
+      }
+      if (pastedFiles.length > 0) {
+        e.preventDefault();
+        handleFilesSelected(pastedFiles);
+      }
+    }
+    document.addEventListener('paste', handlePaste);
+    return () => document.removeEventListener('paste', handlePaste);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentFolderId]);
+
+  const { queue, startUpload, retry, dismiss } = useUpload(currentFolderId, () =>
+    loadContents(currentFolderId),
+  );
+
+  async function handleFilesSelected(selectedFiles: File[]) {
+    if (selectedFiles.length === 0) return;
+
+    // Check first file for duplicates
+    const first = selectedFiles[0];
+    try {
+      const qs = currentFolderId ? `&folderId=${currentFolderId}` : '';
+      const check = await apiFetch<{ exists: boolean; existingFileId?: string }>(
+        `/api/files/check-duplicate?name=${encodeURIComponent(first.name)}${qs}`,
+      );
+      if (check.exists && check.existingFileId) {
+        setDuplicateInfo({
+          file: first,
+          existingFileId: check.existingFileId,
+          remaining: selectedFiles.slice(1),
+        });
+        return;
+      }
+    } catch {
+      // proceed with upload if check fails
+    }
+
+    toast('info', `Uploading ${selectedFiles.length} file${selectedFiles.length > 1 ? 's' : ''}…`);
+    startUpload(selectedFiles);
+  }
+
+  function handleDuplicateAction(action: DuplicateAction) {
+    if (!duplicateInfo) return;
+    const { file, existingFileId, remaining } = duplicateInfo;
+    setDuplicateInfo(null);
+
+    if (action === 'cancel') return;
+
+    if (action === 'keep-both') {
+      const nameParts = file.name.split('.');
+      const ext = nameParts.length > 1 ? '.' + nameParts.pop() : '';
+      const base = nameParts.join('.');
+      const newName = `${base} (copy)${ext}`;
+      const renamedFile = new File([file], newName, { type: file.type });
+      startUpload([renamedFile, ...remaining]);
+    } else if (action === 'new-version') {
+      setVersionTarget({ id: existingFileId, name: file.name });
+      if (remaining.length > 0) startUpload(remaining);
+    } else if (action === 'overwrite') {
+      startUpload([file, ...remaining]);
+    }
+  }
+
+  function handleFilesDropped(droppedFiles: File[]) {
+    const hasRelativePath = droppedFiles.some(
+      (f) => 'relativePath' in f && typeof (f as File & { relativePath?: string }).relativePath === 'string',
+    );
+    if (hasRelativePath) {
+      setFolderImportFiles(droppedFiles);
+    } else {
+      handleFilesSelected(droppedFiles);
+    }
+  }
+
+  function navigateTo(folderId: string | null) {
+    setCurrentFolderId(folderId);
+    setPreviewFile(null);
+    setSelectedIds(new Set());
+  }
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function toggleFavorite(fileId: string) {
+    const isFav = favorites.has(fileId);
+    try {
+      if (isFav) {
+        await apiFetch('/api/favorites', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ targetType: 'file', targetId: fileId }),
+        });
+        setFavorites((prev) => { const n = new Set(prev); n.delete(fileId); return n; });
+      } else {
+        await apiFetch('/api/favorites', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ targetType: 'file', targetId: fileId }),
+        });
+        setFavorites((prev) => new Set(prev).add(fileId));
+      }
+    } catch { /* ignore */ }
+  }
+
+  async function handleBulkDelete() {
+    if (selectedIds.size === 0 || busyAction) return;
+    if (!confirm(`Move ${selectedIds.size} file(s) to trash?`)) return;
+    setBusyAction(true);
+    const count = selectedIds.size;
+    for (const id of selectedIds) {
+      try {
+        await apiFetch(`/api/files/${id}`, { method: 'DELETE' });
+      } catch { /* continue */ }
+    }
+    if (previewFile && selectedIds.has(previewFile.id)) setPreviewFile(null);
+    setSelectedIds(new Set());
+    toast('success', `${count} file${count > 1 ? 's' : ''} moved to trash`);
+    await loadContents(currentFolderId);
+    setBusyAction(false);
+  }
+
+  async function handleDeleteFolder(id: string) {
+    if (busyAction) return;
+    if (!confirm('Move this folder to trash?')) return;
+    setBusyAction(true);
+    try {
+      await apiFetch(`/api/folders/${id}`, { method: 'DELETE' });
+      toast('success', 'Folder moved to trash');
+      await loadContents(currentFolderId);
+    } catch (e: unknown) {
+      toast('error', e instanceof Error ? e.message : 'Could not delete folder');
+    } finally {
+      setBusyAction(false);
+    }
+  }
+
+  async function handleDeleteFile(id: string) {
+    if (busyAction) return;
+    if (!confirm('Move this file to trash?')) return;
+    setBusyAction(true);
+    try {
+      await apiFetch(`/api/files/${id}`, { method: 'DELETE' });
+      if (previewFile?.id === id) setPreviewFile(null);
+      toast('success', 'File moved to trash');
+      await loadContents(currentFolderId);
+    } catch (e: unknown) {
+      toast('error', e instanceof Error ? e.message : 'Could not delete file');
+    } finally {
+      setBusyAction(false);
+    }
+  }
+
+  async function handleRenameConfirm(newName: string) {
+    if (!renameTarget || busyAction) return;
+    setBusyAction(true);
+    const endpoint =
+      renameTarget.type === 'folder'
+        ? `/api/folders/${renameTarget.id}`
+        : `/api/files/${renameTarget.id}`;
+    try {
+      await apiFetch(endpoint, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newName }),
+      });
+      setRenameTarget(null);
+      toast('success', `Renamed to "${newName}"`);
+      await loadContents(currentFolderId);
+    } catch (e: unknown) {
+      toast('error', e instanceof Error ? e.message : 'Rename failed');
+    } finally {
+      setBusyAction(false);
+    }
+  }
+
+  async function handleDownloadFile(id: string) {
+    try {
+      const res = await fetch(`/api/files/${id}/download`);
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        const msg = payload?.error ?? 'Download failed';
+        toast('error', msg);
+        return;
+      }
+      const blob = await res.blob();
+      const disposition = res.headers.get('Content-Disposition') ?? '';
+      const match = disposition.match(/filename="?(.+?)"?$/);
+      const filename = match?.[1] ? decodeURIComponent(match[1]) : 'download';
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      toast('error', 'Download failed — check your connection');
+    }
+  }
+
+  async function handleMoveConfirm(targetFolderId: string | null) {
+    if (!moveTarget || busyAction) return;
+    setBusyAction(true);
+    try {
+      if (moveTarget.type === 'file') {
+        await apiFetch(`/api/files/${moveTarget.id}/move`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ folderId: targetFolderId }),
+        });
+      } else {
+        await apiFetch(`/api/folders/${moveTarget.id}/move`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ parentId: targetFolderId }),
+        });
+      }
+      setMoveTarget(null);
+      toast('success', `${moveTarget.type === 'file' ? 'File' : 'Folder'} moved`);
+      await loadContents(currentFolderId);
+    } catch (e: unknown) {
+      toast('error', e instanceof Error ? e.message : 'Move failed');
+    } finally {
+      setBusyAction(false);
+    }
+  }
+
+  function handleDownloadFolder(folderId: string) {
+    toast('info', 'Preparing ZIP download…');
+    window.open(`/api/folders/${folderId}/download`, '_blank');
+  }
+
+  function handleGridContextMenu(file: FileItem, _pos: { x: number; y: number }) {
+    setPreviewFile(file);
+  }
+
+  return (
+    <DropZone onFilesDropped={handleFilesDropped}>
+      <div className="flex gap-0">
+        <div className={`min-w-0 flex-1 ${previewFile ? '' : ''}`}>
+          {/* Header */}
+          <div className="mb-6 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
+                <h1 className="text-2xl font-bold tracking-tight">Files</h1>
+                <Breadcrumbs crumbs={breadcrumbs} onNavigate={navigateTo} />
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <SearchBar
+                  onNavigateToFolder={navigateTo}
+                  onPreviewFile={(fileId) => {
+                    const found = files.find((f) => f.id === fileId);
+                    if (found) setPreviewFile(found);
+                  }}
+                />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-semibold text-primary-foreground shadow-card transition-all hover:shadow-elevated active:scale-[0.97]"
+                >
+                  <Upload className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Upload</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Toolbar row */}
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => setShowCreateFolder(true)}
+                className="flex items-center gap-1.5 rounded-xl border border-border/50 bg-card px-3 py-2 text-xs font-medium shadow-card transition-all hover:shadow-elevated active:scale-[0.97]"
+              >
+                <FolderPlus className="h-3.5 w-3.5 text-muted-foreground/60" />
+                <span className="hidden sm:inline">New folder</span>
+              </button>
+              <button
+                onClick={() => folderInputRef.current?.click()}
+                className="flex items-center gap-1.5 rounded-xl border border-border/50 bg-card px-3 py-2 text-xs font-medium shadow-card transition-all hover:shadow-elevated active:scale-[0.97]"
+                title="Import folder"
+              >
+                <FolderUp className="h-3.5 w-3.5 text-muted-foreground/60" />
+                <span className="hidden sm:inline">Import</span>
+              </button>
+
+              <div className="mx-1 h-4 w-px bg-border/30" />
+
+              {/* Sort */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowSortMenu(!showSortMenu)}
+                  className="flex items-center gap-1.5 rounded-xl border border-border/50 bg-card px-3 py-2 text-xs font-medium shadow-card transition-all hover:shadow-elevated"
+                >
+                  <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground/60" />
+                  <span className="hidden sm:inline">{SORT_OPTIONS[sortIdx].label}</span>
+                </button>
+                {showSortMenu && (
+                  <>
+                    <div className="fixed inset-0 z-30" onClick={() => setShowSortMenu(false)} />
+                    <div className="absolute right-0 top-10 z-40 w-44 overflow-hidden rounded-xl border border-border/50 bg-popover p-1 shadow-float animate-in scale-in fade-in duration-100">
+                      {SORT_OPTIONS.map((opt, i) => (
+                        <button
+                          key={i}
+                          onClick={() => { startTransition(() => setSortIdx(i)); setShowSortMenu(false); }}
+                          className={`flex w-full rounded-lg px-3 py-2 text-xs transition-all ${i === sortIdx ? 'bg-accent font-medium' : 'hover:bg-accent/50'}`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* View toggle */}
+              <div className="flex items-center overflow-hidden rounded-xl border border-border/50 bg-card shadow-card">
+                <button
+                  onClick={() => { setViewMode('list'); localStorage.setItem('arjun-view', 'list'); }}
+                  className={`p-2 transition-all ${viewMode === 'list' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                  title="List view (V)"
+                >
+                  <LayoutList className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={() => { setViewMode('grid'); localStorage.setItem('arjun-view', 'grid'); }}
+                  className={`p-2 transition-all ${viewMode === 'grid' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                  title="Grid view (V)"
+                >
+                  <LayoutGrid className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Bulk action bar */}
+          {files.length > 0 && (
+            <div className={`mb-4 flex items-center gap-3 rounded-2xl border px-4 py-2.5 transition-all ${selectedIds.size > 0 ? 'border-primary/20 bg-primary/4 shadow-card' : 'border-border/40 bg-card/40'}`}>
+              <label className="flex cursor-pointer items-center gap-2.5">
+                <input
+                  type="checkbox"
+                  checked={selectedIds.size === files.length && files.length > 0}
+                  ref={(el) => { if (el) el.indeterminate = selectedIds.size > 0 && selectedIds.size < files.length; }}
+                  onChange={() => {
+                    if (selectedIds.size === files.length) {
+                      setSelectedIds(new Set());
+                    } else {
+                      setSelectedIds(new Set(fileIds));
+                    }
+                  }}
+                  className="h-4 w-4 rounded border-muted-foreground/40 accent-primary"
+                />
+                <span className="text-xs font-medium text-muted-foreground">
+                  {selectedIds.size === 0
+                    ? `Select all (${files.length})`
+                    : `${selectedIds.size} of ${files.length} selected`}
+                </span>
+              </label>
+              {selectedIds.size > 0 && (
+                <>
+                  <div className="h-4 w-px bg-border" />
+                  <button
+                    onClick={() => {
+                      const firstId = Array.from(selectedIds)[0];
+                      const firstFile = files.find((f) => f.id === firstId);
+                      if (firstFile) setMoveTarget({ id: firstId, name: firstFile.name, type: 'file' });
+                    }}
+                    className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground transition-all hover:bg-accent hover:text-foreground active:scale-[0.97]"
+                  >
+                    <FolderInput className="h-3.5 w-3.5" />
+                    Move
+                  </button>
+                  <button
+                    onClick={async () => {
+                      for (const id of selectedIds) {
+                        await handleDownloadFile(id);
+                      }
+                    }}
+                    className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground transition-all hover:bg-accent hover:text-foreground active:scale-[0.97]"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Download
+                  </button>
+                  <button
+                    onClick={handleBulkDelete}
+                    disabled={busyAction}
+                    className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-destructive transition-all hover:bg-destructive/10 disabled:opacity-50 active:scale-[0.97]"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    {busyAction ? 'Deleting…' : 'Delete'}
+                  </button>
+                  <button
+                    onClick={() => setSelectedIds(new Set())}
+                    className="ml-auto rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-all hover:bg-accent hover:text-foreground active:scale-[0.97]"
+                  >
+                    Clear
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Hidden inputs */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              const f = Array.from(e.target.files ?? []);
+              if (f.length) handleFilesSelected(f);
+              e.target.value = '';
+            }}
+          />
+          <input
+            ref={folderInputRef}
+            type="file"
+            // @ts-expect-error -- webkitdirectory is non-standard
+            webkitdirectory=""
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              const f = Array.from(e.target.files ?? []);
+              if (f.length) setFolderImportFiles(f);
+              e.target.value = '';
+            }}
+          />
+
+          {error && (
+            <p className="mb-4 rounded-2xl border border-destructive/15 bg-destructive/4 px-4 py-3 text-sm text-destructive">{error}</p>
+          )}
+
+          {loading ? (
+            <LoadingSkeleton mode={hydrated ? viewMode : 'list'} />
+          ) : (
+            <>
+              {folders.length > 0 && (
+                <FolderGrid
+                  folders={folders}
+                  onOpen={navigateTo}
+                  onRename={(f) => setRenameTarget({ type: 'folder', id: f.id, name: f.name })}
+                  onDelete={handleDeleteFolder}
+                  onMove={(f) => setMoveTarget({ id: f.id, name: f.name, type: 'folder' })}
+                  onDownload={handleDownloadFolder}
+                />
+              )}
+
+              <div key={viewMode} className="animate-in fade-in duration-200">
+                {viewMode === 'list' ? (
+                  <FileTable
+                    files={files}
+                    onRename={(f) => setRenameTarget({ type: 'file', id: f.id, name: f.name })}
+                    onDelete={handleDeleteFile}
+                    onDownload={handleDownloadFile}
+                    onNewVersion={(f) => setVersionTarget({ id: f.id, name: f.name })}
+                    onPreview={(f) => setPreviewFile(f)}
+                    onMove={(f) => setMoveTarget({ id: f.id, name: f.name, type: 'file' })}
+                    onFavorite={toggleFavorite}
+                    favorites={favorites}
+                  />
+                ) : (
+                  <FileGrid
+                    files={files}
+                    onPreview={(f) => setPreviewFile(f)}
+                    onContextMenu={handleGridContextMenu}
+                    selectedIds={selectedIds}
+                    onToggleSelect={toggleSelect}
+                    favorites={favorites}
+                  />
+                )}
+              </div>
+
+              {folders.length === 0 && files.length === 0 && <EmptyState />}
+            </>
+          )}
+        </div>
+
+        {/* Preview panel */}
+        {previewFile && (
+          <PreviewPanel
+            file={previewFile}
+            files={files}
+            onClose={() => setPreviewFile(null)}
+            onNavigate={setPreviewFile}
+            onDownload={() => handleDownloadFile(previewFile.id)}
+            onNewVersion={() => { setPreviewFile(null); setVersionTarget({ id: previewFile.id, name: previewFile.name }); }}
+            onFavorite={() => toggleFavorite(previewFile.id)}
+            isFavorited={favorites.has(previewFile.id)}
+          />
+        )}
+      </div>
+
+      {/* Upload queue */}
+      <UploadQueue items={queue} onRetry={retry} onDismiss={dismiss} />
+
+      {/* Dialogs */}
+      {showCreateFolder && (
+        <CreateFolderDialog
+          parentId={currentFolderId}
+          onCreated={() => { setShowCreateFolder(false); loadContents(currentFolderId); }}
+          onClose={() => setShowCreateFolder(false)}
+        />
+      )}
+      {renameTarget && (
+        <RenameDialog
+          currentName={renameTarget.name}
+          itemType={renameTarget.type}
+          onConfirm={handleRenameConfirm}
+          onClose={() => setRenameTarget(null)}
+        />
+      )}
+      {versionTarget && (
+        <NewVersionDialog
+          fileId={versionTarget.id}
+          fileName={versionTarget.name}
+          onUploaded={() => { setVersionTarget(null); loadContents(currentFolderId); }}
+          onClose={() => setVersionTarget(null)}
+        />
+      )}
+      {folderImportFiles && (
+        <FolderImportDialog
+          files={folderImportFiles}
+          parentFolderId={currentFolderId}
+          onComplete={() => { setFolderImportFiles(null); loadContents(currentFolderId); }}
+          onCancel={() => setFolderImportFiles(null)}
+        />
+      )}
+      {duplicateInfo && (
+        <DuplicateDialog
+          fileName={duplicateInfo.file.name}
+          existingFileId={duplicateInfo.existingFileId}
+          onAction={handleDuplicateAction}
+        />
+      )}
+      {moveTarget && (
+        <MoveDialog
+          itemName={moveTarget.name}
+          onConfirm={handleMoveConfirm}
+          onClose={() => setMoveTarget(null)}
+        />
+      )}
+    </DropZone>
+  );
+}
+
+function LoadingSkeleton({ mode }: { mode: 'list' | 'grid' }) {
+  if (mode === 'grid') {
+    return (
+      <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+        {Array.from({ length: 10 }).map((_, i) => (
+          <div key={i} className="flex flex-col overflow-hidden rounded-2xl border border-border/40">
+            <div className="aspect-[4/3] bg-shimmer bg-[length:200%_100%] animate-shimmer" style={{ animationDelay: `${i * 60}ms` }} />
+            <div className="space-y-2 p-3.5">
+              <div className="h-3 w-3/4 rounded-full bg-shimmer bg-[length:200%_100%] animate-shimmer" style={{ animationDelay: `${i * 60 + 30}ms` }} />
+              <div className="h-2.5 w-1/2 rounded-full bg-shimmer bg-[length:200%_100%] animate-shimmer" style={{ animationDelay: `${i * 60 + 60}ms` }} />
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  return (
+    <div className="overflow-hidden rounded-2xl border border-border/40">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <div key={i} className="flex items-center gap-4 border-b border-border/30 p-3.5 last:border-0">
+          <div className="h-4 w-4 rounded bg-shimmer bg-[length:200%_100%] animate-shimmer" style={{ animationDelay: `${i * 80}ms` }} />
+          <div className="h-3.5 flex-1 rounded-full bg-shimmer bg-[length:200%_100%] animate-shimmer" style={{ maxWidth: `${35 + i * 8}%`, animationDelay: `${i * 80}ms` }} />
+          <div className="h-3 w-16 rounded-full bg-shimmer bg-[length:200%_100%] animate-shimmer" style={{ animationDelay: `${i * 80 + 40}ms` }} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function EmptyState() {
+  return (
+    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border/40 py-28">
+      <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-primary/8 to-primary/4">
+        <Upload className="h-7 w-7 text-primary/40" />
+      </div>
+      <h3 className="mt-5 text-[15px] font-bold tracking-tight">No files here yet</h3>
+      <p className="mt-2 max-w-xs text-center text-[13px] leading-relaxed text-muted-foreground/50">
+        Drag and drop files onto this area, paste from clipboard, or use the Upload button above.
+      </p>
+      <div className="mt-6 flex items-center gap-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/30">
+        <span>PDF</span>
+        <span className="h-0.5 w-0.5 rounded-full bg-muted-foreground/15" />
+        <span>CDR</span>
+        <span className="h-0.5 w-0.5 rounded-full bg-muted-foreground/15" />
+        <span>Images</span>
+        <span className="h-0.5 w-0.5 rounded-full bg-muted-foreground/15" />
+        <span>All types</span>
+      </div>
+    </div>
+  );
+}

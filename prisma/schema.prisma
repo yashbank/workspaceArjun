@@ -1,0 +1,198 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// User Profiles (linked to Supabase Auth's auth.users)
+// ---------------------------------------------------------------------------
+
+enum UserRole {
+  owner
+  admin
+  member
+  viewer
+}
+
+enum UserStatus {
+  active
+  deactivated
+}
+
+model UserProfile {
+  id        String     @id @default(uuid()) @db.Uuid
+  authId    String     @unique @map("auth_id") @db.Uuid
+  email     String     @unique
+  name      String?
+  role      UserRole   @default(member)
+  status    UserStatus @default(active)
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+
+  folders      Folder[]
+  files        File[]
+  fileVersions FileVersion[]
+  auditEvents  AuditEvent[]
+  notifications Notification[]
+
+  @@map("user_profiles")
+}
+
+// ---------------------------------------------------------------------------
+// Folders
+// ---------------------------------------------------------------------------
+
+model Folder {
+  id        String    @id @default(uuid()) @db.Uuid
+  name      String
+  parentId  String?   @map("parent_id") @db.Uuid
+  ownerId   String    @map("owner_id") @db.Uuid
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  parent   Folder?  @relation("FolderTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children Folder[] @relation("FolderTree")
+  owner    UserProfile @relation(fields: [ownerId], references: [id])
+  files    File[]
+
+  @@index([parentId])
+  @@index([ownerId])
+  @@map("folders")
+}
+
+// ---------------------------------------------------------------------------
+// Files
+// ---------------------------------------------------------------------------
+
+model File {
+  id               String    @id @default(uuid()) @db.Uuid
+  name             String
+  mimeType         String?   @map("mime_type")
+  folderId         String?   @map("folder_id") @db.Uuid
+  ownerId          String    @map("owner_id") @db.Uuid
+  currentVersionId String?   @unique @map("current_version_id") @db.Uuid
+  deletedAt        DateTime? @map("deleted_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  folder         Folder?      @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  owner          UserProfile  @relation(fields: [ownerId], references: [id])
+  currentVersion FileVersion? @relation("CurrentVersion", fields: [currentVersionId], references: [id])
+  versions       FileVersion[] @relation("FileVersions")
+
+  @@index([folderId])
+  @@index([ownerId])
+  @@index([name])
+  @@map("files")
+}
+
+// ---------------------------------------------------------------------------
+// File Versions
+// ---------------------------------------------------------------------------
+
+model FileVersion {
+  id         String   @id @default(uuid()) @db.Uuid
+  fileId     String   @map("file_id") @db.Uuid
+  versionNo  Int      @map("version_no")
+  sizeBytes  BigInt   @map("size_bytes")
+  storageKey String   @map("storage_key")
+  uploadedBy String   @map("uploaded_by") @db.Uuid
+  note       String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  file       File        @relation("FileVersions", fields: [fileId], references: [id], onDelete: Cascade)
+  uploader   UserProfile @relation(fields: [uploadedBy], references: [id])
+  currentOf  File?       @relation("CurrentVersion")
+
+  @@unique([fileId, versionNo])
+  @@index([fileId])
+  @@map("file_versions")
+}
+
+// ---------------------------------------------------------------------------
+// Storage Usage
+// ---------------------------------------------------------------------------
+
+model StorageUsage {
+  id         String   @id @default(uuid()) @db.Uuid
+  totalBytes BigInt   @default(0) @map("total_bytes")
+  fileCount  Int      @default(0) @map("file_count")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("storage_usage")
+}
+
+// ---------------------------------------------------------------------------
+// Workspace Settings (key-value)
+// ---------------------------------------------------------------------------
+
+model WorkspaceSetting {
+  key   String @id
+  value String
+
+  @@map("workspace_settings")
+}
+
+// ---------------------------------------------------------------------------
+// Audit Events
+// ---------------------------------------------------------------------------
+
+model AuditEvent {
+  id         String   @id @default(uuid()) @db.Uuid
+  actorId    String?  @map("actor_id") @db.Uuid
+  role       String?
+  action     String
+  targetType String?  @map("target_type")
+  targetId   String?  @map("target_id")
+  meta       Json?    @db.JsonB
+  ip         String?
+  userAgent  String?  @map("user_agent")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  actor UserProfile? @relation(fields: [actorId], references: [id])
+
+  @@index([actorId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_events")
+}
+
+// ---------------------------------------------------------------------------
+// Favorites (pinned files/folders)
+// ---------------------------------------------------------------------------
+
+model Favorite {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  targetType String   @map("target_type") // 'file' | 'folder'
+  targetId   String   @map("target_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, targetType, targetId])
+  @@index([userId])
+  @@map("favorites")
+}
+
+// ---------------------------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------------------------
+
+model Notification {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  type      String
+  payload   Json?     @db.JsonB
+  readAt    DateTime? @map("read_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user UserProfile @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("notifications")
+}
