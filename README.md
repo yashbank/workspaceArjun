@@ -26,7 +26,7 @@ pnpm install
 
 # 2. Copy environment variables
 cp .env.example .env.local
-# Fill in Supabase keys and DATABASE_URL — see "Auth Setup" below
+# Fill in Supabase keys, DATABASE_URL, and DIRECT_URL — see "Auth Setup" below
 
 # 3. Generate Prisma client
 pnpm db:generate
@@ -67,6 +67,23 @@ NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 ```
+
+From **Project Settings → Database** (use two connection strings):
+
+```
+# Runtime — transaction pooler (port 6543, for Next.js / Vercel)
+DATABASE_URL=postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=1
+
+# Prisma CLI — session pooler (port 5432, for migrate / db pull / studio)
+DIRECT_URL=postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres
+```
+
+| Variable | Port | `pgbouncer` | Used by |
+|----------|------|-------------|---------|
+| `DATABASE_URL` | 6543 | `true` | App runtime (`src/server/db`) |
+| `DIRECT_URL` | 5432 | *(omit)* | Prisma CLI (`prisma.config.ts`) |
+
+Using the transaction pooler for Prisma CLI causes `prepared statement "s1" already exists` errors.
 
 ### 3. Create First Admin Account
 
@@ -497,3 +514,10 @@ The demo seed creates:
 ## Environment Variables
 
 See `.env.example` for local development and `.env.production.example` for Vercel deployment.
+
+### Supabase database connection split
+
+- **`DATABASE_URL`** — Supabase **transaction** pooler, port **6543**, include `?pgbouncer=true&connection_limit=1`. Used by the running app.
+- **`DIRECT_URL`** — Supabase **session** pooler (or direct), port **5432**, **no** `pgbouncer=true`. Used by Prisma CLI (`pnpm db:migrate`, `pnpm prisma db pull`, `pnpm db:studio`) via `prisma.config.ts`.
+
+On Vercel, set **`DATABASE_URL`** for production runtime. Set **`DIRECT_URL`** only if you run migrations/CLI against production from your machine or CI.
