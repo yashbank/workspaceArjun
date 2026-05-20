@@ -10,12 +10,16 @@ const NAV_ITEMS = [
   { label: 'Trash', href: '/trash', icon: Trash2 },
 ];
 
-const ADMIN_ITEMS = [
-  { label: 'Admin', href: '/admin', icon: Shield },
-  { label: 'Settings', href: '/admin/settings', icon: Settings },
-];
+const ADMIN_NAV = { label: 'Admin', href: '/admin', icon: Shield };
+const SETTINGS_NAV = { label: 'Settings', href: '/admin/settings', icon: Settings };
 
-export function Sidebar({ showAdminNav = false }: { showAdminNav?: boolean }) {
+export function Sidebar({
+  showAdminNav = false,
+  showSettingsNav = false,
+}: {
+  showAdminNav?: boolean;
+  showSettingsNav?: boolean;
+}) {
   const pathname = usePathname();
 
   return (
@@ -40,13 +44,10 @@ export function Sidebar({ showAdminNav = false }: { showAdminNav?: boolean }) {
             <p className="mb-2 px-3 text-[9px] font-bold uppercase tracking-widest text-muted-foreground/40">
               Admin
             </p>
-            {ADMIN_ITEMS.map((item) => (
-              <NavLink
-                key={item.href}
-                {...item}
-                active={item.href === '/admin' ? pathname === '/admin' : pathname.startsWith(item.href)}
-              />
-            ))}
+            <NavLink {...ADMIN_NAV} active={pathname === '/admin'} />
+            {showSettingsNav && (
+              <NavLink {...SETTINGS_NAV} active={pathname.startsWith('/admin/settings')} />
+            )}
           </>
         )}
       </nav>

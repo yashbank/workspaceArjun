@@ -54,8 +54,12 @@ Open [http://localhost:3000](http://localhost:3000).
 In your [Supabase dashboard](https://supabase.com/dashboard):
 
 1. Go to **Authentication → URL Configuration**.
-2. Set **Site URL** to `http://localhost:3000`.
-3. Add `http://localhost:3000/**` to **Redirect URLs**.
+2. Set **Site URL** to your public app URL (`http://localhost:3000` locally; production domain in prod).
+3. Add these **Redirect URLs** (local + production equivalents):
+   - `http://localhost:3000/auth/callback`
+   - `http://localhost:3000/invite/accept`
+   - `https://YOUR_DOMAIN/auth/callback`
+   - `https://YOUR_DOMAIN/invite/accept`
 4. (Optional) Under **Auth Providers**, disable email confirmation for faster local testing — or leave it enabled and confirm users manually from the dashboard.
 
 ### 2. Add Keys to `.env.local`
@@ -101,8 +105,9 @@ Set `ALLOW_BOOTSTRAP=true` in `.env.local`, then:
 
 - **Disable public signup** in Supabase → Authentication → Providers (invite-only workspace).
 - Owners and admins invite users from **Admin → Invite User** (max **15** active + pending seats).
-- Supabase sends a **secure invite email** — the user sets their own password via the link (no plaintext passwords).
-- Invited role (`admin`, `member`, `viewer`) is applied on first login from invite metadata.
+- Supabase sends a **secure invite email** — the link opens `/auth/callback` then `/invite/accept` where the user sets their own password (no plaintext passwords).
+- Owner can invite **admin** or **member**; admin can invite **member** only.
+- Invited role is applied after password setup via `complete-invite`.
 - Resend invite from Admin for pending users.
 
 ## Auth Flow

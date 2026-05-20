@@ -314,6 +314,7 @@ function formatAction(action: string): string {
     'user.deactivate': 'deactivated a user',
     'user.reactivate': 'reactivated a user',
     'user.remove': 'removed a user',
+    'user.ownership_transfer': 'transferred ownership',
     'settings.change': 'updated settings',
     'login.success': 'signed in',
   };

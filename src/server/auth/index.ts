@@ -4,7 +4,13 @@ import { db } from '@/server/db';
 import { parseInvitedRole, resolveProfileRole } from '@/server/users';
 import type { UserProfile, UserRole } from '@/generated/prisma/client';
 
-async function markInviteAccepted(email: string): Promise<void> {
+const INVITE_ACCEPT_PATH = '/invite/accept';
+
+function getAppUrl(): string {
+  return process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
+}
+
+export async function markInviteAccepted(email: string): Promise<void> {
   if (!email) return;
   await db.userInvite.updateMany({
     where: { email: email.toLowerCase(), status: 'pending' },
@@ -12,11 +18,30 @@ async function markInviteAccepted(email: string): Promise<void> {
   });
 }
 
+export async function hasPendingInviteForEmail(email: string): Promise<boolean> {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized) return false;
+  const invite = await db.userInvite.findFirst({
+    where: { email: normalized, status: 'pending' },
+  });
+  return !!invite;
+}
+
+/**
+ * Invited users with a valid session but no password yet should finish /invite/accept.
+ */
+export async function userNeedsPasswordSetup(authUser: {
+  email?: string;
+}): Promise<boolean> {
+  if (!authUser.email) return false;
+  return hasPendingInviteForEmail(authUser.email);
+}
+
 /**
  * Auto-creates a UserProfile when a Supabase user authenticates for the first
  * time. The first profile becomes owner; invited users receive their invited_role.
  */
-async function ensureProfile(authUser: {
+export async function ensureProfile(authUser: {
   id: string;
   email?: string;
   user_metadata?: unknown;
@@ -52,8 +77,23 @@ async function ensureProfile(authUser: {
 }
 
 /**
+ * After invite password is set — create profile and mark invite accepted.
+ */
+export async function completeInviteAcceptance(authUser: {
+  id: string;
+  email?: string;
+  user_metadata?: unknown;
+}): Promise<UserProfile> {
+  const profile = await ensureProfile(authUser);
+  if (authUser.email) {
+    await markInviteAccepted(authUser.email);
+  }
+  return profile;
+}
+
+/**
  * Returns the authenticated user's profile, auto-creating it if needed.
- * De-duplicated per-request via React `cache()`.
+ * Skips auto-create while a pending invite exists (user must finish /invite/accept).
  */
 export const getCurrentUser = cache(async (): Promise<UserProfile | null> => {
   const supabase = await createSupabaseServerClient();
@@ -62,6 +102,10 @@ export const getCurrentUser = cache(async (): Promise<UserProfile | null> => {
   } = await supabase.auth.getUser();
 
   if (!user) return null;
+
+  const pendingInvite = await hasPendingInviteForEmail(user.email ?? '');
+  if (pendingInvite) return null;
+
   return ensureProfile({
     id: user.id,
     email: user.email,
@@ -80,15 +124,20 @@ export async function requireUser(): Promise<UserProfile> {
   return user;
 }
 
-/** Sends Supabase invite email — user sets their own password via the link. */
+/** Sends Supabase invite email — user sets password on /invite/accept. */
 export async function inviteUserByEmail(email: string, role: UserRole) {
   const admin = await createSupabaseAdminClient();
   const normalized = email.trim().toLowerCase();
+  const redirectTo = `${getAppUrl()}/auth/callback?next=${encodeURIComponent(INVITE_ACCEPT_PATH)}`;
   const { data, error } = await admin.auth.admin.inviteUserByEmail(normalized, {
     data: { invited_role: role },
-    redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback?next=/`,
+    redirectTo,
   });
 
   if (error) throw error;
   return data;
+}
+
+export function getInviteAcceptPath(): string {
+  return INVITE_ACCEPT_PATH;
 }

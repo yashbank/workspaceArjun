@@ -36,6 +36,8 @@ type InviteItem = {
 };
 
 type AdminUsersPayload = {
+  actorRole: string;
+  invitableRoles: string[];
   seats: {
     max: number;
     used: number;
@@ -47,7 +49,12 @@ type AdminUsersPayload = {
   invites: InviteItem[];
 };
 
-const CHANGEABLE_ROLES = ['admin', 'member', 'viewer'] as const;
+function assignableRoles(actorRole: string, targetRole: string): string[] {
+  if (targetRole === 'owner') return [];
+  if (actorRole === 'owner') return ['admin', 'member', 'viewer'];
+  if (actorRole === 'admin') return ['member', 'viewer'];
+  return [];
+}
 
 const roleBadge: Record<string, string> = {
   owner: 'bg-amber-500/15 text-amber-700 dark:text-amber-400',
@@ -100,7 +107,10 @@ export default function AdminPage() {
   const seats = data?.seats;
   const users = data?.users ?? [];
   const invites = data?.invites ?? [];
+  const actorRole = data?.actorRole ?? 'member';
+  const invitableRoles = data?.invitableRoles ?? ['member'];
   const atSeatLimit = seats ? seats.used >= seats.max : false;
+  const canRemoveUsers = actorRole === 'owner';
 
   const handleRoleChange = async (userId: string, newRole: string, currentRole: string) => {
     if (currentRole === 'owner') return;
@@ -137,6 +147,23 @@ export default function AdminPage() {
       await loadUsers();
     } catch (err) {
       alert(err instanceof Error ? err.message : `Failed to ${label} user`);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleTransferOwnership = async (userId: string, email: string) => {
+    if (!confirm(`Transfer workspace ownership to ${email}? You will become an admin.`)) return;
+    try {
+      setBusyId(userId);
+      await apiFetch('/api/admin/users/transfer-ownership', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      });
+      await loadUsers();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to transfer ownership');
     } finally {
       setBusyId(null);
     }
@@ -307,6 +334,7 @@ export default function AdminPage() {
                     <UserRow
                       key={u.id}
                       user={u}
+                      actorRole={actorRole}
                       busyId={busyId}
                       roleMenu={roleMenu}
                       actionMenu={actionMenu}
@@ -314,7 +342,10 @@ export default function AdminPage() {
                       setActionMenu={setActionMenu}
                       onRoleChange={handleRoleChange}
                       onStatusToggle={handleStatusToggle}
-                      onRemove={handleRemove}
+                      onRemove={canRemoveUsers ? handleRemove : undefined}
+                      onTransferOwnership={
+                        actorRole === 'owner' ? handleTransferOwnership : undefined
+                      }
                     />
                   ))}
                 </tbody>
@@ -325,10 +356,14 @@ export default function AdminPage() {
                 <UserCard
                   key={u.id}
                   user={u}
+                  actorRole={actorRole}
                   busyId={busyId}
                   onRoleChange={handleRoleChange}
                   onStatusToggle={handleStatusToggle}
-                  onRemove={handleRemove}
+                  onRemove={canRemoveUsers ? handleRemove : undefined}
+                  onTransferOwnership={
+                    actorRole === 'owner' ? handleTransferOwnership : undefined
+                  }
                 />
               ))}
             </div>
@@ -339,6 +374,7 @@ export default function AdminPage() {
       {showInvite && (
         <InviteDialog
           atSeatLimit={atSeatLimit}
+          invitableRoles={invitableRoles}
           onClose={() => setShowInvite(false)}
           onSuccess={() => {
             setShowInvite(false);
@@ -369,6 +405,7 @@ function StatusBadge({ status }: { status: string }) {
 
 function UserRow({
   user: u,
+  actorRole,
   busyId,
   roleMenu,
   actionMenu,
@@ -377,8 +414,10 @@ function UserRow({
   onRoleChange,
   onStatusToggle,
   onRemove,
+  onTransferOwnership,
 }: {
   user: UserItem;
+  actorRole: string;
   busyId: string | null;
   roleMenu: string | null;
   actionMenu: string | null;
@@ -386,10 +425,12 @@ function UserRow({
   setActionMenu: (id: string | null) => void;
   onRoleChange: (id: string, role: string, current: string) => void;
   onStatusToggle: (id: string, status: string, role: string) => void;
-  onRemove: (id: string) => void;
+  onRemove?: (id: string) => void;
+  onTransferOwnership?: (id: string, email: string) => void;
 }) {
   const isOwner = u.role === 'owner';
-  const canRemove = u.status === 'deactivated' && !isOwner;
+  const roles = assignableRoles(actorRole, u.role);
+  const canRemove = u.status === 'deactivated' && !isOwner && !!onRemove;
 
   return (
     <tr className="group transition-colors hover:bg-accent/15">
@@ -430,7 +471,7 @@ function UserRow({
                 className="absolute left-0 top-full z-50 mt-1 w-36 overflow-hidden rounded-xl border border-border/50 bg-popover p-1 shadow-float"
                 onClick={(e) => e.stopPropagation()}
               >
-                {CHANGEABLE_ROLES.map((r) => (
+                {roles.map((r) => (
                   <button
                     key={r}
                     type="button"
@@ -494,7 +535,17 @@ function UserRow({
                     </>
                   )}
                 </button>
-                {canRemove && (
+                {onTransferOwnership && u.status === 'active' && !isOwner && (
+                  <button
+                    type="button"
+                    onClick={() => onTransferOwnership(u.id, u.email)}
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] transition-all hover:bg-accent"
+                  >
+                    <Shield className="h-3.5 w-3.5" />
+                    Transfer ownership
+                  </button>
+                )}
+                {canRemove && onRemove && (
                   <button
                     type="button"
                     onClick={() => onRemove(u.id)}
@@ -515,19 +566,24 @@ function UserRow({
 
 function UserCard({
   user: u,
+  actorRole,
   busyId,
   onRoleChange,
   onStatusToggle,
   onRemove,
+  onTransferOwnership,
 }: {
   user: UserItem;
+  actorRole: string;
   busyId: string | null;
   onRoleChange: (id: string, role: string, current: string) => void;
   onStatusToggle: (id: string, status: string, role: string) => void;
-  onRemove: (id: string) => void;
+  onRemove?: (id: string) => void;
+  onTransferOwnership?: (id: string, email: string) => void;
 }) {
   const isOwner = u.role === 'owner';
-  const canRemove = u.status === 'deactivated' && !isOwner;
+  const roles = assignableRoles(actorRole, u.role);
+  const canRemove = u.status === 'deactivated' && !isOwner && !!onRemove;
 
   return (
     <div className="space-y-3 px-5 py-4">
@@ -543,7 +599,7 @@ function UserCard({
           {u.role}
         </span>
         {!isOwner &&
-          CHANGEABLE_ROLES.map((r) =>
+          roles.map((r) =>
             r !== u.role ? (
               <button
                 key={r}
@@ -567,7 +623,7 @@ function UserCard({
           >
             {u.status === 'active' ? 'Deactivate' : 'Reactivate'}
           </button>
-          {canRemove && (
+          {canRemove && onRemove && (
             <button
               type="button"
               disabled={busyId === u.id}
@@ -575,6 +631,16 @@ function UserCard({
               className="rounded-lg border border-destructive/30 px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10"
             >
               Remove
+            </button>
+          )}
+          {onTransferOwnership && u.status === 'active' && (
+            <button
+              type="button"
+              disabled={busyId === u.id}
+              onClick={() => onTransferOwnership(u.id, u.email)}
+              className="rounded-lg border border-border/50 px-3 py-1.5 text-xs font-medium hover:bg-accent"
+            >
+              Transfer ownership
             </button>
           )}
         </div>
@@ -585,15 +651,17 @@ function UserCard({
 
 function InviteDialog({
   atSeatLimit,
+  invitableRoles,
   onClose,
   onSuccess,
 }: {
   atSeatLimit: boolean;
+  invitableRoles: string[];
   onClose: () => void;
   onSuccess: () => void;
 }) {
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState('member');
+  const [role, setRole] = useState(invitableRoles[0] ?? 'member');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
@@ -663,9 +731,11 @@ function InviteDialog({
               className="w-full rounded-xl border border-border/50 bg-background px-3.5 py-2.5 text-sm outline-none transition-all focus:border-primary/30 focus:ring-2 focus:ring-primary/15"
               disabled={atSeatLimit}
             >
-              <option value="admin">Admin</option>
-              <option value="member">Member</option>
-              <option value="viewer">Viewer</option>
+              {invitableRoles.map((r) => (
+                <option key={r} value={r}>
+                  {r.charAt(0).toUpperCase() + r.slice(1)}
+                </option>
+              ))}
             </select>
           </div>
 

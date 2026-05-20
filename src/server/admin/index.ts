@@ -1,9 +1,10 @@
 import { db } from '@/server/db';
 import { requirePermission } from '@/server/rbac';
+import { hasPermission } from '@/server/rbac/permissions';
 import { logAuditEvent } from '@/server/audit';
 import { inviteUserByEmail } from '@/server/auth';
 import { createSupabaseAdminClient } from '@/lib/supabase/server';
-import { assertSeatAvailable, getSeatUsage, isInvitableRole } from '@/server/users';
+import { assertSeatAvailable, getSeatUsage, canActorInviteRole, getInvitableRolesForActor } from '@/server/users';
 import type { UserProfile, UserRole } from '@/generated/prisma/client';
 
 export interface UserListItem {
@@ -26,6 +27,8 @@ export interface PendingInviteItem {
 }
 
 export interface AdminUsersResponse {
+  actorRole: UserRole;
+  invitableRoles: UserRole[];
   seats: {
     max: number;
     used: number;
@@ -37,8 +40,36 @@ export interface AdminUsersResponse {
   invites: PendingInviteItem[];
 }
 
+async function assertCanChangeRoleAsync(
+  actor: UserProfile,
+  target: UserProfile,
+  newRole: UserRole,
+): Promise<void> {
+  if (target.id === actor.id && target.role === 'owner' && newRole !== 'owner') {
+    throw new Error('You cannot demote yourself from owner');
+  }
+
+  if (newRole === 'owner' && target.role !== 'owner') {
+    throw new Error('Use transfer ownership to assign a new owner');
+  }
+
+  if (target.role === 'owner' && newRole !== 'owner') {
+    const ownerCount = await db.userProfile.count({ where: { role: 'owner' } });
+    if (ownerCount <= 1) throw new Error('Cannot demote the only owner');
+  }
+
+  if (actor.role === 'admin') {
+    if (target.role === 'owner' || target.role === 'admin') {
+      throw new Error('Admins cannot modify owner or admin accounts');
+    }
+    if (newRole === 'owner' || newRole === 'admin') {
+      throw new Error('Admins can only assign member or viewer roles');
+    }
+  }
+}
+
 export async function listUsersWithSeats(): Promise<AdminUsersResponse> {
-  await requirePermission('users:manage');
+  const actor = await requirePermission('users:manage');
 
   const [seats, users, invites] = await Promise.all([
     getSeatUsage(),
@@ -69,6 +100,8 @@ export async function listUsersWithSeats(): Promise<AdminUsersResponse> {
   ]);
 
   return {
+    actorRole: actor.role,
+    invitableRoles: getInvitableRolesForActor(actor.role),
     seats: {
       max: seats.max,
       used: seats.used,
@@ -89,10 +122,14 @@ export async function listUsersWithSeats(): Promise<AdminUsersResponse> {
 }
 
 export async function inviteUser(email: string, role: UserRole): Promise<void> {
-  const actor = await requirePermission('users:manage');
+  const actor = await requirePermission('users:invite');
 
-  if (!isInvitableRole(role)) {
-    throw new Error('Invalid invite role. Choose admin, member, or viewer.');
+  if (!canActorInviteRole(actor.role, role)) {
+    throw new Error(
+      actor.role === 'admin'
+        ? 'Admins can only invite members.'
+        : 'You are not allowed to invite users with this role.',
+    );
   }
 
   const normalized = email.trim().toLowerCase();
@@ -136,11 +173,15 @@ export async function inviteUser(email: string, role: UserRole): Promise<void> {
 }
 
 export async function resendInvite(inviteId: string): Promise<void> {
-  const actor = await requirePermission('users:manage');
+  const actor = await requirePermission('users:invite');
 
   const invite = await db.userInvite.findUnique({ where: { id: inviteId } });
   if (!invite || invite.status !== 'pending') {
     throw new Error('Pending invite not found');
+  }
+
+  if (!canActorInviteRole(actor.role, invite.role)) {
+    throw new Error('You are not allowed to resend this invite.');
   }
 
   const existing = await db.userProfile.findFirst({ where: { email: invite.email } });
@@ -173,18 +214,7 @@ export async function changeUserRole(
   const target = await db.userProfile.findUnique({ where: { id: userId } });
   if (!target) throw new Error('User not found');
 
-  if (target.id === actor.id && target.role === 'owner' && newRole !== 'owner') {
-    throw new Error('You cannot demote yourself from owner');
-  }
-
-  if (newRole === 'owner' && target.role !== 'owner') {
-    throw new Error('Cannot assign owner role through the admin panel');
-  }
-
-  if (target.role === 'owner' && newRole !== 'owner') {
-    const ownerCount = await db.userProfile.count({ where: { role: 'owner' } });
-    if (ownerCount <= 1) throw new Error('Cannot demote the only owner');
-  }
+  await assertCanChangeRoleAsync(actor, target, newRole);
 
   const updated = await db.userProfile.update({
     where: { id: userId },
@@ -219,6 +249,10 @@ export async function setUserStatus(
     throw new Error('Cannot deactivate or reactivate an owner account');
   }
 
+  if (actor.role === 'admin' && target.role === 'admin') {
+    throw new Error('Admins cannot deactivate admin accounts');
+  }
+
   if (status === 'active' && target.status === 'deactivated') {
     await assertSeatAvailable();
   }
@@ -241,7 +275,7 @@ export async function setUserStatus(
 }
 
 export async function removeUser(userId: string): Promise<void> {
-  const actor = await requirePermission('users:manage');
+  const actor = await requirePermission('users:remove');
 
   const target = await db.userProfile.findUnique({ where: { id: userId } });
   if (!target) throw new Error('User not found');
@@ -282,4 +316,61 @@ export async function removeUser(userId: string): Promise<void> {
     targetId: userId,
     meta: { email: target.email, role: target.role },
   });
+}
+
+export async function transferOwnership(newOwnerId: string): Promise<void> {
+  const actor = await requirePermission('users:transfer_ownership');
+
+  if (actor.role !== 'owner') {
+    throw new Error('Only the workspace owner can transfer ownership');
+  }
+
+  const target = await db.userProfile.findUnique({ where: { id: newOwnerId } });
+  if (!target) throw new Error('User not found');
+
+  if (target.id === actor.id) {
+    throw new Error('You are already the owner');
+  }
+
+  if (target.status !== 'active') {
+    throw new Error('Ownership can only be transferred to an active user');
+  }
+
+  if (target.role === 'owner') {
+    throw new Error('This user is already an owner');
+  }
+
+  await db.$transaction([
+    db.userProfile.update({
+      where: { id: newOwnerId },
+      data: { role: 'owner' },
+    }),
+    db.userProfile.update({
+      where: { id: actor.id },
+      data: { role: 'admin' },
+    }),
+  ]);
+
+  await logAuditEvent({
+    actor,
+    action: 'user.ownership_transfer',
+    targetType: 'user',
+    targetId: newOwnerId,
+    meta: { email: target.email, previousOwnerEmail: actor.email },
+  });
+}
+
+/** Roles the actor may assign when editing an existing user. */
+export function getAssignableRolesForActor(
+  actorRole: UserRole,
+  targetRole: UserRole,
+): UserRole[] {
+  if (targetRole === 'owner') return ['owner'];
+  if (actorRole === 'owner') return ['admin', 'member', 'viewer'];
+  if (actorRole === 'admin') return ['member', 'viewer'];
+  return [];
+}
+
+export function canActorRemoveUser(actor: UserProfile): boolean {
+  return hasPermission(actor.role, 'users:remove');
 }

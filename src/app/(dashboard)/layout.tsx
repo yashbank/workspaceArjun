@@ -1,4 +1,5 @@
-import { getCurrentUser } from '@/server/auth';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { getCurrentUser, hasPendingInviteForEmail } from '@/server/auth';
 import { isDatabaseConnectionError } from '@/server/db';
 import { redirect } from 'next/navigation';
 import { Sidebar } from '@/components/shell/sidebar';
@@ -9,6 +10,18 @@ import { GuidedTour } from '@/components/shell/guided-tour';
 import { DbConnectionIssue } from '@/components/shell/db-connection-issue';
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user: authUser },
+  } = await supabase.auth.getUser();
+
+  if (authUser?.email) {
+    const pendingInvite = await hasPendingInviteForEmail(authUser.email);
+    if (pendingInvite) {
+      redirect('/invite/accept');
+    }
+  }
+
   let profile;
   try {
     profile = await getCurrentUser();
@@ -31,10 +44,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
   }
 
   const showAdminNav = profile.role === 'owner' || profile.role === 'admin';
+  const showSettingsNav = profile.role === 'owner';
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
-      <Sidebar showAdminNav={showAdminNav} />
+      <Sidebar showAdminNav={showAdminNav} showSettingsNav={showSettingsNav} />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Topbar
           userEmail={profile.email}

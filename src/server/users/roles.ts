@@ -1,6 +1,5 @@
 import type { UserRole } from '@/generated/prisma/client';
 
-const INVITABLE_ROLES: UserRole[] = ['admin', 'member', 'viewer'];
 const ALL_ROLES: UserRole[] = ['owner', 'admin', 'member', 'viewer'];
 
 export function parseInvitedRole(userMetadata: unknown): UserRole | null {
@@ -18,14 +17,20 @@ export function resolveProfileRole(options: {
   if (options.invitedRole && options.invitedRole !== 'owner') {
     return options.invitedRole;
   }
-  if (options.invitedRole === 'owner') {
-    return 'member';
-  }
   return 'member';
 }
 
-export function isInvitableRole(role: string): role is 'admin' | 'member' | 'viewer' {
-  return INVITABLE_ROLES.includes(role as UserRole);
+/** Roles an actor may assign when inviting (server-enforced). */
+export function getInvitableRolesForActor(actorRole: UserRole): UserRole[] {
+  if (actorRole === 'owner') return ['admin', 'member'];
+  if (actorRole === 'admin') return ['member'];
+  return [];
 }
 
-export const INVITABLE_ROLE_OPTIONS = INVITABLE_ROLES;
+export function canActorInviteRole(actorRole: UserRole, role: UserRole): boolean {
+  return getInvitableRolesForActor(actorRole).includes(role);
+}
+
+export function isInvitableRole(role: string): role is UserRole {
+  return ALL_ROLES.includes(role as UserRole) && role !== 'owner' && role !== 'viewer';
+}

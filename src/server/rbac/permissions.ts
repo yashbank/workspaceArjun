@@ -14,34 +14,65 @@ export type Permission =
   | 'versions:read'
   | 'versions:restore'
   | 'users:manage'
+  | 'users:invite'
+  | 'users:remove'
+  | 'users:transfer_ownership'
   | 'audit:read'
   | 'settings:manage'
   | 'storage:read';
 
 const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   owner: [
-    'files:read', 'files:write', 'files:delete', 'files:restore', 'files:permanent_delete',
-    'folders:read', 'folders:write', 'folders:delete', 'folders:restore', 'folders:permanent_delete',
-    'versions:read', 'versions:restore',
-    'users:manage', 'audit:read', 'settings:manage', 'storage:read',
-  ],
-  admin: [
-    'files:read', 'files:write', 'files:delete', 'files:restore', 'files:permanent_delete',
-    'folders:read', 'folders:write', 'folders:delete', 'folders:restore', 'folders:permanent_delete',
-    'versions:read', 'versions:restore',
-    'users:manage', 'audit:read', 'settings:manage', 'storage:read',
-  ],
-  member: [
-    'files:read', 'files:write', 'files:delete', 'files:restore',
-    'folders:read', 'folders:write', 'folders:delete', 'folders:restore',
-    'versions:read', 'versions:restore',
+    'files:read',
+    'files:write',
+    'files:delete',
+    'files:restore',
+    'files:permanent_delete',
+    'folders:read',
+    'folders:write',
+    'folders:delete',
+    'folders:restore',
+    'folders:permanent_delete',
+    'versions:read',
+    'versions:restore',
+    'users:manage',
+    'users:invite',
+    'users:remove',
+    'users:transfer_ownership',
+    'audit:read',
+    'settings:manage',
     'storage:read',
   ],
-  viewer: [
+  admin: [
     'files:read',
+    'files:write',
+    'files:delete',
+    'files:restore',
     'folders:read',
+    'folders:write',
+    'folders:delete',
+    'folders:restore',
     'versions:read',
+    'versions:restore',
+    'users:manage',
+    'users:invite',
+    'audit:read',
+    'storage:read',
   ],
+  member: [
+    'files:read',
+    'files:write',
+    'files:delete',
+    'files:restore',
+    'folders:read',
+    'folders:write',
+    'folders:delete',
+    'folders:restore',
+    'versions:read',
+    'versions:restore',
+    'storage:read',
+  ],
+  viewer: ['files:read', 'folders:read', 'versions:read'],
 };
 
 export function hasPermission(role: UserRole, permission: Permission): boolean {
