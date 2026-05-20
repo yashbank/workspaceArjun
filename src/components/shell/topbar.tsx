@@ -1,7 +1,7 @@
 'use client';
 
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
-import { LogOut, Sun, Moon, Monitor } from 'lucide-react';
+import { LogOut, Sun, Moon, Monitor, Menu } from 'lucide-react';
 import { useTheme } from '@/components/providers/theme-provider';
 import { useState } from 'react';
 
@@ -16,10 +16,12 @@ export function Topbar({
   userEmail,
   userName,
   userRole,
+  onMenuClick,
 }: {
   userEmail: string;
   userName?: string;
   userRole: string;
+  onMenuClick?: () => void;
 }) {
   const { theme, setTheme } = useTheme();
 
@@ -33,9 +35,21 @@ export function Topbar({
 
   return (
     <header className="glass flex h-[3.75rem] shrink-0 items-center justify-between gap-4 border-b border-border/40 px-4 sm:px-6">
-      <p className="hidden text-[11px] font-medium text-muted-foreground/50 sm:block">
-        Premium asset workspace
-      </p>
+      <div className="flex min-w-0 items-center gap-3">
+        {onMenuClick && (
+          <button
+            type="button"
+            onClick={onMenuClick}
+            className="rounded-xl border border-border/40 bg-card/60 p-2 text-muted-foreground transition-all hover:bg-accent hover:text-foreground md:hidden"
+            aria-label="Open navigation"
+          >
+            <Menu className="h-4 w-4" />
+          </button>
+        )}
+        <p className="truncate text-[11px] font-medium text-muted-foreground/50 sm:text-xs">
+          Premium asset workspace
+        </p>
+      </div>
 
       <div className="ml-auto flex items-center gap-2 sm:gap-3">
         <ThemeToggle theme={theme} setTheme={setTheme} />

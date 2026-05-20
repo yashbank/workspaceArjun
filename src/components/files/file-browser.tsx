@@ -18,6 +18,7 @@ import { FolderImportDialog } from './folder-import-dialog';
 import { PreviewPanel } from './preview-panel';
 import { SearchBar } from './search-bar';
 import { DuplicateDialog, type DuplicateAction } from './duplicate-dialog';
+import { parseApiErrorMessage } from '@/lib/storage-errors';
 import { MoveDialog } from './move-dialog';
 import {
   FolderPlus,
@@ -418,8 +419,7 @@ export function FileBrowser() {
       const res = await fetch(`/api/files/${id}/download`);
       if (!res.ok) {
         const payload = await res.json().catch(() => null);
-        const msg = payload?.error ?? 'Download failed';
-        toast('error', msg);
+        toast('error', parseApiErrorMessage(payload, 'Download failed'));
         return;
       }
       const blob = await res.blob();
@@ -714,6 +714,14 @@ export function FileBrowser() {
         </div>
 
         {/* Preview panel */}
+        {previewFile && (
+          <button
+            type="button"
+            aria-label="Close preview"
+            className="fixed inset-0 z-40 bg-black/35 backdrop-blur-[1px] lg:hidden"
+            onClick={() => setPreviewFile(null)}
+          />
+        )}
         {previewFile && (
           <PreviewPanel
             file={previewFile}

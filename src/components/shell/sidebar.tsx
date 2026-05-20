@@ -27,9 +27,11 @@ const SETTINGS_NAV = {
 export function Sidebar({
   showAdminNav = false,
   showSettingsNav = false,
+  onNavigate,
 }: {
   showAdminNav?: boolean;
   showSettingsNav?: boolean;
+  onNavigate?: () => void;
 }) {
   const pathname = usePathname();
 
@@ -49,16 +51,16 @@ export function Sidebar({
 
       <nav className="flex-1 space-y-1 px-3 py-5">
         {NAV_ITEMS.map((item) => (
-          <NavLink key={item.href} {...item} active={item.match(pathname)} />
+          <NavLink key={item.href} {...item} active={item.match(pathname)} onNavigate={onNavigate} />
         ))}
 
         {showAdminNav && (
           <>
             <div className="my-4 border-t border-border/35" />
             <p className="bpp-label-caps mb-2 px-3">Administration</p>
-            <NavLink {...ADMIN_NAV} active={ADMIN_NAV.match(pathname)} />
+            <NavLink {...ADMIN_NAV} active={ADMIN_NAV.match(pathname)} onNavigate={onNavigate} />
             {showSettingsNav && (
-              <NavLink {...SETTINGS_NAV} active={SETTINGS_NAV.match(pathname)} />
+              <NavLink {...SETTINGS_NAV} active={SETTINGS_NAV.match(pathname)} onNavigate={onNavigate} />
             )}
           </>
         )}
@@ -83,6 +85,7 @@ function NavLink({
   icon: Icon,
   active = false,
   disabled = false,
+  onNavigate,
 }: {
   label: string;
   href: string;
@@ -90,6 +93,7 @@ function NavLink({
   active?: boolean;
   disabled?: boolean;
   match?: (p: string) => boolean;
+  onNavigate?: () => void;
 }) {
   const base =
     'relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-medium transition-all duration-150';
@@ -110,6 +114,7 @@ function NavLink({
     <Link
       href={href}
       aria-current={active ? 'page' : undefined}
+      onClick={() => onNavigate?.()}
       className={`${base} active:scale-[0.98] ${
         active
           ? 'bg-accent font-semibold text-foreground shadow-card'

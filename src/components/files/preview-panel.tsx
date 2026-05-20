@@ -22,6 +22,11 @@ import {
   Expand,
 } from 'lucide-react';
 import { getExtension, getFileTypeBadge, formatBytes, formatDate } from '@/lib/file-utils';
+import {
+  STORAGE_CONTENT_MISSING_MESSAGE,
+  isStorageContentMissingPayload,
+  parseApiErrorMessage,
+} from '@/lib/storage-errors';
 import { memo, useEffect, useRef, useState } from 'react';
 import type { FileItem } from './file-table';
 import { Lightbox } from './lightbox';
@@ -92,6 +97,7 @@ export const PreviewPanel = memo(function PreviewPanel({
   const canPreview = isImage || isPdf;
 
   const [imgError, setImgError] = useState(false);
+  const [imgErrorMessage, setImgErrorMessage] = useState<string | null>(null);
   const [imgLoaded, setImgLoaded] = useState(false);
   const [showLightbox, setShowLightbox] = useState(false);
   const filmstripRef = useRef<HTMLDivElement>(null);
@@ -99,12 +105,31 @@ export const PreviewPanel = memo(function PreviewPanel({
   const currentIdx = files.findIndex((f) => f.id === file.id);
   const hasPrev = currentIdx > 0;
   const hasNext = currentIdx < files.length - 1;
+  const previewSrc = `/api/files/${file.id}/preview`;
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reset on file change
     setImgError(false);
+    setImgErrorMessage(null);
     setImgLoaded(false);
   }, [file.id]);
+
+  async function handlePreviewLoadError() {
+    setImgError(true);
+    try {
+      const res = await fetch(previewSrc);
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        if (isStorageContentMissingPayload(payload)) {
+          setImgErrorMessage(STORAGE_CONTENT_MISSING_MESSAGE);
+          return;
+        }
+        setImgErrorMessage(parseApiErrorMessage(payload, 'Preview unavailable'));
+      }
+    } catch {
+      setImgErrorMessage('Preview unavailable');
+    }
+  }
 
   useEffect(() => {
     if (filmstripRef.current) {
@@ -126,12 +151,11 @@ export const PreviewPanel = memo(function PreviewPanel({
     return () => document.removeEventListener('keydown', handleKey);
   }, [onClose, hasPrev, hasNext, currentIdx, files, onNavigate, showLightbox, isImage]);
 
-  const previewSrc = `/api/files/${file.id}/preview`;
   const extMeta = EXT_META[ext];
 
   return (
     <>
-      <div className="ml-0 flex w-full shrink-0 flex-col overflow-hidden rounded-2xl border border-border/55 bg-card shadow-float transition-shadow duration-300 animate-in drawer-in fade-in duration-300 lg:ml-4 lg:w-[min(100%,28rem)] xl:w-[32rem]">
+      <div className="fixed inset-x-0 bottom-0 z-50 flex max-h-[min(92vh,720px)] w-full flex-col overflow-hidden rounded-t-2xl border border-border/55 bg-card shadow-float animate-in drawer-in fade-in duration-300 lg:relative lg:inset-auto lg:z-auto lg:ml-4 lg:max-h-none lg:w-[min(100%,28rem)] lg:rounded-2xl xl:w-[32rem]">
         {/* Header — glass toolbar */}
         <div className="glass flex items-center justify-between border-b border-border/45 px-4 py-3">
           <div className="flex items-center gap-2.5">
@@ -196,7 +220,7 @@ export const PreviewPanel = memo(function PreviewPanel({
                 alt={file.name}
                 className={`max-h-[400px] w-full rounded-xl object-contain shadow-card transition-all duration-600 ease-out ${imgLoaded ? 'opacity-100 scale-100' : 'opacity-0 scale-[0.96]'}`}
                 onLoad={() => setImgLoaded(true)}
-                onError={() => setImgError(true)}
+                onError={() => void handlePreviewLoadError()}
               />
               <div className="absolute inset-0 flex items-center justify-center opacity-0 transition-all duration-200 group-hover:opacity-100">
                 <div className="flex items-center gap-2 rounded-xl bg-black/50 px-4 py-2.5 text-[11px] font-semibold text-white/90 shadow-lg backdrop-blur-md">
@@ -214,7 +238,13 @@ export const PreviewPanel = memo(function PreviewPanel({
                 <span className="text-[11px] font-semibold text-muted-foreground/70">Document</span>
                 <span className="ml-auto rounded-md bg-muted/30 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-muted-foreground/50">PDF</span>
               </div>
-              <iframe key={file.id} src={previewSrc} className="flex-1 border-0" title={file.name} onError={() => setImgError(true)} />
+              <iframe
+                key={file.id}
+                src={previewSrc}
+                className="flex-1 border-0"
+                title={file.name}
+                onError={() => void handlePreviewLoadError()}
+              />
             </div>
           ) : canPreview && imgError ? (
             <div className="flex flex-col items-center gap-5 py-16 text-muted-foreground">
@@ -223,7 +253,9 @@ export const PreviewPanel = memo(function PreviewPanel({
               </div>
               <div className="text-center">
                 <p className="text-sm font-semibold text-foreground/70">Preview unavailable</p>
-                <p className="mt-1 text-xs text-muted-foreground/50">File may be missing from storage</p>
+                <p className="mt-1 max-w-xs text-xs text-muted-foreground/60">
+                  {imgErrorMessage ?? 'File may be missing from storage'}
+                </p>
               </div>
               <button onClick={onDownload} className="rounded-xl border bg-card px-5 py-2.5 text-xs font-semibold shadow-card transition-all hover:shadow-elevated active:scale-[0.97]">
                 Download instead

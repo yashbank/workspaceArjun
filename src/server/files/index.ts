@@ -2,6 +2,10 @@ import { db } from '@/server/db';
 import { requirePermission } from '@/server/rbac';
 import { logAuditEvent } from '@/server/audit';
 import { buildStorageKey, putObject, getObject, headObject } from '@/server/storage';
+import {
+  StorageContentMissingError,
+  logMissingStorageObject,
+} from '@/server/files/storage-errors';
 import type { File, FileVersion } from '@/generated/prisma/client';
 
 export type FileWithVersion = File & {
@@ -126,6 +130,22 @@ export async function getFileStream(id: string, options?: { audit?: boolean }): 
   });
   if (!file || !file.currentVersion) throw new Error('File not found');
 
+  const storageKey = file.currentVersion.storageKey;
+  if (!storageKey?.trim()) {
+    logMissingStorageObject('getFileStream', { fileId: id, storageKey: null });
+    throw new StorageContentMissingError(id, null);
+  }
+
+  const head = await headObject(storageKey);
+  if (!head.exists) {
+    logMissingStorageObject('getFileStream', {
+      fileId: id,
+      storageKey,
+      versionId: file.currentVersion.id,
+    });
+    throw new StorageContentMissingError(id, storageKey);
+  }
+
   if (options?.audit !== false) {
     await logAuditEvent({
       actor: user,
@@ -136,7 +156,20 @@ export async function getFileStream(id: string, options?: { audit?: boolean }): 
     });
   }
 
-  const obj = await getObject(file.currentVersion.storageKey);
+  let obj;
+  try {
+    obj = await getObject(storageKey);
+  } catch (err) {
+    logMissingStorageObject('getFileStream.read', {
+      fileId: id,
+      storageKey,
+      versionId: file.currentVersion.id,
+    });
+    if (err instanceof Error && err.message.includes('Empty response body')) {
+      throw new StorageContentMissingError(id, storageKey);
+    }
+    throw err;
+  }
 
   return {
     bytes: obj.bytes,
@@ -158,7 +191,35 @@ export async function getVersionStream(versionId: string): Promise<FileStreamRes
   });
   if (!version || version.file.deletedAt) throw new Error('Version not found');
 
-  const obj = await getObject(version.storageKey);
+  const storageKey = version.storageKey;
+  if (!storageKey?.trim()) {
+    logMissingStorageObject('getVersionStream', {
+      fileId: version.file.id,
+      storageKey: null,
+      versionId: version.id,
+    });
+    throw new StorageContentMissingError(version.file.id, null);
+  }
+
+  const head = await headObject(storageKey);
+  if (!head.exists) {
+    logMissingStorageObject('getVersionStream', {
+      fileId: version.file.id,
+      storageKey,
+      versionId: version.id,
+    });
+    throw new StorageContentMissingError(version.file.id, storageKey);
+  }
+
+  let obj;
+  try {
+    obj = await getObject(storageKey);
+  } catch (err) {
+    if (err instanceof Error && err.message.includes('Empty response body')) {
+      throw new StorageContentMissingError(version.file.id, storageKey);
+    }
+    throw err;
+  }
 
   return {
     bytes: obj.bytes,

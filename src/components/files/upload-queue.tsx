@@ -38,8 +38,8 @@ export function UploadQueue({
   const overallPercent = totalBytes > 0 ? Math.round((uploadedBytes / totalBytes) * 100) : 0;
 
   return (
-    <div className="fixed bottom-4 left-1/2 z-50 w-full max-w-sm -translate-x-1/2 overflow-hidden rounded-2xl border border-border/50 bg-card/95 shadow-float backdrop-blur-xl animate-in slide-up-fade duration-300 sm:left-auto sm:right-6 sm:translate-x-0">
-      <div className="flex items-center justify-between border-b border-border/20 px-4 py-3">
+    <div className="fixed bottom-4 left-4 right-4 z-50 mx-auto max-w-md overflow-hidden rounded-2xl border border-border/55 bg-card/95 shadow-float backdrop-blur-xl animate-in slide-up-fade duration-300 sm:left-auto sm:right-6 sm:mx-0">
+      <div className="flex items-center justify-between border-b border-border/40 px-4 py-3">
         <div className="flex items-center gap-2.5">
           {inProgress ? (
             <>
@@ -57,7 +57,7 @@ export function UploadQueue({
             </>
           ) : (
             <>
-              <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
               <span className="text-sm font-semibold">{done} uploaded</span>
             </>
           )}
@@ -66,30 +66,33 @@ export function UploadQueue({
           <button
             onClick={onDismiss}
             className="rounded-lg p-1.5 text-muted-foreground transition-all hover:bg-accent hover:text-foreground"
+            aria-label="Dismiss upload queue"
           >
             <X className="h-3.5 w-3.5" />
           </button>
         )}
       </div>
 
-      <div className="h-[2px] bg-muted/20">
+      <div className="h-1 bg-muted/25">
         <div
-          className="h-full bg-primary transition-all duration-300 ease-out"
+          className={`h-full transition-all duration-300 ease-out ${
+            failed > 0 && !inProgress ? 'bg-destructive/70' : 'bg-primary'
+          }`}
           style={{ width: `${inProgress ? overallPercent : done === items.length ? 100 : overallPercent}%` }}
         />
       </div>
 
-      <div className="max-h-52 overflow-y-auto">
+      <div className="max-h-56 overflow-y-auto">
         {items.map((item) => (
           <div
             key={item.id}
-            className={`flex items-center gap-3 border-b border-border/50 px-4 py-2.5 last:border-0 transition-all ${
+            className={`flex items-center gap-3 border-b border-border/35 px-4 py-3 last:border-0 ${
               item.status === 'error'
                 ? 'bg-destructive/5'
                 : item.status === 'success'
                   ? 'bg-emerald-500/5'
                   : item.status === 'uploading'
-                    ? 'bg-primary/3'
+                    ? 'bg-primary/4'
                     : ''
             }`}
           >
@@ -97,19 +100,19 @@ export function UploadQueue({
             <div className="min-w-0 flex-1">
               <p className="truncate text-xs font-medium">{item.name}</p>
               {item.status === 'error' ? (
-                <p className="mt-0.5 truncate text-[10px] text-destructive/80">
-                  {item.error ?? 'Failed'}
+                <p className="mt-0.5 line-clamp-2 text-[10px] text-destructive/85">
+                  {item.error ?? 'Upload failed'}
                 </p>
               ) : (
-                <p className="mt-0.5 text-[10px] text-muted-foreground/70">
+                <p className="mt-0.5 text-[10px] tabular-nums text-muted-foreground/70">
                   {formatBytes(item.size)}
                   {item.status === 'uploading' && ` · ${item.progress ?? 0}%`}
                 </p>
               )}
               {item.status === 'uploading' && (
-                <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-muted/30">
+                <div className="mt-2 h-1 overflow-hidden rounded-full bg-muted/30">
                   <div
-                    className="h-full bg-primary transition-all duration-200"
+                    className="h-full rounded-full bg-primary transition-all duration-200"
                     style={{ width: `${item.progress ?? 0}%` }}
                   />
                 </div>
@@ -135,7 +138,7 @@ export function UploadQueue({
                 </button>
               )}
               {item.status === 'success' && (
-                <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
               )}
             </div>
           </div>
@@ -149,25 +152,25 @@ function StatusIcon({ status }: { status: UploadItem['status'] }) {
   switch (status) {
     case 'pending':
       return (
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-muted/40">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-muted/40 ring-1 ring-border/40">
           <Upload className="h-3.5 w-3.5 text-muted-foreground/60" />
         </div>
       );
     case 'uploading':
       return (
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary/10">
           <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
         </div>
       );
     case 'success':
       return (
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10">
-          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10">
+          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
         </div>
       );
     case 'error':
       return (
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-destructive/10">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-destructive/10">
           <AlertCircle className="h-3.5 w-3.5 text-destructive" />
         </div>
       );

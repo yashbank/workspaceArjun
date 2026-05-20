@@ -216,7 +216,7 @@ export default function AdminPage() {
     <div className="mx-auto max-w-5xl space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">User Management</h1>
+          <h1 className="bpp-page-title">User Management</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Invite-only access · secure email invites · max {seats?.max ?? 15} users
           </p>
@@ -271,10 +271,10 @@ export default function AdminPage() {
       )}
 
       {invites.length > 0 && (
-        <div className="overflow-hidden rounded-2xl border border-border/50 bg-card shadow-card">
-          <div className="flex items-center gap-2 border-b border-border/30 px-5 py-3.5">
+        <div className="bpp-card overflow-visible">
+          <div className="flex items-center gap-2 border-b border-border/40 px-5 py-3.5">
             <Mail className="h-4 w-4 text-amber-600/70" />
-            <span className="text-sm font-medium">Pending invites ({invites.length})</span>
+            <span className="text-sm font-semibold">Pending invites ({invites.length})</span>
           </div>
           <div className="divide-y">
             {invites.map((inv) => (
@@ -326,10 +326,10 @@ export default function AdminPage() {
         </div>
       )}
 
-      <div className="overflow-hidden rounded-2xl border border-border/50 bg-card shadow-card">
-        <div className="flex items-center gap-2 border-b border-border/30 px-5 py-3.5">
+      <div className="bpp-card overflow-visible">
+        <div className="flex items-center gap-2 border-b border-border/40 px-5 py-3.5">
           <Users className="h-4 w-4 text-muted-foreground/40" />
-          <span className="text-sm font-medium">
+          <span className="text-sm font-semibold">
             {users.length} {users.length === 1 ? 'member' : 'members'}
           </span>
         </div>
@@ -492,7 +492,7 @@ function UserRow({
             </button>
             {roleMenu === u.id && (
               <div
-                className="absolute left-0 top-full z-50 mt-1 w-36 overflow-hidden rounded-xl border border-border/50 bg-popover p-1 shadow-float"
+                className="absolute bottom-full left-0 z-[200] mb-1 w-36 overflow-hidden rounded-xl border border-border/50 bg-popover p-1 shadow-float"
                 onClick={(e) => e.stopPropagation()}
               >
                 {roles.map((r) => (
@@ -539,7 +539,7 @@ function UserRow({
             </button>
             {actionMenu === u.id && (
               <div
-                className="absolute right-0 top-full z-50 mt-1 w-48 overflow-hidden rounded-xl border border-border/50 bg-popover p-1 shadow-float"
+                className="absolute bottom-full right-0 z-[200] mb-1 w-48 overflow-hidden rounded-xl border border-border/50 bg-popover p-1 shadow-float"
                 onClick={(e) => e.stopPropagation()}
               >
                 <button

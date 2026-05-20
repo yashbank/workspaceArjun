@@ -3,13 +3,10 @@ import { createSupabaseServerClient, createSupabaseAdminClient } from '@/lib/sup
 import { db } from '@/server/db';
 import { parseInvitedRole, resolveProfileRole } from '@/server/users';
 import { throwMappedInviteError } from '@/server/auth/invite-errors';
+import { getInviteAuthCallbackUrl } from '@/lib/app-url';
 import type { UserProfile, UserRole } from '@/generated/prisma/client';
 
 const INVITE_ACCEPT_PATH = '/invite/accept';
-
-function getAppUrl(): string {
-  return process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
-}
 
 export async function markInviteAccepted(email: string): Promise<void> {
   if (!email) return;
@@ -129,7 +126,7 @@ export async function requireUser(): Promise<UserProfile> {
 export async function inviteUserByEmail(email: string, role: UserRole) {
   const admin = await createSupabaseAdminClient();
   const normalized = email.trim().toLowerCase();
-  const redirectTo = `${getAppUrl()}/auth/callback?type=invite&next=${encodeURIComponent(INVITE_ACCEPT_PATH)}`;
+  const redirectTo = getInviteAuthCallbackUrl();
   const { data, error } = await admin.auth.admin.inviteUserByEmail(normalized, {
     data: { invited_role: role },
     redirectTo,

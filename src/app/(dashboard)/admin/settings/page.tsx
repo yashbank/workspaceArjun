@@ -121,10 +121,13 @@ export default function SettingsPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
+        <h1 className="bpp-page-title">Settings</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Workspace configuration and storage overview
+          Owner-only workspace configuration · storage and upload policies
         </p>
+        <span className="mt-2 inline-flex rounded-lg bg-amber-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-800 ring-1 ring-amber-500/20 dark:text-amber-300">
+          Owner access
+        </span>
       </div>
 
       {error && (
@@ -134,11 +137,11 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {/* Storage overview */}
-      <div className="overflow-hidden rounded-2xl border border-border/50 bg-card shadow-card">
+      {/* Storage & security */}
+      <div className="bpp-card overflow-hidden">
         <div className="flex items-center gap-2 border-b border-border/30 px-5 py-3.5">
           <HardDrive className="h-4 w-4 text-muted-foreground/40" />
-          <span className="text-sm font-semibold">Storage Overview</span>
+          <span className="text-sm font-semibold">Storage &amp; security</span>
         </div>
         <div className="p-5 space-y-4">
           <div>
@@ -162,8 +165,27 @@ export default function SettingsPage() {
         </div>
       </div>
 
+      {/* Workspace branding */}
+      <div className="bpp-card p-5">
+        <h2 className="bpp-label-caps">Workspace branding</h2>
+        <p className="mt-3 text-sm text-muted-foreground/70">
+          Bhaskar Paper Products — premium beige workspace theme. Logo and custom domain are
+          configured at deploy time via environment variables.
+        </p>
+        <dl className="mt-4 grid gap-2 text-xs text-muted-foreground/60 sm:grid-cols-2">
+          <div className="rounded-lg bg-muted/20 px-3 py-2">
+            <dt className="font-medium text-foreground/70">App URL</dt>
+            <dd className="mt-0.5 truncate font-mono">{process.env.NEXT_PUBLIC_APP_URL ?? '(set in deployment)'}</dd>
+          </div>
+          <div className="rounded-lg bg-muted/20 px-3 py-2">
+            <dt className="font-medium text-foreground/70">Storage driver</dt>
+            <dd className="mt-0.5">S3-compatible (IDrive e2) · direct browser uploads</dd>
+          </div>
+        </dl>
+      </div>
+
       {/* Upload settings */}
-      <div className="overflow-hidden rounded-2xl border border-border/50 bg-card shadow-card">
+      <div className="bpp-card overflow-hidden">
         <div className="flex items-center gap-2 border-b border-border/30 px-5 py-3.5">
           <Settings className="h-4 w-4 text-muted-foreground/40" />
           <span className="text-sm font-semibold">Upload Settings</span>

@@ -114,9 +114,9 @@ export function TrashBrowser() {
   return (
     <div className="mx-auto max-w-5xl">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight">Trash</h1>
+        <h1 className="bpp-page-title">Trash</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Deleted files and folders. Restore them or permanently delete.
+          Deleted files and folders. Restore anytime, or permanently delete (owner-only).
         </p>
       </div>
 
@@ -132,7 +132,7 @@ export function TrashBrowser() {
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground/40" />
         </div>
       ) : isEmpty ? (
-        <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border/40 py-28 text-center">
+        <div className="bpp-card flex flex-col items-center justify-center border-dashed py-28 text-center">
           <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-muted/25">
             <Trash2 className="h-7 w-7 text-muted-foreground/25" />
           </div>
@@ -143,10 +143,8 @@ export function TrashBrowser() {
         <div className="space-y-6">
           {folders.length > 0 && (
             <section>
-              <h2 className="mb-3.5 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/50">
-                Folders
-              </h2>
-              <div className="overflow-hidden rounded-2xl border border-border/50 shadow-card">
+              <h2 className="bpp-label-caps mb-3.5">Folders</h2>
+              <div className="bpp-card overflow-hidden">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b bg-muted/15 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/45">
@@ -203,10 +201,8 @@ export function TrashBrowser() {
 
           {files.length > 0 && (
             <section>
-              <h2 className="mb-3.5 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/50">
-                Files
-              </h2>
-              <div className="overflow-hidden rounded-2xl border border-border/50 shadow-card">
+              <h2 className="bpp-label-caps mb-3.5">Files</h2>
+              <div className="bpp-card overflow-hidden">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b bg-muted/15 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/45">
