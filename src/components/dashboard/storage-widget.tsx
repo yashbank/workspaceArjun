@@ -41,7 +41,7 @@ export function StorageWidget({
   const dashOffset = circumference - (animatedPercent / 100) * circumference;
 
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-border/50 bg-card p-4 shadow-card transition-all duration-250 hover:shadow-elevated hover:-translate-y-0.5">
+    <div className="bpp-card-interactive relative overflow-hidden p-4 hover:-translate-y-0.5">
       <div className="flex items-center gap-4">
         <div className="relative h-[76px] w-[76px] shrink-0">
           <svg viewBox="0 0 80 80" className="h-full w-full -rotate-90">

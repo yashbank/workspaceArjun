@@ -47,15 +47,15 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const showSettingsNav = profile.role === 'owner';
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
+    <div className="flex h-screen overflow-hidden bg-background bpp-subtle-bg">
       <Sidebar showAdminNav={showAdminNav} showSettingsNav={showSettingsNav} />
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <Topbar
           userEmail={profile.email}
           userName={profile.name ?? undefined}
           userRole={profile.role}
         />
-        <main className="flex-1 overflow-auto bg-muted/20 p-6">
+        <main className="flex-1 overflow-auto p-4 sm:p-6 lg:p-8">
           <div className="animate-in content-reveal duration-300">{children}</div>
         </main>
       </div>

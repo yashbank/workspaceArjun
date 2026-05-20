@@ -131,9 +131,9 @@ export const PreviewPanel = memo(function PreviewPanel({
 
   return (
     <>
-      <div className="ml-4 flex w-[500px] shrink-0 flex-col overflow-hidden rounded-2xl border border-border/50 bg-card shadow-float transition-shadow duration-300 animate-in drawer-in fade-in duration-300">
+      <div className="ml-0 flex w-full shrink-0 flex-col overflow-hidden rounded-2xl border border-border/55 bg-card shadow-float transition-shadow duration-300 animate-in drawer-in fade-in duration-300 lg:ml-4 lg:w-[min(100%,28rem)] xl:w-[32rem]">
         {/* Header — glass toolbar */}
-        <div className="glass flex items-center justify-between border-b border-border/40 px-4 py-2.5">
+        <div className="glass flex items-center justify-between border-b border-border/45 px-4 py-3">
           <div className="flex items-center gap-2.5">
             <button onClick={onClose} className="rounded-lg p-1.5 text-muted-foreground/60 transition-all hover:bg-accent hover:text-foreground active:scale-95" title="Close (Esc)">
               <X className="h-4 w-4" />
@@ -255,26 +255,36 @@ export const PreviewPanel = memo(function PreviewPanel({
           )}
         </div>
 
-        {/* File info */}
-        <div className="space-y-3 border-t border-border/40 p-4">
+        {/* File info + actions */}
+        <div className="space-y-4 border-t border-border/45 bg-card p-4">
           <div>
-            <p className="truncate text-[13px] font-bold leading-snug tracking-tight" title={file.name}>{file.name}</p>
-            <div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground/50">
-              <span className="font-medium">{formatBytes(size)}</span>
-              <span className="opacity-30">&middot;</span>
-              <span className="uppercase">{ext}</span>
-              <span className="opacity-30">&middot;</span>
-              <span className="flex items-center gap-0.5"><History className="h-2.5 w-2.5" /> v{versionCount}</span>
+            <p className="truncate text-[14px] font-semibold leading-snug tracking-tight" title={file.name}>
+              {file.name}
+            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground/55">
+              <span className="font-medium tabular-nums">{formatBytes(size)}</span>
+              <span className="opacity-30">·</span>
+              <span className="uppercase tracking-wide">{ext}</span>
+              <span className="opacity-30">·</span>
+              <span className="inline-flex items-center gap-1 tabular-nums">
+                <History className="h-2.5 w-2.5" /> v{versionCount}
+              </span>
             </div>
           </div>
 
-          <div className="flex gap-2">
-            <button onClick={onDownload} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-3 py-2.5 text-[12px] font-semibold text-primary-foreground shadow-card transition-all hover:shadow-elevated active:scale-[0.97]">
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <button
+              onClick={onDownload}
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-3 py-2.5 text-[12px] font-semibold text-primary-foreground shadow-card transition-all hover:shadow-elevated active:scale-[0.97]"
+            >
               <Download className="h-3.5 w-3.5" />
               Download
             </button>
             {onNewVersion && (
-              <button onClick={onNewVersion} className="flex flex-1 items-center justify-center gap-2 rounded-xl border bg-card px-3 py-2.5 text-[12px] font-semibold shadow-card transition-all hover:shadow-elevated active:scale-[0.97]">
+              <button
+                onClick={onNewVersion}
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-border/60 bg-accent/30 px-3 py-2.5 text-[12px] font-semibold transition-all hover:bg-accent hover:shadow-card active:scale-[0.97]"
+              >
                 <UploadCloud className="h-3.5 w-3.5" />
                 New version
               </button>
@@ -284,7 +294,7 @@ export const PreviewPanel = memo(function PreviewPanel({
 
         {/* Filmstrip */}
         {files.length > 1 && (
-          <div className="border-t border-border/30 bg-muted/8 px-3 py-2.5">
+          <div className="border-t border-border/40 bg-muted/15 px-3 py-3">
             <div ref={filmstripRef} className="flex gap-1.5 overflow-x-auto scrollbar-none">
               {files.map((f, i) => {
                 const fExt = getExtension(f.name);

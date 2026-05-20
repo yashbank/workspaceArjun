@@ -28,7 +28,7 @@ export function ClientGreeting({ name }: { name: string }) {
   }, []);
 
   return (
-    <h1 className="text-2xl font-bold tracking-tight">
+    <h1 className="bpp-page-title">
       {mounted ? `Good ${greeting}, ${name}` : `Welcome, ${name}`}
     </h1>
   );

@@ -78,9 +78,9 @@ export default async function DashboardHome() {
       </div>
 
       {isNewWorkspace && (
-        <div className="flex items-center gap-4 rounded-2xl border border-primary/15 bg-gradient-to-r from-primary/4 to-primary/8 px-5 py-4 shadow-card">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary/8">
-            <Sparkles className="h-5 w-5 text-primary" />
+        <div className="flex flex-col gap-4 rounded-2xl border border-border/60 bg-card px-5 py-4 shadow-card sm:flex-row sm:items-center">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-accent">
+            <Sparkles className="h-5 w-5 text-foreground/80" />
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold tracking-tight">Start by uploading your first file</p>
@@ -99,17 +99,17 @@ export default async function DashboardHome() {
       )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        <StatCard icon={FileText} label="Total files" value={fileCount.toString()} color="text-blue-500" bg="bg-gradient-to-br from-blue-100 to-blue-50 dark:from-blue-900/30 dark:to-blue-800/20" />
-        <StatCard icon={FolderOpen} label="Folders" value={folderCount.toString()} color="text-amber-500" bg="bg-gradient-to-br from-amber-100 to-amber-50 dark:from-amber-900/30 dark:to-amber-800/20" />
-        <StatCard icon={Layers} label="Versions" value={versionCount.toString()} color="text-purple-500" bg="bg-gradient-to-br from-purple-100 to-purple-50 dark:from-purple-900/30 dark:to-purple-800/20" />
-        <StatCard icon={Activity} label="Recent activity" value={recentActivity.length.toString()} color="text-emerald-500" bg="bg-gradient-to-br from-emerald-100 to-emerald-50 dark:from-emerald-900/30 dark:to-emerald-800/20" />
+        <StatCard icon={FileText} label="Total files" value={fileCount.toString()} />
+        <StatCard icon={FolderOpen} label="Folders" value={folderCount.toString()} />
+        <StatCard icon={Layers} label="Versions" value={versionCount.toString()} />
+        <StatCard icon={Activity} label="Recent activity" value={recentActivity.length.toString()} />
         <StorageWidget usedBytes={totalBytes} quotaBytes={quotaBytes} fileCount={fileCount} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-4">
         <div className="space-y-4">
-          <div className="rounded-2xl border border-border/50 bg-card p-5 shadow-card transition-all duration-200 hover:shadow-elevated">
-            <h2 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Quick actions</h2>
+          <div className="bpp-card p-5 transition-all duration-200 hover:shadow-elevated">
+            <h2 className="bpp-label-caps">Quick actions</h2>
             <div className="mt-3 space-y-0.5">
               <QuickAction href="/files" icon={Upload} label="Upload files" />
               <QuickAction href="/files" icon={Plus} label="New folder" />
@@ -118,10 +118,8 @@ export default async function DashboardHome() {
           </div>
 
           {pinnedFileDetails.length > 0 && (
-            <div className="rounded-2xl border border-border/50 bg-card p-5 shadow-card transition-all duration-200 hover:shadow-elevated">
-              <h2 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">
-                Starred files
-              </h2>
+            <div className="bpp-card p-5 transition-all duration-200 hover:shadow-elevated">
+              <h2 className="bpp-label-caps">Starred files</h2>
               <div className="mt-3 space-y-0.5">
                 {pinnedFileDetails.map((f) => (
                   <div
@@ -137,9 +135,9 @@ export default async function DashboardHome() {
           )}
         </div>
 
-        <div className="rounded-2xl border border-border/50 bg-card p-5 shadow-card transition-all duration-200 hover:shadow-elevated lg:col-span-3">
+        <div className="bpp-card p-5 transition-all duration-200 hover:shadow-elevated lg:col-span-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Recent files</h2>
+            <h2 className="bpp-label-caps">Recent files</h2>
             {recentFiles.length > 0 && (
               <Link href="/files" className="text-[11px] font-semibold text-primary transition-colors hover:text-primary/70">
                 View all →
@@ -186,9 +184,9 @@ export default async function DashboardHome() {
         </div>
       </div>
 
-      <div className="rounded-2xl border border-border/50 bg-card p-5 shadow-card transition-all duration-200 hover:shadow-elevated">
+      <div className="bpp-card p-5 transition-all duration-200 hover:shadow-elevated">
         <div className="flex items-center justify-between">
-          <h2 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Recent activity</h2>
+          <h2 className="bpp-label-caps">Recent activity</h2>
           {recentActivity.length > 0 && (
             <span className="text-[10px] tabular-nums text-muted-foreground/30">{recentActivity.length} events</span>
           )}
@@ -239,24 +237,20 @@ function StatCard({
   icon: Icon,
   label,
   value,
-  color,
-  bg,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: string;
-  color: string;
-  bg: string;
 }) {
   return (
-    <div className="rounded-2xl border border-border/50 bg-card p-4 shadow-card transition-all duration-200 hover:shadow-elevated hover:-translate-y-0.5 active:scale-[0.99]">
+    <div className="bpp-card-interactive p-4 hover:-translate-y-0.5 active:scale-[0.99]">
       <div className="flex items-center gap-3">
-        <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${bg}`}>
-          <Icon className={`h-[18px] w-[18px] ${color} drop-shadow-sm`} />
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent ring-1 ring-border/40">
+          <Icon className="h-[18px] w-[18px] text-foreground/75" />
         </div>
         <div>
-          <p className="text-2xl font-bold tabular-nums tracking-tight">{value}</p>
-          <p className="text-[11px] text-muted-foreground/50">{label}</p>
+          <p className="text-2xl font-semibold tabular-nums tracking-tight">{value}</p>
+          <p className="text-[11px] text-muted-foreground/60">{label}</p>
         </div>
       </div>
     </div>

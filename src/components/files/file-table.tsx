@@ -76,18 +76,18 @@ export function FileTable({
 
   return (
     <div>
-      <h2 className="mb-3.5 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/50">Files</h2>
-      <div className="overflow-hidden rounded-2xl border border-border/50 shadow-card">
-        <table className="w-full text-sm">
+      <h2 className="bpp-label-caps mb-3.5">Files</h2>
+      <div className="bpp-card overflow-hidden">
+        <table className="w-full table-fixed text-sm">
           <thead>
-            <tr className="border-b bg-muted/20 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
-              <th className="w-8 px-2 py-3" />
-              <th className="px-4 py-3">Name</th>
-              <th className="hidden px-4 py-3 sm:table-cell">Type</th>
-              <th className="px-4 py-3">Size</th>
-              <th className="hidden px-4 py-3 md:table-cell">Uploaded</th>
-              <th className="hidden px-4 py-3 sm:table-cell">Ver.</th>
-              <th className="w-12 px-4 py-3" />
+            <tr className="border-b border-border/50 bg-muted/30 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/55">
+              <th className="w-10 px-2 py-3" />
+              <th className="w-[min(40%,320px)] px-4 py-3">Name</th>
+              <th className="hidden w-24 px-4 py-3 sm:table-cell">Type</th>
+              <th className="w-24 px-4 py-3 text-right">Size</th>
+              <th className="hidden w-32 px-4 py-3 md:table-cell">Uploaded</th>
+              <th className="hidden w-16 px-4 py-3 text-center sm:table-cell">Ver.</th>
+              <th className="w-12 px-2 py-3" />
             </tr>
           </thead>
           <tbody>
@@ -178,21 +178,21 @@ function FileRowWithVersions({
             {badge.label}
           </span>
         </td>
-        <td className="px-4 py-2.5 text-xs tabular-nums text-muted-foreground/60">{formatBytes(size)}</td>
+        <td className="px-4 py-2.5 text-right text-xs tabular-nums text-muted-foreground/60">{formatBytes(size)}</td>
         <td className="hidden px-4 py-2.5 text-xs text-muted-foreground/60 md:table-cell">
           {formatDate(file.currentVersion?.createdAt ?? file.createdAt)}
         </td>
-        <td className="hidden px-4 py-2.5 sm:table-cell">
-          <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground/50">
-            <History className="h-3 w-3" />
+        <td className="hidden px-4 py-2.5 text-center sm:table-cell">
+          <span className="inline-flex items-center justify-center gap-1 text-[11px] tabular-nums text-muted-foreground/50">
+            <History className="h-3 w-3 shrink-0" />
             {versionCount}
           </span>
         </td>
-        <td className="px-4 py-2.5">
-            <button
+        <td className="px-2 py-2.5 text-right">
+          <button
             ref={menuBtnRef}
             onClick={openMenu}
-            className="rounded-lg p-1.5 text-muted-foreground/40 opacity-0 transition-all hover:bg-accent hover:text-foreground active:scale-90 group-hover:opacity-100"
+            className="ml-auto rounded-lg p-1.5 text-muted-foreground/40 opacity-0 transition-all hover:bg-accent hover:text-foreground active:scale-90 group-hover:opacity-100 sm:opacity-100"
           >
             <MoreVertical className="h-4 w-4" />
           </button>

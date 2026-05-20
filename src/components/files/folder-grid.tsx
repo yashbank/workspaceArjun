@@ -26,9 +26,7 @@ export const FolderGrid = memo(function FolderGrid({
 }) {
   return (
     <div className="mb-6">
-      <h2 className="mb-3.5 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/50">
-        Folders
-      </h2>
+      <h2 className="bpp-label-caps mb-3.5">Folders</h2>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {folders.map((folder) => (
           <FolderCard
@@ -81,10 +79,10 @@ function FolderCard({
   }
 
   return (
-    <div className="group relative flex items-center gap-3 rounded-2xl border border-border/50 bg-card px-4 py-3.5 shadow-card transition-all duration-200 hover:shadow-elevated hover:-translate-y-0.5 hover:border-border">
+    <div className="bpp-card-interactive group relative flex items-center gap-3 px-4 py-3.5 hover:-translate-y-0.5">
       <button onClick={onOpen} className="flex flex-1 items-center gap-3 text-left">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-100 to-blue-50 dark:from-blue-900/30 dark:to-blue-800/20">
-          <Folder className="h-5 w-5 text-blue-500 drop-shadow-sm" />
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent ring-1 ring-border/40">
+          <Folder className="h-5 w-5 text-foreground/70" />
         </div>
         <div className="min-w-0">
           <p className="truncate text-[13px] font-semibold tracking-tight">{folder.name}</p>

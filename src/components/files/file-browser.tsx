@@ -477,13 +477,13 @@ export function FileBrowser() {
 
   return (
     <DropZone onFilesDropped={handleFilesDropped}>
-      <div className="flex gap-0">
-        <div className={`min-w-0 flex-1 ${previewFile ? '' : ''}`}>
+      <div className="flex flex-col gap-4 lg:flex-row lg:gap-0">
+        <div className="min-w-0 flex-1">
           {/* Header */}
           <div className="mb-6 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="min-w-0">
-                <h1 className="text-2xl font-bold tracking-tight">Files</h1>
+                <h1 className="bpp-page-title">Files</h1>
                 <Breadcrumbs crumbs={breadcrumbs} onNavigate={navigateTo} />
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -505,7 +505,7 @@ export function FileBrowser() {
             </div>
 
             {/* Toolbar row */}
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border/50 bg-card/80 p-2 shadow-card backdrop-blur-sm">
               <button
                 onClick={() => setShowCreateFolder(true)}
                 className="flex items-center gap-1.5 rounded-xl border border-border/50 bg-card px-3 py-2 text-xs font-medium shadow-card transition-all hover:shadow-elevated active:scale-[0.97]"

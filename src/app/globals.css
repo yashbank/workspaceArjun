@@ -31,46 +31,61 @@
 }
 
 :root {
-  --radius: 0.625rem;
-  --background: oklch(0.985 0 0);
-  --foreground: oklch(0.13 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.13 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.13 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.965 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.96 0 0);
-  --muted-foreground: oklch(0.52 0 0);
-  --accent: oklch(0.955 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  /* BPP / Stitch — Tactile Executive (light) */
+  --bpp-background: #faf9f9;
+  --bpp-ivory: #f4f3f3;
+  --bpp-surface: #ffffff;
+  --bpp-surface-container: #efeded;
+  --bpp-graphite: #1b1c1c;
+  --bpp-muted: #5e5e5b;
+  --bpp-outline: #c4c7c7;
+  --radius: 0.75rem;
+  --background: var(--bpp-background);
+  --foreground: var(--bpp-graphite);
+  --card: var(--bpp-surface);
+  --card-foreground: var(--bpp-graphite);
+  --popover: var(--bpp-surface);
+  --popover-foreground: var(--bpp-graphite);
+  --primary: #181919;
+  --primary-foreground: #ffffff;
+  --secondary: var(--bpp-ivory);
+  --secondary-foreground: var(--bpp-graphite);
+  --muted: var(--bpp-ivory);
+  --muted-foreground: var(--bpp-muted);
+  --accent: var(--bpp-surface-container);
+  --accent-foreground: var(--bpp-graphite);
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(0.577 0.245 27.325);
-  --border: oklch(0.915 0 0);
-  --input: oklch(0.915 0 0);
-  --ring: oklch(0.708 0 0);
-  --shadow-card: 0 1px 2px oklch(0 0 0 / 0.04), 0 1px 3px oklch(0 0 0 / 0.03);
-  --shadow-elevated: 0 2px 8px oklch(0 0 0 / 0.06), 0 1px 2px oklch(0 0 0 / 0.04);
-  --shadow-float: 0 8px 30px oklch(0 0 0 / 0.08), 0 2px 8px oklch(0 0 0 / 0.04);
+  --border: color-mix(in oklab, var(--bpp-outline) 55%, transparent);
+  --input: var(--bpp-outline);
+  --ring: #747878;
+  --shadow-card: 0 1px 2px rgb(27 28 28 / 0.04), 0 1px 3px rgb(27 28 28 / 0.03);
+  --shadow-elevated: 0 4px 16px rgb(27 28 28 / 0.06), 0 1px 3px rgb(27 28 28 / 0.04);
+  --shadow-float: 0 12px 40px rgb(27 28 28 / 0.1), 0 4px 12px rgb(27 28 28 / 0.05);
 }
 
 .dark {
-  --background: oklch(0.12 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.155 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.155 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.985 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.22 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.22 0 0);
-  --muted-foreground: oklch(0.65 0 0);
-  --accent: oklch(0.22 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --bpp-background: #141414;
+  --bpp-ivory: #1c1c1c;
+  --bpp-surface: #1a1a1a;
+  --bpp-surface-container: #262626;
+  --bpp-graphite: #f2f0f0;
+  --bpp-muted: #a3a3a3;
+  --bpp-outline: #3a3a3a;
+  --background: var(--bpp-background);
+  --foreground: var(--bpp-graphite);
+  --card: var(--bpp-surface);
+  --card-foreground: var(--bpp-graphite);
+  --popover: var(--bpp-surface);
+  --popover-foreground: var(--bpp-graphite);
+  --primary: #f2f0f0;
+  --primary-foreground: #181919;
+  --secondary: var(--bpp-ivory);
+  --secondary-foreground: var(--bpp-graphite);
+  --muted: var(--bpp-ivory);
+  --muted-foreground: var(--bpp-muted);
+  --accent: var(--bpp-surface-container);
+  --accent-foreground: var(--bpp-graphite);
   --destructive: oklch(0.396 0.141 25.723);
   --destructive-foreground: oklch(0.637 0.237 25.331);
   --border: oklch(0.24 0 0);
@@ -191,6 +206,32 @@
 .shadow-card { box-shadow: var(--shadow-card); }
 .shadow-elevated { box-shadow: var(--shadow-elevated); }
 .shadow-float { box-shadow: var(--shadow-float); }
+
+/* BPP paper surfaces */
+@layer components {
+  .bpp-card {
+    @apply rounded-2xl border border-border/60 bg-card;
+    box-shadow: var(--shadow-card);
+  }
+  .bpp-card-interactive {
+    @apply rounded-2xl border border-border/60 bg-card transition-all duration-200;
+    box-shadow: var(--shadow-card);
+  }
+  .bpp-card-interactive:hover {
+    box-shadow: var(--shadow-elevated);
+  }
+  .bpp-label-caps {
+    @apply text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/55;
+  }
+  .bpp-page-title {
+    @apply text-2xl font-semibold tracking-tight text-foreground;
+  }
+}
+.bpp-subtle-bg {
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -20%, color-mix(in oklab, var(--bpp-ivory) 80%, transparent), transparent),
+    var(--background);
+}
 
 .bg-checkerboard {
   background-image:

@@ -47,7 +47,7 @@ export const FileGrid = memo(function FileGrid({
 
   return (
     <div>
-      <h2 className="mb-3.5 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/50">Files</h2>
+      <h2 className="bpp-label-caps mb-3.5">Files</h2>
       <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
         {files.map((file) => (
           <FileCard
@@ -103,10 +103,10 @@ const FileCard = memo(function FileCard({
 
   return (
     <div
-      className={`group relative flex flex-col overflow-hidden rounded-2xl border bg-card shadow-card transition-all duration-250 ease-out will-change-transform hover:shadow-elevated hover:-translate-y-1 ${
+      className={`group relative flex flex-col overflow-hidden rounded-2xl border bg-card shadow-card transition-all duration-250 ease-out will-change-transform hover:shadow-elevated hover:-translate-y-0.5 ${
         selected
-          ? 'border-primary/40 ring-2 ring-primary/15 shadow-elevated'
-          : 'border-border/60 hover:border-border'
+          ? 'border-primary/35 ring-2 ring-primary/10 shadow-elevated'
+          : 'border-border/55 hover:border-border/80'
       }`}
       onContextMenu={handleContext}
       onDoubleClick={onOpen}
@@ -159,25 +159,26 @@ const FileCard = memo(function FileCard({
         )}
       </div>
 
-      {/* Info */}
-      <div className="flex flex-1 flex-col justify-between gap-1 px-3.5 py-3">
-        <p className="truncate text-[13px] font-semibold leading-tight tracking-tight" title={file.name}>{file.name}</p>
-        <div className="flex items-center justify-between">
-          <span className={`rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${badge.color}`}>
+      {/* Info + actions */}
+      <div className="flex flex-1 flex-col gap-2 px-3.5 py-3">
+        <p className="truncate pr-8 text-[13px] font-semibold leading-tight tracking-tight" title={file.name}>
+          {file.name}
+        </p>
+        <div className="flex items-center justify-between gap-2">
+          <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${badge.color}`}>
             {badge.label}
           </span>
-          <span className="text-[10px] tabular-nums text-muted-foreground/50">{formatBytes(size)}</span>
+          <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground/55">{formatBytes(size)}</span>
+          <button
+            ref={menuBtnRef}
+            onClick={handleMenuClick}
+            className="ml-auto shrink-0 rounded-lg p-1 text-muted-foreground/50 transition-all hover:bg-accent hover:text-foreground group-hover:opacity-100"
+            aria-label="File actions"
+          >
+            <MoreVertical className="h-3.5 w-3.5" />
+          </button>
         </div>
       </div>
-
-      {/* Menu button */}
-      <button
-        ref={menuBtnRef}
-        onClick={handleMenuClick}
-        className="absolute right-2 bottom-2 rounded-lg p-1 text-muted-foreground/60 opacity-0 transition-all hover:bg-accent hover:text-foreground group-hover:opacity-100"
-      >
-        <MoreVertical className="h-3.5 w-3.5" />
-      </button>
     </div>
   );
 });
