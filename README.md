@@ -545,6 +545,8 @@ Does **not** delete users, roles, or workspace settings.
 
 See [docs/CLIENT_DEMO_QA.md](../docs/CLIENT_DEMO_QA.md) for the full pre-demo QA checklist.
 
+For production release (user removal, reactivation, performance, mobile): [docs/FINAL_PRODUCTION_QA.md](../docs/FINAL_PRODUCTION_QA.md).
+
 ### Clear activity history (demo reset)
 
 To wipe **all** audit events and starred activity pins (e.g. before a client demo):

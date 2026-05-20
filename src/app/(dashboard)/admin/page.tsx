@@ -10,23 +10,24 @@ import {
   ChevronDown,
   AlertCircle,
   Loader2,
-  UserX,
-  UserCheck,
   Mail,
-  Trash2,
   RefreshCw,
 } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { useToast } from '@/components/ui/toast';
 import { getUserDisplayName } from '@/lib/user-display';
+import { RemoveUserModal } from '@/components/admin/remove-user-modal';
+import {
+  buildUserMenuActions,
+  resolveAccountState,
+  type AdminUserRow,
+  type UserAccountState,
+} from '@/lib/admin-user-actions';
 
-type UserItem = {
-  id: string;
-  email: string;
-  name: string | null;
-  role: string;
-  status: string;
+type UserItem = AdminUserRow & {
   createdAt: string;
+  accountState: UserAccountState;
+  authExists: boolean;
 };
 
 type InviteItem = {
@@ -85,6 +86,7 @@ export default function AdminPage() {
   const [actionMenu, setActionMenu] = useState<string | null>(null);
   const [roleMenu, setRoleMenu] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<UserItem | null>(null);
 
   const loadUsers = useCallback(async () => {
     try {
@@ -131,23 +133,50 @@ export default function AdminPage() {
     }
   };
 
-  const handleStatusToggle = async (userId: string, currentStatus: string, role: string) => {
-    if (role === 'owner') return;
-    const newStatus = currentStatus === 'active' ? 'deactivated' : 'active';
+  const handleStatusToggle = async (user: UserItem) => {
+    if (user.role === 'owner') return;
+    const state = resolveAccountState(user);
+    if (state === 'auth_missing') {
+      toast('error', 'Login account missing. Use Invite again.');
+      return;
+    }
+    const newStatus = user.status === 'active' ? 'deactivated' : 'active';
     const label = newStatus === 'deactivated' ? 'deactivate' : 'reactivate';
     if (!confirm(`Are you sure you want to ${label} this user?`)) return;
 
     try {
-      setBusyId(userId);
-      await apiFetch(`/api/admin/users/${userId}`, {
+      setBusyId(user.id);
+      await apiFetch(`/api/admin/users/${user.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),
       });
       setActionMenu(null);
+      toast('success', newStatus === 'active' ? 'User reactivated' : 'User deactivated');
       await loadUsers();
     } catch (err) {
       toast('error', err instanceof Error ? err.message : `Failed to ${label} user`);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleInviteAgain = async (user: UserItem) => {
+    const roles = assignableRoles(actorRole, user.role);
+    const role = roles.includes(user.role) ? user.role : roles[0] ?? 'member';
+    if (!confirm(`Send a new invite to ${user.email} as ${role}?`)) return;
+    try {
+      setBusyId(user.id);
+      await apiFetch('/api/admin/users/invite-again', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: user.email, role }),
+      });
+      setActionMenu(null);
+      toast('success', 'Invite sent');
+      await loadUsers();
+    } catch (err) {
+      toast('error', err instanceof Error ? err.message : 'Failed to invite again');
     } finally {
       setBusyId(null);
     }
@@ -170,12 +199,14 @@ export default function AdminPage() {
     }
   };
 
-  const handleRemove = async (userId: string) => {
-    if (!confirm('Permanently remove this deactivated user? This cannot be undone.')) return;
+  const confirmRemove = async () => {
+    if (!removeTarget) return;
     try {
-      setBusyId(userId);
-      await apiFetch(`/api/admin/users/${userId}`, { method: 'DELETE' });
+      setBusyId(removeTarget.id);
+      await apiFetch(`/api/admin/users/${removeTarget.id}`, { method: 'DELETE' });
+      setRemoveTarget(null);
       setActionMenu(null);
+      toast('success', 'User removed permanently');
       await loadUsers();
     } catch (err) {
       toast('error', err instanceof Error ? err.message : 'Failed to remove user');
@@ -386,8 +417,10 @@ export default function AdminPage() {
                       setRoleMenu={setRoleMenu}
                       setActionMenu={setActionMenu}
                       onRoleChange={handleRoleChange}
+                      atSeatLimit={atSeatLimit}
                       onStatusToggle={handleStatusToggle}
-                      onRemove={canRemoveUsers ? handleRemove : undefined}
+                      onInviteAgain={handleInviteAgain}
+                      onRemove={canRemoveUsers ? (u) => setRemoveTarget(u) : undefined}
                       onTransferOwnership={
                         actorRole === 'owner' ? handleTransferOwnership : undefined
                       }
@@ -403,9 +436,11 @@ export default function AdminPage() {
                   user={u}
                   actorRole={actorRole}
                   busyId={busyId}
+                  atSeatLimit={atSeatLimit}
                   onRoleChange={handleRoleChange}
                   onStatusToggle={handleStatusToggle}
-                  onRemove={canRemoveUsers ? handleRemove : undefined}
+                  onInviteAgain={handleInviteAgain}
+                  onRemove={canRemoveUsers ? (user) => setRemoveTarget(user) : undefined}
                   onTransferOwnership={
                     actorRole === 'owner' ? handleTransferOwnership : undefined
                   }
@@ -415,6 +450,19 @@ export default function AdminPage() {
           </>
         )}
       </div>
+
+      {removeTarget && (
+        <RemoveUserModal
+          email={removeTarget.email}
+          displayName={getUserDisplayName({
+            email: removeTarget.email,
+            name: removeTarget.name,
+          })}
+          busy={busyId === removeTarget.id}
+          onCancel={() => setRemoveTarget(null)}
+          onConfirm={confirmRemove}
+        />
+      )}
 
       {showInvite && (
         <InviteDialog
@@ -431,8 +479,9 @@ export default function AdminPage() {
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
-  if (status === 'active') {
+function StatusBadge({ user }: { user: UserItem }) {
+  const state = resolveAccountState(user);
+  if (state === 'active') {
     return (
       <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
         <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
@@ -440,11 +489,45 @@ function StatusBadge({ status }: { status: string }) {
       </span>
     );
   }
+  if (state === 'auth_missing') {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-medium text-rose-600 dark:text-rose-400">
+        <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
+        Auth removed
+      </span>
+    );
+  }
   return (
-    <span className="inline-flex items-center gap-1 text-xs font-medium text-zinc-500">
+    <span className="inline-flex items-center gap-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">
       <span className="h-1.5 w-1.5 rounded-full bg-zinc-400" />
       Deactivated
     </span>
+  );
+}
+
+function MenuActionButton({
+  action,
+  onRun,
+}: {
+  action: { id: string; label: string; disabled: boolean; reason?: string; destructive?: boolean };
+  onRun: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      disabled={action.disabled}
+      title={action.disabled ? action.reason : action.reason}
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={() => {
+        if (!action.disabled) onRun();
+      }}
+      className={`flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] transition-all hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40 ${
+        action.destructive ? 'text-destructive hover:bg-destructive/10' : ''
+      }`}
+    >
+      {action.label}
+    </button>
   );
 }
 
@@ -452,32 +535,49 @@ function UserRow({
   user: u,
   actorRole,
   busyId,
+  atSeatLimit,
   roleMenu,
   actionMenu,
   setRoleMenu,
   setActionMenu,
   onRoleChange,
   onStatusToggle,
+  onInviteAgain,
   onRemove,
   onTransferOwnership,
 }: {
   user: UserItem;
   actorRole: string;
   busyId: string | null;
+  atSeatLimit: boolean;
   roleMenu: string | null;
   actionMenu: string | null;
   setRoleMenu: (id: string | null) => void;
   setActionMenu: (id: string | null) => void;
   onRoleChange: (id: string, role: string, current: string) => void;
-  onStatusToggle: (id: string, status: string, role: string) => void;
-  onRemove?: (id: string) => void;
+  onStatusToggle: (user: UserItem) => void;
+  onInviteAgain: (user: UserItem) => void;
+  onRemove?: (user: UserItem) => void;
   onTransferOwnership?: (id: string, email: string) => void;
 }) {
   const isOwner = u.role === 'owner';
   const roles = assignableRoles(actorRole, u.role);
-  const canRemove = u.status === 'deactivated' && !isOwner && !!onRemove;
+  const menuActions = buildUserMenuActions({
+    user: u,
+    actorRole,
+    canRemove: !!onRemove && !isOwner,
+    atSeatLimit,
+  });
   const roleBtnRef = useRef<HTMLButtonElement>(null);
   const actionBtnRef = useRef<HTMLButtonElement>(null);
+
+  const runAction = (actionId: string) => {
+    setActionMenu(null);
+    if (actionId === 'deactivate' || actionId === 'reactivate') onStatusToggle(u);
+    else if (actionId === 'invite_again') onInviteAgain(u);
+    else if (actionId === 'transfer' && onTransferOwnership) onTransferOwnership(u.id, u.email);
+    else if (actionId === 'remove' && onRemove) onRemove(u);
+  };
 
   return (
     <tr className="group transition-colors hover:bg-accent/15">
@@ -547,7 +647,7 @@ function UserRow({
         )}
       </td>
       <td className="px-5 py-3.5">
-        <StatusBadge status={u.status} />
+        <StatusBadge user={u} />
       </td>
       <td className="px-5 py-3.5 text-sm text-muted-foreground">
         {new Date(u.createdAt).toLocaleDateString()}
@@ -580,60 +680,16 @@ function UserRow({
               onClose={() => setActionMenu(null)}
               anchorRef={actionBtnRef}
               align="right"
-              width={192}
+              width={220}
+              estimatedHeight={menuActions.length * 44 + 16}
             >
-              <button
-                type="button"
-                role="menuitem"
-                onMouseDown={(e) => e.stopPropagation()}
-                onClick={() => {
-                  setActionMenu(null);
-                  onStatusToggle(u.id, u.status, u.role);
-                }}
-                className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] transition-all hover:bg-accent"
-              >
-                {u.status === 'active' ? (
-                  <>
-                    <UserX className="h-3.5 w-3.5 text-destructive" />
-                    <span className="text-destructive">Deactivate</span>
-                  </>
-                ) : (
-                  <>
-                    <UserCheck className="h-3.5 w-3.5 text-emerald-600" />
-                    <span>Reactivate</span>
-                  </>
-                )}
-              </button>
-              {onTransferOwnership && u.status === 'active' && !isOwner && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onClick={() => {
-                    setActionMenu(null);
-                    onTransferOwnership(u.id, u.email);
-                  }}
-                  className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] transition-all hover:bg-accent"
-                >
-                  <Shield className="h-3.5 w-3.5" />
-                  Transfer ownership
-                </button>
-              )}
-              {canRemove && onRemove && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onClick={() => {
-                    setActionMenu(null);
-                    onRemove(u.id);
-                  }}
-                  className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] text-destructive transition-all hover:bg-destructive/10"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  Remove user
-                </button>
-              )}
+              {menuActions.map((action) => (
+                <MenuActionButton
+                  key={action.id}
+                  action={action}
+                  onRun={() => runAction(action.id)}
+                />
+              ))}
             </FixedMenu>
           </>
         )}
@@ -646,22 +702,38 @@ function UserCard({
   user: u,
   actorRole,
   busyId,
+  atSeatLimit,
   onRoleChange,
   onStatusToggle,
+  onInviteAgain,
   onRemove,
   onTransferOwnership,
 }: {
   user: UserItem;
   actorRole: string;
   busyId: string | null;
+  atSeatLimit: boolean;
   onRoleChange: (id: string, role: string, current: string) => void;
-  onStatusToggle: (id: string, status: string, role: string) => void;
-  onRemove?: (id: string) => void;
+  onStatusToggle: (user: UserItem) => void;
+  onInviteAgain: (user: UserItem) => void;
+  onRemove?: (user: UserItem) => void;
   onTransferOwnership?: (id: string, email: string) => void;
 }) {
   const isOwner = u.role === 'owner';
   const roles = assignableRoles(actorRole, u.role);
-  const canRemove = u.status === 'deactivated' && !isOwner && !!onRemove;
+  const menuActions = buildUserMenuActions({
+    user: u,
+    actorRole,
+    canRemove: !!onRemove && !isOwner,
+    atSeatLimit,
+  });
+
+  const runAction = (actionId: string) => {
+    if (actionId === 'deactivate' || actionId === 'reactivate') onStatusToggle(u);
+    else if (actionId === 'invite_again') onInviteAgain(u);
+    else if (actionId === 'transfer' && onTransferOwnership) onTransferOwnership(u.id, u.email);
+    else if (actionId === 'remove' && onRemove) onRemove(u);
+  };
 
   return (
     <div className="space-y-3 px-5 py-4">
@@ -672,7 +744,7 @@ function UserCard({
           </p>
           <p className="truncate text-xs text-muted-foreground">{u.email}</p>
         </div>
-        <StatusBadge status={u.status} />
+        <StatusBadge user={u} />
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${roleBadge[u.role] ?? ''}`}>
@@ -693,36 +765,24 @@ function UserCard({
             ) : null,
           )}
       </div>
-      {!isOwner && (
+      {!isOwner && menuActions.length > 0 && (
         <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            disabled={busyId === u.id}
-            onClick={() => onStatusToggle(u.id, u.status, u.role)}
-            className="rounded-lg border border-border/50 px-3 py-1.5 text-xs font-medium hover:bg-accent"
-          >
-            {u.status === 'active' ? 'Deactivate' : 'Reactivate'}
-          </button>
-          {canRemove && onRemove && (
+          {menuActions.map((action) => (
             <button
+              key={action.id}
               type="button"
-              disabled={busyId === u.id}
-              onClick={() => onRemove(u.id)}
-              className="rounded-lg border border-destructive/30 px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10"
+              disabled={busyId === u.id || action.disabled}
+              title={action.disabled ? action.reason : action.reason}
+              onClick={() => runAction(action.id)}
+              className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-all disabled:cursor-not-allowed disabled:opacity-40 ${
+                action.destructive
+                  ? 'border-destructive/30 text-destructive hover:bg-destructive/10'
+                  : 'border-border/50 hover:bg-accent'
+              }`}
             >
-              Remove
+              {action.label}
             </button>
-          )}
-          {onTransferOwnership && u.status === 'active' && (
-            <button
-              type="button"
-              disabled={busyId === u.id}
-              onClick={() => onTransferOwnership(u.id, u.email)}
-              className="rounded-lg border border-border/50 px-3 py-1.5 text-xs font-medium hover:bg-accent"
-            >
-              Transfer ownership
-            </button>
-          )}
+          ))}
         </div>
       )}
     </div>

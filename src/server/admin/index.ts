@@ -3,7 +3,6 @@ import { requirePermission } from '@/server/rbac';
 import { hasPermission } from '@/server/rbac/permissions';
 import { logAuditEvent } from '@/server/audit';
 import { inviteUserByEmail } from '@/server/auth';
-import { createSupabaseAdminClient } from '@/lib/supabase/server';
 import {
   assertSeatAvailable,
   getSeatUsage,
@@ -14,7 +13,16 @@ import {
 } from '@/server/users';
 import { INVITE_ERROR_MESSAGES, InviteSendError } from '@/server/auth/invite-errors';
 import { getInviteUrlConfig } from '@/lib/app-url';
+import { checkAuthUserExists } from '@/server/admin/auth-users';
+import {
+  getRemovalBlockReason,
+  permanentlyRemoveUser,
+  detachProfileReferences,
+  deleteProfileRecord,
+} from '@/server/admin/user-removal';
 import type { UserProfile, UserRole } from '@/generated/prisma/client';
+
+export type UserAccountState = 'active' | 'deactivated' | 'auth_missing';
 
 export interface UserListItem {
   id: string;
@@ -23,6 +31,8 @@ export interface UserListItem {
   name: string | null;
   role: UserRole;
   status: string;
+  accountState: UserAccountState;
+  authExists: boolean;
   createdAt: Date;
 }
 
@@ -129,7 +139,7 @@ export async function listUsersWithSeats(): Promise<AdminUsersResponse> {
       pendingInvites: seats.pendingInvites,
       available: seats.available,
     },
-    users,
+    users: await enrichUsersWithAuthState(users),
     invites: invites.map((i) => ({
       id: i.id,
       email: i.email,
@@ -317,6 +327,12 @@ export async function setUserStatus(
 
   if (status === 'active' && target.status === 'deactivated') {
     await assertSeatAvailable();
+    const authExists = await checkAuthUserExists(target.authId);
+    if (!authExists) {
+      throw new Error(
+        'This user no longer has a Supabase login. Use Invite again instead of reactivate.',
+      );
+    }
   }
 
   const updated = await db.userProfile.update({
@@ -339,6 +355,10 @@ export async function setUserStatus(
 export async function removeUser(userId: string): Promise<void> {
   const actor = await requirePermission('users:remove');
 
+  if (actor.role !== 'owner') {
+    throw new Error('Only the workspace owner can permanently remove users');
+  }
+
   const target = await db.userProfile.findUnique({ where: { id: userId } });
   if (!target) throw new Error('User not found');
 
@@ -354,22 +374,33 @@ export async function removeUser(userId: string): Promise<void> {
     throw new Error('Only deactivated users can be removed. Deactivate the account first.');
   }
 
-  const [fileCount, folderCount] = await Promise.all([
-    db.file.count({ where: { ownerId: userId, deletedAt: null } }),
-    db.folder.count({ where: { ownerId: userId, deletedAt: null } }),
-  ]);
+  const authExists = await checkAuthUserExists(target.authId);
 
-  if (fileCount > 0 || folderCount > 0) {
-    throw new Error(
-      'This user still owns files or folders. Reassign or delete their content before removal.',
-    );
+  if (!authExists) {
+    // Profile without Auth — still allow cleanup after deactivation
+    console.info('[admin.removeUser] auth already missing', { userId: target.id.slice(0, 8) });
   }
 
-  const admin = await createSupabaseAdminClient();
-  const { error } = await admin.auth.admin.deleteUser(target.authId);
-  if (error) throw new Error(error.message);
+  const block = await getRemovalBlockReason(userId);
+  if (block) {
+    throw new Error(block.message);
+  }
 
-  await db.userProfile.delete({ where: { id: userId } });
+  try {
+    await permanentlyRemoveUser({
+      userId: target.id,
+      authId: target.authId,
+      email: target.email,
+      fallbackOwnerId: actor.id,
+    });
+  } catch (err) {
+    console.error('[admin.removeUser] failed', {
+      userId: target.id.slice(0, 8),
+      email: target.email,
+      step: err instanceof Error ? err.message.slice(0, 80) : 'unknown',
+    });
+    throw err;
+  }
 
   await logAuditEvent({
     actor,
@@ -378,6 +409,39 @@ export async function removeUser(userId: string): Promise<void> {
     targetId: userId,
     meta: { email: target.email, role: target.role },
   });
+}
+
+/** Re-invite when profile exists but Supabase Auth user was deleted. */
+export async function inviteAgainForEmail(email: string, role: UserRole): Promise<void> {
+  const actor = await requirePermission('users:invite');
+
+  if (!canActorInviteRole(actor.role, role)) {
+    throw new Error('You are not allowed to invite users with this role.');
+  }
+
+  const normalized = email.trim().toLowerCase();
+  const profile = await db.userProfile.findFirst({ where: { email: normalized } });
+
+  if (profile) {
+    const authExists = await checkAuthUserExists(profile.authId);
+    if (authExists) {
+      if (profile.status === 'deactivated') {
+        throw new Error('This user still has a login account. Use Reactivate instead.');
+      }
+      throw new Error('An active user with this email already exists.');
+    }
+
+    const owner = await db.userProfile.findFirst({
+      where: { role: 'owner', status: 'active' },
+      select: { id: true },
+    });
+    if (!owner) throw new Error('No active owner found for reference cleanup');
+
+    await detachProfileReferences(profile.id, profile.email, owner.id);
+    await deleteProfileRecord(profile.id);
+  }
+
+  await inviteUser(normalized, role);
 }
 
 export async function transferOwnership(newOwnerId: string): Promise<void> {
@@ -434,5 +498,36 @@ export function getAssignableRolesForActor(
 }
 
 export function canActorRemoveUser(actor: UserProfile): boolean {
-  return hasPermission(actor.role, 'users:remove');
+  return actor.role === 'owner' && hasPermission(actor.role, 'users:remove');
+}
+
+async function enrichUsersWithAuthState(
+  users: {
+    id: string;
+    authId: string;
+    email: string;
+    name: string | null;
+    role: UserRole;
+    status: string;
+    createdAt: Date;
+  }[],
+): Promise<UserListItem[]> {
+  const authChecks = await Promise.all(
+    users.map(async (u) => ({
+      id: u.id,
+      exists: await checkAuthUserExists(u.authId),
+    })),
+  );
+  const authMap = new Map(authChecks.map((c) => [c.id, c.exists]));
+
+  return users.map((u) => {
+    const authExists = authMap.get(u.id) ?? false;
+    const accountState: UserAccountState =
+      u.status === 'active' ? 'active' : authExists ? 'deactivated' : 'auth_missing';
+    return {
+      ...u,
+      authExists,
+      accountState,
+    };
+  });
 }

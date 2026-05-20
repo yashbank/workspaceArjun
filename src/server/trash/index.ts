@@ -22,6 +22,8 @@ type TrashedFile = {
   currentVersion: { sizeBytes: bigint; createdAt: Date } | null;
 };
 
+const TRASH_LIST_LIMIT = 200;
+
 export async function listTrashedFolders(): Promise<TrashedFolder[]> {
   await requirePermission('folders:read');
   return db.folder.findMany({
@@ -34,6 +36,7 @@ export async function listTrashedFolders(): Promise<TrashedFolder[]> {
       owner: { select: { email: true, name: true } },
     },
     orderBy: { deletedAt: 'desc' },
+    take: TRASH_LIST_LIMIT,
   }) as Promise<TrashedFolder[]>;
 }
 
@@ -51,6 +54,7 @@ export async function listTrashedFiles(): Promise<TrashedFile[]> {
       currentVersion: { select: { sizeBytes: true, createdAt: true } },
     },
     orderBy: { deletedAt: 'desc' },
+    take: TRASH_LIST_LIMIT,
   }) as Promise<TrashedFile[]>;
 }
 

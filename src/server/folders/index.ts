@@ -7,6 +7,8 @@ export type FolderWithCounts = Folder & {
   _count: { children: number; files: number };
 };
 
+const FOLDERS_LIST_LIMIT = 500;
+
 export async function listFolders(parentId: string | null): Promise<FolderWithCounts[]> {
   await requirePermission('folders:read');
   return db.folder.findMany({
@@ -20,6 +22,7 @@ export async function listFolders(parentId: string | null): Promise<FolderWithCo
       },
     },
     orderBy: { name: 'asc' },
+    take: FOLDERS_LIST_LIMIT,
   }) as Promise<FolderWithCounts[]>;
 }
 

@@ -14,6 +14,8 @@ export type FileWithVersion = File & {
   _count: { versions: number };
 };
 
+const FILES_LIST_LIMIT = 500;
+
 export async function listFiles(folderId: string | null): Promise<FileWithVersion[]> {
   await requirePermission('files:read');
   const rows = await db.file.findMany({
@@ -23,6 +25,7 @@ export async function listFiles(folderId: string | null): Promise<FileWithVersio
       _count: { select: { versions: true } },
     },
     orderBy: { name: 'asc' },
+    take: FILES_LIST_LIMIT,
   });
   return rows.filter(isListableFile) as FileWithVersion[];
 }
