@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>BPP Workspace - Admin</title>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind Config -->
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-primary": "#ffffff",
+                        "inverse-primary": "#c8c6c6",
+                        "outline-variant": "#c4c7c7",
+                        "on-primary-fixed": "#1b1c1c",
+                        "on-primary-container": "#959494",
+                        "primary-fixed": "#e4e2e1",
+                        "error-container": "#ffdad6",
+                        "on-secondary": "#ffffff",
+                        "on-secondary-fixed": "#1b1c19",
+                        "surface-container": "#efeded",
+                        "on-primary-fixed-variant": "#474747",
+                        "secondary-fixed-dim": "#c8c6c2",
+                        "on-error": "#ffffff",
+                        "inverse-surface": "#2f3031",
+                        "surface-container-low": "#f4f3f3",
+                        "on-background": "#1b1c1c",
+                        "on-error-container": "#93000a",
+                        "inverse-on-surface": "#f2f0f0",
+                        "on-tertiary-fixed": "#261a00",
+                        "tertiary-container": "#3c2a00",
+                        "on-surface-variant": "#444748",
+                        "secondary-fixed": "#e4e2dd",
+                        "surface-dim": "#dbdad9",
+                        "primary": "#181919",
+                        "secondary-container": "#e1dfdb",
+                        "tertiary": "#221700",
+                        "tertiary-fixed": "#ffdfa0",
+                        "tertiary-fixed-dim": "#fbbc00",
+                        "primary-container": "#2d2d2d",
+                        "error": "#ba1a1a",
+                        "on-surface": "#1b1c1c",
+                        "surface": "#faf9f9",
+                        "on-secondary-container": "#63635f",
+                        "on-tertiary": "#ffffff",
+                        "on-tertiary-container": "#bd8d00",
+                        "background": "#faf9f9",
+                        "surface-variant": "#e3e2e2",
+                        "surface-tint": "#5f5e5e",
+                        "on-secondary-fixed-variant": "#474744",
+                        "on-tertiary-fixed-variant": "#5c4300",
+                        "secondary": "#5e5e5b",
+                        "surface-bright": "#faf9f9",
+                        "surface-container-lowest": "#ffffff",
+                        "primary-fixed-dim": "#c8c6c6",
+                        "surface-container-highest": "#e3e2e2",
+                        "surface-container-high": "#e9e8e8",
+                        "outline": "#747878"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "stack-sm": "8px",
+                        "margin-desktop": "48px",
+                        "margin-mobile": "16px",
+                        "gutter": "24px",
+                        "stack-md": "16px",
+                        "unit": "4px",
+                        "stack-lg": "32px"
+                    },
+                    "fontFamily": {
+                        "headline-lg-mobile": ["Hanken Grotesk"],
+                        "body-sm": ["Hanken Grotesk"],
+                        "headline-lg": ["Hanken Grotesk"],
+                        "label-caps": ["JetBrains Mono"],
+                        "headline-md": ["Hanken Grotesk"],
+                        "display": ["Hanken Grotesk"],
+                        "body-lg": ["Hanken Grotesk"]
+                    },
+                    "fontSize": {
+                        "headline-lg-mobile": ["24px", { "lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "body-sm": ["14px", { "lineHeight": "1.5", "letterSpacing": "0", "fontWeight": "400" }],
+                        "headline-lg": ["32px", { "lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "label-caps": ["11px", { "lineHeight": "1", "letterSpacing": "0.06em", "fontWeight": "500" }],
+                        "headline-md": ["20px", { "lineHeight": "1.4", "letterSpacing": "-0.01em", "fontWeight": "500" }],
+                        "display": ["48px", { "lineHeight": "1.1", "letterSpacing": "-0.03em", "fontWeight": "600" }],
+                        "body-lg": ["16px", { "lineHeight": "1.6", "letterSpacing": "-0.01em", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        /* Base tactical materiality */
+        body {
+            background-color: #FDFCF8; /* Ivory base */
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.02'/%3E%3C/svg%3E");
+        }
+    </style>
+</head>
+<body class="text-on-background min-h-screen flex font-body-lg antialiased">
+<!-- SideNavBar (Desktop) -->
+<nav class="hidden md:flex fixed left-0 top-0 h-full flex-col p-stack-lg z-40 h-screen w-64 border-r border-outline-variant border-r border-outline-variant bg-surface/80 backdrop-blur-xl">
+<div class="flex items-center gap-stack-sm mb-stack-lg">
+<div class="w-8 h-8 rounded bg-primary flex items-center justify-center text-on-primary">
+<span class="material-symbols-outlined text-sm">print</span>
+</div>
+<div>
+<h1 class="font-headline-md text-headline-md font-bold text-primary dark:text-primary-fixed">BPP Workspace</h1>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Premium Printing</p>
+</div>
+</div>
+<ul class="flex flex-col gap-stack-md mt-stack-lg font-body-lg text-body-lg text-primary dark:text-on-primary-fixed">
+<li class="flex items-center gap-stack-md text-on-surface-variant dark:text-on-secondary-fixed-variant hover:text-primary transition-colors hover:bg-surface-container-low dark:hover:bg-surface-container-highest transition-all duration-200 cursor-pointer p-2 rounded-lg">
+<span class="material-symbols-outlined">dashboard</span>
+<span>Dashboard</span>
+</li>
+<li class="flex items-center gap-stack-md text-on-surface-variant dark:text-on-secondary-fixed-variant hover:text-primary transition-colors hover:bg-surface-container-low dark:hover:bg-surface-container-highest transition-all duration-200 cursor-pointer p-2 rounded-lg">
+<span class="material-symbols-outlined">folder_open</span>
+<span>Files</span>
+</li>
+<li class="flex items-center gap-stack-md text-on-surface-variant dark:text-on-secondary-fixed-variant hover:text-primary transition-colors hover:bg-surface-container-low dark:hover:bg-surface-container-highest transition-all duration-200 cursor-pointer p-2 rounded-lg">
+<span class="material-symbols-outlined">delete</span>
+<span>Trash</span>
+</li>
+<!-- Active Tab -->
+<li class="flex items-center gap-stack-md text-primary dark:text-primary-fixed font-bold relative before:content-[''] before:absolute before:left-[-16px] before:w-1 before:h-4 before:bg-primary before:rounded-full cursor-pointer p-2 rounded-lg bg-surface-container-low">
+<span class="material-symbols-outlined">admin_panel_settings</span>
+<span>Admin</span>
+</li>
+<li class="flex items-center gap-stack-md text-on-surface-variant dark:text-on-secondary-fixed-variant hover:text-primary transition-colors hover:bg-surface-container-low dark:hover:bg-surface-container-highest transition-all duration-200 cursor-pointer p-2 rounded-lg">
+<span class="material-symbols-outlined">settings</span>
+<span>Settings</span>
+</li>
+</ul>
+</nav>
+<!-- TopNavBar -->
+<header class="fixed top-0 right-0 left-0 md:left-64 flex justify-between items-center px-margin-desktop z-30 h-16 w-full border-b border-outline-variant border-b border-outline-variant bg-surface/80 backdrop-blur-xl">
+<div class="flex items-center gap-stack-sm md:hidden">
+<span class="material-symbols-outlined">menu</span>
+<span class="font-headline-md text-headline-md-mobile font-semibold text-primary dark:text-primary-fixed">BPP Workspace</span>
+</div>
+<div class="hidden md:flex items-center bg-surface-container-low rounded-full px-4 py-2 border border-outline-variant">
+<span class="material-symbols-outlined text-on-surface-variant mr-2">search</span>
+<input class="bg-transparent border-none focus:ring-0 text-body-sm w-64 outline-none" placeholder="Search..." type="text"/>
+</div>
+<div class="flex items-center gap-stack-md">
+<button class="hidden md:block bg-transparent border border-outline-variant text-primary px-4 py-1.5 rounded-lg font-body-sm hover:bg-surface-container-low transition-colors">Admin</button>
+<button class="bg-primary text-on-primary px-4 py-1.5 rounded-lg font-body-sm hover:opacity-90 transition-opacity">Upload</button>
+<div class="flex gap-stack-sm text-on-surface-variant">
+<span class="material-symbols-outlined cursor-pointer hover:text-primary transition-colors">dark_mode</span>
+<span class="material-symbols-outlined cursor-pointer hover:text-primary transition-colors">notifications</span>
+<span class="material-symbols-outlined cursor-pointer hover:text-primary transition-colors">account_circle</span>
+</div>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-1 mt-16 md:ml-64 p-margin-mobile md:p-margin-desktop space-y-stack-lg max-w-7xl">
+<!-- Page Header -->
+<div class="flex flex-col md:flex-row md:items-end justify-between gap-stack-md">
+<div>
+<h2 class="font-headline-lg text-headline-lg-mobile md:text-headline-lg text-primary tracking-tight">User Management</h2>
+<p class="font-body-lg text-body-lg text-on-surface-variant mt-1">Manage team access, roles, and invitations.</p>
+</div>
+<button class="bg-primary text-on-primary px-6 py-3 rounded-xl font-body-lg font-medium hover:opacity-90 transition-opacity flex items-center gap-2 shadow-sm">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">person_add</span>
+                Invite User
+            </button>
+</div>
+<!-- Bento Grid: Top Section -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-gutter">
+<!-- Seat Usage Card -->
+<div class="col-span-1 bg-[#F9F7F2] rounded-xl p-stack-lg shadow-sm border border-[#E5E0D5] flex flex-col justify-between">
+<div>
+<div class="flex items-center gap-2 text-on-surface-variant mb-4">
+<span class="material-symbols-outlined text-xl">groups</span>
+<h3 class="font-label-caps text-label-caps uppercase tracking-wider">Seat Usage</h3>
+</div>
+<div class="flex items-baseline gap-2">
+<span class="font-display text-display text-primary">3</span>
+<span class="font-headline-md text-headline-md text-on-surface-variant">/ 15</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-1">Active seats in your plan</p>
+</div>
+<div class="mt-8">
+<div class="h-2 w-full bg-surface-variant rounded-full overflow-hidden">
+<div class="h-full bg-primary w-1/5 rounded-full"></div>
+</div>
+</div>
+</div>
+<!-- Pending Invites Card -->
+<div class="col-span-1 lg:col-span-2 bg-[#F9F7F2] rounded-xl p-stack-lg shadow-sm border border-[#E5E0D5]">
+<div class="flex items-center gap-2 text-on-surface-variant mb-6">
+<span class="material-symbols-outlined text-xl">mail</span>
+<h3 class="font-label-caps text-label-caps uppercase tracking-wider">Pending Invitations (2)</h3>
+</div>
+<div class="space-y-4">
+<!-- Invite Item 1 -->
+<div class="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-surface-container-lowest rounded-lg border border-[#E5E0D5]">
+<div class="flex items-center gap-3 mb-3 sm:mb-0">
+<div class="w-10 h-10 rounded-full bg-surface-variant flex items-center justify-center text-on-surface-variant">
+<span class="font-headline-md text-headline-md">A</span>
+</div>
+<div>
+<p class="font-body-lg text-body-lg font-medium text-primary">alex.designer@example.com</p>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Invited 2 days ago • Role: Member</p>
+</div>
+</div>
+<div class="flex gap-2">
+<button class="px-3 py-1.5 rounded-lg border border-outline-variant text-primary font-body-sm hover:bg-surface-container-low transition-colors">Resend</button>
+<button class="px-3 py-1.5 rounded-lg text-error hover:bg-error-container transition-colors font-body-sm">Cancel</button>
+</div>
+</div>
+<!-- Invite Item 2 -->
+<div class="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-surface-container-lowest rounded-lg border border-[#E5E0D5]">
+<div class="flex items-center gap-3 mb-3 sm:mb-0">
+<div class="w-10 h-10 rounded-full bg-surface-variant flex items-center justify-center text-on-surface-variant">
+<span class="font-headline-md text-headline-md">S</span>
+</div>
+<div>
+<p class="font-body-lg text-body-lg font-medium text-primary">sarah.ops@example.com</p>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Invited 5 hrs ago • Role: Admin</p>
+</div>
+</div>
+<div class="flex gap-2">
+<button class="px-3 py-1.5 rounded-lg border border-outline-variant text-primary font-body-sm hover:bg-surface-container-low transition-colors">Resend</button>
+<button class="px-3 py-1.5 rounded-lg text-error hover:bg-error-container transition-colors font-body-sm">Cancel</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Users List Section -->
+<div class="bg-[#F9F7F2] rounded-xl shadow-sm border border-[#E5E0D5] overflow-visible">
+<div class="p-stack-lg border-b border-[#E5E0D5]">
+<h3 class="font-headline-md text-headline-md text-primary">Active Users</h3>
+</div>
+<div class="w-full">
+<!-- Header Row -->
+<div class="hidden md:grid grid-cols-12 gap-4 p-4 border-b border-[#E5E0D5] text-on-surface-variant font-label-caps text-label-caps uppercase tracking-wider bg-surface-container-lowest/50 rounded-t-xl">
+<div class="col-span-5 pl-4">User</div>
+<div class="col-span-3">Role</div>
+<div class="col-span-3">Status</div>
+<div class="col-span-1 text-right pr-4">Actions</div>
+</div>
+<!-- User Row 1 (Owner) -->
+<div class="grid grid-cols-1 md:grid-cols-12 gap-4 p-4 items-center border-b border-[#E5E0D5] hover:bg-surface-container-lowest/50 transition-colors">
+<div class="col-span-1 md:col-span-5 pl-0 md:pl-4 flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-primary text-on-primary flex items-center justify-center font-headline-md">M</div>
+<div>
+<p class="font-body-lg text-body-lg font-medium text-primary">Marcus Vance</p>
+<p class="font-body-sm text-body-sm text-on-surface-variant">marcus@bppworkspace.com</p>
+</div>
+</div>
+<div class="col-span-1 md:col-span-3">
+<span class="inline-flex items-center px-2.5 py-0.5 rounded-full font-label-caps text-label-caps bg-surface-variant text-on-surface-variant">
+                            Owner
+                        </span>
+</div>
+<div class="col-span-1 md:col-span-3">
+<span class="flex items-center gap-1 text-sm text-primary">
+<div class="w-2 h-2 rounded-full bg-green-500"></div> Active
+                        </span>
+</div>
+<div class="col-span-1 md:col-span-1 text-right pr-0 md:pr-4">
+<button class="text-on-surface-variant hover:text-primary transition-colors p-1 rounded-full hover:bg-surface-variant">
+<span class="material-symbols-outlined">more_vert</span>
+</button>
+</div>
+</div>
+<!-- User Row 2 (Admin - Dropdown Open) -->
+<div class="grid grid-cols-1 md:grid-cols-12 gap-4 p-4 items-center border-b border-[#E5E0D5] bg-surface-container-lowest/50 relative z-10">
+<div class="col-span-1 md:col-span-5 pl-0 md:pl-4 flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-surface-variant text-on-surface-variant flex items-center justify-center font-headline-md">E</div>
+<div>
+<p class="font-body-lg text-body-lg font-medium text-primary">Elena Rodriguez</p>
+<p class="font-body-sm text-body-sm text-on-surface-variant">elena@bppworkspace.com</p>
+</div>
+</div>
+<div class="col-span-1 md:col-span-3">
+<!-- CMYK Accent: Cyan for Admin using closest theme colors to represent the concept -->
+<span class="inline-flex items-center px-2.5 py-0.5 rounded-full font-label-caps text-label-caps bg-blue-50 text-blue-700 border border-blue-200">
+                            Admin
+                        </span>
+</div>
+<div class="col-span-1 md:col-span-3">
+<span class="flex items-center gap-1 text-sm text-primary">
+<div class="w-2 h-2 rounded-full bg-green-500"></div> Active
+                        </span>
+</div>
+<div class="col-span-1 md:col-span-1 text-right pr-0 md:pr-4 relative">
+<button class="text-primary p-1 rounded-full bg-surface-variant">
+<span class="material-symbols-outlined">more_vert</span>
+</button>
+<!-- Open Dropdown Menu -->
+<div class="absolute right-4 top-10 w-48 bg-[#FDFCF8CC] backdrop-blur-md rounded-xl shadow-[0_4px_20px_-4px_rgba(74,63,53,0.15)] border border-[#E5E0D5] py-2 z-50 text-left">
+<a class="block px-4 py-2 font-body-sm text-primary hover:bg-surface-container-low transition-colors" href="#">Change Role</a>
+<a class="block px-4 py-2 font-body-sm text-primary hover:bg-surface-container-low transition-colors" href="#">View Activity Log</a>
+<div class="h-px bg-[#E5E0D5] my-1"></div>
+<a class="block px-4 py-2 font-body-sm text-error hover:bg-error-container transition-colors" href="#">Deactivate User</a>
+<a class="block px-4 py-2 font-body-sm text-error hover:bg-error-container transition-colors" href="#">Remove from Workspace</a>
+</div>
+</div>
+</div>
+<!-- User Row 3 (Member) -->
+<div class="grid grid-cols-1 md:grid-cols-12 gap-4 p-4 items-center hover:bg-surface-container-lowest/50 transition-colors">
+<div class="col-span-1 md:col-span-5 pl-0 md:pl-4 flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-surface-variant text-on-surface-variant flex items-center justify-center font-headline-md">D</div>
+<div>
+<p class="font-body-lg text-body-lg font-medium text-primary">David Chen</p>
+<p class="font-body-sm text-body-sm text-on-surface-variant">david.c@bppworkspace.com</p>
+</div>
+</div>
+<div class="col-span-1 md:col-span-3">
+<!-- CMYK Accent: Magenta for Member -->
+<span class="inline-flex items-center px-2.5 py-0.5 rounded-full font-label-caps text-label-caps bg-pink-50 text-pink-700 border border-pink-200">
+                            Member
+                        </span>
+</div>
+<div class="col-span-1 md:col-span-3">
+<span class="flex items-center gap-1 text-sm text-primary">
+<div class="w-2 h-2 rounded-full bg-green-500"></div> Active
+                        </span>
+</div>
+<div class="col-span-1 md:col-span-1 text-right pr-0 md:pr-4">
+<button class="text-on-surface-variant hover:text-primary transition-colors p-1 rounded-full hover:bg-surface-variant">
+<span class="material-symbols-outlined">more_vert</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Bottom spacing -->
+<div class="h-12"></div>
+</main>
+</body></html>

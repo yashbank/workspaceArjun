@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Settings - BPP Workspace</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-primary": "#ffffff",
+                        "inverse-primary": "#c8c6c6",
+                        "outline-variant": "#c4c7c7",
+                        "on-primary-fixed": "#1b1c1c",
+                        "on-primary-container": "#959494",
+                        "primary-fixed": "#e4e2e1",
+                        "error-container": "#ffdad6",
+                        "on-secondary": "#ffffff",
+                        "on-secondary-fixed": "#1b1c19",
+                        "surface-container": "#efeded",
+                        "on-primary-fixed-variant": "#474747",
+                        "secondary-fixed-dim": "#c8c6c2",
+                        "on-error": "#ffffff",
+                        "inverse-surface": "#2f3031",
+                        "surface-container-low": "#f4f3f3",
+                        "on-background": "#1b1c1c",
+                        "on-error-container": "#93000a",
+                        "inverse-on-surface": "#f2f0f0",
+                        "on-tertiary-fixed": "#261a00",
+                        "tertiary-container": "#3c2a00",
+                        "on-surface-variant": "#444748",
+                        "secondary-fixed": "#e4e2dd",
+                        "surface-dim": "#dbdad9",
+                        "primary": "#181919",
+                        "secondary-container": "#e1dfdb",
+                        "tertiary": "#221700",
+                        "tertiary-fixed": "#ffdfa0",
+                        "tertiary-fixed-dim": "#fbbc00",
+                        "primary-container": "#2d2d2d",
+                        "error": "#ba1a1a",
+                        "on-surface": "#1b1c1c",
+                        "surface": "#faf9f9",
+                        "on-secondary-container": "#63635f",
+                        "on-tertiary": "#ffffff",
+                        "on-tertiary-container": "#bd8d00",
+                        "background": "#faf9f9",
+                        "surface-variant": "#e3e2e2",
+                        "surface-tint": "#5f5e5e",
+                        "on-secondary-fixed-variant": "#474744",
+                        "on-tertiary-fixed-variant": "#5c4300",
+                        "secondary": "#5e5e5b",
+                        "surface-bright": "#faf9f9",
+                        "surface-container-lowest": "#ffffff",
+                        "primary-fixed-dim": "#c8c6c6",
+                        "surface-container-highest": "#e3e2e2",
+                        "surface-container-high": "#e9e8e8",
+                        "outline": "#747878"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "stack-sm": "8px",
+                        "margin-desktop": "48px",
+                        "margin-mobile": "16px",
+                        "gutter": "24px",
+                        "stack-md": "16px",
+                        "unit": "4px",
+                        "stack-lg": "32px"
+                    },
+                    "fontFamily": {
+                        "headline-lg-mobile": ["Hanken Grotesk"],
+                        "body-sm": ["Hanken Grotesk"],
+                        "headline-lg": ["Hanken Grotesk"],
+                        "label-caps": ["JetBrains Mono"],
+                        "headline-md": ["Hanken Grotesk"],
+                        "display": ["Hanken Grotesk"],
+                        "body-lg": ["Hanken Grotesk"]
+                    },
+                    "fontSize": {
+                        "headline-lg-mobile": ["24px", { "lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "body-sm": ["14px", { "lineHeight": "1.5", "letterSpacing": "0", "fontWeight": "400" }],
+                        "headline-lg": ["32px", { "lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "label-caps": ["11px", { "lineHeight": "1", "letterSpacing": "0.06em", "fontWeight": "500" }],
+                        "headline-md": ["20px", { "lineHeight": "1.4", "letterSpacing": "-0.01em", "fontWeight": "500" }],
+                        "display": ["48px", { "lineHeight": "1.1", "letterSpacing": "-0.03em", "fontWeight": "600" }],
+                        "body-lg": ["16px", { "lineHeight": "1.6", "letterSpacing": "-0.01em", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .material-symbols-outlined.fill {
+            font-variation-settings: 'FILL' 1;
+        }
+        
+        /* Ambient texture overlay simulating paper */
+        body::before {
+            content: "";
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            pointer-events: none;
+            z-index: 9999;
+            opacity: 0.03;
+            background-image: repeating-linear-gradient(45deg, #000 25%, transparent 25%, transparent 75%, #000 75%, #000), repeating-linear-gradient(45deg, #000 25%, transparent 25%, transparent 75%, #000 75%, #000);
+            background-position: 0 0, 1px 1px;
+            background-size: 2px 2px;
+        }
+
+        /* CMYK Specific utility colors for file types, adhering to brand but bypassing strict config for these specific indicators */
+        .indicator-c { background-color: #00AEEF; }
+        .indicator-m { background-color: #E2007A; }
+        .indicator-y { background-color: #FFC000; }
+        .indicator-k { background-color: #1b1c1c; } /* using on-background equivalent */
+    </style>
+</head>
+<body class="bg-background text-on-background min-h-screen font-body-lg flex overflow-x-hidden">
+<!-- TopNavBar -->
+<header class="h-16 w-full border-b border-outline-variant bg-surface/80 dark:bg-surface-container/80 backdrop-blur-xl fixed top-0 right-0 left-0 md:left-64 flex justify-between items-center px-margin-desktop z-30">
+<div class="flex items-center gap-stack-md">
+<!-- Mobile menu trigger -->
+<button class="md:hidden text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[24px]">menu</span>
+</button>
+<h1 class="font-headline-md text-headline-md-mobile font-semibold text-primary dark:text-primary-fixed md:hidden">BPP Workspace</h1>
+</div>
+<div class="flex items-center gap-gutter">
+<div class="hidden md:flex gap-stack-sm items-center">
+<!-- Search representation as per JSON 'on_left' -> moving right for layout balance here, or keeping minimal -->
+<div class="relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">search</span>
+<input class="pl-10 pr-4 py-1.5 bg-surface-container-low border-none rounded-full text-body-sm focus:ring-1 focus:ring-outline-variant w-48 transition-all" placeholder="Search files..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-stack-md border-l border-outline-variant pl-stack-md">
+<button class="text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[20px]">dark_mode</span>
+</button>
+<button class="text-on-surface-variant hover:text-primary transition-colors relative">
+<span class="material-symbols-outlined text-[20px]">notifications</span>
+<span class="absolute top-0 right-0 w-2 h-2 bg-error rounded-full"></span>
+</button>
+<button class="text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[24px]">account_circle</span>
+</button>
+</div>
+</div>
+</header>
+<!-- SideNavBar -->
+<nav class="hidden md:flex flex-col h-screen w-64 border-r border-outline-variant bg-surface/80 dark:bg-surface-container/80 backdrop-blur-xl fixed left-0 top-0 p-stack-lg z-40">
+<div class="mb-stack-lg">
+<h2 class="font-headline-md text-headline-md font-bold text-primary dark:text-primary-fixed tracking-tight">BPP Workspace</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-1">Premium Printing</p>
+</div>
+<ul class="flex flex-col gap-stack-sm mt-stack-md flex-grow">
+<!-- Dashboard -->
+<li>
+<a class="flex items-center gap-stack-md text-on-surface-variant dark:text-on-secondary-fixed-variant hover:text-primary hover:bg-surface-container-low dark:hover:bg-surface-container-highest transition-all duration-200 px-3 py-2 rounded-lg" href="#">
+<span class="material-symbols-outlined text-[20px]">dashboard</span>
+<span class="font-body-sm text-body-sm">Dashboard</span>
+</a>
+</li>
+<!-- Files -->
+<li>
+<a class="flex items-center gap-stack-md text-on-surface-variant dark:text-on-secondary-fixed-variant hover:text-primary hover:bg-surface-container-low dark:hover:bg-surface-container-highest transition-all duration-200 px-3 py-2 rounded-lg" href="#">
+<span class="material-symbols-outlined text-[20px]">folder_open</span>
+<span class="font-body-sm text-body-sm">Files</span>
+</a>
+</li>
+<!-- Trash -->
+<li>
+<a class="flex items-center gap-stack-md text-on-surface-variant dark:text-on-secondary-fixed-variant hover:text-primary hover:bg-surface-container-low dark:hover:bg-surface-container-highest transition-all duration-200 px-3 py-2 rounded-lg" href="#">
+<span class="material-symbols-outlined text-[20px]">delete</span>
+<span class="font-body-sm text-body-sm">Trash</span>
+</a>
+</li>
+<!-- Admin -->
+<li>
+<a class="flex items-center gap-stack-md text-on-surface-variant dark:text-on-secondary-fixed-variant hover:text-primary hover:bg-surface-container-low dark:hover:bg-surface-container-highest transition-all duration-200 px-3 py-2 rounded-lg" href="#">
+<span class="material-symbols-outlined text-[20px]">admin_panel_settings</span>
+<span class="font-body-sm text-body-sm">Admin</span>
+</a>
+</li>
+<!-- Settings (ACTIVE) -->
+<li class="mt-auto">
+<a class="flex items-center gap-stack-md text-primary dark:text-primary-fixed font-bold relative before:content-[''] before:absolute before:left-[-16px] before:w-1 before:h-4 before:bg-primary before:rounded-full px-3 py-2 bg-surface-container-low dark:bg-surface-container-highest rounded-lg transition-transform duration-150 scale-[0.98]" href="#">
+<span class="material-symbols-outlined text-[20px] fill">settings</span>
+<span class="font-body-sm text-body-sm">Settings</span>
+</a>
+</li>
+</ul>
+</nav>
+<!-- Main Canvas -->
+<main class="w-full md:ml-64 mt-16 p-margin-mobile md:p-margin-desktop bg-background">
+<div class="max-w-[1200px] mx-auto">
+<div class="mb-stack-lg flex justify-between items-end border-b border-outline-variant pb-stack-md">
+<div>
+<h2 class="font-headline-lg text-headline-lg text-primary tracking-tight">Workspace Configuration</h2>
+<p class="text-on-surface-variant font-body-sm text-body-sm mt-2">Manage owner-level settings, storage rules, and brand identity.</p>
+</div>
+<div class="hidden sm:block">
+<span class="inline-flex items-center gap-2 bg-surface-container-low px-3 py-1 rounded-full text-on-surface-variant font-label-caps text-label-caps">
+<span class="material-symbols-outlined text-[14px]">lock</span>
+                        Owner Access
+                    </span>
+</div>
+</div>
+<!-- Bento Grid Layout -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-gutter">
+<!-- Section 1: Upload Limits (Col Span 8) -->
+<section class="lg:col-span-7 bg-surface-container-low rounded-xl p-stack-lg shadow-sm">
+<div class="flex items-center gap-3 mb-stack-md">
+<span class="material-symbols-outlined text-primary text-[24px]">cloud_upload</span>
+<h3 class="font-headline-md text-headline-md text-primary">Upload Limits</h3>
+</div>
+<p class="text-on-surface-variant font-body-sm text-body-sm mb-stack-lg">Define maximum allowed file sizes per document category.</p>
+<div class="flex flex-col gap-4">
+<!-- PDF -->
+<div class="flex items-center justify-between p-4 bg-surface rounded-lg border border-outline-variant/30">
+<div class="flex items-center gap-4">
+<div class="w-8 h-8 rounded-md indicator-c flex items-center justify-center shadow-inner">
+<span class="font-label-caps text-label-caps text-on-primary">PDF</span>
+</div>
+<div>
+<p class="font-body-sm text-body-sm font-medium text-primary">Portable Document</p>
+<p class="font-label-caps text-label-caps text-on-surface-variant mt-1">STANDARD ASSETS</p>
+</div>
+</div>
+<div class="relative">
+<select class="appearance-none bg-transparent border-b border-outline-variant text-body-sm font-body-sm text-primary py-1 pr-8 pl-2 focus:outline-none focus:border-primary transition-colors cursor-pointer">
+<option value="100">100 MB</option>
+<option value="250">250 MB</option>
+<option selected="" value="500">500 MB</option>
+<option value="1000">1 GB</option>
+</select>
+<span class="material-symbols-outlined absolute right-0 top-1/2 -translate-y-1/2 text-[16px] text-on-surface-variant pointer-events-none">expand_more</span>
+</div>
+</div>
+<!-- CDR / Design Files -->
+<div class="flex items-center justify-between p-4 bg-surface rounded-lg border border-outline-variant/30">
+<div class="flex items-center gap-4">
+<div class="w-8 h-8 rounded-md indicator-m flex items-center justify-center shadow-inner">
+<span class="font-label-caps text-label-caps text-on-primary">CDR</span>
+</div>
+<div>
+<p class="font-body-sm text-body-sm font-medium text-primary">Vector Artwork</p>
+<p class="font-label-caps text-label-caps text-on-surface-variant mt-1">SOURCE FILES</p>
+</div>
+</div>
+<div class="relative">
+<select class="appearance-none bg-transparent border-b border-outline-variant text-body-sm font-body-sm text-primary py-1 pr-8 pl-2 focus:outline-none focus:border-primary transition-colors cursor-pointer">
+<option value="500">500 MB</option>
+<option selected="" value="1000">1 GB</option>
+<option value="2000">2 GB</option>
+</select>
+<span class="material-symbols-outlined absolute right-0 top-1/2 -translate-y-1/2 text-[16px] text-on-surface-variant pointer-events-none">expand_more</span>
+</div>
+</div>
+<!-- MP4 / Video -->
+<div class="flex items-center justify-between p-4 bg-surface rounded-lg border border-outline-variant/30">
+<div class="flex items-center gap-4">
+<div class="w-8 h-8 rounded-md indicator-y flex items-center justify-center shadow-inner">
+<span class="font-label-caps text-label-caps text-primary">MP4</span>
+</div>
+<div>
+<p class="font-body-sm text-body-sm font-medium text-primary">Motion Media</p>
+<p class="font-label-caps text-label-caps text-on-surface-variant mt-1">HEAVY ASSETS</p>
+</div>
+</div>
+<div class="relative">
+<select class="appearance-none bg-transparent border-b border-outline-variant text-body-sm font-body-sm text-primary py-1 pr-8 pl-2 focus:outline-none focus:border-primary transition-colors cursor-pointer">
+<option value="1000">1 GB</option>
+<option value="2500">2.5 GB</option>
+<option selected="" value="5000">5 GB</option>
+<option value="10000">10 GB</option>
+</select>
+<span class="material-symbols-outlined absolute right-0 top-1/2 -translate-y-1/2 text-[16px] text-on-surface-variant pointer-events-none">expand_more</span>
+</div>
+</div>
+<!-- Other -->
+<div class="flex items-center justify-between p-4 bg-surface rounded-lg border border-outline-variant/30">
+<div class="flex items-center gap-4">
+<div class="w-8 h-8 rounded-md indicator-k flex items-center justify-center shadow-inner">
+<span class="font-label-caps text-label-caps text-on-primary">***</span>
+</div>
+<div>
+<p class="font-body-sm text-body-sm font-medium text-primary">Other Formats</p>
+<p class="font-label-caps text-label-caps text-on-surface-variant mt-1">GENERAL</p>
+</div>
+</div>
+<div class="relative">
+<select class="appearance-none bg-transparent border-b border-outline-variant text-body-sm font-body-sm text-primary py-1 pr-8 pl-2 focus:outline-none focus:border-primary transition-colors cursor-pointer">
+<option value="100">100 MB</option>
+<option selected="" value="unlimited">Unlimited</option>
+</select>
+<span class="material-symbols-outlined absolute right-0 top-1/2 -translate-y-1/2 text-[16px] text-on-surface-variant pointer-events-none">expand_more</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Right Column (Col Span 5) -->
+<div class="lg:col-span-5 flex flex-col gap-gutter">
+<!-- Section 4: Storage Summary -->
+<section class="bg-surface-container-low rounded-xl p-stack-lg shadow-sm">
+<div class="flex items-center gap-3 mb-stack-md">
+<span class="material-symbols-outlined text-primary text-[24px]">hard_drive</span>
+<h3 class="font-headline-md text-headline-md text-primary">Storage Summary</h3>
+</div>
+<div class="flex items-center gap-6 mt-6">
+<!-- CSS Pie Chart representation -->
+<div class="w-32 h-32 rounded-full relative" style="background: conic-gradient(#00AEEF 0% 35%, #E2007A 35% 60%, #FFC000 60% 75%, #e3e2e2 75% 100%); box-shadow: inset 0 0 20px rgba(0,0,0,0.05);">
+<!-- Inner circle to make it a donut -->
+<div class="absolute inset-4 bg-surface-container-low rounded-full flex items-center justify-center flex-col">
+<span class="font-headline-md text-headline-md text-primary">75%</span>
+</div>
+</div>
+<div class="flex flex-col gap-3 flex-1">
+<div class="flex items-center justify-between text-body-sm font-body-sm">
+<div class="flex items-center gap-2">
+<span class="w-3 h-3 rounded-sm indicator-c"></span>
+<span class="text-on-surface-variant">PDF</span>
+</div>
+<span class="text-primary font-medium">3.5 TB</span>
+</div>
+<div class="flex items-center justify-between text-body-sm font-body-sm">
+<div class="flex items-center gap-2">
+<span class="w-3 h-3 rounded-sm indicator-m"></span>
+<span class="text-on-surface-variant">Vector</span>
+</div>
+<span class="text-primary font-medium">2.5 TB</span>
+</div>
+<div class="flex items-center justify-between text-body-sm font-body-sm">
+<div class="flex items-center gap-2">
+<span class="w-3 h-3 rounded-sm indicator-y"></span>
+<span class="text-on-surface-variant">Video</span>
+</div>
+<span class="text-primary font-medium">1.5 TB</span>
+</div>
+</div>
+</div>
+<div class="mt-6 pt-4 border-t border-outline-variant/50 flex justify-between items-center">
+<span class="font-label-caps text-label-caps text-on-surface-variant">TOTAL USAGE</span>
+<span class="font-body-sm text-body-sm font-medium text-primary">7.5 TB / 10 TB</span>
+</div>
+</section>
+<!-- Section 3: Security Preferences -->
+<section class="bg-surface-container-low rounded-xl p-stack-lg shadow-sm">
+<div class="flex items-center gap-3 mb-stack-md">
+<span class="material-symbols-outlined text-primary text-[24px]">security</span>
+<h3 class="font-headline-md text-headline-md text-primary">Security</h3>
+</div>
+<div class="flex flex-col gap-5 mt-4">
+<!-- Toggle 2FA -->
+<div class="flex items-center justify-between">
+<div>
+<p class="font-body-sm text-body-sm font-medium text-primary">Require 2FA</p>
+<p class="font-label-caps text-label-caps text-on-surface-variant mt-1">FOR ALL WORKSPACE USERS</p>
+</div>
+<!-- CSS Toggle Switch -->
+<label class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox" value=""/>
+<div class="w-11 h-6 bg-outline-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+</label>
+</div>
+<hr class="border-outline-variant/30"/>
+<!-- Password Expiry -->
+<div class="flex items-center justify-between">
+<div>
+<p class="font-body-sm text-body-sm font-medium text-primary">Password Expiry</p>
+<p class="font-label-caps text-label-caps text-on-surface-variant mt-1">FORCE ROTATION</p>
+</div>
+<div class="relative">
+<select class="appearance-none bg-transparent border-b border-outline-variant text-body-sm font-body-sm text-primary py-1 pr-8 pl-2 focus:outline-none focus:border-primary transition-colors cursor-pointer">
+<option value="0">Never</option>
+<option value="30">30 Days</option>
+<option selected="" value="90">90 Days</option>
+<option value="180">180 Days</option>
+</select>
+<span class="material-symbols-outlined absolute right-0 top-1/2 -translate-y-1/2 text-[16px] text-on-surface-variant pointer-events-none">expand_more</span>
+</div>
+</div>
+</div>
+</section>
+</div>
+<!-- Section 2: Workspace Branding (Full Width Bottom) -->
+<section class="lg:col-span-12 bg-surface-container-low rounded-xl p-stack-lg shadow-sm flex flex-col md:flex-row gap-gutter">
+<div class="md:w-1/3">
+<div class="flex items-center gap-3 mb-stack-md">
+<span class="material-symbols-outlined text-primary text-[24px]">palette</span>
+<h3 class="font-headline-md text-headline-md text-primary">Branding</h3>
+</div>
+<p class="text-on-surface-variant font-body-sm text-body-sm">Customize the visual identity of your workspace for clients and team members.</p>
+</div>
+<div class="md:w-2/3 flex flex-col sm:flex-row gap-gutter">
+<!-- Logo Upload area -->
+<div class="flex-1 border-2 border-dashed border-outline-variant rounded-lg p-6 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-surface-container transition-colors group">
+<span class="material-symbols-outlined text-[32px] text-on-surface-variant group-hover:text-primary transition-colors mb-2">add_photo_alternate</span>
+<p class="font-body-sm text-body-sm font-medium text-primary">Upload Workspace Logo</p>
+<p class="font-label-caps text-label-caps text-on-surface-variant mt-1">SVG OR PNG, MAX 2MB</p>
+</div>
+<!-- Brand Colors -->
+<div class="flex-1 bg-surface rounded-lg p-6 border border-outline-variant/30 flex flex-col justify-center">
+<p class="font-body-sm text-body-sm font-medium text-primary mb-4">Primary Accent Color</p>
+<div class="flex gap-4">
+<button class="w-10 h-10 rounded-full bg-[#181919] ring-2 ring-offset-2 ring-offset-surface ring-primary flex items-center justify-center">
+<span class="material-symbols-outlined text-white text-[18px]">check</span>
+</button>
+<button class="w-10 h-10 rounded-full bg-[#00AEEF] border border-outline-variant/30"></button>
+<button class="w-10 h-10 rounded-full bg-[#E2007A] border border-outline-variant/30"></button>
+<button class="w-10 h-10 rounded-full bg-surface-container border border-outline-variant flex items-center justify-center">
+<span class="material-symbols-outlined text-on-surface-variant text-[18px]">add</span>
+</button>
+</div>
+</div>
+</div>
+</section>
+</div>
+<!-- Action Bar -->
+<div class="mt-stack-lg flex justify-end pt-stack-md border-t border-outline-variant">
+<button class="bg-primary text-on-primary font-body-sm text-body-sm font-medium px-8 py-3 rounded-xl shadow-sm hover:opacity-90 transition-opacity flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px]">save</span>
+                    Save Changes
+                </button>
+</div>
+</div>
+</main>
+</body></html>

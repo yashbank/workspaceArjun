@@ -52,3 +52,7 @@ next-env.d.ts
 *.csv
 *access*key*
 *secret*
+
+# BPP — exclude heavy GIF from production backgrounds (use MP4)
+/public/assets/bpp/backgrounds/*.gif
+/public/assets/bpp/frames/

@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Files - BPP Workspace</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-primary": "#ffffff",
+                        "inverse-primary": "#c8c6c6",
+                        "outline-variant": "#c4c7c7",
+                        "on-primary-fixed": "#1b1c1c",
+                        "on-primary-container": "#959494",
+                        "primary-fixed": "#e4e2e1",
+                        "error-container": "#ffdad6",
+                        "on-secondary": "#ffffff",
+                        "on-secondary-fixed": "#1b1c19",
+                        "surface-container": "#efeded",
+                        "on-primary-fixed-variant": "#474747",
+                        "secondary-fixed-dim": "#c8c6c2",
+                        "on-error": "#ffffff",
+                        "inverse-surface": "#2f3031",
+                        "surface-container-low": "#f4f3f3",
+                        "on-background": "#1b1c1c",
+                        "on-error-container": "#93000a",
+                        "inverse-on-surface": "#f2f0f0",
+                        "on-tertiary-fixed": "#261a00",
+                        "tertiary-container": "#3c2a00",
+                        "on-surface-variant": "#444748",
+                        "secondary-fixed": "#e4e2dd",
+                        "surface-dim": "#dbdad9",
+                        "primary": "#181919",
+                        "secondary-container": "#e1dfdb",
+                        "tertiary": "#221700",
+                        "tertiary-fixed": "#ffdfa0",
+                        "tertiary-fixed-dim": "#fbbc00",
+                        "primary-container": "#2d2d2d",
+                        "error": "#ba1a1a",
+                        "on-surface": "#1b1c1c",
+                        "surface": "#faf9f9",
+                        "on-secondary-container": "#63635f",
+                        "on-tertiary": "#ffffff",
+                        "on-tertiary-container": "#bd8d00",
+                        "background": "#faf9f9",
+                        "surface-variant": "#e3e2e2",
+                        "surface-tint": "#5f5e5e",
+                        "on-secondary-fixed-variant": "#474744",
+                        "on-tertiary-fixed-variant": "#5c4300",
+                        "secondary": "#5e5e5b",
+                        "surface-bright": "#faf9f9",
+                        "surface-container-lowest": "#ffffff",
+                        "primary-fixed-dim": "#c8c6c6",
+                        "surface-container-highest": "#e3e2e2",
+                        "surface-container-high": "#e9e8e8",
+                        "outline": "#747878"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "stack-sm": "8px",
+                        "margin-desktop": "48px",
+                        "margin-mobile": "16px",
+                        "gutter": "24px",
+                        "stack-md": "16px",
+                        "unit": "4px",
+                        "stack-lg": "32px"
+                    },
+                    "fontFamily": {
+                        "headline-lg-mobile": ["Hanken Grotesk"],
+                        "body-sm": ["Hanken Grotesk"],
+                        "headline-lg": ["Hanken Grotesk"],
+                        "label-caps": ["JetBrains Mono"],
+                        "headline-md": ["Hanken Grotesk"],
+                        "display": ["Hanken Grotesk"],
+                        "body-lg": ["Hanken Grotesk"]
+                    },
+                    "fontSize": {
+                        "headline-lg-mobile": ["24px", {"lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "600"}],
+                        "body-sm": ["14px", {"lineHeight": "1.5", "letterSpacing": "0", "fontWeight": "400"}],
+                        "headline-lg": ["32px", {"lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "600"}],
+                        "label-caps": ["11px", {"lineHeight": "1", "letterSpacing": "0.06em", "fontWeight": "500"}],
+                        "headline-md": ["20px", {"lineHeight": "1.4", "letterSpacing": "-0.01em", "fontWeight": "500"}],
+                        "display": ["48px", {"lineHeight": "1.1", "letterSpacing": "-0.03em", "fontWeight": "600"}],
+                        "body-lg": ["16px", {"lineHeight": "1.6", "letterSpacing": "-0.01em", "fontWeight": "400"}]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .icon-fill {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body-sm min-h-screen antialiased selection:bg-primary-container selection:text-on-primary-container flex">
+<aside class="hidden md:flex flex-col fixed left-0 top-0 h-screen w-64 border-r border-outline-variant bg-surface/80 backdrop-blur-xl p-stack-lg z-40">
+<div class="mb-stack-lg">
+<h1 class="font-headline-md text-headline-md font-bold text-primary">BPP Workspace</h1>
+<p class="font-label-caps text-label-caps text-on-surface-variant mt-unit">Premium Printing</p>
+</div>
+<nav class="flex flex-col gap-stack-sm flex-1 font-body-lg text-body-lg">
+<a class="flex items-center gap-stack-md text-on-surface-variant hover:text-primary transition-colors hover:bg-surface-container-low px-3 py-2 rounded-lg duration-200" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span>Dashboard</span>
+</a>
+<a class="flex items-center gap-stack-md text-primary font-bold relative before:content-[''] before:absolute before:left-[-16px] before:w-1 before:h-4 before:bg-primary before:rounded-full px-3 py-2" href="#">
+<span class="material-symbols-outlined icon-fill">folder_open</span>
+<span>Files</span>
+</a>
+<a class="flex items-center gap-stack-md text-on-surface-variant hover:text-primary transition-colors hover:bg-surface-container-low px-3 py-2 rounded-lg duration-200" href="#">
+<span class="material-symbols-outlined">delete</span>
+<span>Trash</span>
+</a>
+<a class="flex items-center gap-stack-md text-on-surface-variant hover:text-primary transition-colors hover:bg-surface-container-low px-3 py-2 rounded-lg duration-200 mt-auto" href="#">
+<span class="material-symbols-outlined">admin_panel_settings</span>
+<span>Admin</span>
+</a>
+<a class="flex items-center gap-stack-md text-on-surface-variant hover:text-primary transition-colors hover:bg-surface-container-low px-3 py-2 rounded-lg duration-200" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span>Settings</span>
+</a>
+</nav>
+</aside>
+<div class="flex-1 md:ml-64 flex flex-col min-h-screen">
+<header class="fixed top-0 right-0 left-0 md:left-64 h-16 w-full md:w-[calc(100%-16rem)] border-b border-outline-variant bg-surface/80 backdrop-blur-xl flex justify-between items-center px-margin-mobile md:px-margin-desktop z-30 font-body-sm text-body-sm text-primary">
+<div class="flex items-center flex-1 max-w-md">
+<div class="relative w-full">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px]">search</span>
+<input class="w-full bg-surface-container-lowest border-none rounded-full py-2 pl-10 pr-4 text-on-surface focus:ring-1 focus:ring-outline-variant placeholder:text-on-surface-variant/60 font-body-sm shadow-sm" placeholder="Search files, folders..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-stack-md ml-auto">
+<button class="bg-primary text-on-primary font-label-caps text-label-caps px-4 py-2 rounded-lg hover:opacity-90 transition-opacity flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">upload</span>
+                    Upload
+                </button>
+<div class="flex items-center gap-unit text-on-surface-variant border-l border-outline-variant pl-stack-md ml-stack-sm">
+<button class="p-2 hover:bg-surface-container rounded-full transition-colors"><span class="material-symbols-outlined">dark_mode</span></button>
+<button class="p-2 hover:bg-surface-container rounded-full transition-colors relative">
+<span class="material-symbols-outlined">notifications</span>
+<span class="absolute top-2 right-2 w-2 h-2 bg-error rounded-full"></span>
+</button>
+<button class="p-2 hover:bg-surface-container rounded-full transition-colors"><span class="material-symbols-outlined">account_circle</span></button>
+</div>
+</div>
+</header>
+<main class="flex-1 pt-24 px-margin-mobile md:px-margin-desktop pb-margin-desktop flex flex-col gap-stack-lg">
+<div class="flex flex-col md:flex-row md:items-center justify-between gap-stack-md">
+<nav class="flex items-center text-on-surface-variant font-label-caps text-label-caps">
+<a class="hover:text-primary transition-colors" href="#">Home</a>
+<span class="material-symbols-outlined text-[16px] mx-1">chevron_right</span>
+<span class="text-primary font-bold">Client Projects</span>
+</nav>
+<div class="flex items-center bg-surface-container-low rounded-lg p-1 border border-outline-variant/50">
+<button class="p-1.5 rounded-md bg-surface-container-lowest shadow-sm text-primary transition-all"><span class="material-symbols-outlined text-[20px]">grid_view</span></button>
+<button class="p-1.5 rounded-md text-on-surface-variant hover:text-primary transition-all"><span class="material-symbols-outlined text-[20px]">view_list</span></button>
+</div>
+</div>
+<section>
+<h2 class="font-headline-md text-headline-md font-semibold text-primary mb-stack-md">Folders</h2>
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-gutter">
+<div class="group bg-surface-container-lowest border border-outline-variant/40 rounded-xl p-stack-md flex items-center gap-stack-md cursor-pointer hover:border-outline-variant hover:shadow-sm transition-all">
+<div class="w-12 h-12 rounded-lg bg-surface-container flex items-center justify-center text-on-surface-variant group-hover:text-primary transition-colors">
+<span class="material-symbols-outlined icon-fill text-[24px]">folder</span>
+</div>
+<div class="flex-1">
+<h3 class="font-body-sm text-body-sm font-semibold text-primary">Client Projects</h3>
+<p class="font-label-caps text-label-caps text-on-surface-variant mt-1">12 Items</p>
+</div>
+<button class="text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity"><span class="material-symbols-outlined">more_vert</span></button>
+</div>
+<div class="group bg-surface-container-lowest border border-outline-variant/40 rounded-xl p-stack-md flex items-center gap-stack-md cursor-pointer hover:border-outline-variant hover:shadow-sm transition-all">
+<div class="w-12 h-12 rounded-lg bg-surface-container flex items-center justify-center text-on-surface-variant group-hover:text-primary transition-colors">
+<span class="material-symbols-outlined icon-fill text-[24px]">folder_special</span>
+</div>
+<div class="flex-1">
+<h3 class="font-body-sm text-body-sm font-semibold text-primary">Production Ready</h3>
+<p class="font-label-caps text-label-caps text-on-surface-variant mt-1">4 Items</p>
+</div>
+<button class="text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity"><span class="material-symbols-outlined">more_vert</span></button>
+</div>
+<div class="group bg-surface-container-lowest border border-outline-variant/40 rounded-xl p-stack-md flex items-center gap-stack-md cursor-pointer hover:border-outline-variant hover:shadow-sm transition-all">
+<div class="w-12 h-12 rounded-lg bg-surface-container flex items-center justify-center text-on-surface-variant group-hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[24px]">inventory_2</span>
+</div>
+<div class="flex-1">
+<h3 class="font-body-sm text-body-sm font-semibold text-primary">Archive</h3>
+<p class="font-label-caps text-label-caps text-on-surface-variant mt-1">156 Items</p>
+</div>
+<button class="text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity"><span class="material-symbols-outlined">more_vert</span></button>
+</div>
+</div>
+</section>
+<section class="flex-1">
+<h2 class="font-headline-md text-headline-md font-semibold text-primary mb-stack-md">Files</h2>
+<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-gutter">
+<div class="group bg-surface-container-lowest border border-outline-variant/40 rounded-xl overflow-hidden hover:shadow-md transition-all flex flex-col">
+<div class="relative aspect-square bg-surface-container overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="A high-resolution, tactile close-up photograph of thick, textured ivory paper layered in an abstract composition. Soft, directional studio lighting highlights the subtle grain and sharp, pristine edges of the paper stock against a minimalist warm beige background. The mood is highly professional, focusing on the materiality and craftsmanship typical of high-end editorial or premium stationery design." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDBeUEjydT49mHEnWfd6avC48UHz8XgBq0JSoE62VYxVPM7G9aEN0DOslaS-IItA8E2HdFp1kdtNmoWmn3LfMprLIicgjSQrsY8xhgNJTIjXeeO05pol8bMzFlnRnfDot4gRvpiEiq2X7Sh4tJSdNTOyvxT-_SZqw6Fvyp2DMtf9tECL-mN3Mvf4Lx_fuCiG0gVa6K-zzY6INgNoTH9D9hNHQxb1MC3YIMxI9rXJpF3axjpAF-iw7UKGqgFlEJF_6b52PZOyUo9GHs"/>
+<div class="absolute top-2 left-2 bg-surface-container-lowest/90 backdrop-blur-sm px-2 py-1 rounded font-label-caps text-[10px] text-primary border border-outline-variant/20 tracking-wider">JPG</div>
+<div class="absolute inset-0 bg-primary/60 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-stack-sm backdrop-blur-[2px]">
+<button class="w-10 h-10 rounded-full bg-surface-container-lowest text-primary flex items-center justify-center hover:scale-105 transition-transform"><span class="material-symbols-outlined text-[20px]">visibility</span></button>
+<button class="w-10 h-10 rounded-full bg-surface-container-lowest text-primary flex items-center justify-center hover:scale-105 transition-transform"><span class="material-symbols-outlined text-[20px]">download</span></button>
+</div>
+</div>
+<div class="p-stack-sm flex justify-between items-start bg-surface-container-lowest z-10">
+<div class="overflow-hidden pr-2">
+<h3 class="font-body-sm text-body-sm font-medium text-primary truncate" title="Brand_Guidelines_Final.jpg">Brand_Guidelines_Final.jpg</h3>
+<div class="flex items-center gap-2 mt-0.5">
+<span class="font-label-caps text-label-caps text-on-surface-variant">4.2 MB</span>
+<span class="w-1 h-1 rounded-full bg-outline-variant"></span>
+<span class="font-label-caps text-label-caps text-on-surface-variant">v3</span>
+</div>
+</div>
+<button class="text-on-surface-variant hover:text-primary mt-0.5"><span class="material-symbols-outlined text-[18px]">more_vert</span></button>
+</div>
+</div>
+<div class="group bg-surface-container-lowest border border-outline-variant/40 rounded-xl overflow-hidden hover:shadow-md transition-all flex flex-col">
+<div class="relative aspect-square bg-surface-container-high overflow-hidden flex items-center justify-center">
+<img class="w-3/4 h-[85%] object-cover shadow-sm bg-white border border-outline-variant/30" data-alt="A clean, isometric view of a multi-page editorial layout spread, rendered digitally but styled to look like printed vellum paper. The document features minimal typography in a tight grid system with generous white space. The document sits against a soft, light warm-grey surface, embodying precision, high-end catalog design, and tactile minimalism." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDHrrMlux44mvI51QD3ebnAFVBwHNlIODDx4O55Va3Pxy6uQOCDVXrkhCPXD2RXqfsmIiS60-_4ju3Tas9j87qWjQ7rM0cRfYVa9l-UdljfeBADD2R0RUUtv7QZLOwA8CipOO66kPzvQFAiiN0jpDnVWCGJTpW5B33nweuaZvMX5BBrZlZX03nlzPfcA9sjeCAAa3CgkNok06vxFxy5q4hVZ4JyggEKfLXTlaub2_-CG7xjbTdduGlftLRDZS-nyPL0GsOYcklCouo"/>
+<div class="absolute top-2 left-2 bg-surface-container-lowest/90 backdrop-blur-sm px-2 py-1 rounded font-label-caps text-[10px] text-[#00AEEF] border border-outline-variant/20 tracking-wider">PDF</div>
+<div class="absolute inset-0 bg-primary/60 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-stack-sm backdrop-blur-[2px]">
+<button class="w-10 h-10 rounded-full bg-surface-container-lowest text-primary flex items-center justify-center hover:scale-105 transition-transform"><span class="material-symbols-outlined text-[20px]">visibility</span></button>
+<button class="w-10 h-10 rounded-full bg-surface-container-lowest text-primary flex items-center justify-center hover:scale-105 transition-transform"><span class="material-symbols-outlined text-[20px]">download</span></button>
+</div>
+</div>
+<div class="p-stack-sm flex justify-between items-start bg-surface-container-lowest z-10 border-t border-outline-variant/20">
+<div class="overflow-hidden pr-2">
+<h3 class="font-body-sm text-body-sm font-medium text-primary truncate" title="Annual_Report_Print.pdf">Annual_Report_Print.pdf</h3>
+<div class="flex items-center gap-2 mt-0.5">
+<span class="font-label-caps text-label-caps text-on-surface-variant">12.8 MB</span>
+<span class="w-1 h-1 rounded-full bg-outline-variant"></span>
+<span class="font-label-caps text-label-caps text-on-surface-variant">v1</span>
+</div>
+</div>
+<button class="text-on-surface-variant hover:text-primary mt-0.5"><span class="material-symbols-outlined text-[18px]">more_vert</span></button>
+</div>
+</div>
+<div class="group bg-surface-container-lowest border border-outline-variant/40 rounded-xl overflow-hidden hover:shadow-md transition-all flex flex-col">
+<div class="relative aspect-square bg-surface-container overflow-hidden">
+<img class="w-full h-full object-cover opacity-90" data-alt="A cinematic still frame capturing a minimalist workspace set. A sleek metal desklamp casts a sharp, warm beam across a pristine ivory desk surface, revealing subtle paper grain textures in the periphery. The lighting is dramatic yet understated, conveying a mood of focused, premium digital production within a highly organized physical environment." src="https://lh3.googleusercontent.com/aida-public/AB6AXuA6Uxut-8UfL_v58RqdP6Vk1iy3hilS5FhUdEFcorMNAxcKtjN6zQ7m9Bq34Hf06Uz_Bf3yW2RQr0xB8MwUNLPpbyxab09JmRKzG-0EkUHIOOevRJgeJkfs4S6cXQrzS11BwGn1BLV1vGWuomrM5Oyoa8ZTCGFpfMuvwmdpt1MLuhtWN3TzBQedrb9J8DY5W4OrgRe3rzFdb3THd6JdWYBS_wa_PM3iCWjR-VX9ciYEDnS4imQPU4PUwHTJ05HyWo_9bGKO-qVX7ZM"/>
+<div class="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+<div class="w-12 h-12 rounded-full bg-primary/80 text-on-primary flex items-center justify-center backdrop-blur-md">
+<span class="material-symbols-outlined icon-fill text-[28px] ml-1">play_arrow</span>
+</div>
+</div>
+<div class="absolute top-2 left-2 bg-surface-container-lowest/90 backdrop-blur-sm px-2 py-1 rounded font-label-caps text-[10px] text-primary border border-outline-variant/20 tracking-wider z-20">MP4</div>
+<div class="absolute inset-0 bg-primary/60 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-stack-sm backdrop-blur-[2px] z-30">
+<button class="w-10 h-10 rounded-full bg-surface-container-lowest text-primary flex items-center justify-center hover:scale-105 transition-transform"><span class="material-symbols-outlined text-[20px]">play_circle</span></button>
+<button class="w-10 h-10 rounded-full bg-surface-container-lowest text-primary flex items-center justify-center hover:scale-105 transition-transform"><span class="material-symbols-outlined text-[20px]">download</span></button>
+</div>
+</div>
+<div class="p-stack-sm flex justify-between items-start bg-surface-container-lowest z-10">
+<div class="overflow-hidden pr-2">
+<h3 class="font-body-sm text-body-sm font-medium text-primary truncate" title="Promo_Sequence_01.mp4">Promo_Sequence_01.mp4</h3>
+<div class="flex items-center gap-2 mt-0.5">
+<span class="font-label-caps text-label-caps text-on-surface-variant">45.2 MB</span>
+<span class="w-1 h-1 rounded-full bg-outline-variant"></span>
+<span class="font-label-caps text-label-caps text-on-surface-variant">v2</span>
+</div>
+</div>
+<button class="text-on-surface-variant hover:text-primary mt-0.5"><span class="material-symbols-outlined text-[18px]">more_vert</span></button>
+</div>
+</div>
+<div class="group bg-surface-container-lowest border border-outline-variant/40 rounded-xl overflow-hidden hover:shadow-md transition-all flex flex-col">
+<div class="relative aspect-square bg-surface-container-low flex flex-col items-center justify-center p-stack-md text-center">
+<span class="material-symbols-outlined text-[48px] text-on-surface-variant mb-2">draw</span>
+<span class="font-label-caps text-label-caps text-on-surface-variant tracking-widest">CORELDRAW</span>
+<div class="absolute top-2 left-2 bg-surface-container-lowest px-2 py-1 rounded font-label-caps text-[10px] text-[#EC008C] border border-outline-variant/20 tracking-wider shadow-sm">CDR</div>
+<div class="absolute inset-0 bg-primary/60 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-stack-sm backdrop-blur-[2px]">
+<button class="w-10 h-10 rounded-full bg-surface-container-lowest text-primary flex items-center justify-center hover:scale-105 transition-transform"><span class="material-symbols-outlined text-[20px]">info</span></button>
+<button class="w-10 h-10 rounded-full bg-surface-container-lowest text-primary flex items-center justify-center hover:scale-105 transition-transform"><span class="material-symbols-outlined text-[20px]">download</span></button>
+</div>
+</div>
+<div class="p-stack-sm flex justify-between items-start bg-surface-container-lowest z-10 border-t border-outline-variant/20">
+<div class="overflow-hidden pr-2">
+<h3 class="font-body-sm text-body-sm font-medium text-primary truncate" title="Diecut_Template_Master.cdr">Diecut_Template_Master.cdr</h3>
+<div class="flex items-center gap-2 mt-0.5">
+<span class="font-label-caps text-label-caps text-on-surface-variant">2.1 MB</span>
+<span class="w-1 h-1 rounded-full bg-outline-variant"></span>
+<span class="font-label-caps text-label-caps text-on-surface-variant">v1</span>
+</div>
+</div>
+<button class="text-on-surface-variant hover:text-primary mt-0.5"><span class="material-symbols-outlined text-[18px]">more_vert</span></button>
+</div>
+</div>
+<div class="group bg-surface-container-lowest border border-outline-variant/40 rounded-xl overflow-hidden hover:shadow-md transition-all flex flex-col hidden xl:flex">
+<div class="relative aspect-square bg-surface-container flex items-center justify-center">
+<span class="material-symbols-outlined text-[64px] text-outline-variant">folder_zip</span>
+<div class="absolute top-2 left-2 bg-surface-container-lowest px-2 py-1 rounded font-label-caps text-[10px] text-on-surface-variant border border-outline-variant/20 tracking-wider shadow-sm">ZIP</div>
+<div class="absolute inset-0 bg-primary/60 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-stack-sm backdrop-blur-[2px]">
+<button class="w-10 h-10 rounded-full bg-surface-container-lowest text-primary flex items-center justify-center hover:scale-105 transition-transform"><span class="material-symbols-outlined text-[20px]">download</span></button>
+</div>
+</div>
+<div class="p-stack-sm flex justify-between items-start bg-surface-container-lowest z-10 border-t border-outline-variant/20">
+<div class="overflow-hidden pr-2">
+<h3 class="font-body-sm text-body-sm font-medium text-primary truncate" title="Assets_Q3_Batch.zip">Assets_Q3_Batch.zip</h3>
+<div class="flex items-center gap-2 mt-0.5">
+<span class="font-label-caps text-label-caps text-on-surface-variant">142 MB</span>
+<span class="w-1 h-1 rounded-full bg-outline-variant"></span>
+<span class="font-label-caps text-label-caps text-on-surface-variant">v1</span>
+</div>
+</div>
+<button class="text-on-surface-variant hover:text-primary mt-0.5"><span class="material-symbols-outlined text-[18px]">more_vert</span></button>
+</div>
+</div>
+</div>
+</section>
+</main>
+</div>
+</body></html>

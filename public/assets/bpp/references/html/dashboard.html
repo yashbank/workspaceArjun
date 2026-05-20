@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>BPP Workspace - Dashboard</title>
+<!-- Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-primary": "#ffffff",
+                        "inverse-primary": "#c8c6c6",
+                        "outline-variant": "#c4c7c7",
+                        "on-primary-fixed": "#1b1c1c",
+                        "on-primary-container": "#959494",
+                        "primary-fixed": "#e4e2e1",
+                        "error-container": "#ffdad6",
+                        "on-secondary": "#ffffff",
+                        "on-secondary-fixed": "#1b1c19",
+                        "surface-container": "#efeded",
+                        "on-primary-fixed-variant": "#474747",
+                        "secondary-fixed-dim": "#c8c6c2",
+                        "on-error": "#ffffff",
+                        "inverse-surface": "#2f3031",
+                        "surface-container-low": "#f4f3f3",
+                        "on-background": "#1b1c1c",
+                        "on-error-container": "#93000a",
+                        "inverse-on-surface": "#f2f0f0",
+                        "on-tertiary-fixed": "#261a00",
+                        "tertiary-container": "#3c2a00",
+                        "on-surface-variant": "#444748",
+                        "secondary-fixed": "#e4e2dd",
+                        "surface-dim": "#dbdad9",
+                        "primary": "#181919",
+                        "secondary-container": "#e1dfdb",
+                        "tertiary": "#221700",
+                        "tertiary-fixed": "#ffdfa0",
+                        "tertiary-fixed-dim": "#fbbc00",
+                        "primary-container": "#2d2d2d",
+                        "error": "#ba1a1a",
+                        "on-surface": "#1b1c1c",
+                        "surface": "#faf9f9",
+                        "on-secondary-container": "#63635f",
+                        "on-tertiary": "#ffffff",
+                        "on-tertiary-container": "#bd8d00",
+                        "background": "#faf9f9",
+                        "surface-variant": "#e3e2e2",
+                        "surface-tint": "#5f5e5e",
+                        "on-secondary-fixed-variant": "#474744",
+                        "on-tertiary-fixed-variant": "#5c4300",
+                        "secondary": "#5e5e5b",
+                        "surface-bright": "#faf9f9",
+                        "surface-container-lowest": "#ffffff",
+                        "primary-fixed-dim": "#c8c6c6",
+                        "surface-container-highest": "#e3e2e2",
+                        "surface-container-high": "#e9e8e8",
+                        "outline": "#747878"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "stack-sm": "8px",
+                        "margin-desktop": "48px",
+                        "margin-mobile": "16px",
+                        "gutter": "24px",
+                        "stack-md": "16px",
+                        "unit": "4px",
+                        "stack-lg": "32px"
+                    },
+                    "fontFamily": {
+                        "headline-lg-mobile": ["Hanken Grotesk"],
+                        "body-sm": ["Hanken Grotesk"],
+                        "headline-lg": ["Hanken Grotesk"],
+                        "label-caps": ["JetBrains Mono"],
+                        "headline-md": ["Hanken Grotesk"],
+                        "display": ["Hanken Grotesk"],
+                        "body-lg": ["Hanken Grotesk"]
+                    },
+                    "fontSize": {
+                        "headline-lg-mobile": ["24px", { "lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "body-sm": ["14px", { "lineHeight": "1.5", "letterSpacing": "0", "fontWeight": "400" }],
+                        "headline-lg": ["32px", { "lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "label-caps": ["11px", { "lineHeight": "1", "letterSpacing": "0.06em", "fontWeight": "500" }],
+                        "headline-md": ["20px", { "lineHeight": "1.4", "letterSpacing": "-0.01em", "fontWeight": "500" }],
+                        "display": ["48px", { "lineHeight": "1.1", "letterSpacing": "-0.03em", "fontWeight": "600" }],
+                        "body-lg": ["16px", { "lineHeight": "1.6", "letterSpacing": "-0.01em", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .noise-bg {
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.03'/%3E%3C/svg%3E");
+        }
+        .ambient-shadow {
+            box-shadow: 0 4px 24px -4px rgba(74, 63, 53, 0.08);
+        }
+    </style>
+</head>
+<body class="bg-surface text-on-surface font-body-lg text-body-lg antialiased noise-bg min-h-screen flex">
+<!-- SideNavBar -->
+<nav class="hidden md:flex flex-col fixed left-0 top-0 h-full w-64 border-r border-outline-variant bg-surface/80 backdrop-blur-xl p-stack-lg z-40">
+<div class="mb-stack-lg flex items-center gap-stack-sm">
+<div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-on-primary">
+<span class="material-symbols-outlined text-sm">view_in_ar</span>
+</div>
+<div>
+<h1 class="font-headline-md text-headline-md font-bold text-primary">BPP Workspace</h1>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Premium Printing</p>
+</div>
+</div>
+<ul class="flex flex-col gap-unit mt-stack-md">
+<!-- Active Tab: Dashboard -->
+<li>
+<a class="flex items-center gap-stack-md text-primary font-bold relative before:content-[''] before:absolute before:left-[-16px] before:w-1 before:h-4 before:bg-primary before:rounded-full py-2 hover:bg-surface-container-low transition-all duration-200" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">dashboard</span>
+                    Dashboard
+                </a>
+</li>
+<li>
+<a class="flex items-center gap-stack-md text-on-surface-variant hover:text-primary py-2 hover:bg-surface-container-low transition-all duration-200" href="#">
+<span class="material-symbols-outlined">folder_open</span>
+                    Files
+                </a>
+</li>
+<li>
+<a class="flex items-center gap-stack-md text-on-surface-variant hover:text-primary py-2 hover:bg-surface-container-low transition-all duration-200" href="#">
+<span class="material-symbols-outlined">delete</span>
+                    Trash
+                </a>
+</li>
+<li>
+<a class="flex items-center gap-stack-md text-on-surface-variant hover:text-primary py-2 hover:bg-surface-container-low transition-all duration-200" href="#">
+<span class="material-symbols-outlined">admin_panel_settings</span>
+                    Admin
+                </a>
+</li>
+<li>
+<a class="flex items-center gap-stack-md text-on-surface-variant hover:text-primary py-2 hover:bg-surface-container-low transition-all duration-200" href="#">
+<span class="material-symbols-outlined">settings</span>
+                    Settings
+                </a>
+</li>
+</ul>
+<div class="mt-auto pt-stack-lg border-t border-outline-variant">
+<div class="flex items-center gap-stack-sm">
+<img alt="BPP Workspace Logo" class="w-10 h-10 rounded-full object-cover" data-alt="A close-up portrait of a professional man with a neutral expression, wearing a tailored suit, in a bright, modern, minimalist office space with soft lighting." src="https://lh3.googleusercontent.com/aida-public/AB6AXuD9I3weFzayCYu4EUJ5lrDfrM7RaaqidSl7whOnHSXYJLw7J3Xk5-iq9rQeGRS6m3qS5PuaYBPlzhZ_3NhcX5F82U1YnBTP1NOhwToAgzZyXYzHBahX-odh53638XNKHRpeysn9kGfp_MK0XfcP-7j6YEJW4yH7HMYO82Jd217gNHKwYp9Ss6sPWMyKeecQzXnxBDKwULm34h3bq00qUHZCV38hbIqArwnXTS11gV-qF4MjFjy-HS56iJrSYGCwUPNjnHfElvrZq8E"/>
+<div>
+<p class="font-body-sm text-body-sm font-semibold">Workspace Admin</p>
+<p class="font-body-sm text-body-sm text-on-surface-variant text-xs">admin@bpp.com</p>
+</div>
+</div>
+</div>
+</nav>
+<!-- Main Content Area -->
+<main class="flex-1 flex flex-col md:ml-64 w-full min-h-screen relative">
+<!-- TopNavBar -->
+<header class="fixed top-0 right-0 left-0 md:left-64 h-16 w-full md:w-[calc(100%-16rem)] border-b border-outline-variant bg-surface/80 backdrop-blur-xl flex justify-between items-center px-margin-mobile md:px-margin-desktop z-30">
+<div class="flex items-center gap-stack-md">
+<button class="md:hidden text-on-surface-variant">
+<span class="material-symbols-outlined">menu</span>
+</button>
+<div class="relative hidden sm:block">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-sm">search</span>
+<input class="bg-surface-container-low border-none rounded-full py-1.5 pl-9 pr-4 font-body-sm text-body-sm focus:ring-1 focus:ring-primary w-64 placeholder:text-on-surface-variant" placeholder="Search files..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-stack-md">
+<button class="hidden sm:block text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined">dark_mode</span>
+</button>
+<button class="text-on-surface-variant hover:text-primary transition-colors relative">
+<span class="material-symbols-outlined">notifications</span>
+<span class="absolute top-0 right-0 w-2 h-2 bg-error rounded-full"></span>
+</button>
+<div class="h-6 w-px bg-outline-variant mx-2 hidden sm:block"></div>
+<button class="font-body-sm text-body-sm font-semibold hover:text-primary transition-colors hidden sm:block">
+                    Admin
+                </button>
+<button class="bg-primary text-on-primary px-4 py-1.5 rounded-xl font-body-sm text-body-sm hover:opacity-90 transition-opacity flex items-center gap-2">
+<span class="material-symbols-outlined text-sm">upload</span>
+                    Upload
+                </button>
+</div>
+</header>
+<!-- Canvas -->
+<div class="mt-16 p-margin-mobile md:p-margin-desktop space-y-stack-lg max-w-[1440px] mx-auto w-full">
+<!-- Welcome & Quick Actions -->
+<div class="flex flex-col md:flex-row justify-between items-start md:items-end gap-stack-md">
+<div>
+<h2 class="font-headline-lg text-headline-lg-mobile md:text-headline-lg text-primary tracking-tight">Overview</h2>
+<p class="text-on-surface-variant mt-1">Here is the status of your premium workspace.</p>
+</div>
+<div class="flex flex-wrap gap-stack-sm">
+<button class="bg-surface-container border border-outline-variant text-primary px-4 py-2 rounded-xl font-body-sm text-body-sm hover:bg-surface-container-high transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-sm">person_add</span>
+                        Invite User
+                    </button>
+<button class="bg-surface-container border border-outline-variant text-primary px-4 py-2 rounded-xl font-body-sm text-body-sm hover:bg-surface-container-high transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-sm">create_new_folder</span>
+                        New Folder
+                    </button>
+</div>
+</div>
+<!-- Stats Bento Grid -->
+<div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-stack-sm md:gap-stack-md">
+<!-- Total Files -->
+<div class="bg-surface-container-lowest rounded-xl p-stack-md border border-outline-variant/50 ambient-shadow flex flex-col justify-between h-32 relative overflow-hidden group">
+<div class="flex justify-between items-start">
+<span class="font-body-sm text-body-sm text-on-surface-variant">Total Files</span>
+<span class="material-symbols-outlined text-on-surface-variant/50">description</span>
+</div>
+<div>
+<span class="font-label-caps text-label-caps text-primary text-2xl">1,240</span>
+</div>
+<div class="absolute -bottom-4 -right-4 w-16 h-16 bg-surface-container rounded-full opacity-0 group-hover:opacity-50 transition-opacity"></div>
+</div>
+<!-- Total Folders -->
+<div class="bg-surface-container-lowest rounded-xl p-stack-md border border-outline-variant/50 ambient-shadow flex flex-col justify-between h-32 relative overflow-hidden group">
+<div class="flex justify-between items-start">
+<span class="font-body-sm text-body-sm text-on-surface-variant">Folders</span>
+<span class="material-symbols-outlined text-on-surface-variant/50">folder</span>
+</div>
+<div>
+<span class="font-label-caps text-label-caps text-primary text-2xl">85</span>
+</div>
+<div class="absolute -bottom-4 -right-4 w-16 h-16 bg-surface-container rounded-full opacity-0 group-hover:opacity-50 transition-opacity"></div>
+</div>
+<!-- Storage Used (Spans 2 cols on mobile) -->
+<div class="bg-surface-container-lowest rounded-xl p-stack-md border border-outline-variant/50 ambient-shadow flex flex-col justify-between h-32 col-span-2 md:col-span-1 lg:col-span-1 relative overflow-hidden">
+<div class="flex justify-between items-start">
+<span class="font-body-sm text-body-sm text-on-surface-variant">Storage</span>
+<span class="material-symbols-outlined text-on-surface-variant/50">cloud</span>
+</div>
+<div class="w-full">
+<div class="flex justify-between items-end mb-2">
+<span class="font-label-caps text-label-caps text-primary text-xl">12.4<span class="text-xs text-on-surface-variant">GB</span></span>
+<span class="font-label-caps text-label-caps text-on-surface-variant text-xs">/ 50 GB</span>
+</div>
+<div class="w-full bg-surface-container-high rounded-full h-1.5">
+<div class="bg-primary h-1.5 rounded-full" style="width: 25%"></div>
+</div>
+</div>
+</div>
+<!-- Active Users -->
+<div class="bg-surface-container-lowest rounded-xl p-stack-md border border-outline-variant/50 ambient-shadow flex flex-col justify-between h-32 relative overflow-hidden">
+<div class="flex justify-between items-start">
+<span class="font-body-sm text-body-sm text-on-surface-variant">Active Users</span>
+<span class="material-symbols-outlined text-on-surface-variant/50">group</span>
+</div>
+<div>
+<span class="font-label-caps text-label-caps text-primary text-2xl">12<span class="text-sm text-on-surface-variant">/15</span></span>
+</div>
+</div>
+<!-- Pending Invites -->
+<div class="bg-surface-container-lowest rounded-xl p-stack-md border border-outline-variant/50 ambient-shadow flex flex-col justify-between h-32 relative overflow-hidden bg-surface-container/30">
+<div class="flex justify-between items-start">
+<span class="font-body-sm text-body-sm text-on-surface-variant">Pending</span>
+<span class="material-symbols-outlined text-on-surface-variant/50">schedule</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="font-label-caps text-label-caps text-primary text-2xl">2</span>
+<span class="text-xs bg-surface-variant px-2 py-0.5 rounded-full text-on-surface-variant">Invites</span>
+</div>
+</div>
+</div>
+<!-- Main Split Content -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-stack-lg">
+<!-- Recent Uploads Grid (Wider Col) -->
+<div class="lg:col-span-2 space-y-stack-md">
+<div class="flex justify-between items-center border-b border-outline-variant/50 pb-2">
+<h3 class="font-headline-md text-headline-md text-primary">Recent Uploads</h3>
+<a class="font-body-sm text-body-sm text-on-surface-variant hover:text-primary transition-colors" href="#">View All</a>
+</div>
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-stack-md">
+<!-- File Card 1 -->
+<div class="bg-surface-container-lowest border border-outline-variant/50 rounded-xl p-stack-sm flex items-center gap-stack-md hover:border-outline transition-colors cursor-pointer group">
+<div class="w-16 h-16 bg-surface-container rounded-lg overflow-hidden flex-shrink-0 relative">
+<img alt="Thumbnail" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" data-alt="Abstract fluid art background with smooth gradient curves in muted cyan and gray tones, suggesting a premium design asset, softly lit in a minimalist style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDl_eqSb9tkQtMat1hWbFSrfmGd4KX2r4LnWYWcB68ttnPSNJMVlFyBmysfPDMn_dojU5vvqu60WQGVj4f0gzSTHkNbn_7Wj7k8aNUjDK_Wg12I3t-C4aqI2BVwisMDxVD6nMLArOtnRmlyE8TMoNtiUBZDGM252yO4bCXcpQicngjK51vNB1XfNl30GGbvIhW7s2Lm04vAzAimKLpepxfZkqYRYOa1ssgszF2aoNLaMD53UbGYHuUTZ9FLIQozXj0u8ido-iFU6gE"/>
+<div class="absolute bottom-1 right-1 w-2 h-2 bg-[#00A3E0] rounded-sm"></div> <!-- Cyan indicator -->
+</div>
+<div class="flex-1 min-w-0">
+<p class="font-body-sm text-body-sm text-primary font-medium truncate">Q3_Brand_Guidelines_Final.pdf</p>
+<p class="font-label-caps text-label-caps text-on-surface-variant mt-1">4.2 MB • 2 hrs ago</p>
+</div>
+</div>
+<!-- File Card 2 -->
+<div class="bg-surface-container-lowest border border-outline-variant/50 rounded-xl p-stack-sm flex items-center gap-stack-md hover:border-outline transition-colors cursor-pointer group">
+<div class="w-16 h-16 bg-surface-container rounded-lg flex items-center justify-center flex-shrink-0 relative">
+<span class="material-symbols-outlined text-on-surface-variant text-2xl">folder_zip</span>
+<div class="absolute bottom-1 right-1 w-2 h-2 bg-[#E20074] rounded-sm"></div> <!-- Magenta indicator -->
+</div>
+<div class="flex-1 min-w-0">
+<p class="font-body-sm text-body-sm text-primary font-medium truncate">Marketing_Assets_Raw.zip</p>
+<p class="font-label-caps text-label-caps text-on-surface-variant mt-1">1.2 GB • 5 hrs ago</p>
+</div>
+</div>
+<!-- File Card 3 -->
+<div class="bg-surface-container-lowest border border-outline-variant/50 rounded-xl p-stack-sm flex items-center gap-stack-md hover:border-outline transition-colors cursor-pointer group">
+<div class="w-16 h-16 bg-surface-container rounded-lg overflow-hidden flex-shrink-0 relative">
+<img alt="Thumbnail" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" data-alt="A modern minimalist interior setup with a sleek chair and subtle lighting, shot in a high-key architectural style, representing interior design photography assets." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCGsH_fEo0kfqxrS5LIMDxGXydAz6L2hNMnC-rPuhEwWfuG0wQNiW_Pzge7lc0XU8gy2p17NmZE7Gb9wN5eZhV31fUCfwF1aOJ4xOTSYl25F5DJp8fGC320OiJoBNNDKKd6_6yz8Wljo7GaB9En2KEhMuKkmm90jM9kLrUW0FMpoR75cfM2lWKYL9vRhzYro1uzNjUeAyhlEMJ1t2Vyg5iwpPnzx1QDUoA5nwzvi-aMz-rGphktxhEyZfNGeZJS2d7DWZyIykhttNA"/>
+<div class="absolute bottom-1 right-1 w-2 h-2 bg-[#FFB81C] rounded-sm"></div> <!-- Amber indicator -->
+</div>
+<div class="flex-1 min-w-0">
+<p class="font-body-sm text-body-sm text-primary font-medium truncate">Lookbook_Shoot_01.jpg</p>
+<p class="font-label-caps text-label-caps text-on-surface-variant mt-1">8.4 MB • Yesterday</p>
+</div>
+</div>
+<!-- File Card 4 -->
+<div class="bg-surface-container-lowest border border-outline-variant/50 rounded-xl p-stack-sm flex items-center gap-stack-md hover:border-outline transition-colors cursor-pointer group">
+<div class="w-16 h-16 bg-surface-container rounded-lg flex items-center justify-center flex-shrink-0 relative">
+<span class="material-symbols-outlined text-on-surface-variant text-2xl">description</span>
+<div class="absolute bottom-1 right-1 w-2 h-2 bg-primary rounded-sm"></div> <!-- Black indicator -->
+</div>
+<div class="flex-1 min-w-0">
+<p class="font-body-sm text-body-sm text-primary font-medium truncate">Client_Contract_Signed.docx</p>
+<p class="font-label-caps text-label-caps text-on-surface-variant mt-1">245 KB • Yesterday</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Recent Activity (Narrower Col) -->
+<div class="space-y-stack-md">
+<div class="flex justify-between items-center border-b border-outline-variant/50 pb-2">
+<h3 class="font-headline-md text-headline-md text-primary">Activity Log</h3>
+</div>
+<div class="bg-surface-container-lowest border border-outline-variant/50 rounded-xl p-stack-md ambient-shadow">
+<div class="relative border-l border-outline-variant/30 ml-3 space-y-6 pb-2">
+<!-- Activity Item 1 -->
+<div class="relative pl-6">
+<div class="absolute -left-[5px] top-1 w-2.5 h-2.5 bg-primary rounded-full border-2 border-surface-container-lowest"></div>
+<p class="font-body-sm text-body-sm text-primary">
+<span class="font-medium">Admin</span> uploaded <span class="font-medium">Client_Final.cdr</span>
+</p>
+<p class="font-label-caps text-label-caps text-on-surface-variant mt-1">Just now</p>
+</div>
+<!-- Activity Item 2 -->
+<div class="relative pl-6">
+<div class="absolute -left-[5px] top-1 w-2.5 h-2.5 bg-surface-variant rounded-full border-2 border-surface-container-lowest"></div>
+<p class="font-body-sm text-body-sm text-primary">
+<span class="font-medium">Sarah D.</span> commented on <span class="font-medium">Brochure_V2.pdf</span>
+</p>
+<p class="font-label-caps text-label-caps text-on-surface-variant mt-1">1 hr ago</p>
+</div>
+<!-- Activity Item 3 -->
+<div class="relative pl-6">
+<div class="absolute -left-[5px] top-1 w-2.5 h-2.5 bg-surface-variant rounded-full border-2 border-surface-container-lowest"></div>
+<p class="font-body-sm text-body-sm text-primary">
+<span class="font-medium">Owner</span> restored <span class="font-medium">Folder_X</span> from Trash
+                                </p>
+<p class="font-label-caps text-label-caps text-on-surface-variant mt-1">3 hrs ago</p>
+</div>
+<!-- Activity Item 4 -->
+<div class="relative pl-6">
+<div class="absolute -left-[5px] top-1 w-2.5 h-2.5 bg-surface-variant rounded-full border-2 border-surface-container-lowest"></div>
+<p class="font-body-sm text-body-sm text-primary">
+<span class="font-medium">System</span> completed backup of <span class="font-medium">Archive_2023</span>
+</p>
+<p class="font-label-caps text-label-caps text-on-surface-variant mt-1">Yesterday</p>
+</div>
+</div>
+<button class="w-full mt-4 py-2 text-center font-label-caps text-label-caps text-on-surface-variant hover:text-primary transition-colors border-t border-outline-variant/30 pt-4">
+                            VIEW FULL LOG
+                        </button>
+</div>
+</div>
+</div>
+</div>
+</main>
+</body></html>
