@@ -9,12 +9,19 @@ import {
   getWorkspaceQuotaBytes,
   setSetting,
 } from '@/server/settings';
+import {
+  getUploadLimits,
+  setUploadLimits,
+  UPLOAD_FILE_TYPES,
+  UPLOAD_LIMIT_OPTIONS,
+  type UploadLimitsConfig,
+} from '@/server/settings/upload-limits';
 
 export async function GET() {
   try {
     await requirePermission('settings:manage');
 
-    const [totalFiles, totalFolders, totalVersions, storageRow, fileSizeCap, versionRetention, quota] =
+    const [totalFiles, totalFolders, totalVersions, storageRow, fileSizeCap, versionRetention, quota, uploadLimits] =
       await Promise.all([
         db.file.count({ where: { deletedAt: null } }),
         db.folder.count({ where: { deletedAt: null } }),
@@ -23,6 +30,7 @@ export async function GET() {
         getFileSizeCapBytes(),
         getVersionRetentionCount(),
         getWorkspaceQuotaBytes(),
+        getUploadLimits(),
       ]);
 
     return NextResponse.json({
@@ -33,6 +41,9 @@ export async function GET() {
       fileSizeCapBytes: fileSizeCap,
       versionRetentionCount: versionRetention,
       workspaceQuotaBytes: quota,
+      uploadLimits,
+      uploadLimitOptions: UPLOAD_LIMIT_OPTIONS,
+      uploadFileTypes: UPLOAD_FILE_TYPES,
     });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'Unknown error';
@@ -64,6 +75,12 @@ export async function PATCH(request: NextRequest) {
       }
       await setSetting('version_retention_count', String(val));
       updates.push('version_retention_count');
+    }
+
+    if (body.uploadLimits !== undefined) {
+      const limits = body.uploadLimits as UploadLimitsConfig;
+      await setUploadLimits(limits);
+      updates.push('upload_limits_json');
     }
 
     if (updates.length > 0) {

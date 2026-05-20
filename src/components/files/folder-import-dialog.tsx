@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { FolderUp, Loader2 } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { useToast } from '@/components/ui/toast';
+import { formatUploadError, uploadFileDirect } from '@/lib/direct-upload';
 
 export function FolderImportDialog({
   files,
@@ -35,21 +36,18 @@ export function FolderImportDialog({
       });
 
       let done = 0;
+      let failed = 0;
       for (const file of files) {
         try {
-          const formData = new FormData();
-          formData.append('file', file);
-          formData.append('folderId', folderId);
-          const res = await fetch('/api/files', { method: 'POST', body: formData });
-          if (!res.ok) {
-            const payload = await res.json().catch(() => null);
-            throw new Error(payload?.error ?? `Upload failed (${res.status})`);
+          await uploadFileDirect(file, folderId, () => {});
+          done++;
+        } catch (e) {
+          failed++;
+          if (failed === 1) {
+            toast('error', formatUploadError(e));
           }
-        } catch {
-          // continue with remaining files
         }
-        done++;
-        setProgress(done);
+        setProgress(done + failed);
       }
 
       toast('success', `Imported folder "${folderName}" with ${done} files`);

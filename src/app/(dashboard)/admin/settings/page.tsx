@@ -15,6 +15,13 @@ import {
 } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 
+import {
+  type UploadFileType,
+  type UploadLimitOption,
+  formatLimitLabel,
+  FILE_TYPE_LABELS,
+} from '@/lib/upload-limits';
+
 interface WorkspaceSettings {
   totalFiles: number;
   totalFolders: number;
@@ -23,6 +30,9 @@ interface WorkspaceSettings {
   fileSizeCapBytes: number;
   versionRetentionCount: number;
   workspaceQuotaBytes: number;
+  uploadLimits: Record<UploadFileType, UploadLimitOption>;
+  uploadLimitOptions: UploadLimitOption[];
+  uploadFileTypes: UploadFileType[];
 }
 
 function formatBytes(bytes: number): string {
@@ -33,17 +43,15 @@ function formatBytes(bytes: number): string {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
-function formatMB(bytes: number): string {
-  return (bytes / (1024 * 1024)).toFixed(0);
-}
-
 export default function SettingsPage() {
   const [data, setData] = useState<WorkspaceSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const [fileSizeCapMB, setFileSizeCapMB] = useState('');
+  const [uploadLimits, setUploadLimitsState] = useState<Record<UploadFileType, UploadLimitOption> | null>(null);
+  const [limitOptions, setLimitOptions] = useState<UploadLimitOption[]>([]);
+  const [fileTypes, setFileTypes] = useState<UploadFileType[]>([]);
   const [versionRetention, setVersionRetention] = useState('');
 
   const loadSettings = useCallback(async () => {
@@ -52,7 +60,9 @@ export default function SettingsPage() {
       setError(null);
       const d = await apiFetch<WorkspaceSettings>('/api/admin/settings');
       setData(d);
-      setFileSizeCapMB(formatMB(d.fileSizeCapBytes));
+      setUploadLimitsState(d.uploadLimits);
+      setLimitOptions(d.uploadLimitOptions);
+      setFileTypes(d.uploadFileTypes);
       setVersionRetention(String(d.versionRetentionCount));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load settings');
@@ -74,10 +84,12 @@ export default function SettingsPage() {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          fileSizeCapBytes: Number(fileSizeCapMB) * 1024 * 1024,
           versionRetentionCount: Number(versionRetention),
+          uploadLimits,
         }),
       });
+      const { clearUploadConfigCache } = await import('@/lib/direct-upload');
+      clearUploadConfigCache();
       await loadSettings();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save');
@@ -158,19 +170,49 @@ export default function SettingsPage() {
         </div>
         <div className="space-y-5 p-5">
           <div>
-            <label className="mb-1.5 block text-sm font-medium">
-              Maximum file size (MB)
-            </label>
-            <input
-              type="number"
-              min={1}
-              value={fileSizeCapMB}
-              onChange={(e) => setFileSizeCapMB(e.target.value)}
-              className="w-40 rounded-xl border border-border/50 bg-background px-3 py-2.5 text-sm tabular-nums outline-none transition-all focus:border-primary/30 focus:ring-2 focus:ring-primary/15"
-            />
-            <p className="mt-1.5 text-xs text-muted-foreground/70">
-              Files larger than this will be rejected during upload
+            <label className="mb-2 block text-sm font-medium">Upload limits by file type</label>
+            <p className="mb-3 text-xs text-muted-foreground/70">
+              Enforced server-side before direct-to-storage uploads. Unlimited uses only workspace
+              storage quota.
             </p>
+            {uploadLimits && (
+              <div className="overflow-hidden rounded-xl border border-border/40">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b bg-muted/15 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/45">
+                      <th className="px-4 py-2.5">Type</th>
+                      <th className="px-4 py-2.5">Max size</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {fileTypes.map((type) => (
+                      <tr key={type}>
+                        <td className="px-4 py-2.5 font-medium">{FILE_TYPE_LABELS[type]}</td>
+                        <td className="px-4 py-2.5">
+                          <select
+                            value={uploadLimits[type]}
+                            onChange={(e) =>
+                              setUploadLimitsState((prev) =>
+                                prev
+                                  ? { ...prev, [type]: e.target.value as UploadLimitOption }
+                                  : prev,
+                              )
+                            }
+                            className="rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-xs outline-none focus:border-primary/30 focus:ring-2 focus:ring-primary/15"
+                          >
+                            {limitOptions.map((opt) => (
+                              <option key={opt} value={opt}>
+                                {formatLimitLabel(opt)}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
           <div>

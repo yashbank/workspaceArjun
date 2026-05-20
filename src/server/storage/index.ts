@@ -1,92 +1,38 @@
-import path from 'path';
 import fs from 'fs/promises';
+import path from 'path';
 import {
-  S3Client,
   PutObjectCommand,
   GetObjectCommand,
   DeleteObjectCommand,
   HeadObjectCommand,
 } from '@aws-sdk/client-s3';
+import { getDriver, getS3Client, getBucket, LOCAL_ROOT } from '@/server/storage/driver';
+
+export { getDriver, isStorageConfigured, getStorageDriverName } from '@/server/storage/driver';
+export {
+  MULTIPART_THRESHOLD_BYTES,
+  MULTIPART_PART_SIZE_BYTES,
+  PRESIGN_EXPIRY_SECONDS,
+  requiresDirectUpload,
+  shouldUseMultipart,
+  createPresignedPutUrl,
+  startMultipartUpload,
+  createPresignedPartUrl,
+  finishMultipartUpload,
+  cancelMultipartUpload,
+} from '@/server/storage/s3-upload';
 
 // ---------------------------------------------------------------------------
-// Driver detection
+// Local filesystem helpers
 // ---------------------------------------------------------------------------
 
-type StorageDriver = 'local' | 's3';
-
-function getDriver(): StorageDriver {
-  const explicit = process.env.STORAGE_DRIVER?.toLowerCase();
-  if (explicit === 'local') return 'local';
-  if (explicit === 's3') return 's3';
-  // Auto-detect: if S3 vars are all present, use s3; otherwise fall back to local
-  const s3Configured = S3_REQUIRED_VARS.every((v) => !!process.env[v]);
-  return s3Configured ? 's3' : 'local';
-}
-
-// ---------------------------------------------------------------------------
-// S3 driver (MinIO / IDrive e2 / any S3-compatible)
-// ---------------------------------------------------------------------------
-
-const S3_REQUIRED_VARS = [
-  'STORAGE_ENDPOINT',
-  'STORAGE_REGION',
-  'STORAGE_ACCESS_KEY',
-  'STORAGE_SECRET_KEY',
-  'STORAGE_BUCKET',
-] as const;
-
-function getS3Config() {
-  const missing = S3_REQUIRED_VARS.filter((v) => !process.env[v]);
-  if (missing.length > 0) {
-    throw new Error(
-      `S3 storage is not configured. Missing env vars: ${missing.join(', ')}. ` +
-        'Set these in .env.local or use STORAGE_DRIVER=local for filesystem mode.',
-    );
-  }
-  return {
-    endpoint: process.env.STORAGE_ENDPOINT!,
-    region: process.env.STORAGE_REGION!,
-    accessKeyId: process.env.STORAGE_ACCESS_KEY!,
-    secretAccessKey: process.env.STORAGE_SECRET_KEY!,
-    bucket: process.env.STORAGE_BUCKET!,
-  };
-}
-
-let _s3: S3Client | null = null;
-
-function getS3() {
-  if (_s3) return _s3;
-  const config = getS3Config();
-  _s3 = new S3Client({
-    endpoint: config.endpoint,
-    region: config.region,
-    credentials: {
-      accessKeyId: config.accessKeyId,
-      secretAccessKey: config.secretAccessKey,
-    },
-    forcePathStyle: true,
-  });
-  return _s3;
-}
-
-function getBucket(): string {
-  return getS3Config().bucket;
-}
-
-// ---------------------------------------------------------------------------
-// Local filesystem driver
-// ---------------------------------------------------------------------------
-
-const LOCAL_ROOT = process.env.LOCAL_STORAGE_PATH
-  ?? path.join(/* turbopackIgnore: true */ process.cwd(), '.local-storage');
+const CONTENT_TYPE_FILE = '.content-type';
 
 async function localPath(key: string): Promise<string> {
   const full = path.join(LOCAL_ROOT, key);
   await fs.mkdir(path.dirname(full), { recursive: true });
   return full;
 }
-
-const CONTENT_TYPE_FILE = '.content-type';
 
 async function writeContentType(key: string, contentType: string): Promise<void> {
   const metaPath = (await localPath(key)) + CONTENT_TYPE_FILE;
@@ -103,7 +49,7 @@ async function readContentType(key: string): Promise<string | undefined> {
 }
 
 // ---------------------------------------------------------------------------
-// Public API — identical interface regardless of driver
+// Public API
 // ---------------------------------------------------------------------------
 
 export async function putObject(
@@ -118,7 +64,7 @@ export async function putObject(
     return;
   }
 
-  await getS3().send(
+  await getS3Client().send(
     new PutObjectCommand({
       Bucket: getBucket(),
       Key: key,
@@ -140,7 +86,7 @@ export async function getObject(key: string): Promise<{
     return { bytes, contentType, contentLength: bytes.length };
   }
 
-  const response = await getS3().send(
+  const response = await getS3Client().send(
     new GetObjectCommand({ Bucket: getBucket(), Key: key }),
   );
   if (!response.Body) {
@@ -162,7 +108,7 @@ export async function deleteObject(key: string): Promise<void> {
     return;
   }
 
-  await getS3().send(
+  await getS3Client().send(
     new DeleteObjectCommand({ Bucket: getBucket(), Key: key }),
   );
 }
@@ -181,7 +127,7 @@ export async function headObject(
   }
 
   try {
-    const res = await getS3().send(
+    const res = await getS3Client().send(
       new HeadObjectCommand({ Bucket: getBucket(), Key: key }),
     );
     return {
@@ -193,23 +139,10 @@ export async function headObject(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Utilities
-// ---------------------------------------------------------------------------
-
 export function buildStorageKey(
   fileId: string,
   versionNo: number,
   filename: string,
 ): string {
   return `files/${fileId}/v${versionNo}/${filename}`;
-}
-
-export function isStorageConfigured(): boolean {
-  if (getDriver() === 'local') return true;
-  return S3_REQUIRED_VARS.every((v) => !!process.env[v]);
-}
-
-export function getStorageDriverName(): string {
-  return getDriver();
 }

@@ -243,7 +243,7 @@ export function FileBrowser() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentFolderId]);
 
-  const { queue, startUpload, retry, dismiss } = useUpload(currentFolderId, () =>
+  const { queue, startUpload, retry, cancel, dismiss } = useUpload(currentFolderId, () =>
     loadContents(currentFolderId),
   );
 
@@ -729,7 +729,7 @@ export function FileBrowser() {
       </div>
 
       {/* Upload queue */}
-      <UploadQueue items={queue} onRetry={retry} onDismiss={dismiss} />
+      <UploadQueue items={queue} onRetry={retry} onCancel={cancel} onDismiss={dismiss} />
 
       {/* Dialogs */}
       {showCreateFolder && (
