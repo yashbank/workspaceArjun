@@ -55,7 +55,7 @@ const SORT_OPTIONS: SortOption[] = [
   { by: 'type', dir: 'asc', label: 'Type' },
 ];
 
-export function FileBrowser() {
+export function FileBrowser({ canDiagnose = false }: { canDiagnose?: boolean }) {
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [files, setFiles] = useState<FileItem[]>([]);
@@ -741,6 +741,7 @@ export function FileBrowser() {
           <PreviewPanel
             file={previewFile}
             files={files}
+            canDiagnose={canDiagnose}
             onClose={() => setPreviewFile(null)}
             onNavigate={setPreviewFile}
             onDownload={() => handleDownloadFile(previewFile.id)}

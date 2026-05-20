@@ -63,13 +63,23 @@ export async function loadDashboardData(profile: UserProfile | null): Promise<Da
     recentActivityResult,
     pinnedFilesResult,
   ] = await Promise.allSettled([
-    db.file.count({ where: { deletedAt: null } }),
+    db.file.count({
+      where: {
+        deletedAt: null,
+        currentVersionId: { not: null },
+        currentVersion: { is: { sizeBytes: { gt: 0 } } },
+      },
+    }),
     db.folder.count({ where: { deletedAt: null } }),
     db.fileVersion.count(),
     db.storageUsage.findFirst(),
     getWorkspaceQuotaBytes(),
     db.file.findMany({
-      where: { deletedAt: null },
+      where: {
+        deletedAt: null,
+        currentVersionId: { not: null },
+        currentVersion: { is: { sizeBytes: { gt: 0 } } },
+      },
       orderBy: { updatedAt: 'desc' },
       take: 8,
       select: {
@@ -141,7 +151,12 @@ export async function loadDashboardData(profile: UserProfile | null): Promise<Da
     const ids = pinnedFilesResult.value.map((p) => p.targetId);
     try {
       const files = await db.file.findMany({
-        where: { id: { in: ids }, deletedAt: null },
+        where: {
+          id: { in: ids },
+          deletedAt: null,
+          currentVersionId: { not: null },
+          currentVersion: { is: { sizeBytes: { gt: 0 } } },
+        },
         select: { id: true, name: true, mimeType: true },
       });
       pinnedFileDetails = files.filter((f) => f.name?.trim());

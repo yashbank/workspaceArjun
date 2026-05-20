@@ -151,7 +151,13 @@ export function TrashBrowser({ canPermanentDelete }: { canPermanentDelete: boole
 
   async function handlePermanentDeleteFile(id: string) {
     if (!canPermanentDelete) return;
-    if (!confirm('Permanently delete this file and all its versions? This cannot be undone.')) return;
+    if (
+      !confirm(
+        'This permanently removes the file from storage and cannot be undone. Delete this file and all its versions?',
+      )
+    ) {
+      return;
+    }
     markBusy(id);
     try {
       await apiFetch(`/api/trash/files/${id}`, { method: 'DELETE' });
@@ -187,7 +193,7 @@ export function TrashBrowser({ canPermanentDelete }: { canPermanentDelete: boole
     const n = folderIds.length + fileIds.length;
     if (
       !confirm(
-        `Permanently delete ${n} selected item${n === 1 ? '' : 's'}? This cannot be undone.`,
+        `This permanently removes ${n} selected item${n === 1 ? '' : 's'} from storage and cannot be undone. Continue?`,
       )
     ) {
       return;

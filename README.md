@@ -522,6 +522,29 @@ The demo seed creates:
 - Audit trail with realistic activity
 - Storage usage tracking
 
+### Client demo cleanup (production-safe)
+
+**Build/deploy never runs demo seed.** Only `pnpm db:seed` (workspace settings) is documented for production — not `demo:seed`.
+
+Before a client review, run from `app/` as **owner**:
+
+```bash
+# 1. Dry-run — lists invalid/orphan files (0 KB, no version, missing storage)
+pnpm demo:cleanup-files
+
+# 2. Delete invalid file records + best-effort storage cleanup
+CONFIRM_CLEAN_DEMO_FILES=true pnpm demo:cleanup-files
+
+# 3. Optional — clear activity feed
+CONFIRM_CLEAR_ACTIVITY=true pnpm demo:clear-activity
+```
+
+Invalid files are hidden from the file list automatically (no version, zero size). Records with missing storage blobs are removed by the cleanup script after a storage HEAD check.
+
+Does **not** delete users, roles, or workspace settings.
+
+See [docs/CLIENT_DEMO_QA.md](../docs/CLIENT_DEMO_QA.md) for the full pre-demo QA checklist.
+
 ### Clear activity history (demo reset)
 
 To wipe **all** audit events and starred activity pins (e.g. before a client demo):

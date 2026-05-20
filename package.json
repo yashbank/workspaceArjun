@@ -21,6 +21,7 @@
     "demo:seed": "tsx prisma/seed-demo.ts",
     "demo:reset": "tsx prisma/seed-reset.ts && tsx prisma/seed-demo.ts",
     "demo:clear-activity": "tsx scripts/clear-activity-demo.ts",
+    "demo:cleanup-files": "tsx scripts/cleanup-demo-files.ts",
     "workspace:reset": "tsx prisma/reset-production-workspace.ts",
     "prepare": "husky"
   },

@@ -12,6 +12,7 @@ import {
   UploadCloud,
   Loader2,
   AlertCircle,
+  Stethoscope,
   FileArchive,
   FileSpreadsheet,
   Pen,
@@ -81,6 +82,7 @@ export const PreviewPanel = memo(function PreviewPanel({
   onNewVersion,
   onFavorite,
   isFavorited,
+  canDiagnose = false,
 }: {
   file: FileItem;
   files: FileItem[];
@@ -90,6 +92,7 @@ export const PreviewPanel = memo(function PreviewPanel({
   onNewVersion?: () => void;
   onFavorite: () => void;
   isFavorited: boolean;
+  canDiagnose?: boolean;
 }) {
   const ext = getExtension(file.name);
   const badge = getFileTypeBadge(file.name);
@@ -109,6 +112,8 @@ export const PreviewPanel = memo(function PreviewPanel({
   const [videoError, setVideoError] = useState(false);
   const [pdfLoaded, setPdfLoaded] = useState(false);
   const [showLightbox, setShowLightbox] = useState(false);
+  const [diagnoseLog, setDiagnoseLog] = useState<string | null>(null);
+  const [diagnoseBusy, setDiagnoseBusy] = useState(false);
   const isCdr = ext === 'cdr';
   const filmstripRef = useRef<HTMLDivElement>(null);
 
@@ -125,7 +130,22 @@ export const PreviewPanel = memo(function PreviewPanel({
     setVideoError(false);
     setPdfLoaded(false);
     setImageFit('contain');
+    setDiagnoseLog(null);
   }, [file.id]);
+
+  async function runDiagnose() {
+    setDiagnoseBusy(true);
+    setDiagnoseLog(null);
+    try {
+      const res = await fetch(`/api/files/${file.id}/diagnose`, { credentials: 'include' });
+      const data = await res.json();
+      setDiagnoseLog(JSON.stringify(data, null, 2));
+    } catch {
+      setDiagnoseLog('Diagnose request failed');
+    } finally {
+      setDiagnoseBusy(false);
+    }
+  }
 
   async function handlePreviewLoadError() {
     setImgError(true);
@@ -380,12 +400,30 @@ export const PreviewPanel = memo(function PreviewPanel({
               <div className="text-center">
                 <p className="text-sm font-semibold text-foreground/70">Preview unavailable</p>
                 <p className="mt-1 max-w-xs text-xs text-muted-foreground/60">
-                  {imgErrorMessage ?? 'File may be missing from storage'}
+                  {imgErrorMessage ?? 'File content is missing. Please re-upload this file.'}
                 </p>
               </div>
-              <button onClick={onDownload} className="rounded-xl border bg-card px-5 py-2.5 text-xs font-semibold shadow-card transition-all hover:shadow-elevated active:scale-[0.97]">
-                Download instead
-              </button>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <button onClick={onDownload} className="rounded-xl border bg-card px-5 py-2.5 text-xs font-semibold shadow-card transition-all hover:shadow-elevated active:scale-[0.97]">
+                  Download instead
+                </button>
+                {canDiagnose && (
+                  <button
+                    type="button"
+                    disabled={diagnoseBusy}
+                    onClick={() => void runDiagnose()}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-border/60 px-5 py-2.5 text-xs font-semibold"
+                  >
+                    {diagnoseBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Stethoscope className="h-3.5 w-3.5" />}
+                    Storage diagnose
+                  </button>
+                )}
+              </div>
+              {diagnoseLog && (
+                <pre className="max-h-32 max-w-full overflow-auto rounded-lg border bg-muted/30 p-2 text-[10px] text-muted-foreground">
+                  {diagnoseLog}
+                </pre>
+              )}
             </div>
           ) : (
             /* Premium unsupported-file card */

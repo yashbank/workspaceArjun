@@ -6,6 +6,7 @@ import {
   StorageContentMissingError,
   logMissingStorageObject,
 } from '@/server/files/storage-errors';
+import { isListableFile } from '@/server/files/file-health';
 import type { File, FileVersion } from '@/generated/prisma/client';
 
 export type FileWithVersion = File & {
@@ -15,14 +16,15 @@ export type FileWithVersion = File & {
 
 export async function listFiles(folderId: string | null): Promise<FileWithVersion[]> {
   await requirePermission('files:read');
-  return db.file.findMany({
+  const rows = await db.file.findMany({
     where: { folderId, deletedAt: null },
     include: {
       currentVersion: true,
       _count: { select: { versions: true } },
     },
     orderBy: { name: 'asc' },
-  }) as Promise<FileWithVersion[]>;
+  });
+  return rows.filter(isListableFile) as FileWithVersion[];
 }
 
 export async function getFile(id: string): Promise<(File & { currentVersion: FileVersion | null }) | null> {

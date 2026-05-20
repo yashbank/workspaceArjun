@@ -1,6 +1,6 @@
 /** User-facing message when DB record exists but object storage blob is missing. */
 export const STORAGE_CONTENT_MISSING_MESSAGE =
-  'File content is missing from storage. Please re-upload or restore a valid version.';
+  'File content is missing. Please re-upload this file.';
 
 export const STORAGE_CONTENT_MISSING_CODE = 'STORAGE_CONTENT_MISSING';
 

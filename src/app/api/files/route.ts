@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { listFiles, createFileWithContent } from '@/server/files';
 
+const NO_STORE = { 'Cache-Control': 'no-store, no-cache, must-revalidate' };
+
 export async function GET(request: NextRequest) {
   try {
     const folderId = request.nextUrl.searchParams.get('folderId') || null;
@@ -42,11 +44,11 @@ export async function GET(request: NextRequest) {
         : null,
     }));
 
-    return NextResponse.json(serialized);
+    return NextResponse.json(serialized, { headers: NO_STORE });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'Unknown error';
     const status = msg === 'Unauthorized' ? 401 : msg === 'Forbidden' ? 403 : 500;
-    return NextResponse.json({ error: msg }, { status });
+    return NextResponse.json({ error: msg }, { status, headers: NO_STORE });
   }
 }
 

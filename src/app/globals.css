@@ -227,12 +227,6 @@
     @apply text-2xl font-semibold tracking-tight text-foreground;
   }
 }
-.bpp-subtle-bg {
-  background:
-    radial-gradient(ellipse 80% 50% at 50% -20%, color-mix(in oklab, var(--bpp-ivory) 80%, transparent), transparent),
-    var(--background);
-}
-
 .bg-checkerboard {
   background-image:
     linear-gradient(45deg, var(--muted) 25%, transparent 25%),

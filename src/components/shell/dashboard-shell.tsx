@@ -3,8 +3,6 @@
 import { useState } from 'react';
 import { Sidebar } from './sidebar';
 import { Topbar } from './topbar';
-import { BppAmbientBackground } from './bpp-ambient-background';
-
 export function DashboardShell({
   showAdminNav,
   showSettingsNav,
@@ -25,8 +23,7 @@ export function DashboardShell({
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   return (
-    <div className="relative flex h-screen overflow-hidden bg-background bpp-subtle-bg">
-      <BppAmbientBackground variant="dashboard" />
+    <div className="relative flex h-screen overflow-hidden bg-background">
       {mobileNavOpen && (
         <button
           type="button"
