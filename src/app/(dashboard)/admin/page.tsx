@@ -16,6 +16,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
+import { useToast } from '@/components/ui/toast';
 
 type UserItem = {
   id: string;
@@ -64,6 +65,7 @@ const roleBadge: Record<string, string> = {
 };
 
 export default function AdminPage() {
+  const { toast } = useToast();
   const [data, setData] = useState<AdminUsersPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -124,7 +126,7 @@ export default function AdminPage() {
       setRoleMenu(null);
       await loadUsers();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to change role');
+      toast('error', err instanceof Error ? err.message : 'Failed to change role');
     } finally {
       setBusyId(null);
     }
@@ -146,7 +148,7 @@ export default function AdminPage() {
       setActionMenu(null);
       await loadUsers();
     } catch (err) {
-      alert(err instanceof Error ? err.message : `Failed to ${label} user`);
+      toast('error', err instanceof Error ? err.message : `Failed to ${label} user`);
     } finally {
       setBusyId(null);
     }
@@ -163,7 +165,7 @@ export default function AdminPage() {
       });
       await loadUsers();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to transfer ownership');
+      toast('error', err instanceof Error ? err.message : 'Failed to transfer ownership');
     } finally {
       setBusyId(null);
     }
@@ -177,7 +179,7 @@ export default function AdminPage() {
       setActionMenu(null);
       await loadUsers();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to remove user');
+      toast('error', err instanceof Error ? err.message : 'Failed to remove user');
     } finally {
       setBusyId(null);
     }
@@ -187,9 +189,24 @@ export default function AdminPage() {
     try {
       setBusyId(inviteId);
       await apiFetch(`/api/admin/users/invites/${inviteId}/resend`, { method: 'POST' });
+      toast('success', 'Invite email resent');
       await loadUsers();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to resend invite');
+      toast('error', err instanceof Error ? err.message : 'Failed to resend invite');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleCancelInvite = async (inviteId: string) => {
+    if (!confirm('Cancel this pending invite? The seat will be freed immediately.')) return;
+    try {
+      setBusyId(inviteId);
+      await apiFetch(`/api/admin/users/invites/${inviteId}/cancel`, { method: 'POST' });
+      toast('success', 'Invite cancelled');
+      await loadUsers();
+    } catch (err) {
+      toast('error', err instanceof Error ? err.message : 'Failed to cancel invite');
     } finally {
       setBusyId(null);
     }
@@ -240,8 +257,7 @@ export default function AdminPage() {
           </div>
           {atSeatLimit && (
             <p className="mt-3 text-xs text-amber-700 dark:text-amber-400">
-              Seat limit reached. Deactivate a user or wait for a pending invite to be accepted before
-              inviting someone new.
+              Seat limit reached. Deactivate a user or cancel a pending invite to free a seat.
             </p>
           )}
         </div>
@@ -294,6 +310,14 @@ export default function AdminPage() {
                       <RefreshCw className="h-3 w-3" />
                     )}
                     Resend
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busyId === inv.id}
+                    onClick={() => handleCancelInvite(inv.id)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-destructive/25 px-3 py-1.5 text-xs font-medium text-destructive transition-all hover:bg-destructive/10 disabled:opacity-50"
+                  >
+                    Cancel
                   </button>
                 </div>
               </div>

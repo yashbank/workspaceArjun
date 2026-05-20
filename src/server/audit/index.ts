@@ -11,6 +11,7 @@ type AuditAction =
   | 'user.profile_created'
   | 'user.invite'
   | 'user.invite_resend'
+  | 'user.invite_cancel'
   | 'user.role_change'
   | 'user.deactivate'
   | 'user.reactivate'

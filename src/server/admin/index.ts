@@ -4,7 +4,15 @@ import { hasPermission } from '@/server/rbac/permissions';
 import { logAuditEvent } from '@/server/audit';
 import { inviteUserByEmail } from '@/server/auth';
 import { createSupabaseAdminClient } from '@/lib/supabase/server';
-import { assertSeatAvailable, getSeatUsage, canActorInviteRole, getInvitableRolesForActor } from '@/server/users';
+import {
+  assertSeatAvailable,
+  getSeatUsage,
+  canActorInviteRole,
+  getInvitableRolesForActor,
+  releaseStalePendingInvite,
+  cancelPendingInvitesForEmail,
+} from '@/server/users';
+import { INVITE_ERROR_MESSAGES, InviteSendError } from '@/server/auth/invite-errors';
 import type { UserProfile, UserRole } from '@/generated/prisma/client';
 
 export interface UserListItem {
@@ -136,16 +144,25 @@ export async function inviteUser(email: string, role: UserRole): Promise<void> {
   if (!normalized) throw new Error('Email is required');
 
   const existing = await db.userProfile.findFirst({ where: { email: normalized } });
-  if (existing) throw new Error('A user with this email already exists');
+  if (existing) throw new Error(INVITE_ERROR_MESSAGES.user_exists);
+
+  await releaseStalePendingInvite(normalized);
 
   const pending = await db.userInvite.findFirst({
     where: { email: normalized, status: 'pending' },
   });
-  if (pending) throw new Error('An invite is already pending for this email');
+  if (pending) throw new Error(INVITE_ERROR_MESSAGES.pending_invite);
 
   await assertSeatAvailable();
 
-  await inviteUserByEmail(normalized, role);
+  try {
+    await inviteUserByEmail(normalized, role);
+  } catch (error) {
+    if (error instanceof InviteSendError && error.code === 'user_exists') {
+      await cancelPendingInvitesForEmail(normalized);
+    }
+    throw error;
+  }
 
   await db.userInvite.upsert({
     where: { email: normalized },
@@ -189,7 +206,14 @@ export async function resendInvite(inviteId: string): Promise<void> {
     throw new Error('This user has already accepted the invite and is active');
   }
 
-  await inviteUserByEmail(invite.email, invite.role);
+  try {
+    await inviteUserByEmail(invite.email, invite.role);
+  } catch (error) {
+    if (error instanceof InviteSendError && error.code === 'user_exists') {
+      await cancelPendingInvitesForEmail(invite.email);
+    }
+    throw error;
+  }
 
   await db.userInvite.update({
     where: { id: inviteId },
@@ -199,6 +223,32 @@ export async function resendInvite(inviteId: string): Promise<void> {
   await logAuditEvent({
     actor,
     action: 'user.invite_resend',
+    targetType: 'user',
+    targetId: inviteId,
+    meta: { email: invite.email, role: invite.role },
+  });
+}
+
+export async function cancelInvite(inviteId: string): Promise<void> {
+  const actor = await requirePermission('users:invite');
+
+  const invite = await db.userInvite.findUnique({ where: { id: inviteId } });
+  if (!invite || invite.status !== 'pending') {
+    throw new Error('Pending invite not found');
+  }
+
+  if (!canActorInviteRole(actor.role, invite.role)) {
+    throw new Error('You are not allowed to cancel this invite.');
+  }
+
+  await db.userInvite.update({
+    where: { id: inviteId },
+    data: { status: 'cancelled' },
+  });
+
+  await logAuditEvent({
+    actor,
+    action: 'user.invite_cancel',
     targetType: 'user',
     targetId: inviteId,
     meta: { email: invite.email, role: invite.role },

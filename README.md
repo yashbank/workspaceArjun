@@ -108,7 +108,8 @@ Set `ALLOW_BOOTSTRAP=true` in `.env.local`, then:
 - Supabase sends a **secure invite email** — the link opens `/auth/callback` then `/invite/accept` where the user sets their own password (no plaintext passwords).
 - Owner can invite **admin** or **member**; admin can invite **member** only.
 - Invited role is applied after password setup via `complete-invite`.
-- Resend invite from Admin for pending users.
+- Resend or **Cancel** pending invites from Admin (cancelled invites do not use seats).
+- See [docs/email-templates.md](../docs/email-templates.md) for SMTP, templates, and troubleshooting.
 
 ## Auth Flow
 

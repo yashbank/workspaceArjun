@@ -310,6 +310,7 @@ function formatAction(action: string): string {
     'folder.permanent_delete': 'permanently deleted a folder',
     'user.invite': 'invited a user',
     'user.invite_resend': 'resent an invite',
+    'user.invite_cancel': 'cancelled an invite',
     'user.role_change': 'changed a user role',
     'user.deactivate': 'deactivated a user',
     'user.reactivate': 'reactivated a user',

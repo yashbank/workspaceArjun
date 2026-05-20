@@ -2,6 +2,7 @@ import { cache } from 'react';
 import { createSupabaseServerClient, createSupabaseAdminClient } from '@/lib/supabase/server';
 import { db } from '@/server/db';
 import { parseInvitedRole, resolveProfileRole } from '@/server/users';
+import { throwMappedInviteError } from '@/server/auth/invite-errors';
 import type { UserProfile, UserRole } from '@/generated/prisma/client';
 
 const INVITE_ACCEPT_PATH = '/invite/accept';
@@ -134,7 +135,9 @@ export async function inviteUserByEmail(email: string, role: UserRole) {
     redirectTo,
   });
 
-  if (error) throw error;
+  if (error) {
+    throwMappedInviteError(error, { email: normalized, operation: 'inviteUserByEmail' });
+  }
   return data;
 }
 

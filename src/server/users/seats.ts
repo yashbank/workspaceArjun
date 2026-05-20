@@ -29,7 +29,7 @@ export async function assertSeatAvailable(): Promise<SeatUsage> {
   const seats = await getSeatUsage();
   if (seats.used >= seats.max) {
     throw new Error(
-      `Workspace user limit reached (${seats.max} seats). Deactivate a user or cancel a pending invite before inviting someone new.`,
+      `Workspace user limit reached (${seats.max} seats). Deactivate a user or cancel a pending invite to free a seat.`,
     );
   }
   return seats;
