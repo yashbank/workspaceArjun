@@ -24,6 +24,7 @@ export function FixedMenu({
 }: FixedMenuProps) {
   const mounted = useSyncExternalStore(() => () => {}, () => true, () => false);
   const [pos, setPos] = useState({ top: 0, left: 0 });
+  const backdropRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
@@ -56,6 +57,16 @@ export function FixedMenu({
     };
   }, [open, anchorRef, align, width, estimatedHeight]);
 
+  useLayoutEffect(() => {
+    const el = backdropRef.current;
+    if (!open || !el) return;
+    el.style.pointerEvents = 'none';
+    const id = requestAnimationFrame(() => {
+      if (backdropRef.current) backdropRef.current.style.pointerEvents = 'auto';
+    });
+    return () => cancelAnimationFrame(id);
+  }, [open]);
+
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
@@ -69,13 +80,22 @@ export function FixedMenu({
 
   return createPortal(
     <>
-      <div className="fixed inset-0 z-[500]" onClick={onClose} aria-hidden />
+      <div
+        ref={backdropRef}
+        className="fixed inset-0 z-[600]"
+        style={{ pointerEvents: 'none' }}
+        onMouseDown={(e) => {
+          e.preventDefault();
+          onClose();
+        }}
+        aria-hidden
+      />
       <div
         ref={menuRef}
         role="menu"
-        className="fixed z-[501] overflow-hidden rounded-xl border border-border/55 bg-popover p-1 shadow-float animate-in scale-in fade-in duration-100"
-        style={{ top: pos.top, left: pos.left, width }}
-        onClick={(e) => e.stopPropagation()}
+        className="fixed z-[601] overflow-hidden rounded-xl border border-border/55 bg-popover p-1 shadow-float animate-in scale-in fade-in duration-100"
+        style={{ top: pos.top, left: pos.left, width, pointerEvents: 'auto' }}
+        onMouseDown={(e) => e.stopPropagation()}
       >
         {children}
       </div>

@@ -1,27 +1,49 @@
 'use client';
 
-import { FileText, ImageIcon, FileArchive, FileIcon, MoreVertical, Star, Pen } from 'lucide-react';
+import {
+  FileText,
+  ImageIcon,
+  FileArchive,
+  FileIcon,
+  MoreVertical,
+  Star,
+  Pen,
+  Film,
+  Smartphone,
+} from 'lucide-react';
 import { memo, useRef, useState } from 'react';
 import { getExtension, getFileTypeBadge, formatBytes } from '@/lib/file-utils';
 import type { FileItem } from './file-table';
 
-const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'tiff', 'bmp']);
+/** Extensions we attempt inline thumbnail preview for. */
+const PREVIEW_IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'tiff']);
+/** Shown as image-type cards with icon fallback (no browser decode). */
+const IMAGE_FALLBACK_EXTS = new Set(['heic', 'heif']);
 const ARCHIVE_EXTS = new Set(['zip', 'rar', '7z', 'tar', 'gz']);
 const DOC_EXTS = new Set(['pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'ppt', 'pptx', 'txt']);
 const DESIGN_EXTS = new Set(['cdr', 'ai', 'eps', 'psd']);
+const VIDEO_EXTS = new Set(['mp4', 'mov', 'webm', 'm4v']);
 
 function getCardColor(ext: string): string {
-  if (IMAGE_EXTS.has(ext)) return 'from-sky-50 to-sky-100/60 dark:from-sky-950/30 dark:to-sky-900/20 text-sky-600 dark:text-sky-400';
+  if (PREVIEW_IMAGE_EXTS.has(ext) || IMAGE_FALLBACK_EXTS.has(ext))
+    return 'from-sky-50 to-sky-100/60 dark:from-sky-950/30 dark:to-sky-900/20 text-sky-600 dark:text-sky-400';
   if (ext === 'pdf') return 'from-red-50 to-red-100/60 dark:from-red-950/30 dark:to-red-900/20 text-red-600 dark:text-red-400';
-  if (DESIGN_EXTS.has(ext)) return 'from-purple-50 to-purple-100/60 dark:from-purple-950/30 dark:to-purple-900/20 text-purple-600 dark:text-purple-400';
-  if (ARCHIVE_EXTS.has(ext)) return 'from-amber-50 to-amber-100/60 dark:from-amber-950/30 dark:to-amber-900/20 text-amber-600 dark:text-amber-400';
-  if (DOC_EXTS.has(ext)) return 'from-blue-50 to-blue-100/60 dark:from-blue-950/30 dark:to-blue-900/20 text-blue-600 dark:text-blue-400';
+  if (VIDEO_EXTS.has(ext))
+    return 'from-pink-50 to-pink-100/60 dark:from-pink-950/30 dark:to-pink-900/20 text-pink-600 dark:text-pink-400';
+  if (DESIGN_EXTS.has(ext))
+    return 'from-purple-50 to-purple-100/60 dark:from-purple-950/30 dark:to-purple-900/20 text-purple-600 dark:text-purple-400';
+  if (ARCHIVE_EXTS.has(ext))
+    return 'from-amber-50 to-amber-100/60 dark:from-amber-950/30 dark:to-amber-900/20 text-amber-600 dark:text-amber-400';
+  if (DOC_EXTS.has(ext))
+    return 'from-blue-50 to-blue-100/60 dark:from-blue-950/30 dark:to-blue-900/20 text-blue-600 dark:text-blue-400';
   return 'from-muted/40 to-muted/60 text-muted-foreground';
 }
 
 function FileCardIcon({ ext }: { ext: string }) {
   const cls = 'h-8 w-8 drop-shadow-sm';
-  if (IMAGE_EXTS.has(ext)) return <ImageIcon className={cls} />;
+  if (IMAGE_FALLBACK_EXTS.has(ext)) return <Smartphone className={cls} />;
+  if (PREVIEW_IMAGE_EXTS.has(ext)) return <ImageIcon className={cls} />;
+  if (VIDEO_EXTS.has(ext)) return <Film className={cls} />;
   if (ARCHIVE_EXTS.has(ext)) return <FileArchive className={cls} />;
   if (DESIGN_EXTS.has(ext)) return <Pen className={cls} />;
   if (DOC_EXTS.has(ext)) return <FileText className={cls} />;
@@ -84,7 +106,8 @@ const FileCard = memo(function FileCard({
   const badge = getFileTypeBadge(file.name);
   const size = file.currentVersion ? Number(file.currentVersion.sizeBytes) : 0;
   const cardColor = getCardColor(ext);
-  const isImage = IMAGE_EXTS.has(ext);
+  const canThumbPreview = PREVIEW_IMAGE_EXTS.has(ext);
+  const isHeicFallback = IMAGE_FALLBACK_EXTS.has(ext);
   const menuBtnRef = useRef<HTMLButtonElement>(null);
   const [thumbLoaded, setThumbLoaded] = useState(false);
   const [thumbError, setThumbError] = useState(false);
@@ -94,7 +117,8 @@ const FileCard = memo(function FileCard({
     onContextMenu(file, { x: e.clientX, y: e.clientY });
   }
 
-  function handleMenuClick() {
+  function handleMenuClick(e: React.MouseEvent) {
+    e.stopPropagation();
     if (menuBtnRef.current) {
       const rect = menuBtnRef.current.getBoundingClientRect();
       onContextMenu(file, { x: rect.left, y: rect.bottom + 4 });
@@ -103,7 +127,7 @@ const FileCard = memo(function FileCard({
 
   return (
     <div
-      className={`group relative flex flex-col overflow-hidden rounded-2xl border bg-card shadow-card transition-all duration-250 ease-out will-change-transform hover:shadow-elevated hover:-translate-y-0.5 ${
+      className={`group relative flex flex-col overflow-hidden rounded-2xl border bg-card shadow-card transition-all duration-250 ease-out will-change-transform hover:-translate-y-0.5 hover:shadow-elevated ${
         selected
           ? 'border-primary/35 ring-2 ring-primary/10 shadow-elevated'
           : 'border-border/55 hover:border-border/80'
@@ -111,9 +135,10 @@ const FileCard = memo(function FileCard({
       onContextMenu={handleContext}
       onDoubleClick={onOpen}
     >
-      {/* Thumbnail area — taller aspect ratio for cinematic feel */}
-      <div className={`relative flex aspect-[4/3] items-center justify-center bg-gradient-to-br ${cardColor} overflow-hidden`}>
-        {isImage && !thumbError ? (
+      <div
+        className={`relative flex aspect-[4/3] items-center justify-center overflow-hidden bg-gradient-to-br ${cardColor}`}
+      >
+        {canThumbPreview && !thumbError ? (
           <>
             {!thumbLoaded && (
               <div className="absolute inset-0 bg-shimmer bg-[length:200%_100%] animate-shimmer" />
@@ -122,57 +147,70 @@ const FileCard = memo(function FileCard({
             <img
               src={`/api/files/${file.id}/preview`}
               alt=""
-              className={`h-full w-full object-cover transition-all duration-500 ease-out ${thumbLoaded ? 'opacity-100 scale-100' : 'opacity-0 scale-105'}`}
+              className={`h-full w-full object-cover transition-all duration-500 ease-out ${thumbLoaded ? 'scale-100 opacity-100' : 'scale-105 opacity-0'}`}
               loading="lazy"
               onLoad={() => setThumbLoaded(true)}
               onError={() => setThumbError(true)}
             />
-            {/* Subtle vignette for depth */}
             {thumbLoaded && (
-              <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/8 via-transparent to-transparent" />
+              <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/10 via-transparent to-transparent" />
             )}
           </>
+        ) : isHeicFallback ? (
+          <div className="flex flex-col items-center gap-1.5 px-3 text-center">
+            <Smartphone className="h-8 w-8 drop-shadow-sm" />
+            <span className="text-[9px] font-bold uppercase tracking-wider opacity-70">iPhone photo</span>
+          </div>
         ) : (
           <FileCardIcon ext={ext} />
         )}
 
-        {/* Selection checkbox — glass pill */}
-        <label className={`absolute left-2.5 top-2.5 flex h-5 w-5 cursor-pointer items-center justify-center rounded-md border backdrop-blur-sm transition-all ${selected ? 'border-primary bg-primary' : 'border-white/50 bg-white/30 opacity-0 group-hover:opacity-100 dark:border-white/20 dark:bg-black/30'}`}>
-          <input
-            type="checkbox"
-            checked={selected}
-            onChange={onSelect}
-            className="sr-only"
-          />
+        <label
+          className={`absolute left-2.5 top-2.5 z-10 flex h-5 w-5 cursor-pointer items-center justify-center rounded-md border backdrop-blur-sm transition-all ${
+            selected
+              ? 'border-primary bg-primary'
+              : 'border-white/50 bg-white/30 opacity-0 group-hover:opacity-100 dark:border-white/20 dark:bg-black/30'
+          }`}
+        >
+          <input type="checkbox" checked={selected} onChange={onSelect} className="sr-only" />
           {selected && (
-            <svg viewBox="0 0 16 16" className="h-3 w-3 text-primary-foreground" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              viewBox="0 0 16 16"
+              className="h-3 w-3 text-primary-foreground"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <polyline points="4 8.5 7 11.5 12 5" />
             </svg>
           )}
         </label>
 
-        {/* Favorite star */}
         {favorited && (
-          <div className="absolute right-2.5 top-2.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/20 backdrop-blur-md">
+          <div className="absolute right-2.5 top-2.5 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-black/20 backdrop-blur-md">
             <Star className="h-3 w-3 fill-amber-400 text-amber-400 drop-shadow-sm" />
           </div>
         )}
       </div>
 
-      {/* Info + actions */}
-      <div className="flex flex-1 flex-col gap-2 px-3.5 py-3">
-        <p className="truncate pr-8 text-[13px] font-semibold leading-tight tracking-tight" title={file.name}>
+      <div className="relative flex flex-1 flex-col gap-2 px-3.5 py-3">
+        <p className="truncate pr-7 text-[13px] font-semibold leading-tight tracking-tight" title={file.name}>
           {file.name}
         </p>
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${badge.color}`}>
             {badge.label}
           </span>
-          <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground/55">{formatBytes(size)}</span>
+          <span className="min-w-0 flex-1 truncate text-right text-[10px] tabular-nums text-muted-foreground/55">
+            {size > 0 ? formatBytes(size) : '—'}
+          </span>
           <button
             ref={menuBtnRef}
+            type="button"
             onClick={handleMenuClick}
-            className="ml-auto shrink-0 rounded-lg p-1 text-muted-foreground/50 transition-all hover:bg-accent hover:text-foreground group-hover:opacity-100"
+            className="absolute bottom-3 right-3 shrink-0 rounded-lg p-1 text-muted-foreground/50 transition-all hover:bg-accent hover:text-foreground"
             aria-label="File actions"
           >
             <MoreVertical className="h-3.5 w-3.5" />

@@ -159,15 +159,6 @@ export function getInviteUrlWarnings(): string[] {
     );
   }
 
-  if (process.env.VERCEL_URL && process.env.NODE_ENV === 'production') {
-    const vercel = normalizeBaseUrl(process.env.VERCEL_URL);
-    if (vercel !== base) {
-      warnings.push(
-        `VERCEL_URL (${vercel}) differs from invite base (${base}). Invites use NEXT_PUBLIC_APP_URL only.`,
-      );
-    }
-  }
-
   return warnings;
 }
 

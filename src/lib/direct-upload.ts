@@ -38,6 +38,21 @@ export function clearUploadConfigCache(): void {
   cachedConfig = null;
 }
 
+/** MIME for upload init — iOS HEIC often has empty file.type. */
+export function resolveUploadMimeType(file: File): string {
+  if (file.type) return file.type;
+  const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+  if (ext === 'heic') return 'image/heic';
+  if (ext === 'heif') return 'image/heif';
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+  if (ext === 'png') return 'image/png';
+  if (ext === 'webp') return 'image/webp';
+  if (ext === 'gif') return 'image/gif';
+  if (ext === 'pdf') return 'application/pdf';
+  if (ext === 'mp4') return 'video/mp4';
+  return 'application/octet-stream';
+}
+
 function formatUploadError(err: unknown, status?: number): string {
   if (err instanceof Error) {
     if (err.name === 'AbortError') return 'Upload cancelled';
@@ -198,7 +213,7 @@ export async function uploadFileDirect(
   signal?: AbortSignal,
 ): Promise<void> {
   await getUploadConfig();
-  const mimeType = file.type || 'application/octet-stream';
+  const mimeType = resolveUploadMimeType(file);
 
   const initRes = await fetch('/api/files/upload/init', {
     method: 'POST',
@@ -224,6 +239,19 @@ export async function uploadFileDirect(
   try {
     if (init.method === 'single' && init.uploadUrl) {
       await putWithProgress(init.uploadUrl, file, mimeType, onProgress, signal);
+      const completeRes = await fetch('/api/files/upload/complete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        signal,
+        body: JSON.stringify({
+          fileId: init.fileId,
+          storageKey: init.storageKey,
+          sizeBytes: file.size,
+          mimeType,
+        }),
+      });
+      if (!completeRes.ok) throw new Error(await parseApiError(completeRes));
     } else if (init.method === 'multipart' && init.uploadId) {
       const parts = await uploadMultipart(
         file,
@@ -274,7 +302,7 @@ export async function uploadVersionDirect(
   onProgress: UploadProgressCallback,
   signal?: AbortSignal,
 ): Promise<void> {
-  const mimeType = file.type || 'application/octet-stream';
+  const mimeType = resolveUploadMimeType(file);
 
   const initRes = await fetch(`/api/files/${fileId}/versions/upload/init`, {
     method: 'POST',
@@ -306,6 +334,20 @@ export async function uploadVersionDirect(
   try {
     if (init.method === 'single' && init.uploadUrl) {
       await putWithProgress(init.uploadUrl, file, mimeType, onProgress, signal);
+      const completeRes = await fetch(`/api/files/${fileId}/versions/upload/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        signal,
+        body: JSON.stringify({
+          versionNo: init.versionNo,
+          storageKey: init.storageKey,
+          sizeBytes: file.size,
+          mimeType,
+          note,
+        }),
+      });
+      if (!completeRes.ok) throw new Error(await parseApiError(completeRes));
     } else if (init.method === 'multipart' && init.uploadId) {
       const parts = await uploadMultipart(
         file,

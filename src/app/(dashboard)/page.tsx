@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { StorageWidget } from '@/components/dashboard/storage-widget';
 import { ClientGreeting, ClientDate } from '@/components/dashboard/client-greeting';
+import { formatAuditAction, getAuditActionColor } from '@/lib/audit-display';
 
 export default async function DashboardHome() {
   let profile = null;
@@ -201,13 +202,13 @@ export default async function DashboardHome() {
           <div className="mt-3 grid gap-x-4 gap-y-0.5 lg:grid-cols-2">
             {recentActivity.map((event) => (
               <div key={event.id} className="flex items-center gap-3 rounded-xl px-3 py-2 text-xs transition-all hover:bg-accent/15">
-                <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${getActivityColor(event.action)}`}>
+                <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${getAuditActionColor(event.action)}`}>
                   <Activity className="h-3 w-3" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <span className="font-semibold">{event.actor?.name ?? event.actor?.email ?? 'System'}</span>
                   {' '}
-                  <span className="text-muted-foreground/60">{formatAction(event.action)}</span>
+                  <span className="text-muted-foreground/60">{formatAuditAction(event.action, event.meta)}</span>
                 </div>
                 <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground/35">
                   {timeAgo(event.createdAt)}
@@ -275,45 +276,6 @@ function QuickAction({
       {label}
     </Link>
   );
-}
-
-function getActivityColor(action: string): string {
-  if (action.includes('upload')) return 'bg-emerald-500/8 text-emerald-600';
-  if (action.includes('delete') || action.includes('permanent_delete')) return 'bg-red-500/8 text-red-500';
-  if (action.includes('restore')) return 'bg-blue-500/8 text-blue-500';
-  if (action.includes('create') || action.includes('invite')) return 'bg-purple-500/8 text-purple-500';
-  return 'bg-muted/30 text-muted-foreground';
-}
-
-function formatAction(action: string): string {
-  const map: Record<string, string> = {
-    'file.upload': 'uploaded a file',
-    'file.download': 'downloaded a file',
-    'file.rename': 'renamed a file',
-    'file.move': 'moved a file',
-    'file.delete': 'deleted a file',
-    'file.restore': 'restored a file',
-    'folder.create': 'created a folder',
-    'folder.rename': 'renamed a folder',
-    'folder.delete': 'deleted a folder',
-    'folder.restore': 'restored a folder',
-    'version.upload': 'uploaded a new version',
-    'version.restore': 'restored a file version',
-    'folder.move': 'moved a folder',
-    'file.permanent_delete': 'permanently deleted a file',
-    'folder.permanent_delete': 'permanently deleted a folder',
-    'user.invite': 'invited a user',
-    'user.invite_resend': 'resent an invite',
-    'user.invite_cancel': 'cancelled an invite',
-    'user.role_change': 'changed a user role',
-    'user.deactivate': 'deactivated a user',
-    'user.reactivate': 'reactivated a user',
-    'user.remove': 'removed a user',
-    'user.ownership_transfer': 'transferred ownership',
-    'settings.change': 'updated settings',
-    'login.success': 'signed in',
-  };
-  return map[action] ?? action.replace('.', ' ');
 }
 
 function timeAgo(date: Date): string {

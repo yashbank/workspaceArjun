@@ -13,14 +13,14 @@ export async function POST(request: NextRequest) {
       parts?: { partNumber: number; etag: string }[];
     };
 
-    if (!body.fileId || !body.storageKey || !body.sizeBytes) {
+    if (!body.fileId || !body.storageKey || body.sizeBytes == null) {
       return NextResponse.json({ error: 'fileId, storageKey, and sizeBytes are required' }, { status: 400 });
     }
 
     const result = await completeFileUpload({
       fileId: body.fileId,
       storageKey: body.storageKey,
-      sizeBytes: body.sizeBytes,
+      sizeBytes: Math.max(0, body.sizeBytes),
       mimeType: body.mimeType || 'application/octet-stream',
       uploadId: body.uploadId,
       parts: body.parts,

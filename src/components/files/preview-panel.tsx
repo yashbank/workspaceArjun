@@ -20,6 +20,8 @@ import {
   Weight,
   Layers,
   Expand,
+  Film,
+  Smartphone,
 } from 'lucide-react';
 import { getExtension, getFileTypeBadge, formatBytes, formatDate } from '@/lib/file-utils';
 import {
@@ -31,7 +33,9 @@ import { memo, useEffect, useRef, useState } from 'react';
 import type { FileItem } from './file-table';
 import { Lightbox } from './lightbox';
 
-const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp']);
+const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'tiff']);
+const HEIC_EXTS = new Set(['heic', 'heif']);
+const VIDEO_EXTS = new Set(['mp4', 'mov', 'webm', 'm4v']);
 const PDF_EXT = 'pdf';
 const DESIGN_EXTS = new Set(['cdr', 'ai', 'eps', 'psd', 'indd', 'sketch', 'fig', 'xd']);
 const SPREADSHEET_EXTS = new Set(['xls', 'xlsx', 'csv']);
@@ -93,8 +97,10 @@ export const PreviewPanel = memo(function PreviewPanel({
   const versionCount = file._count?.versions ?? 1;
 
   const isImage = IMAGE_EXTS.has(ext);
+  const isHeic = HEIC_EXTS.has(ext);
+  const isVideo = VIDEO_EXTS.has(ext);
   const isPdf = ext === PDF_EXT;
-  const canPreview = isImage || isPdf;
+  const canPreview = isImage || isPdf || isVideo;
 
   const [imgError, setImgError] = useState(false);
   const [imgErrorMessage, setImgErrorMessage] = useState<string | null>(null);
@@ -155,7 +161,7 @@ export const PreviewPanel = memo(function PreviewPanel({
 
   return (
     <>
-      <div className="fixed inset-x-0 bottom-0 z-50 flex max-h-[min(92vh,720px)] w-full flex-col overflow-hidden rounded-t-2xl border border-border/55 bg-card shadow-float animate-in drawer-in fade-in duration-300 lg:relative lg:inset-auto lg:z-auto lg:ml-4 lg:max-h-none lg:w-[min(100%,28rem)] lg:rounded-2xl xl:w-[32rem]">
+      <div className="fixed inset-x-0 bottom-0 z-50 flex max-h-[min(92vh,720px)] w-full flex-col overflow-hidden rounded-t-2xl border border-border/55 bg-card/98 shadow-float backdrop-blur-sm animate-in drawer-in fade-in duration-300 lg:relative lg:inset-auto lg:z-auto lg:ml-4 lg:max-h-none lg:w-[min(100%,28rem)] lg:rounded-2xl xl:w-[32rem]">
         {/* Header — glass toolbar */}
         <div className="glass flex items-center justify-between border-b border-border/45 px-4 py-3">
           <div className="flex items-center gap-2.5">
@@ -199,7 +205,7 @@ export const PreviewPanel = memo(function PreviewPanel({
         </div>
 
         {/* Hero preview */}
-        <div className="relative flex min-h-[380px] items-center justify-center overflow-hidden bg-muted/15">
+        <div className="relative flex min-h-[380px] items-center justify-center overflow-hidden bg-gradient-to-b from-muted/20 to-muted/5">
           {isImage && !imgError ? (
             <div
               className="group relative flex h-full w-full cursor-pointer items-center justify-center p-4"
@@ -218,7 +224,7 @@ export const PreviewPanel = memo(function PreviewPanel({
                 key={file.id}
                 src={previewSrc}
                 alt={file.name}
-                className={`max-h-[400px] w-full rounded-xl object-contain shadow-card transition-all duration-600 ease-out ${imgLoaded ? 'opacity-100 scale-100' : 'opacity-0 scale-[0.96]'}`}
+                className={`max-h-[min(420px,55vh)] w-full rounded-xl object-contain shadow-elevated transition-all duration-600 ease-out ${imgLoaded ? 'opacity-100 scale-100' : 'opacity-0 scale-[0.96]'}`}
                 onLoad={() => setImgLoaded(true)}
                 onError={() => void handlePreviewLoadError()}
               />
@@ -229,22 +235,55 @@ export const PreviewPanel = memo(function PreviewPanel({
                 </div>
               </div>
             </div>
+          ) : isVideo && !imgError ? (
+            <div className="flex h-full w-full flex-col p-4">
+              <div className="mb-2 flex items-center gap-2">
+                <Film className="h-4 w-4 text-pink-500" />
+                <span className="text-[11px] font-semibold text-muted-foreground/70">Video preview</span>
+              </div>
+              <video
+                key={file.id}
+                src={previewSrc}
+                controls
+                playsInline
+                className="max-h-[min(400px,50vh)] w-full rounded-xl bg-black/90 shadow-elevated"
+                onError={() => void handlePreviewLoadError()}
+              />
+            </div>
           ) : isPdf && !imgError ? (
-            <div className="flex h-[440px] w-full flex-col">
+            <div className="flex h-[min(440px,55vh)] w-full flex-col rounded-xl border border-border/40 overflow-hidden shadow-card m-3">
               <div className="glass flex items-center gap-2.5 border-b border-border/30 px-4 py-2.5">
                 <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-red-500/10">
                   <FileText className="h-3.5 w-3.5 text-red-500" />
                 </div>
-                <span className="text-[11px] font-semibold text-muted-foreground/70">Document</span>
-                <span className="ml-auto rounded-md bg-muted/30 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-muted-foreground/50">PDF</span>
+                <span className="truncate text-[11px] font-semibold text-muted-foreground/70">{file.name}</span>
+                <span className="ml-auto shrink-0 rounded-md bg-red-500/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-red-600">PDF</span>
               </div>
               <iframe
                 key={file.id}
                 src={previewSrc}
-                className="flex-1 border-0"
+                className="min-h-[320px] flex-1 border-0 bg-muted/10"
                 title={file.name}
                 onError={() => void handlePreviewLoadError()}
               />
+            </div>
+          ) : isHeic ? (
+            <div className="flex flex-col items-center gap-5 px-8 py-14 text-center">
+              <div className="flex h-20 w-20 items-center justify-center rounded-[24px] bg-gradient-to-br from-sky-100 to-sky-50 shadow-card dark:from-sky-900/30 dark:to-sky-800/20">
+                <Smartphone className="h-10 w-10 text-sky-500" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold">iPhone photo (HEIC)</p>
+                <p className="mt-1 max-w-xs text-xs text-muted-foreground/60">
+                  Browsers cannot preview HEIC inline. Download to view on your device.
+                </p>
+              </div>
+              <button
+                onClick={onDownload}
+                className="rounded-xl bg-primary px-5 py-2.5 text-xs font-semibold text-primary-foreground shadow-card"
+              >
+                Download original
+              </button>
             </div>
           ) : canPreview && imgError ? (
             <div className="flex flex-col items-center gap-5 py-16 text-muted-foreground">

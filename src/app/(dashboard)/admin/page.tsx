@@ -503,8 +503,9 @@ function UserRow({
               ref={roleBtnRef}
               type="button"
               disabled={busyId === u.id}
-              onClick={(e) => {
+              onMouseDown={(e) => {
                 e.stopPropagation();
+                e.preventDefault();
                 setActionMenu(null);
                 setRoleMenu(roleMenu === u.id ? null : u.id);
               }}
@@ -528,11 +529,12 @@ function UserRow({
                   type="button"
                   role="menuitem"
                   disabled={r === u.role}
+                  onMouseDown={(e) => e.stopPropagation()}
                   onClick={() => {
                     setRoleMenu(null);
                     onRoleChange(u.id, r, u.role);
                   }}
-                  className="flex w-full items-center rounded-lg px-3 py-2 text-left text-[13px] capitalize transition-all hover:bg-accent disabled:opacity-40"
+                  className="flex w-full cursor-pointer items-center rounded-lg px-3 py-2 text-left text-[13px] capitalize transition-all hover:bg-accent disabled:opacity-40"
                 >
                   {r}
                 </button>
@@ -556,8 +558,9 @@ function UserRow({
               ref={actionBtnRef}
               type="button"
               disabled={busyId === u.id}
-              onClick={(e) => {
+              onMouseDown={(e) => {
                 e.stopPropagation();
+                e.preventDefault();
                 setRoleMenu(null);
                 setActionMenu(actionMenu === u.id ? null : u.id);
               }}
@@ -579,11 +582,12 @@ function UserRow({
               <button
                 type="button"
                 role="menuitem"
+                onMouseDown={(e) => e.stopPropagation()}
                 onClick={() => {
                   setActionMenu(null);
                   onStatusToggle(u.id, u.status, u.role);
                 }}
-                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] transition-all hover:bg-accent"
+                className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] transition-all hover:bg-accent"
               >
                 {u.status === 'active' ? (
                   <>
@@ -601,11 +605,12 @@ function UserRow({
                 <button
                   type="button"
                   role="menuitem"
+                  onMouseDown={(e) => e.stopPropagation()}
                   onClick={() => {
                     setActionMenu(null);
                     onTransferOwnership(u.id, u.email);
                   }}
-                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] transition-all hover:bg-accent"
+                  className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] transition-all hover:bg-accent"
                 >
                   <Shield className="h-3.5 w-3.5" />
                   Transfer ownership
@@ -615,11 +620,12 @@ function UserRow({
                 <button
                   type="button"
                   role="menuitem"
+                  onMouseDown={(e) => e.stopPropagation()}
                   onClick={() => {
                     setActionMenu(null);
                     onRemove(u.id);
                   }}
-                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] text-destructive transition-all hover:bg-destructive/10"
+                  className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] text-destructive transition-all hover:bg-destructive/10"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                   Remove user

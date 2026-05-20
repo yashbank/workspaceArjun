@@ -794,11 +794,29 @@ function LoadingSkeleton({ mode }: { mode: 'list' | 'grid' }) {
     return (
       <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
         {Array.from({ length: 10 }).map((_, i) => (
-          <div key={i} className="flex flex-col overflow-hidden rounded-2xl border border-border/40">
-            <div className="aspect-[4/3] bg-shimmer bg-[length:200%_100%] animate-shimmer" style={{ animationDelay: `${i * 60}ms` }} />
-            <div className="space-y-2 p-3.5">
-              <div className="h-3 w-3/4 rounded-full bg-shimmer bg-[length:200%_100%] animate-shimmer" style={{ animationDelay: `${i * 60 + 30}ms` }} />
-              <div className="h-2.5 w-1/2 rounded-full bg-shimmer bg-[length:200%_100%] animate-shimmer" style={{ animationDelay: `${i * 60 + 60}ms` }} />
+          <div
+            key={i}
+            className="flex flex-col overflow-hidden rounded-2xl border border-border/40 bg-card/50 shadow-card"
+          >
+            <div
+              className="aspect-[4/3] bg-shimmer bg-[length:200%_100%] animate-shimmer"
+              style={{ animationDelay: `${i * 60}ms` }}
+            />
+            <div className="space-y-2.5 p-3.5">
+              <div
+                className="h-3.5 w-4/5 rounded-lg bg-shimmer bg-[length:200%_100%] animate-shimmer"
+                style={{ animationDelay: `${i * 60 + 30}ms` }}
+              />
+              <div className="flex gap-2">
+                <div
+                  className="h-4 w-10 rounded-md bg-shimmer bg-[length:200%_100%] animate-shimmer"
+                  style={{ animationDelay: `${i * 60 + 50}ms` }}
+                />
+                <div
+                  className="h-4 flex-1 rounded-md bg-shimmer bg-[length:200%_100%] animate-shimmer"
+                  style={{ animationDelay: `${i * 60 + 70}ms` }}
+                />
+              </div>
             </div>
           </div>
         ))}

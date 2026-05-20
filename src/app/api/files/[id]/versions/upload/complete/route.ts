@@ -18,7 +18,7 @@ export async function POST(
       parts?: { partNumber: number; etag: string }[];
     };
 
-    if (!body.versionNo || !body.storageKey || !body.sizeBytes) {
+    if (!body.versionNo || !body.storageKey || body.sizeBytes == null) {
       return NextResponse.json(
         { error: 'versionNo, storageKey, and sizeBytes are required' },
         { status: 400 },
@@ -29,7 +29,7 @@ export async function POST(
       fileId: id,
       versionNo: body.versionNo,
       storageKey: body.storageKey,
-      sizeBytes: body.sizeBytes,
+      sizeBytes: Math.max(0, body.sizeBytes),
       mimeType: body.mimeType || 'application/octet-stream',
       note: body.note,
       uploadId: body.uploadId,

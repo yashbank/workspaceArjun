@@ -14,6 +14,7 @@ export type DashboardActivity = {
   action: string;
   createdAt: Date;
   actor: { name: string | null; email: string } | null;
+  meta: Record<string, unknown> | null;
 };
 
 export type DashboardPinnedFile = {
@@ -91,6 +92,7 @@ export async function loadDashboardData(profile: UserProfile | null): Promise<Da
         action: true,
         createdAt: true,
         actor: { select: { name: true, email: true } },
+        meta: true,
       },
     }),
     profile
@@ -151,6 +153,10 @@ export async function loadDashboardData(profile: UserProfile | null): Promise<Da
           action: e.action ?? 'unknown',
           createdAt: e.createdAt,
           actor: e.actor,
+          meta:
+            e.meta && typeof e.meta === 'object' && !Array.isArray(e.meta)
+              ? (e.meta as Record<string, unknown>)
+              : null,
         }))
       : (errors.push(`recentActivity: ${String(recentActivityResult.reason)}`), []);
 

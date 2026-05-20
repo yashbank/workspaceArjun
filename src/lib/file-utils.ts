@@ -11,6 +11,8 @@ const EXT_MAP: Record<string, { label: string; color: string }> = {
   jpeg: { label: 'JPEG', color: 'bg-sky-500/15 text-sky-700 dark:text-sky-400' },
   gif: { label: 'GIF', color: 'bg-sky-500/15 text-sky-700 dark:text-sky-400' },
   webp: { label: 'WEBP', color: 'bg-sky-500/15 text-sky-700 dark:text-sky-400' },
+  heic: { label: 'HEIC', color: 'bg-sky-500/15 text-sky-700 dark:text-sky-400' },
+  heif: { label: 'HEIF', color: 'bg-sky-500/15 text-sky-700 dark:text-sky-400' },
   tiff: { label: 'TIFF', color: 'bg-sky-500/15 text-sky-700 dark:text-sky-400' },
   doc: { label: 'DOC', color: 'bg-blue-600/15 text-blue-800 dark:text-blue-300' },
   docx: { label: 'DOCX', color: 'bg-blue-600/15 text-blue-800 dark:text-blue-300' },

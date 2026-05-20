@@ -90,4 +90,11 @@ describe('getAppUrl', () => {
     const warnings = getInviteUrlWarnings();
     expect(warnings.some((w) => w.includes('NEXT_PUBLIC_APP_URL'))).toBe(true);
   });
+
+  it('does not warn when VERCEL_URL differs but NEXT_PUBLIC_APP_URL is set', () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    process.env.NEXT_PUBLIC_APP_URL = PRODUCTION_APP_URL;
+    process.env.VERCEL_URL = 'workspace-arjun-git-main.vercel.app';
+    expect(getInviteUrlWarnings()).toEqual([]);
+  });
 });

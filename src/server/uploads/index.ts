@@ -23,6 +23,33 @@ import {
 
 const PROXY_MAX_BYTES = 4 * 1024 * 1024; // Vercel-safe proxy limit for local dev
 
+/** Prefer client size; fall back to storage HEAD when iOS reports 0 or size mismatches. */
+async function resolveUploadedSizeBytes(
+  storageKey: string,
+  clientSizeBytes: number,
+): Promise<number> {
+  const head = await headObject(storageKey);
+  if (!head.exists) {
+    throw new Error('Storage verification failed — object not found after upload');
+  }
+
+  const stored = head.contentLength ?? 0;
+  if (stored > 0) {
+    if (clientSizeBytes > 0 && clientSizeBytes !== stored) {
+      console.warn('[upload] size mismatch — using storage ContentLength', {
+        storageKey,
+        clientSizeBytes,
+        stored,
+      });
+    }
+    return stored;
+  }
+
+  if (clientSizeBytes > 0) return clientSizeBytes;
+
+  throw new Error('Uploaded file is empty or size could not be verified');
+}
+
 export type UploadInitResponse = {
   mode: 'direct' | 'proxy';
   fileId: string;
@@ -169,16 +196,13 @@ export async function completeFileUpload(input: {
       await finishMultipartUpload(input.storageKey, input.uploadId, input.parts);
     }
 
-    const head = await headObject(input.storageKey);
-    if (!head.exists) {
-      throw new Error('Storage verification failed — object not found after upload');
-    }
+    const sizeBytes = await resolveUploadedSizeBytes(input.storageKey, input.sizeBytes);
 
     const version = await db.fileVersion.create({
       data: {
         fileId: file.id,
         versionNo: 1,
-        sizeBytes: BigInt(input.sizeBytes),
+        sizeBytes: BigInt(sizeBytes),
         storageKey: input.storageKey,
         uploadedBy: user.id,
       },
@@ -191,7 +215,7 @@ export async function completeFileUpload(input: {
 
     await db.storageUsage.updateMany({
       data: {
-        totalBytes: { increment: BigInt(input.sizeBytes) },
+        totalBytes: { increment: BigInt(sizeBytes) },
         fileCount: { increment: 1 },
       },
     });
@@ -201,7 +225,12 @@ export async function completeFileUpload(input: {
       action: 'file.upload',
       targetType: 'file',
       targetId: file.id,
-      meta: { name: file.name, mimeType: input.mimeType, sizeBytes: input.sizeBytes },
+      meta: {
+        name: file.name,
+        mimeType: input.mimeType,
+        sizeBytes,
+        folderId: file.folderId,
+      },
     });
 
     return { fileId: file.id };
@@ -308,16 +337,13 @@ export async function completeVersionUpload(input: {
       await finishMultipartUpload(input.storageKey, input.uploadId, input.parts);
     }
 
-    const head = await headObject(input.storageKey);
-    if (!head.exists) {
-      throw new Error('Storage verification failed — object not found after upload');
-    }
+    const sizeBytes = await resolveUploadedSizeBytes(input.storageKey, input.sizeBytes);
 
     const version = await db.fileVersion.create({
       data: {
         fileId: file.id,
         versionNo: input.versionNo,
-        sizeBytes: BigInt(input.sizeBytes),
+        sizeBytes: BigInt(sizeBytes),
         storageKey: input.storageKey,
         uploadedBy: user.id,
         note: input.note?.trim() || null,
@@ -330,7 +356,7 @@ export async function completeVersionUpload(input: {
     });
 
     await db.storageUsage.updateMany({
-      data: { totalBytes: { increment: BigInt(input.sizeBytes) } },
+      data: { totalBytes: { increment: BigInt(sizeBytes) } },
     });
 
     await logAuditEvent({
@@ -340,7 +366,7 @@ export async function completeVersionUpload(input: {
       targetId: file.id,
       meta: {
         versionNo: input.versionNo,
-        sizeBytes: input.sizeBytes,
+        sizeBytes,
         note: input.note ?? null,
         fileName: file.name,
       },
