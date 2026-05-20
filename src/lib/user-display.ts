@@ -19,3 +19,11 @@ export function getUserDisplayName(actor: ActorLike | null | undefined): string 
 export function needsDisplayName(name: string | null | undefined): boolean {
   return !name?.trim();
 }
+
+/** Redirect to /account/name when name missing or collides with another user. */
+export function needsDisplayNameSetup(
+  name: string | null | undefined,
+  hasDuplicateName: boolean,
+): boolean {
+  return needsDisplayName(name) || hasDuplicateName;
+}

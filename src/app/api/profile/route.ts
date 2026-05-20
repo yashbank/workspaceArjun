@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getCurrentUser } from '@/server/auth';
-import { updateOwnDisplayName } from '@/server/profile';
+import { updateOwnDisplayName, userHasDuplicateDisplayName } from '@/server/profile';
 
 export async function PATCH(request: NextRequest) {
   try {
@@ -16,6 +16,7 @@ export async function PATCH(request: NextRequest) {
       email: profile.email,
       name: profile.name,
       role: profile.role,
+      hasDuplicateName: false,
     });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'Unknown error';
@@ -30,11 +31,13 @@ export async function GET() {
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+    const hasDuplicateName = await userHasDuplicateDisplayName(user.id);
     return NextResponse.json({
       id: user.id,
       email: user.email,
       name: user.name,
       role: user.role,
+      hasDuplicateName,
     });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'Unknown error';

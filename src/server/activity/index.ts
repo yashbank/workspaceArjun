@@ -1,8 +1,11 @@
 import { db } from '@/server/db';
 import { requirePermission } from '@/server/rbac';
 import type { UserProfile } from '@/generated/prisma/client';
+import {
+  defaultActivityFromDate,
+  parseActivityDateRange,
+} from '@/lib/activity-dates';
 
-const MAX_DAYS = 30;
 const MAX_RESULTS = 200;
 const RECENT_DEFAULT = 8;
 
@@ -29,9 +32,16 @@ export type ActivityListQuery = {
   targetType?: string;
   from?: string;
   to?: string;
+  /** Client `Date.getTimezoneOffset()` minutes (local → UTC). */
+  tzOffset?: number;
   q?: string;
   starredOnly?: boolean;
 };
+
+export {
+  parseActivityDateRange,
+  defaultActivityFromDate as defaultFromDate,
+} from '@/lib/activity-dates';
 
 const activitySelect = {
   id: true,
@@ -48,39 +58,6 @@ export function parseMeta(meta: unknown): Record<string, unknown> | null {
     return meta as Record<string, unknown>;
   }
   return null;
-}
-
-export function defaultFromDate(): Date {
-  const d = new Date();
-  d.setDate(d.getDate() - MAX_DAYS);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-/** Parse YYYY-MM-DD; end date includes full local day through 23:59:59.999 */
-export function parseActivityDateRange(from?: string, to?: string): { from: Date; to: Date } {
-  const parseDay = (dateStr: string, endOfDay: boolean): Date => {
-    const parts = dateStr.split('-').map((p) => Number(p));
-    if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) {
-      throw new Error('Invalid date');
-    }
-    const [y, m, d] = parts;
-    if (endOfDay) return new Date(y, m - 1, d, 23, 59, 59, 999);
-    return new Date(y, m - 1, d, 0, 0, 0, 0);
-  };
-
-  const fromDate = from ? parseDay(from, false) : defaultFromDate();
-  const toDate = to ? parseDay(to, true) : (() => {
-    const end = new Date();
-    end.setHours(23, 59, 59, 999);
-    return end;
-  })();
-
-  if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
-    throw new Error('Invalid date range');
-  }
-
-  return { from: fromDate, to: toDate };
 }
 
 function matchesSearch(
@@ -144,7 +121,7 @@ export async function listActivity(
 ): Promise<{ events: ActivityListItem[]; actors: ActivityActor[] }> {
   await requirePermission('audit:read');
 
-  const { from, to } = parseActivityDateRange(query.from, query.to);
+  const { from, to } = parseActivityDateRange(query.from, query.to, query.tzOffset);
 
   const starredIds = query.starredOnly
     ? (
@@ -198,7 +175,7 @@ export async function listActivity(
 
 export async function listActivityActors(): Promise<ActivityActor[]> {
   await requirePermission('audit:read');
-  const since = defaultFromDate();
+  const since = defaultActivityFromDate();
   return db.userProfile.findMany({
     where: { auditEvents: { some: { createdAt: { gte: since } } } },
     select: { id: true, email: true, name: true },

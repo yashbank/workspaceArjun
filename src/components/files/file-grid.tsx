@@ -11,18 +11,22 @@ import {
   Film,
   Smartphone,
 } from 'lucide-react';
-import { memo, useRef, useState } from 'react';
+import { memo, useRef } from 'react';
 import { getExtension, getFileTypeBadge, formatBytes } from '@/lib/file-utils';
+import { FileMediaThumbnail } from './file-media-thumbnail';
 import type { FileItem } from './file-table';
 
-/** Extensions we attempt inline thumbnail preview for. */
 const PREVIEW_IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'tiff']);
-/** Shown as image-type cards with icon fallback (no browser decode). */
 const IMAGE_FALLBACK_EXTS = new Set(['heic', 'heif']);
 const ARCHIVE_EXTS = new Set(['zip', 'rar', '7z', 'tar', 'gz']);
 const DOC_EXTS = new Set(['pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'ppt', 'pptx', 'txt']);
 const DESIGN_EXTS = new Set(['cdr', 'ai', 'eps', 'psd']);
 const VIDEO_EXTS = new Set(['mp4', 'mov', 'webm', 'm4v']);
+const MEDIA_THUMB_EXTS = new Set([
+  ...PREVIEW_IMAGE_EXTS,
+  ...IMAGE_FALLBACK_EXTS,
+  ...VIDEO_EXTS,
+]);
 
 function getCardColor(ext: string): string {
   if (PREVIEW_IMAGE_EXTS.has(ext) || IMAGE_FALLBACK_EXTS.has(ext))
@@ -106,11 +110,8 @@ const FileCard = memo(function FileCard({
   const badge = getFileTypeBadge(file.name);
   const size = file.currentVersion ? Number(file.currentVersion.sizeBytes) : 0;
   const cardColor = getCardColor(ext);
-  const canThumbPreview = PREVIEW_IMAGE_EXTS.has(ext);
-  const isHeicFallback = IMAGE_FALLBACK_EXTS.has(ext);
+  const hasMediaThumb = MEDIA_THUMB_EXTS.has(ext);
   const menuBtnRef = useRef<HTMLButtonElement>(null);
-  const [thumbLoaded, setThumbLoaded] = useState(false);
-  const [thumbError, setThumbError] = useState(false);
 
   function handleContext(e: React.MouseEvent) {
     e.preventDefault();
@@ -138,29 +139,8 @@ const FileCard = memo(function FileCard({
       <div
         className={`relative flex aspect-[4/3] items-center justify-center overflow-hidden bg-gradient-to-br ${cardColor}`}
       >
-        {canThumbPreview && !thumbError ? (
-          <>
-            {!thumbLoaded && (
-              <div className="absolute inset-0 bg-shimmer bg-[length:200%_100%] animate-shimmer" />
-            )}
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={`/api/files/${file.id}/preview`}
-              alt=""
-              className={`h-full w-full object-cover transition-all duration-500 ease-out ${thumbLoaded ? 'scale-100 opacity-100' : 'scale-105 opacity-0'}`}
-              loading="lazy"
-              onLoad={() => setThumbLoaded(true)}
-              onError={() => setThumbError(true)}
-            />
-            {thumbLoaded && (
-              <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/10 via-transparent to-transparent" />
-            )}
-          </>
-        ) : isHeicFallback ? (
-          <div className="flex flex-col items-center gap-1.5 px-3 text-center">
-            <Smartphone className="h-8 w-8 drop-shadow-sm" />
-            <span className="text-[9px] font-bold uppercase tracking-wider opacity-70">iPhone photo</span>
-          </div>
+        {hasMediaThumb ? (
+          <FileMediaThumbnail fileId={file.id} filename={file.name} variant="grid" />
         ) : (
           <FileCardIcon ext={ext} />
         )}
@@ -196,7 +176,7 @@ const FileCard = memo(function FileCard({
       </div>
 
       <div className="relative flex flex-1 flex-col gap-2 px-3.5 py-3">
-        <p className="truncate pr-7 text-[13px] font-semibold leading-tight tracking-tight" title={file.name}>
+        <p className="line-clamp-2 min-h-[2.5rem] pr-7 text-[13px] font-semibold leading-tight tracking-tight" title={file.name}>
           {file.name}
         </p>
         <div className="flex min-w-0 items-center gap-2">

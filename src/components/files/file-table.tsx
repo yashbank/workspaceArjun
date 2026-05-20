@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { useRef, useState, useEffect } from 'react';
 import { getExtension, getFileTypeBadge, formatBytes, formatDate } from '@/lib/file-utils';
+import { FileMediaThumbnail } from './file-media-thumbnail';
 import { VersionPanel } from './version-panel';
 
 export type FileItem = {
@@ -36,7 +37,9 @@ export type FileItem = {
   } | null;
 };
 
-const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'tiff', 'bmp']);
+const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'tiff', 'bmp', 'heic', 'heif']);
+const VIDEO_EXTS = new Set(['mp4', 'mov', 'webm', 'm4v']);
+const MEDIA_THUMB_EXTS = new Set([...IMAGE_EXTS, ...VIDEO_EXTS]);
 const ARCHIVE_EXTS = new Set(['zip', 'rar', '7z', 'tar', 'gz']);
 const DOC_EXTS = new Set(['pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'ppt', 'pptx', 'txt']);
 const DESIGN_EXTS = new Set(['cdr', 'ai', 'eps', 'psd']);
@@ -137,9 +140,11 @@ function FileRowWithVersions({
   const [expanded, setExpanded] = useState(false);
   const [menuPos, setMenuPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const menuBtnRef = useRef<HTMLButtonElement>(null);
+  const ext = getExtension(file.name);
   const size = file.currentVersion ? Number(file.currentVersion.sizeBytes) : 0;
   const badge = getFileTypeBadge(file.name);
   const versionCount = file._count?.versions ?? 1;
+  const hasMediaThumb = MEDIA_THUMB_EXTS.has(ext);
 
   function openMenu() {
     if (menuBtnRef.current) {
@@ -168,7 +173,11 @@ function FileRowWithVersions({
         </td>
         <td className="px-4 py-2.5">
           <div className="flex items-center gap-2.5">
-            <FileTypeIcon filename={file.name} />
+            {hasMediaThumb ? (
+              <FileMediaThumbnail fileId={file.id} filename={file.name} variant="list" />
+            ) : (
+              <FileTypeIcon filename={file.name} />
+            )}
             <span className="truncate text-[13px] font-semibold tracking-tight" title={file.name}>{file.name}</span>
             {isFavorited && <Star className="h-3 w-3 shrink-0 fill-amber-400 text-amber-400 drop-shadow-sm" />}
           </div>

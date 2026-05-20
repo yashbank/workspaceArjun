@@ -667,7 +667,9 @@ function UserCard({
     <div className="space-y-3 px-5 py-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium">{u.name || u.email.split('@')[0]}</p>
+          <p className="truncate text-sm font-medium">
+            {getUserDisplayName({ email: u.email, name: u.name })}
+          </p>
           <p className="truncate text-xs text-muted-foreground">{u.email}</p>
         </div>
         <StatusBadge status={u.status} />

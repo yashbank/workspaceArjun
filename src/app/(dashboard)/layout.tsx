@@ -8,7 +8,8 @@ import { GlobalKeys } from '@/components/shell/global-keys';
 import { GuidedTour } from '@/components/shell/guided-tour';
 import { DbConnectionIssue } from '@/components/shell/db-connection-issue';
 import { DisplayNameGuard } from '@/components/shell/display-name-guard';
-import { needsDisplayName } from '@/lib/user-display';
+import { needsDisplayNameSetup } from '@/lib/user-display';
+import { userHasDuplicateDisplayName } from '@/server/profile';
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createSupabaseServerClient();
@@ -47,10 +48,13 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const showAdminNav = profile.role === 'owner' || profile.role === 'admin';
   const showSettingsNav = profile.role === 'owner';
   const showActivityNav = profile.role === 'owner' || profile.role === 'admin';
+  const hasDuplicateName = await userHasDuplicateDisplayName(profile.id);
 
   return (
     <>
-      <DisplayNameGuard needsDisplayName={needsDisplayName(profile.name)}>
+      <DisplayNameGuard
+        needsSetup={needsDisplayNameSetup(profile.name, hasDuplicateName)}
+      >
         <DashboardShell
           showAdminNav={showAdminNav}
           showSettingsNav={showSettingsNav}

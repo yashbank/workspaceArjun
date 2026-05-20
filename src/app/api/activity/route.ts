@@ -17,12 +17,16 @@ export async function GET(request: NextRequest) {
     }
 
     const sp = request.nextUrl.searchParams;
+    const tzRaw = sp.get('tzOffset');
+    const tzOffset = tzRaw != null && tzRaw !== '' ? Number(tzRaw) : undefined;
+
     const data = await listActivity(user, {
       actorId: sp.get('actorId') ?? undefined,
       action: sp.get('action') ?? undefined,
       targetType: sp.get('targetType') ?? undefined,
       from: sp.get('from') ?? undefined,
       to: sp.get('to') ?? undefined,
+      tzOffset: Number.isFinite(tzOffset) ? tzOffset : undefined,
       q: sp.get('q') ?? undefined,
       starredOnly: sp.get('starredOnly') === 'true',
     });

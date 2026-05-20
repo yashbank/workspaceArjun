@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getUserDisplayName, needsDisplayName } from './user-display';
+import { getUserDisplayName, needsDisplayName, needsDisplayNameSetup } from './user-display';
 
 describe('getUserDisplayName', () => {
   it('uses profile name when set', () => {
@@ -19,5 +19,15 @@ describe('needsDisplayName', () => {
 
   it('false when name set', () => {
     expect(needsDisplayName('Arya')).toBe(false);
+  });
+});
+
+describe('needsDisplayNameSetup', () => {
+  it('true when duplicate', () => {
+    expect(needsDisplayNameSetup('Arya', true)).toBe(true);
+  });
+
+  it('false when name ok and unique', () => {
+    expect(needsDisplayNameSetup('Arya', false)).toBe(false);
   });
 });
