@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { AlertCircle, Loader2, Lock } from 'lucide-react';
 
@@ -12,7 +13,11 @@ type InviteStatus =
   | { status: 'already_complete'; message: string }
   | { status: 'error'; message: string };
 
-export default function InviteAcceptPage() {
+const EXPIRED_MESSAGE =
+  'This invite link is invalid or has expired. Ask your administrator to resend the invite.';
+
+function InviteAcceptContent() {
+  const searchParams = useSearchParams();
   const [inviteStatus, setInviteStatus] = useState<InviteStatus>({ status: 'loading' });
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -21,19 +26,23 @@ export default function InviteAcceptPage() {
 
   useEffect(() => {
     async function init() {
-      const supabase = createSupabaseBrowserClient();
+      if (searchParams.get('error') === 'expired') {
+        setInviteStatus({ status: 'no_session', message: EXPIRED_MESSAGE });
+        return;
+      }
 
-      // Handle hash tokens from some Supabase invite links (implicit flow).
-      if (typeof window !== 'undefined' && window.location.hash.includes('access_token')) {
-        const { error: sessionError } = await supabase.auth.getSession();
-        if (sessionError) {
-          setInviteStatus({
-            status: 'no_session',
-            message: 'This invite link is invalid or has expired.',
-          });
-          return;
-        }
-        window.history.replaceState(null, '', window.location.pathname);
+      const supabase = createSupabaseBrowserClient();
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+      if (sessionError || !session?.user?.email) {
+        setInviteStatus({
+          status: 'no_session',
+          message: EXPIRED_MESSAGE,
+        });
+        return;
       }
 
       const res = await fetch('/api/auth/invite-status', { credentials: 'include' });
@@ -58,9 +67,7 @@ export default function InviteAcceptPage() {
       if (data.status === 'no_session') {
         setInviteStatus({
           status: 'no_session',
-          message:
-            data.message ??
-            'This invite link is invalid or has expired. Ask your administrator to resend the invite.',
+          message: data.message ?? EXPIRED_MESSAGE,
         });
         return;
       }
@@ -71,7 +78,7 @@ export default function InviteAcceptPage() {
     }
 
     void init();
-  }, []);
+  }, [searchParams]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -89,6 +96,15 @@ export default function InviteAcceptPage() {
     setSubmitting(true);
     try {
       const supabase = createSupabaseBrowserClient();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session) {
+        setError(EXPIRED_MESSAGE);
+        return;
+      }
+
       const { error: updateError } = await supabase.auth.updateUser({ password });
 
       if (updateError) {
@@ -229,5 +245,20 @@ export default function InviteAcceptPage() {
         </form>
       </div>
     </div>
+  );
+}
+
+export default function InviteAcceptPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex w-full max-w-sm flex-col items-center justify-center rounded-2xl border border-border/50 bg-card p-12 shadow-float">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground/40" />
+          <p className="mt-4 text-sm text-muted-foreground">Verifying your invite…</p>
+        </div>
+      }
+    >
+      <InviteAcceptContent />
+    </Suspense>
   );
 }

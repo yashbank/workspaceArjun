@@ -129,7 +129,7 @@ export async function requireUser(): Promise<UserProfile> {
 export async function inviteUserByEmail(email: string, role: UserRole) {
   const admin = await createSupabaseAdminClient();
   const normalized = email.trim().toLowerCase();
-  const redirectTo = `${getAppUrl()}/auth/callback?next=${encodeURIComponent(INVITE_ACCEPT_PATH)}`;
+  const redirectTo = `${getAppUrl()}/auth/callback?type=invite&next=${encodeURIComponent(INVITE_ACCEPT_PATH)}`;
   const { data, error } = await admin.auth.admin.inviteUserByEmail(normalized, {
     data: { invited_role: role },
     redirectTo,

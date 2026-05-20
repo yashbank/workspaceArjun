@@ -1,14 +1,40 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
-import { Loader2 } from 'lucide-react';
+import { AlertCircle, Loader2 } from 'lucide-react';
 
-export default function ResetPasswordPage() {
+const EXPIRED_MESSAGE =
+  'This password reset link is invalid or has expired. Request a new link from the sign-in page.';
+
+function ResetPasswordContent() {
+  const searchParams = useSearchParams();
+  const [sessionReady, setSessionReady] = useState<boolean | null>(null);
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    async function checkSession() {
+      if (searchParams.get('error') === 'expired') {
+        setSessionReady(false);
+        return;
+      }
+
+      const supabase = createSupabaseBrowserClient();
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+      setSessionReady(!sessionError && !!session);
+    }
+
+    void checkSession();
+  }, [searchParams]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -24,16 +50,59 @@ export default function ResetPasswordPage() {
     }
 
     setLoading(true);
-    const supabase = createSupabaseBrowserClient();
-    const { error: updateError } = await supabase.auth.updateUser({ password });
+    try {
+      const supabase = createSupabaseBrowserClient();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
-    if (updateError) {
-      setError(updateError.message);
+      if (!session) {
+        setError(EXPIRED_MESSAGE);
+        return;
+      }
+
+      const { error: updateError } = await supabase.auth.updateUser({ password });
+
+      if (updateError) {
+        setError(updateError.message);
+        return;
+      }
+
+      window.location.href = '/login?reset=success';
+    } catch {
+      setError('Something went wrong. Please try again.');
+    } finally {
       setLoading(false);
-      return;
     }
+  }
 
-    window.location.href = '/';
+  if (sessionReady === null) {
+    return (
+      <div className="flex w-full max-w-sm flex-col items-center justify-center rounded-2xl border border-border/50 bg-card p-12 shadow-float">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground/40" />
+        <p className="mt-4 text-sm text-muted-foreground">Verifying reset link…</p>
+      </div>
+    );
+  }
+
+  if (!sessionReady) {
+    return (
+      <div className="w-full max-w-sm overflow-hidden rounded-2xl border border-border/50 bg-card shadow-float">
+        <div className="p-8 text-center">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-destructive/10">
+            <AlertCircle className="h-6 w-6 text-destructive" />
+          </div>
+          <h1 className="mt-4 text-lg font-bold tracking-tight">Reset link unavailable</h1>
+          <p className="mt-2 text-sm text-muted-foreground/70">{EXPIRED_MESSAGE}</p>
+          <Link
+            href="/forgot-password"
+            className="mt-6 inline-flex rounded-xl bg-primary px-4 py-2.5 text-xs font-semibold text-primary-foreground shadow-card"
+          >
+            Request new link
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -100,5 +169,20 @@ export default function ResetPasswordPage() {
         </form>
       </div>
     </div>
+  );
+}
+
+export default function ResetPasswordPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex w-full max-w-sm flex-col items-center justify-center rounded-2xl border border-border/50 bg-card p-12 shadow-float">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground/40" />
+          <p className="mt-4 text-sm text-muted-foreground">Verifying reset link…</p>
+        </div>
+      }
+    >
+      <ResetPasswordContent />
+    </Suspense>
   );
 }

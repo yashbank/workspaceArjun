@@ -1,44 +1,74 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { getInviteAcceptPath } from '@/server/auth';
+import {
+  mapCallbackOtpType,
+  resolveAuthCallbackRedirect,
+  resolveAuthCallbackErrorRedirect,
+} from '@/server/auth/callback-redirect';
 
 /**
- * Handles Supabase PKCE callbacks (invite, recovery, magic link, OAuth).
- * Routes invite users to password setup before the dashboard.
+ * Handles Supabase auth callbacks:
+ * - token_hash + type (invite/recovery email links)
+ * - PKCE code exchange (OAuth / legacy flows)
  */
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = request.nextUrl;
   const code = searchParams.get('code');
+  const tokenHash = searchParams.get('token_hash');
   const type = searchParams.get('type');
   const next = searchParams.get('next');
 
-  if (!code) {
-    return NextResponse.redirect(`${origin}/login?error=auth_callback_failed`);
-  }
-
   const supabase = await createSupabaseServerClient();
-  const { error } = await supabase.auth.exchangeCodeForSession(code);
 
-  if (error) {
-    return NextResponse.redirect(`${origin}/login?error=auth_callback_failed`);
+  if (tokenHash) {
+    const otpType = mapCallbackOtpType(type);
+    if (!otpType) {
+      return NextResponse.redirect(resolveAuthCallbackErrorRedirect(origin, type));
+    }
+
+    const { error } = await supabase.auth.verifyOtp({
+      token_hash: tokenHash,
+      type: otpType,
+    });
+
+    if (error) {
+      if (process.env.NODE_ENV === 'development') {
+        console.error('[auth.callback] verifyOtp failed:', {
+          type: otpType,
+          message: error.message,
+          status: error.status,
+          name: error.name,
+        });
+      }
+      return NextResponse.redirect(resolveAuthCallbackErrorRedirect(origin, type));
+    }
+
+    const redirectPath = resolveAuthCallbackRedirect(type, next);
+    return NextResponse.redirect(`${origin}${redirectPath}`);
   }
 
-  let redirectPath = next ?? '/';
+  if (code) {
+    const { error } = await supabase.auth.exchangeCodeForSession(code);
 
-  if (type === 'recovery' || type === 'signup') {
-    redirectPath = '/reset-password';
-  } else if (
-    type === 'invite' ||
-    next === getInviteAcceptPath() ||
-    next?.startsWith('/invite/')
-  ) {
-    redirectPath = getInviteAcceptPath();
+    if (error) {
+      if (process.env.NODE_ENV === 'development') {
+        console.error('[auth.callback] exchangeCodeForSession failed:', {
+          message: error.message,
+          status: error.status,
+          name: error.name,
+        });
+      }
+      return NextResponse.redirect(resolveAuthCallbackErrorRedirect(origin, type));
+    }
+
+    let redirectPath = resolveAuthCallbackRedirect(type, next);
+    if (!redirectPath.startsWith('/')) {
+      redirectPath = `/${redirectPath}`;
+    }
+
+    return NextResponse.redirect(`${origin}${redirectPath}`);
   }
 
-  if (!redirectPath.startsWith('/')) {
-    redirectPath = `/${redirectPath}`;
-  }
-
-  return NextResponse.redirect(`${origin}${redirectPath}`);
+  return NextResponse.redirect(resolveAuthCallbackErrorRedirect(origin, type));
 }
