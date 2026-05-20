@@ -27,3 +27,10 @@ export async function getWorkspaceQuotaBytes(): Promise<number> {
   const val = await getSetting('workspace_quota_bytes');
   return val ? Number(val) : 2 * 1024 * 1024 * 1024 * 1024;
 }
+
+/** Maximum active users + pending invites (default 15 for BPP). */
+export async function getMaxUsers(): Promise<number> {
+  const val = await getSetting('workspace_max_users');
+  const n = val ? Number(val) : 15;
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 15;
+}

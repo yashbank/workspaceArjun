@@ -97,9 +97,13 @@ Set `ALLOW_BOOTSTRAP=true` in `.env.local`, then:
 5. Sign in with those credentials. On first login, you are automatically assigned the **Owner** role.
 6. Set `ALLOW_BOOTSTRAP=false` in `.env.local` (or remove the line) after setup.
 
-### 4. Invite Additional Users
+### 4. Invite Additional Users (invite-only)
 
-Owners and admins can invite users via the admin panel (coming soon) or directly from the Supabase dashboard → Authentication → Users → Invite. New users are auto-assigned the **member** role on first login.
+- **Disable public signup** in Supabase → Authentication → Providers (invite-only workspace).
+- Owners and admins invite users from **Admin → Invite User** (max **15** active + pending seats).
+- Supabase sends a **secure invite email** — the user sets their own password via the link (no plaintext passwords).
+- Invited role (`admin`, `member`, `viewer`) is applied on first login from invite metadata.
+- Resend invite from Admin for pending users.
 
 ## Auth Flow
 

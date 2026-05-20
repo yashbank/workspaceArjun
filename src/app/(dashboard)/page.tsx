@@ -309,9 +309,11 @@ function formatAction(action: string): string {
     'file.permanent_delete': 'permanently deleted a file',
     'folder.permanent_delete': 'permanently deleted a folder',
     'user.invite': 'invited a user',
+    'user.invite_resend': 'resent an invite',
     'user.role_change': 'changed a user role',
     'user.deactivate': 'deactivated a user',
     'user.reactivate': 'reactivated a user',
+    'user.remove': 'removed a user',
     'settings.change': 'updated settings',
     'login.success': 'signed in',
   };

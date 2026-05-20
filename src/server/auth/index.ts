@@ -1,16 +1,25 @@
 import { cache } from 'react';
 import { createSupabaseServerClient, createSupabaseAdminClient } from '@/lib/supabase/server';
 import { db } from '@/server/db';
+import { parseInvitedRole, resolveProfileRole } from '@/server/users';
 import type { UserProfile, UserRole } from '@/generated/prisma/client';
+
+async function markInviteAccepted(email: string): Promise<void> {
+  if (!email) return;
+  await db.userInvite.updateMany({
+    where: { email: email.toLowerCase(), status: 'pending' },
+    data: { status: 'accepted', acceptedAt: new Date() },
+  });
+}
 
 /**
  * Auto-creates a UserProfile when a Supabase user authenticates for the first
- * time. The very first profile in the system is promoted to `owner`; all
- * subsequent profiles default to `member`.
+ * time. The first profile becomes owner; invited users receive their invited_role.
  */
 async function ensureProfile(authUser: {
   id: string;
   email?: string;
+  user_metadata?: unknown;
 }): Promise<UserProfile> {
   const existing = await db.userProfile.findUnique({
     where: { authId: authUser.id },
@@ -18,19 +27,22 @@ async function ensureProfile(authUser: {
   if (existing) return existing;
 
   const profileCount = await db.userProfile.count();
-  const role: UserRole = profileCount === 0 ? 'owner' : 'member';
+  const invitedRole = parseInvitedRole(authUser.user_metadata);
+  const role = resolveProfileRole({ profileCount, invitedRole });
+  const email = (authUser.email ?? '').toLowerCase();
 
   try {
-    return await db.userProfile.create({
+    const profile = await db.userProfile.create({
       data: {
         authId: authUser.id,
-        email: authUser.email ?? '',
+        email,
         role,
         status: 'active',
       },
     });
+    await markInviteAccepted(email);
+    return profile;
   } catch {
-    // Race condition: another concurrent request created the profile first.
     const profile = await db.userProfile.findUnique({
       where: { authId: authUser.id },
     });
@@ -50,7 +62,11 @@ export const getCurrentUser = cache(async (): Promise<UserProfile | null> => {
   } = await supabase.auth.getUser();
 
   if (!user) return null;
-  return ensureProfile(user);
+  return ensureProfile({
+    id: user.id,
+    email: user.email,
+    user_metadata: user.user_metadata,
+  });
 });
 
 export async function requireUser(): Promise<UserProfile> {
@@ -64,9 +80,11 @@ export async function requireUser(): Promise<UserProfile> {
   return user;
 }
 
+/** Sends Supabase invite email — user sets their own password via the link. */
 export async function inviteUserByEmail(email: string, role: UserRole) {
   const admin = await createSupabaseAdminClient();
-  const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
+  const normalized = email.trim().toLowerCase();
+  const { data, error } = await admin.auth.admin.inviteUserByEmail(normalized, {
     data: { invited_role: role },
     redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback?next=/`,
   });

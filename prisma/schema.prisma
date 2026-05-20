@@ -23,6 +23,12 @@ enum UserStatus {
   deactivated
 }
 
+enum UserInviteStatus {
+  pending
+  accepted
+  cancelled
+}
+
 model UserProfile {
   id        String     @id @default(uuid()) @db.Uuid
   authId    String     @unique @map("auth_id") @db.Uuid
@@ -33,13 +39,29 @@ model UserProfile {
   createdAt DateTime   @default(now()) @map("created_at")
   updatedAt DateTime   @updatedAt @map("updated_at")
 
-  folders      Folder[]
-  files        File[]
-  fileVersions FileVersion[]
-  auditEvents  AuditEvent[]
+  folders       Folder[]
+  files         File[]
+  fileVersions  FileVersion[]
+  auditEvents   AuditEvent[]
   notifications Notification[]
+  invitesSent   UserInvite[] @relation("InvitedBy")
 
   @@map("user_profiles")
+}
+
+model UserInvite {
+  id         String           @id @default(uuid()) @db.Uuid
+  email      String           @unique
+  role       UserRole
+  status     UserInviteStatus @default(pending)
+  invitedBy  String           @map("invited_by") @db.Uuid
+  invitedAt  DateTime         @default(now()) @map("invited_at")
+  acceptedAt DateTime?        @map("accepted_at")
+
+  inviter UserProfile @relation("InvitedBy", fields: [invitedBy], references: [id])
+
+  @@index([status])
+  @@map("user_invites")
 }
 
 // ---------------------------------------------------------------------------

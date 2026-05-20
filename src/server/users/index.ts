@@ -1,4 +1,7 @@
-// Users module — profile management, admin user operations
-// Implementation comes in Stage 8 of the implementation plan.
-
-export {};
+export {
+  parseInvitedRole,
+  resolveProfileRole,
+  isInvitableRole,
+  INVITABLE_ROLE_OPTIONS,
+} from './roles';
+export { assertSeatAvailable, getSeatUsage, type SeatUsage } from './seats';

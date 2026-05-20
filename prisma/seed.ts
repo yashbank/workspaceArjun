@@ -22,6 +22,7 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   file_size_cap_bytes: String(200 * 1024 * 1024), // 200 MB
   version_retention_count: '10',
   workspace_quota_bytes: String(2 * 1024 * 1024 * 1024 * 1024), // 2 TB
+  workspace_max_users: '15',
   password_min_length: '10',
   mfa_required_for_admins: 'true',
 };
