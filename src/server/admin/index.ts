@@ -13,6 +13,7 @@ import {
   cancelPendingInvitesForEmail,
 } from '@/server/users';
 import { INVITE_ERROR_MESSAGES, InviteSendError } from '@/server/auth/invite-errors';
+import { getInviteUrlConfig } from '@/lib/app-url';
 import type { UserProfile, UserRole } from '@/generated/prisma/client';
 
 export interface UserListItem {
@@ -34,9 +35,19 @@ export interface PendingInviteItem {
   invitedByEmail: string | null;
 }
 
+export interface InviteUrlConfig {
+  appUrl: string;
+  appUrlSource: string;
+  inviteCallbackUrl: string;
+  recoveryCallbackUrl: string;
+  warnings: string[];
+  productionFallback: string;
+}
+
 export interface AdminUsersResponse {
   actorRole: UserRole;
   invitableRoles: UserRole[];
+  inviteUrlConfig: InviteUrlConfig;
   seats: {
     max: number;
     used: number;
@@ -110,6 +121,7 @@ export async function listUsersWithSeats(): Promise<AdminUsersResponse> {
   return {
     actorRole: actor.role,
     invitableRoles: getInvitableRolesForActor(actor.role),
+    inviteUrlConfig: getInviteUrlConfig(),
     seats: {
       max: seats.max,
       used: seats.used,

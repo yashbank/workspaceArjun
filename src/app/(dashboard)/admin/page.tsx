@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { FixedMenu } from '@/components/ui/fixed-menu';
 import {
   Users,
   Shield,
@@ -36,9 +37,19 @@ type InviteItem = {
   invitedByEmail: string | null;
 };
 
+type InviteUrlConfig = {
+  appUrl: string;
+  appUrlSource: string;
+  inviteCallbackUrl: string;
+  recoveryCallbackUrl: string;
+  warnings: string[];
+  productionFallback: string;
+};
+
 type AdminUsersPayload = {
   actorRole: string;
   invitableRoles: string[];
+  inviteUrlConfig?: InviteUrlConfig;
   seats: {
     max: number;
     used: number;
@@ -92,21 +103,8 @@ export default function AdminPage() {
     loadUsers();
   }, [loadUsers]);
 
-  useEffect(() => {
-    function handleClick() {
-      if (roleMenu) setRoleMenu(null);
-      if (actionMenu) setActionMenu(null);
-    }
-    if (roleMenu || actionMenu) {
-      const timer = setTimeout(() => document.addEventListener('click', handleClick), 0);
-      return () => {
-        clearTimeout(timer);
-        document.removeEventListener('click', handleClick);
-      };
-    }
-  }, [roleMenu, actionMenu]);
-
   const seats = data?.seats;
+  const inviteUrlConfig = data?.inviteUrlConfig;
   const users = data?.users ?? [];
   const invites = data?.invites ?? [];
   const actorRole = data?.actorRole ?? 'member';
@@ -230,6 +228,28 @@ export default function AdminPage() {
           Invite User
         </button>
       </div>
+
+      {inviteUrlConfig && inviteUrlConfig.warnings.length > 0 && (
+        <div className="rounded-2xl border border-amber-500/25 bg-amber-500/5 px-4 py-3 text-sm text-amber-900 dark:text-amber-200">
+          <div className="flex gap-2">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <div className="space-y-1.5">
+              <p className="font-semibold">Invite URL misconfiguration</p>
+              <ul className="list-inside list-disc text-xs leading-relaxed opacity-90">
+                {inviteUrlConfig.warnings.map((w) => (
+                  <li key={w}>{w}</li>
+                ))}
+              </ul>
+              <p className="text-[11px] opacity-75">
+                Current invite base: <code className="rounded bg-muted/50 px-1">{inviteUrlConfig.appUrl}</code>{' '}
+                ({inviteUrlConfig.appUrlSource}). Set{' '}
+                <code className="rounded bg-muted/50 px-1">NEXT_PUBLIC_APP_URL={inviteUrlConfig.productionFallback}</code>{' '}
+                on Vercel Production and match Supabase Site URL.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {seats && (
         <div className="rounded-2xl border border-border/50 bg-card px-5 py-4 shadow-card">
@@ -455,6 +475,8 @@ function UserRow({
   const isOwner = u.role === 'owner';
   const roles = assignableRoles(actorRole, u.role);
   const canRemove = u.status === 'deactivated' && !isOwner && !!onRemove;
+  const roleBtnRef = useRef<HTMLButtonElement>(null);
+  const actionBtnRef = useRef<HTMLButtonElement>(null);
 
   return (
     <tr className="group transition-colors hover:bg-accent/15">
@@ -476,12 +498,14 @@ function UserRow({
             owner
           </span>
         ) : (
-          <div className="relative">
+          <>
             <button
+              ref={roleBtnRef}
               type="button"
               disabled={busyId === u.id}
               onClick={(e) => {
                 e.stopPropagation();
+                setActionMenu(null);
                 setRoleMenu(roleMenu === u.id ? null : u.id);
               }}
               className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${roleBadge[u.role] || ''}`}
@@ -490,25 +514,31 @@ function UserRow({
               {u.role}
               <ChevronDown className="h-3 w-3" />
             </button>
-            {roleMenu === u.id && (
-              <div
-                className="absolute bottom-full left-0 z-[200] mb-1 w-36 overflow-hidden rounded-xl border border-border/50 bg-popover p-1 shadow-float"
-                onClick={(e) => e.stopPropagation()}
-              >
-                {roles.map((r) => (
-                  <button
-                    key={r}
-                    type="button"
-                    disabled={r === u.role}
-                    onClick={() => onRoleChange(u.id, r, u.role)}
-                    className="flex w-full items-center rounded-lg px-3 py-2 text-left text-[13px] capitalize transition-all hover:bg-accent disabled:opacity-40"
-                  >
-                    {r}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+            <FixedMenu
+              open={roleMenu === u.id}
+              onClose={() => setRoleMenu(null)}
+              anchorRef={roleBtnRef}
+              align="left"
+              width={144}
+              estimatedHeight={roles.length * 40 + 16}
+            >
+              {roles.map((r) => (
+                <button
+                  key={r}
+                  type="button"
+                  role="menuitem"
+                  disabled={r === u.role}
+                  onClick={() => {
+                    setRoleMenu(null);
+                    onRoleChange(u.id, r, u.role);
+                  }}
+                  className="flex w-full items-center rounded-lg px-3 py-2 text-left text-[13px] capitalize transition-all hover:bg-accent disabled:opacity-40"
+                >
+                  {r}
+                </button>
+              ))}
+            </FixedMenu>
+          </>
         )}
       </td>
       <td className="px-5 py-3.5">
@@ -521,12 +551,14 @@ function UserRow({
         {isOwner ? (
           <span className="text-[11px] text-muted-foreground/40">Protected</span>
         ) : (
-          <div className="relative inline-block">
+          <>
             <button
+              ref={actionBtnRef}
               type="button"
               disabled={busyId === u.id}
               onClick={(e) => {
                 e.stopPropagation();
+                setRoleMenu(null);
                 setActionMenu(actionMenu === u.id ? null : u.id);
               }}
               className="rounded-lg p-1.5 text-muted-foreground/40 transition-all hover:bg-accent hover:text-foreground"
@@ -537,51 +569,64 @@ function UserRow({
                 <MoreHorizontal className="h-4 w-4" />
               )}
             </button>
-            {actionMenu === u.id && (
-              <div
-                className="absolute bottom-full right-0 z-[200] mb-1 w-48 overflow-hidden rounded-xl border border-border/50 bg-popover p-1 shadow-float"
-                onClick={(e) => e.stopPropagation()}
+            <FixedMenu
+              open={actionMenu === u.id}
+              onClose={() => setActionMenu(null)}
+              anchorRef={actionBtnRef}
+              align="right"
+              width={192}
+            >
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setActionMenu(null);
+                  onStatusToggle(u.id, u.status, u.role);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] transition-all hover:bg-accent"
               >
+                {u.status === 'active' ? (
+                  <>
+                    <UserX className="h-3.5 w-3.5 text-destructive" />
+                    <span className="text-destructive">Deactivate</span>
+                  </>
+                ) : (
+                  <>
+                    <UserCheck className="h-3.5 w-3.5 text-emerald-600" />
+                    <span>Reactivate</span>
+                  </>
+                )}
+              </button>
+              {onTransferOwnership && u.status === 'active' && !isOwner && (
                 <button
                   type="button"
-                  onClick={() => onStatusToggle(u.id, u.status, u.role)}
+                  role="menuitem"
+                  onClick={() => {
+                    setActionMenu(null);
+                    onTransferOwnership(u.id, u.email);
+                  }}
                   className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] transition-all hover:bg-accent"
                 >
-                  {u.status === 'active' ? (
-                    <>
-                      <UserX className="h-3.5 w-3.5 text-destructive" />
-                      <span className="text-destructive">Deactivate</span>
-                    </>
-                  ) : (
-                    <>
-                      <UserCheck className="h-3.5 w-3.5 text-emerald-600" />
-                      <span>Reactivate</span>
-                    </>
-                  )}
+                  <Shield className="h-3.5 w-3.5" />
+                  Transfer ownership
                 </button>
-                {onTransferOwnership && u.status === 'active' && !isOwner && (
-                  <button
-                    type="button"
-                    onClick={() => onTransferOwnership(u.id, u.email)}
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] transition-all hover:bg-accent"
-                  >
-                    <Shield className="h-3.5 w-3.5" />
-                    Transfer ownership
-                  </button>
-                )}
-                {canRemove && onRemove && (
-                  <button
-                    type="button"
-                    onClick={() => onRemove(u.id)}
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] text-destructive transition-all hover:bg-destructive/10"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    Remove user
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
+              )}
+              {canRemove && onRemove && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setActionMenu(null);
+                    onRemove(u.id);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] text-destructive transition-all hover:bg-destructive/10"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Remove user
+                </button>
+              )}
+            </FixedMenu>
+          </>
         )}
       </td>
     </tr>
