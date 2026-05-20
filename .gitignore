@@ -56,3 +56,4 @@ next-env.d.ts
 # BPP — exclude heavy GIF from production backgrounds (use MP4)
 /public/assets/bpp/backgrounds/*.gif
 /public/assets/bpp/frames/
+public/assets/bpp/references/bpp-ambient-motion-reference.gif
