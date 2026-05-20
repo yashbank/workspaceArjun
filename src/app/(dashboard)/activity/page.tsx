@@ -9,5 +9,5 @@ export default async function ActivityPage() {
     redirect('/');
   }
 
-  return <ActivityBrowser />;
+  return <ActivityBrowser isOwner={user.role === 'owner'} />;
 }

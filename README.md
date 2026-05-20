@@ -522,6 +522,21 @@ The demo seed creates:
 - Audit trail with realistic activity
 - Storage usage tracking
 
+### Clear activity history (demo reset)
+
+To wipe **all** audit events and starred activity pins (e.g. before a client demo):
+
+```bash
+# From app/ — requires explicit confirmation
+CONFIRM_CLEAR_ACTIVITY=true pnpm demo:clear-activity
+```
+
+Deletes `audit_stars` first, then `audit_events`. Does **not** run automatically. Owners can also use **Activity → Clear history** in the UI (with confirmation).
+
+### Display names
+
+`UserProfile.name` is the workspace display name (shown in activity, topbar, and admin). New users are prompted at `/account/name` after invite setup if name is missing. Anyone can update their name from the topbar account menu.
+
 ## Environment Variables
 
 See `.env.example` for local development and `.env.production.example` for Vercel deployment.

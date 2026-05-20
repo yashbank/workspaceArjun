@@ -7,6 +7,8 @@ import { KeyboardShortcuts } from '@/components/shell/keyboard-shortcuts';
 import { GlobalKeys } from '@/components/shell/global-keys';
 import { GuidedTour } from '@/components/shell/guided-tour';
 import { DbConnectionIssue } from '@/components/shell/db-connection-issue';
+import { DisplayNameGuard } from '@/components/shell/display-name-guard';
+import { needsDisplayName } from '@/lib/user-display';
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createSupabaseServerClient();
@@ -48,16 +50,18 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <>
-      <DashboardShell
-        showAdminNav={showAdminNav}
-        showSettingsNav={showSettingsNav}
-        showActivityNav={showActivityNav}
-        userEmail={profile.email}
-        userName={profile.name ?? undefined}
-        userRole={profile.role}
-      >
-        {children}
-      </DashboardShell>
+      <DisplayNameGuard needsDisplayName={needsDisplayName(profile.name)}>
+        <DashboardShell
+          showAdminNav={showAdminNav}
+          showSettingsNav={showSettingsNav}
+          showActivityNav={showActivityNav}
+          userEmail={profile.email}
+          userName={profile.name ?? undefined}
+          userRole={profile.role}
+        >
+          {children}
+        </DashboardShell>
+      </DisplayNameGuard>
       <KeyboardShortcuts />
       <GlobalKeys />
       <GuidedTour />

@@ -209,18 +209,23 @@ export default async function DashboardHome() {
             <p className="mt-1 text-xs text-muted-foreground/40">Actions you take will appear here.</p>
           </div>
         ) : (
-          <div className="mt-3 grid gap-x-4 gap-y-0.5 lg:grid-cols-2">
+          <div className="mt-3 space-y-0.5">
             {recentActivity.map((event) => (
-              <div key={event.id} className="flex items-center gap-3 rounded-xl px-3 py-2 text-xs transition-all hover:bg-accent/15">
-                <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${getAuditActionColor(event.action)}`}>
+              <div
+                key={event.id}
+                className="flex items-start gap-3 rounded-xl px-3 py-2.5 text-xs transition-all hover:bg-accent/15 sm:items-center"
+              >
+                <div
+                  className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full sm:mt-0 ${getAuditActionColor(event.action)}`}
+                >
                   <Activity className="h-3 w-3" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <span className="text-muted-foreground/80">
+                  <p className="break-words text-[13px] leading-snug text-foreground/85">
                     {formatActivityLine(event.actor, event.action, event.meta)}
-                  </span>
+                  </p>
                 </div>
-                <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground/35">
+                <span className="shrink-0 pt-0.5 text-[10px] tabular-nums text-muted-foreground/35 sm:pt-0">
                   {timeAgo(event.createdAt)}
                 </span>
               </div>

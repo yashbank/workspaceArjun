@@ -1,5 +1,7 @@
 /** Human-readable audit labels for dashboard and activity views. */
 
+import { getUserDisplayName, type ActorLike } from '@/lib/user-display';
+
 export function formatAuditAction(
   action: string,
   meta?: Record<string, unknown> | null,
@@ -43,13 +45,13 @@ export function formatAuditAction(
   return map[action] ?? action.replaceAll('.', ' ');
 }
 
-/** Full line: email + action, e.g. user@x.com uploaded a file 'photo.jpg' */
+/** Full line: display name + action, e.g. Sarthak uploaded a file 'photo.jpg' */
 export function formatActivityLine(
-  actor: { email: string; name: string | null } | null,
+  actor: ActorLike | null,
   action: string,
   meta?: Record<string, unknown> | null,
 ): string {
-  const who = actor?.email ?? actor?.name ?? 'System';
+  const who = getUserDisplayName(actor);
   return `${who} ${formatAuditAction(action, meta)}`;
 }
 

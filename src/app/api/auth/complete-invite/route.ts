@@ -37,6 +37,7 @@ export async function POST() {
       profile: {
         id: profile.id,
         email: profile.email,
+        name: profile.name,
         role: profile.role,
       },
     });

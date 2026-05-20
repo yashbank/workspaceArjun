@@ -3,11 +3,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { apiFetch } from '@/lib/api';
+import { useToast } from '@/components/ui/toast';
 import {
   formatActivityLine,
   getAuditActionColor,
   ACTIVITY_ACTION_GROUPS,
 } from '@/lib/audit-display';
+import { getUserDisplayName } from '@/lib/user-display';
 import {
   Activity,
   ArrowLeft,
@@ -16,6 +18,7 @@ import {
   Star,
   Filter,
   Calendar,
+  Trash2,
 } from 'lucide-react';
 
 type ActivityEvent = {
@@ -40,11 +43,14 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-export function ActivityBrowser() {
+export function ActivityBrowser({ isOwner }: { isOwner?: boolean }) {
+  const { toast } = useToast();
   const [events, setEvents] = useState<ActivityEvent[]>([]);
   const [actors, setActors] = useState<Actor[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [clearOpen, setClearOpen] = useState(false);
+  const [clearBusy, setClearBusy] = useState(false);
 
   const [actorId, setActorId] = useState('');
   const [action, setAction] = useState('');
@@ -54,7 +60,6 @@ export function ActivityBrowser() {
   const [q, setQ] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [starredOnly, setStarredOnly] = useState(false);
-  const [busyStar, setBusyStar] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -68,6 +73,7 @@ export function ActivityBrowser() {
       if (to) params.set('to', to);
       if (q) params.set('q', q);
       if (starredOnly) params.set('starredOnly', 'true');
+      params.set('_', String(Date.now()));
 
       const data = await apiFetch<{ events: ActivityEvent[]; actors: Actor[] }>(
         `/api/activity?${params.toString()}`,
@@ -86,25 +92,30 @@ export function ActivityBrowser() {
     void load();
   }, [load]);
 
-  async function toggleStar(event: ActivityEvent) {
-    setBusyStar(event.id);
-    try {
-      if (event.starred) {
-        await apiFetch(`/api/activity/${event.id}/star`, { method: 'DELETE' });
-      } else {
-        await apiFetch(`/api/activity/${event.id}/star`, { method: 'POST' });
-      }
-      setEvents((prev) =>
-        prev.map((e) => (e.id === event.id ? { ...e, starred: !e.starred } : e)),
-      );
-      if (starredOnly && event.starred) {
-        setEvents((prev) => prev.filter((e) => e.id !== event.id));
-      }
-    } catch {
-      // ignore
-    } finally {
-      setBusyStar(null);
+  useEffect(() => {
+    function onVisible() {
+      if (document.visibilityState === 'visible') void load();
     }
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [load]);
+
+  function toggleStar(event: ActivityEvent) {
+    const nextStarred = !event.starred;
+    const prevEvents = events;
+
+    setEvents((prev) => {
+      if (starredOnly && !nextStarred) {
+        return prev.filter((e) => e.id !== event.id);
+      }
+      return prev.map((e) => (e.id === event.id ? { ...e, starred: nextStarred } : e));
+    });
+
+    const method = nextStarred ? 'POST' : 'DELETE';
+    void apiFetch(`/api/activity/${event.id}/star`, { method }).catch(() => {
+      setEvents(prevEvents);
+      toast('error', 'Could not update star. Try again.');
+    });
   }
 
   function handleSearchSubmit(e: React.FormEvent) {
@@ -112,9 +123,24 @@ export function ActivityBrowser() {
     setQ(searchInput.trim());
   }
 
+  async function handleClearHistory() {
+    setClearBusy(true);
+    try {
+      await apiFetch('/api/activity/clear', { method: 'POST' });
+      setClearOpen(false);
+      setEvents([]);
+      setActors([]);
+      toast('success', 'Activity history cleared');
+    } catch (err) {
+      toast('error', err instanceof Error ? err.message : 'Clear failed');
+    } finally {
+      setClearBusy(false);
+    }
+  }
+
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+    <div className="mx-auto max-w-4xl space-y-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <Link
             href="/"
@@ -125,12 +151,22 @@ export function ActivityBrowser() {
           </Link>
           <h1 className="bpp-page-title">Activity</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Workspace actions from the last 30 days. Star events to pin them for quick reference.
+            Newest first · last 30 days · same feed as dashboard recent activity
           </p>
         </div>
+        {isOwner && (
+          <button
+            type="button"
+            onClick={() => setClearOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-destructive/25 px-3 py-2 text-xs font-medium text-destructive transition-all hover:bg-destructive/10"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Clear history
+          </button>
+        )}
       </div>
 
-      <div className="bpp-card space-y-4 p-4 sm:p-5">
+      <div className="bpp-card space-y-3 p-4 sm:p-5">
         <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground/70">
           <Filter className="h-3.5 w-3.5" />
           Filters
@@ -142,89 +178,76 @@ export function ActivityBrowser() {
             type="search"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="Search by user, file, or folder name…"
-            className="w-full rounded-xl border border-border/50 bg-background py-2.5 pl-9 pr-3 text-sm outline-none transition-all focus:border-primary/30 focus:ring-2 focus:ring-primary/15"
+            placeholder="Search user, file, or folder…"
+            className="w-full rounded-xl border border-border/50 bg-background py-2 pl-9 pr-3 text-sm outline-none focus:border-primary/30 focus:ring-2 focus:ring-primary/15"
           />
         </form>
 
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <label className="block text-[10px] font-bold uppercase tracking-wider text-muted-foreground/45">
-            User
-            <select
-              value={actorId}
-              onChange={(e) => setActorId(e.target.value)}
-              className="mt-1 w-full rounded-xl border border-border/50 bg-background px-3 py-2 text-xs"
-            >
-              <option value="">All users</option>
-              {actors.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name ?? a.email}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="block text-[10px] font-bold uppercase tracking-wider text-muted-foreground/45">
-            Action
-            <select
-              value={action}
-              onChange={(e) => setAction(e.target.value)}
-              className="mt-1 w-full rounded-xl border border-border/50 bg-background px-3 py-2 text-xs"
-            >
-              {ACTIVITY_ACTION_GROUPS.map((g) => (
-                <option key={g.value || 'all'} value={g.value}>
-                  {g.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="block text-[10px] font-bold uppercase tracking-wider text-muted-foreground/45">
-            Target
-            <select
-              value={targetType}
-              onChange={(e) => setTargetType(e.target.value)}
-              className="mt-1 w-full rounded-xl border border-border/50 bg-background px-3 py-2 text-xs"
-            >
-              <option value="">All</option>
-              <option value="file">Files</option>
-              <option value="folder">Folders</option>
-              <option value="user">Users</option>
-            </select>
-          </label>
-
-          <label className="flex cursor-pointer items-end gap-2 pb-2 text-xs">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <select
+            value={actorId}
+            onChange={(e) => setActorId(e.target.value)}
+            className="rounded-xl border border-border/50 bg-background px-2.5 py-2 text-xs"
+            aria-label="Filter by user"
+          >
+            <option value="">All users</option>
+            {actors.map((a) => (
+              <option key={a.id} value={a.id}>
+                {getUserDisplayName(a)}
+              </option>
+            ))}
+          </select>
+          <select
+            value={action}
+            onChange={(e) => setAction(e.target.value)}
+            className="rounded-xl border border-border/50 bg-background px-2.5 py-2 text-xs"
+            aria-label="Filter by action"
+          >
+            {ACTIVITY_ACTION_GROUPS.map((g) => (
+              <option key={g.value || 'all'} value={g.value}>
+                {g.label}
+              </option>
+            ))}
+          </select>
+          <select
+            value={targetType}
+            onChange={(e) => setTargetType(e.target.value)}
+            className="rounded-xl border border-border/50 bg-background px-2.5 py-2 text-xs"
+            aria-label="Filter by target"
+          >
+            <option value="">All targets</option>
+            <option value="file">Files</option>
+            <option value="folder">Folders</option>
+            <option value="user">Users</option>
+          </select>
+          <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-border/50 bg-background px-2.5 py-2 text-xs">
             <input
               type="checkbox"
               checked={starredOnly}
               onChange={(e) => setStarredOnly(e.target.checked)}
-              className="h-4 w-4 rounded accent-primary"
+              className="h-3.5 w-3.5 rounded accent-primary"
             />
-            <span className="font-medium">Starred only</span>
+            Starred
           </label>
         </div>
 
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="block text-[10px] font-bold uppercase tracking-wider text-muted-foreground/45">
-            <span className="flex items-center gap-1">
-              <Calendar className="h-3 w-3" /> From
-            </span>
-            <input
-              type="date"
-              value={from}
-              onChange={(e) => setFrom(e.target.value)}
-              className="mt-1 rounded-xl border border-border/50 bg-background px-3 py-2 text-xs"
-            />
-          </label>
-          <label className="block text-[10px] font-bold uppercase tracking-wider text-muted-foreground/45">
-            To
-            <input
-              type="date"
-              value={to}
-              onChange={(e) => setTo(e.target.value)}
-              className="mt-1 rounded-xl border border-border/50 bg-background px-3 py-2 text-xs"
-            />
-          </label>
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <Calendar className="h-3.5 w-3.5 text-muted-foreground/50" />
+          <input
+            type="date"
+            value={from}
+            onChange={(e) => setFrom(e.target.value)}
+            className="rounded-lg border border-border/50 bg-background px-2 py-1.5"
+            aria-label="From date"
+          />
+          <span className="text-muted-foreground/40">–</span>
+          <input
+            type="date"
+            value={to}
+            onChange={(e) => setTo(e.target.value)}
+            className="rounded-lg border border-border/50 bg-background px-2 py-1.5"
+            aria-label="To date"
+          />
           {q && (
             <button
               type="button"
@@ -232,7 +255,7 @@ export function ActivityBrowser() {
                 setQ('');
                 setSearchInput('');
               }}
-              className="rounded-lg px-2 py-1 text-xs text-muted-foreground hover:bg-accent"
+              className="ml-auto text-muted-foreground hover:text-foreground"
             >
               Clear search
             </button>
@@ -248,23 +271,23 @@ export function ActivityBrowser() {
 
       <div className="bpp-card overflow-hidden">
         {loading ? (
-          <div className="divide-y">
+          <div className="divide-y divide-border/30">
             {Array.from({ length: 8 }).map((_, i) => (
               <div key={i} className="flex items-center gap-3 px-4 py-3.5">
                 <div className="h-8 w-8 shrink-0 rounded-full bg-shimmer bg-[length:200%_100%] animate-shimmer" />
-                <div className="flex-1 space-y-2">
-                  <div className="h-3 w-4/5 rounded-full bg-shimmer bg-[length:200%_100%] animate-shimmer" />
-                  <div className="h-2.5 w-1/3 rounded-full bg-shimmer bg-[length:200%_100%] animate-shimmer" />
+                <div className="min-w-0 flex-1 space-y-2">
+                  <div className="h-3 w-4/5 max-w-md rounded-full bg-shimmer bg-[length:200%_100%] animate-shimmer" />
+                  <div className="h-2.5 w-24 rounded-full bg-shimmer bg-[length:200%_100%] animate-shimmer" />
                 </div>
               </div>
             ))}
           </div>
         ) : events.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
+          <div className="flex flex-col items-center justify-center px-6 py-20 text-center">
             <Activity className="h-10 w-10 text-muted-foreground/20" />
             <p className="mt-4 text-sm font-semibold text-muted-foreground/55">No activity found</p>
             <p className="mt-1 max-w-xs text-xs text-muted-foreground/45">
-              Try adjusting filters or date range. Member uploads and folder actions appear here.
+              Uploads, folder changes, and restores appear here for owners and admins.
             </p>
           </div>
         ) : (
@@ -280,10 +303,8 @@ export function ActivityBrowser() {
                   <Activity className="h-3.5 w-3.5" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-[13px] leading-snug">
-                    <span className="font-medium text-foreground">
-                      {formatActivityLine(event.actor, event.action, event.meta)}
-                    </span>
+                  <p className="text-[13px] leading-snug break-words">
+                    {formatActivityLine(event.actor, event.action, event.meta)}
                   </p>
                   <p className="mt-0.5 text-[10px] tabular-nums text-muted-foreground/45">
                     {new Date(event.createdAt).toLocaleString()}
@@ -296,18 +317,13 @@ export function ActivityBrowser() {
                 </div>
                 <button
                   type="button"
-                  disabled={busyStar === event.id}
-                  onClick={() => void toggleStar(event)}
+                  onClick={() => toggleStar(event)}
                   className={`shrink-0 rounded-lg p-2 transition-all hover:bg-accent ${
                     event.starred ? 'text-amber-500' : 'text-muted-foreground/35'
                   }`}
                   title={event.starred ? 'Unstar' : 'Star'}
                 >
-                  {busyStar === event.id ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Star className={`h-4 w-4 ${event.starred ? 'fill-current' : ''}`} />
-                  )}
+                  <Star className={`h-4 w-4 ${event.starred ? 'fill-current' : ''}`} />
                 </button>
               </li>
             ))}
@@ -317,8 +333,37 @@ export function ActivityBrowser() {
 
       {!loading && events.length > 0 && (
         <p className="text-center text-[11px] text-muted-foreground/40">
-          Showing up to {events.length} events (last 30 days max)
+          Showing {events.length} events (newest first, max 200 in range)
         </p>
+      )}
+
+      {clearOpen && (
+        <div className="fixed inset-0 z-[700] flex items-center justify-center bg-black/40 p-4 backdrop-blur-[2px]">
+          <div className="w-full max-w-md rounded-2xl border border-border/55 bg-card p-6 shadow-float">
+            <h2 className="text-lg font-semibold">Clear all activity?</h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              This permanently deletes every audit event and starred pin. For demo resets only.
+            </p>
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setClearOpen(false)}
+                className="rounded-xl px-4 py-2 text-sm font-medium hover:bg-accent"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={clearBusy}
+                onClick={() => void handleClearHistory()}
+                className="inline-flex items-center gap-2 rounded-xl bg-destructive px-4 py-2 text-sm font-semibold text-destructive-foreground disabled:opacity-50"
+              >
+                {clearBusy && <Loader2 className="h-4 w-4 animate-spin" />}
+                Delete all
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

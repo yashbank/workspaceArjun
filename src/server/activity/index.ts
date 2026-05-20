@@ -4,6 +4,13 @@ import type { UserProfile } from '@/generated/prisma/client';
 
 const MAX_DAYS = 30;
 const MAX_RESULTS = 200;
+const RECENT_DEFAULT = 8;
+
+export type ActivityActor = {
+  id: string;
+  email: string;
+  name: string | null;
+};
 
 export type ActivityListItem = {
   id: string;
@@ -12,7 +19,7 @@ export type ActivityListItem = {
   targetId: string | null;
   meta: Record<string, unknown> | null;
   createdAt: Date;
-  actor: { id: string; email: string; name: string | null } | null;
+  actor: ActivityActor | null;
   starred: boolean;
 };
 
@@ -26,52 +33,118 @@ export type ActivityListQuery = {
   starredOnly?: boolean;
 };
 
-function parseMeta(meta: unknown): Record<string, unknown> | null {
+const activitySelect = {
+  id: true,
+  action: true,
+  targetType: true,
+  targetId: true,
+  meta: true,
+  createdAt: true,
+  actor: { select: { id: true, email: true, name: true } },
+} as const;
+
+export function parseMeta(meta: unknown): Record<string, unknown> | null {
   if (meta && typeof meta === 'object' && !Array.isArray(meta)) {
     return meta as Record<string, unknown>;
   }
   return null;
 }
 
-function defaultFromDate(): Date {
+export function defaultFromDate(): Date {
   const d = new Date();
   d.setDate(d.getDate() - MAX_DAYS);
   d.setHours(0, 0, 0, 0);
   return d;
 }
 
+/** Parse YYYY-MM-DD; end date includes full local day through 23:59:59.999 */
+export function parseActivityDateRange(from?: string, to?: string): { from: Date; to: Date } {
+  const parseDay = (dateStr: string, endOfDay: boolean): Date => {
+    const parts = dateStr.split('-').map((p) => Number(p));
+    if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) {
+      throw new Error('Invalid date');
+    }
+    const [y, m, d] = parts;
+    if (endOfDay) return new Date(y, m - 1, d, 23, 59, 59, 999);
+    return new Date(y, m - 1, d, 0, 0, 0, 0);
+  };
+
+  const fromDate = from ? parseDay(from, false) : defaultFromDate();
+  const toDate = to ? parseDay(to, true) : (() => {
+    const end = new Date();
+    end.setHours(23, 59, 59, 999);
+    return end;
+  })();
+
+  if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+    throw new Error('Invalid date range');
+  }
+
+  return { from: fromDate, to: toDate };
+}
+
 function matchesSearch(
   event: {
     action: string;
     meta: Record<string, unknown> | null;
-    actor: { email: string; name: string | null } | null;
+    actor: ActivityActor | null;
   },
   q: string,
 ): boolean {
   const lower = q.toLowerCase();
-  const name =
+  const resourceName =
     (typeof event.meta?.name === 'string' && event.meta.name) ||
     (typeof event.meta?.fileName === 'string' && event.meta.fileName) ||
     '';
   return (
     event.action.toLowerCase().includes(lower) ||
-    name.toLowerCase().includes(lower) ||
+    resourceName.toLowerCase().includes(lower) ||
     (event.actor?.email?.toLowerCase().includes(lower) ?? false) ||
     (event.actor?.name?.toLowerCase().includes(lower) ?? false)
   );
 }
 
+function mapRowsToEvents(
+  rows: {
+    id: string;
+    action: string;
+    targetType: string | null;
+    targetId: string | null;
+    meta: unknown;
+    createdAt: Date;
+    actor: ActivityActor | null;
+  }[],
+  starSet: Set<string>,
+): ActivityListItem[] {
+  return rows.map((r) => ({
+    id: r.id,
+    action: r.action,
+    targetType: r.targetType,
+    targetId: r.targetId,
+    meta: parseMeta(r.meta),
+    createdAt: r.createdAt,
+    actor: r.actor,
+    starred: starSet.has(r.id),
+  }));
+}
+
+/** Dashboard recent activity — same shape as /activity, newest first, no date window. */
+export async function fetchRecentActivity(limit = RECENT_DEFAULT): Promise<ActivityListItem[]> {
+  const rows = await db.auditEvent.findMany({
+    orderBy: { createdAt: 'desc' },
+    take: limit,
+    select: activitySelect,
+  });
+  return mapRowsToEvents(rows, new Set());
+}
+
 export async function listActivity(
   user: UserProfile,
   query: ActivityListQuery,
-): Promise<{ events: ActivityListItem[]; actors: { id: string; email: string; name: string | null }[] }> {
+): Promise<{ events: ActivityListItem[]; actors: ActivityActor[] }> {
   await requirePermission('audit:read');
 
-  const from = query.from ? new Date(query.from) : defaultFromDate();
-  const to = query.to ? new Date(query.to) : new Date();
-  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
-    throw new Error('Invalid date range');
-  }
+  const { from, to } = parseActivityDateRange(query.from, query.to);
 
   const starredIds = query.starredOnly
     ? (
@@ -105,15 +178,7 @@ export async function listActivity(
     },
     orderBy: { createdAt: 'desc' },
     take: MAX_RESULTS,
-    select: {
-      id: true,
-      action: true,
-      targetType: true,
-      targetId: true,
-      meta: true,
-      createdAt: true,
-      actor: { select: { id: true, email: true, name: true } },
-    },
+    select: activitySelect,
   });
 
   const userStars = await db.auditStar.findMany({
@@ -122,16 +187,7 @@ export async function listActivity(
   });
   const starSet = new Set(userStars.map((s) => s.auditEventId));
 
-  let events: ActivityListItem[] = rows.map((r) => ({
-    id: r.id,
-    action: r.action,
-    targetType: r.targetType,
-    targetId: r.targetId,
-    meta: parseMeta(r.meta),
-    createdAt: r.createdAt,
-    actor: r.actor,
-    starred: starSet.has(r.id),
-  }));
+  let events = mapRowsToEvents(rows, starSet);
 
   if (query.q) {
     events = events.filter((e) => matchesSearch(e, query.q!));
@@ -140,9 +196,7 @@ export async function listActivity(
   return { events, actors: await listActivityActors() };
 }
 
-export async function listActivityActors(): Promise<
-  { id: string; email: string; name: string | null }[]
-> {
+export async function listActivityActors(): Promise<ActivityActor[]> {
   await requirePermission('audit:read');
   const since = defaultFromDate();
   return db.userProfile.findMany({
@@ -169,4 +223,14 @@ export async function unstarActivityEvent(user: UserProfile, auditEventId: strin
   await db.auditStar.deleteMany({
     where: { userId: user.id, auditEventId },
   });
+}
+
+/** Owner-only: wipe all audit stars and events (demo reset). */
+export async function clearAllActivityHistory(actor: UserProfile): Promise<{ deletedEvents: number }> {
+  if (actor.role !== 'owner') {
+    throw new Error('Forbidden');
+  }
+  await db.auditStar.deleteMany({});
+  const result = await db.auditEvent.deleteMany({});
+  return { deletedEvents: result.count };
 }

@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { useToast } from '@/components/ui/toast';
+import { getUserDisplayName } from '@/lib/user-display';
 
 type UserItem = {
   id: string;
@@ -485,9 +486,11 @@ function UserRow({
           <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary/10 text-xs font-bold text-primary">
             {(u.name || u.email).charAt(0).toUpperCase()}
           </div>
-          <div>
-            <p className="text-sm font-medium">{u.name || u.email.split('@')[0]}</p>
-            <p className="text-xs text-muted-foreground">{u.email}</p>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold">
+              {getUserDisplayName({ email: u.email, name: u.name })}
+            </p>
+            <p className="truncate text-xs text-muted-foreground">{u.email}</p>
           </div>
         </div>
       </td>

@@ -120,14 +120,18 @@ function InviteAcceptContent() {
         method: 'POST',
         credentials: 'include',
       });
-      const completeData = (await completeRes.json()) as { error?: string };
+      const completeData = (await completeRes.json()) as {
+        error?: string;
+        profile?: { name?: string | null };
+      };
 
       if (!completeRes.ok) {
         setError(completeData.error ?? 'Failed to finish account setup.');
         return;
       }
 
-      window.location.href = '/';
+      const needsName = !completeData.profile?.name?.trim();
+      window.location.href = needsName ? '/account/name' : '/';
     } catch {
       setError('Something went wrong. Please try again.');
     } finally {

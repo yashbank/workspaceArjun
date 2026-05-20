@@ -14,13 +14,23 @@ describe('formatAuditAction', () => {
 });
 
 describe('formatActivityLine', () => {
-  it('includes actor email', () => {
+  it('prefers display name over email', () => {
     expect(
       formatActivityLine(
-        { email: 'workspacearjun7@gmail.com', name: null },
+        { email: 'workspacearjun7@gmail.com', name: 'Sarthak' },
         'file.upload',
         { name: 'IMG_2649.mov' },
       ),
-    ).toBe("workspacearjun7@gmail.com uploaded a file 'IMG_2649.mov'");
+    ).toBe("Sarthak uploaded a file 'IMG_2649.mov'");
+  });
+
+  it('falls back to email local-part when name missing', () => {
+    expect(
+      formatActivityLine(
+        { email: 'aryayadav3480@gmail.com', name: null },
+        'folder.create',
+        { name: 'N' },
+      ),
+    ).toBe("aryayadav3480 created a folder 'N'");
   });
 });

@@ -1,5 +1,6 @@
 import { db } from '@/server/db';
 import { getWorkspaceQuotaBytes } from '@/server/settings';
+import { fetchRecentActivity, type ActivityListItem } from '@/server/activity';
 import type { UserProfile } from '@/generated/prisma/client';
 
 export type DashboardRecentFile = {
@@ -9,13 +10,7 @@ export type DashboardRecentFile = {
   updatedAt: Date;
 };
 
-export type DashboardActivity = {
-  id: string;
-  action: string;
-  createdAt: Date;
-  actor: { name: string | null; email: string } | null;
-  meta: Record<string, unknown> | null;
-};
+export type DashboardActivity = ActivityListItem;
 
 export type DashboardPinnedFile = {
   id: string;
@@ -84,17 +79,7 @@ export async function loadDashboardData(profile: UserProfile | null): Promise<Da
         updatedAt: true,
       },
     }),
-    db.auditEvent.findMany({
-      orderBy: { createdAt: 'desc' },
-      take: 8,
-      select: {
-        id: true,
-        action: true,
-        createdAt: true,
-        actor: { select: { name: true, email: true } },
-        meta: true,
-      },
-    }),
+    fetchRecentActivity(8),
     profile
       ? db.favorite.findMany({
           where: { userId: profile.id, targetType: 'file' },
@@ -148,16 +133,7 @@ export async function loadDashboardData(profile: UserProfile | null): Promise<Da
 
   const recentActivity: DashboardActivity[] =
     recentActivityResult.status === 'fulfilled'
-      ? recentActivityResult.value.map((e) => ({
-          id: e.id,
-          action: e.action ?? 'unknown',
-          createdAt: e.createdAt,
-          actor: e.actor,
-          meta:
-            e.meta && typeof e.meta === 'object' && !Array.isArray(e.meta)
-              ? (e.meta as Record<string, unknown>)
-              : null,
-        }))
+      ? recentActivityResult.value
       : (errors.push(`recentActivity: ${String(recentActivityResult.reason)}`), []);
 
   let pinnedFileDetails: DashboardPinnedFile[] = [];
