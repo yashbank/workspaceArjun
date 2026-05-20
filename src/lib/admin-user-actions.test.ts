@@ -15,7 +15,7 @@ describe('admin-user-actions', () => {
     ).toBe('auth_missing');
   });
 
-  it('offers invite again instead of reactivate for auth_missing', () => {
+  it('offers invite again and remove from workspace for auth_missing', () => {
     const actions = buildUserMenuActions({
       user: {
         id: '1',
@@ -31,6 +31,7 @@ describe('admin-user-actions', () => {
       atSeatLimit: false,
     });
     expect(actions.some((a) => a.id === 'invite_again')).toBe(true);
+    expect(actions.find((a) => a.id === 'remove')?.label).toBe('Remove from workspace');
     expect(actions.some((a) => a.id === 'reactivate')).toBe(false);
   });
 

@@ -2,29 +2,35 @@ import { db } from '@/server/db';
 import { deleteAuthUser } from '@/server/admin/auth-users';
 import { cancelPendingInvitesForEmail } from '@/server/users';
 
-export type RemovalBlockReason = {
-  code: 'owns_files' | 'owns_folders';
-  message: string;
-  fileCount?: number;
-  folderCount?: number;
+export type OwnershipTransferResult = {
+  filesTransferred: number;
+  foldersTransferred: number;
 };
 
-export async function getRemovalBlockReason(userId: string): Promise<RemovalBlockReason | null> {
-  const [fileCount, folderCount] = await Promise.all([
-    db.file.count({ where: { ownerId: userId, deletedAt: null } }),
-    db.folder.count({ where: { ownerId: userId, deletedAt: null } }),
+/** Reassign all files/folders owned by user to the workspace owner. */
+export async function transferOwnedContentToOwner(
+  userId: string,
+  ownerId: string,
+): Promise<OwnershipTransferResult> {
+  if (userId === ownerId) {
+    return { filesTransferred: 0, foldersTransferred: 0 };
+  }
+
+  const [filesResult, foldersResult] = await Promise.all([
+    db.file.updateMany({
+      where: { ownerId: userId },
+      data: { ownerId },
+    }),
+    db.folder.updateMany({
+      where: { ownerId: userId },
+      data: { ownerId },
+    }),
   ]);
 
-  if (fileCount > 0 || folderCount > 0) {
-    return {
-      code: fileCount > 0 ? 'owns_files' : 'owns_folders',
-      message:
-        'This user still owns files or folders. Reassign or delete their content before permanent removal.',
-      fileCount,
-      folderCount,
-    };
-  }
-  return null;
+  return {
+    filesTransferred: filesResult.count,
+    foldersTransferred: foldersResult.count,
+  };
 }
 
 /** Detach FK references so UserProfile can be deleted. Does not delete auth or profile. */
@@ -56,17 +62,30 @@ export async function deleteProfileRecord(userId: string): Promise<void> {
   await db.userProfile.delete({ where: { id: userId } });
 }
 
-/**
- * Permanent removal: DB cleanup first, then Supabase Auth, then profile row.
- * Auth is deleted only after DB prep; profile is deleted only after auth succeeds.
- */
-export async function permanentlyRemoveUser(params: {
+export type PermanentRemovalParams = {
   userId: string;
   authId: string;
   email: string;
   fallbackOwnerId: string;
-}): Promise<void> {
+  /** When false, skip Supabase Auth delete (already removed). */
+  authExists?: boolean;
+};
+
+/**
+ * Permanent removal: transfer owned content → detach FKs → delete Auth (if present) → delete profile.
+ */
+export async function permanentlyRemoveUser(params: PermanentRemovalParams): Promise<OwnershipTransferResult> {
+  const transfer = await transferOwnedContentToOwner(params.userId, params.fallbackOwnerId);
   await detachProfileReferences(params.userId, params.email, params.fallbackOwnerId);
-  await deleteAuthUser(params.authId);
+
+  if (params.authExists !== false) {
+    await deleteAuthUser(params.authId);
+  } else {
+    console.info('[user-removal] skipping auth delete — already removed', {
+      userId: params.userId.slice(0, 8),
+    });
+  }
+
   await deleteProfileRecord(params.userId);
+  return transfer;
 }

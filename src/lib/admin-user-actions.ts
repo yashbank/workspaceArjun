@@ -64,20 +64,21 @@ export function buildUserMenuActions(params: {
     actions.push({ id: 'transfer', label: 'Transfer ownership', disabled: false });
   }
 
-  if (canRemove && state === 'deactivated') {
+  if (canRemove && state === 'auth_missing') {
     actions.push({
       id: 'remove',
-      label: 'Remove permanently',
+      label: 'Remove from workspace',
       disabled: false,
       destructive: true,
+      reason: 'Removes profile and transfers owned files/folders to the owner',
     });
-  } else if (canRemove && state === 'auth_missing') {
+  } else if (canRemove && state === 'deactivated') {
     actions.push({
       id: 'remove',
       label: 'Remove permanently',
       disabled: false,
       destructive: true,
-      reason: 'Removes leftover profile after auth was deleted',
+      reason: 'Transfers owned content to the owner, then deletes Auth and profile',
     });
   }
 

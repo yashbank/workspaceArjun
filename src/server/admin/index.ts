@@ -15,11 +15,12 @@ import { INVITE_ERROR_MESSAGES, InviteSendError } from '@/server/auth/invite-err
 import { getInviteUrlConfig } from '@/lib/app-url';
 import { checkAuthUserExists } from '@/server/admin/auth-users';
 import {
-  getRemovalBlockReason,
   permanentlyRemoveUser,
   detachProfileReferences,
   deleteProfileRecord,
+  transferOwnedContentToOwner,
 } from '@/server/admin/user-removal';
+import { validatePermanentRemovalGuards } from '@/server/admin/remove-user-guards';
 import type { UserProfile, UserRole } from '@/generated/prisma/client';
 
 export type UserAccountState = 'active' | 'deactivated' | 'auth_missing';
@@ -355,43 +356,36 @@ export async function setUserStatus(
 export async function removeUser(userId: string): Promise<void> {
   const actor = await requirePermission('users:remove');
 
-  if (actor.role !== 'owner') {
-    throw new Error('Only the workspace owner can permanently remove users');
-  }
-
   const target = await db.userProfile.findUnique({ where: { id: userId } });
   if (!target) throw new Error('User not found');
 
-  if (target.id === actor.id) {
-    throw new Error('You cannot remove your own account');
-  }
-
-  if (target.role === 'owner') {
-    throw new Error('Cannot remove an owner account');
-  }
-
-  if (target.status !== 'deactivated') {
-    throw new Error('Only deactivated users can be removed. Deactivate the account first.');
-  }
+  const guard = validatePermanentRemovalGuards({
+    actorId: actor.id,
+    actorRole: actor.role,
+    targetId: target.id,
+    targetRole: target.role,
+  });
+  if (!guard.ok) throw new Error(guard.message);
 
   const authExists = await checkAuthUserExists(target.authId);
 
-  if (!authExists) {
-    // Profile without Auth — still allow cleanup after deactivation
-    console.info('[admin.removeUser] auth already missing', { userId: target.id.slice(0, 8) });
-  }
-
-  const block = await getRemovalBlockReason(userId);
-  if (block) {
-    throw new Error(block.message);
+  if (target.status !== 'deactivated' && authExists) {
+    throw new Error('Only deactivated users can be removed. Deactivate the account first.');
   }
 
   try {
-    await permanentlyRemoveUser({
+    const transfer = await permanentlyRemoveUser({
       userId: target.id,
       authId: target.authId,
       email: target.email,
       fallbackOwnerId: actor.id,
+      authExists,
+    });
+    console.info('[admin.removeUser] completed', {
+      userId: target.id.slice(0, 8),
+      authExists,
+      filesTransferred: transfer.filesTransferred,
+      foldersTransferred: transfer.foldersTransferred,
     });
   } catch (err) {
     console.error('[admin.removeUser] failed', {
@@ -407,7 +401,11 @@ export async function removeUser(userId: string): Promise<void> {
     action: 'user.remove',
     targetType: 'user',
     targetId: userId,
-    meta: { email: target.email, role: target.role },
+    meta: {
+      email: target.email,
+      role: target.role,
+      authWasPresent: authExists,
+    },
   });
 }
 
@@ -437,6 +435,7 @@ export async function inviteAgainForEmail(email: string, role: UserRole): Promis
     });
     if (!owner) throw new Error('No active owner found for reference cleanup');
 
+    await transferOwnedContentToOwner(profile.id, owner.id);
     await detachProfileReferences(profile.id, profile.email, owner.id);
     await deleteProfileRecord(profile.id);
   }

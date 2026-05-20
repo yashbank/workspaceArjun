@@ -458,6 +458,9 @@ export default function AdminPage() {
             email: removeTarget.email,
             name: removeTarget.name,
           })}
+          variant={
+            resolveAccountState(removeTarget) === 'auth_missing' ? 'workspace' : 'permanent'
+          }
           busy={busyId === removeTarget.id}
           onCancel={() => setRemoveTarget(null)}
           onConfirm={confirmRemove}
