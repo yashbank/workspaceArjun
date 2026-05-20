@@ -1,4 +1,4 @@
-/** Human-readable audit labels for dashboard activity. */
+/** Human-readable audit labels for dashboard and activity views. */
 
 export function formatAuditAction(
   action: string,
@@ -10,7 +10,7 @@ export function formatAuditAction(
     (typeof meta?.newName === 'string' && meta.newName) ||
     null;
 
-  const quoted = name ? ` “${name}”` : '';
+  const quoted = name ? ` '${name}'` : '';
 
   const map: Record<string, string> = {
     'file.upload': `uploaded a file${quoted}`,
@@ -43,6 +43,16 @@ export function formatAuditAction(
   return map[action] ?? action.replaceAll('.', ' ');
 }
 
+/** Full line: email + action, e.g. user@x.com uploaded a file 'photo.jpg' */
+export function formatActivityLine(
+  actor: { email: string; name: string | null } | null,
+  action: string,
+  meta?: Record<string, unknown> | null,
+): string {
+  const who = actor?.email ?? actor?.name ?? 'System';
+  return `${who} ${formatAuditAction(action, meta)}`;
+}
+
 export function getAuditActionColor(action: string): string {
   if (action.includes('upload')) return 'bg-emerald-500/8 text-emerald-600';
   if (action.includes('delete') || action.includes('permanent_delete')) return 'bg-red-500/8 text-red-500';
@@ -50,3 +60,16 @@ export function getAuditActionColor(action: string): string {
   if (action.includes('create') || action.includes('invite')) return 'bg-purple-500/8 text-purple-600';
   return 'bg-muted/30 text-muted-foreground';
 }
+
+export const ACTIVITY_ACTION_GROUPS = [
+  { value: '', label: 'All actions' },
+  { value: 'file.upload', label: 'File upload' },
+  { value: 'file.delete', label: 'File deleted' },
+  { value: 'file.restore', label: 'File restored' },
+  { value: 'file.permanent_delete', label: 'File permanent delete' },
+  { value: 'folder.create', label: 'Folder created' },
+  { value: 'folder.delete', label: 'Folder deleted' },
+  { value: 'folder.restore', label: 'Folder restored' },
+  { value: 'version.upload', label: 'New version' },
+  { value: 'user.invite', label: 'User invite' },
+] as const;

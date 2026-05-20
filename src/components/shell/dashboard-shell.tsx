@@ -8,6 +8,7 @@ import { BppAmbientBackground } from './bpp-ambient-background';
 export function DashboardShell({
   showAdminNav,
   showSettingsNav,
+  showActivityNav = false,
   userEmail,
   userName,
   userRole,
@@ -15,6 +16,7 @@ export function DashboardShell({
 }: {
   showAdminNav: boolean;
   showSettingsNav: boolean;
+  showActivityNav?: boolean;
   userEmail: string;
   userName?: string;
   userRole: string;
@@ -42,6 +44,7 @@ export function DashboardShell({
         <Sidebar
           showAdminNav={showAdminNav}
           showSettingsNav={showSettingsNav}
+          showActivityNav={showActivityNav}
           onNavigate={() => setMobileNavOpen(false)}
         />
       </div>

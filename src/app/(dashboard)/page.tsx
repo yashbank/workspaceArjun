@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { StorageWidget } from '@/components/dashboard/storage-widget';
 import { ClientGreeting, ClientDate } from '@/components/dashboard/client-greeting';
-import { formatAuditAction, getAuditActionColor } from '@/lib/audit-display';
+import { formatActivityLine, getAuditActionColor } from '@/lib/audit-display';
 
 export default async function DashboardHome() {
   let profile = null;
@@ -186,11 +186,21 @@ export default async function DashboardHome() {
       </div>
 
       <div className="bpp-card p-5 transition-all duration-200 hover:shadow-elevated">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="bpp-label-caps">Recent activity</h2>
-          {recentActivity.length > 0 && (
-            <span className="text-[10px] tabular-nums text-muted-foreground/30">{recentActivity.length} events</span>
-          )}
+          <div className="flex items-center gap-3">
+            {recentActivity.length > 0 && (
+              <span className="text-[10px] tabular-nums text-muted-foreground/30">{recentActivity.length} events</span>
+            )}
+            {(profile?.role === 'owner' || profile?.role === 'admin') && (
+              <Link
+                href="/activity"
+                className="text-[11px] font-semibold text-primary transition-colors hover:text-primary/80"
+              >
+                View all activity →
+              </Link>
+            )}
+          </div>
         </div>
         {recentActivity.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -206,9 +216,9 @@ export default async function DashboardHome() {
                   <Activity className="h-3 w-3" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <span className="font-semibold">{event.actor?.name ?? event.actor?.email ?? 'System'}</span>
-                  {' '}
-                  <span className="text-muted-foreground/60">{formatAuditAction(event.action, event.meta)}</span>
+                  <span className="text-muted-foreground/80">
+                    {formatActivityLine(event.actor, event.action, event.meta)}
+                  </span>
                 </div>
                 <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground/35">
                   {timeAgo(event.createdAt)}

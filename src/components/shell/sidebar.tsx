@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, FolderOpen, Trash2, Shield, Settings } from 'lucide-react';
+import { LayoutDashboard, FolderOpen, Trash2, Shield, Settings, Activity } from 'lucide-react';
 import { BppMonogram } from './bpp-monogram';
 
 const NAV_ITEMS = [
@@ -24,13 +24,22 @@ const SETTINGS_NAV = {
   match: (p: string) => p.startsWith('/admin/settings'),
 };
 
+const ACTIVITY_NAV = {
+  label: 'Activity',
+  href: '/activity',
+  icon: Activity,
+  match: (p: string) => p === '/activity',
+};
+
 export function Sidebar({
   showAdminNav = false,
   showSettingsNav = false,
+  showActivityNav = false,
   onNavigate,
 }: {
   showAdminNav?: boolean;
   showSettingsNav?: boolean;
+  showActivityNav?: boolean;
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
@@ -53,6 +62,10 @@ export function Sidebar({
         {NAV_ITEMS.map((item) => (
           <NavLink key={item.href} {...item} active={item.match(pathname)} onNavigate={onNavigate} />
         ))}
+
+        {showActivityNav && (
+          <NavLink {...ACTIVITY_NAV} active={ACTIVITY_NAV.match(pathname)} onNavigate={onNavigate} />
+        )}
 
         {showAdminNav && (
           <>

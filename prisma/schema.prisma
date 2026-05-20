@@ -43,6 +43,7 @@ model UserProfile {
   files         File[]
   fileVersions  FileVersion[]
   auditEvents   AuditEvent[]
+  auditStars    AuditStar[]
   notifications Notification[]
   invitesSent   UserInvite[] @relation("InvitedBy")
 
@@ -177,11 +178,31 @@ model AuditEvent {
   createdAt  DateTime @default(now()) @map("created_at")
 
   actor UserProfile? @relation(fields: [actorId], references: [id])
+  stars AuditStar[]
 
   @@index([actorId])
   @@index([action])
   @@index([createdAt])
   @@map("audit_events")
+}
+
+// ---------------------------------------------------------------------------
+// Starred audit events (per-user pins; references audit row only)
+// ---------------------------------------------------------------------------
+
+model AuditStar {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  auditEventId String   @map("audit_event_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  user       UserProfile @relation(fields: [userId], references: [id], onDelete: Cascade)
+  auditEvent AuditEvent  @relation(fields: [auditEventId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, auditEventId])
+  @@index([userId])
+  @@index([auditEventId])
+  @@map("audit_stars")
 }
 
 // ---------------------------------------------------------------------------

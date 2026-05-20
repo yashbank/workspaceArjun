@@ -1,16 +1,26 @@
 import { describe, it, expect } from 'vitest';
-import { formatAuditAction } from './audit-display';
+import { formatAuditAction, formatActivityLine } from './audit-display';
 
 describe('formatAuditAction', () => {
-  it('includes file name from meta', () => {
-    expect(formatAuditAction('file.upload', { name: 'photo.heic' })).toBe(
-      'uploaded a file “photo.heic”',
+  it('uses single-quoted file names', () => {
+    expect(formatAuditAction('file.upload', { name: 'IMG_2649.mov' })).toBe(
+      "uploaded a file 'IMG_2649.mov'",
     );
   });
 
   it('formats folder create', () => {
-    expect(formatAuditAction('folder.create', { name: 'Q2 Assets' })).toBe(
-      'created a folder “Q2 Assets”',
-    );
+    expect(formatAuditAction('folder.create', { name: 'N' })).toBe("created a folder 'N'");
+  });
+});
+
+describe('formatActivityLine', () => {
+  it('includes actor email', () => {
+    expect(
+      formatActivityLine(
+        { email: 'workspacearjun7@gmail.com', name: null },
+        'file.upload',
+        { name: 'IMG_2649.mov' },
+      ),
+    ).toBe("workspacearjun7@gmail.com uploaded a file 'IMG_2649.mov'");
   });
 });

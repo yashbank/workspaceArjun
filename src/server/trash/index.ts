@@ -141,3 +141,57 @@ export async function permanentDeleteFile(id: string): Promise<void> {
     meta: { name: file.name, versionsDeleted: file.versions.length },
   });
 }
+
+export async function bulkRestoreTrash(input: {
+  folderIds: string[];
+  fileIds: string[];
+}): Promise<{ restoredFolders: number; restoredFiles: number }> {
+  let restoredFolders = 0;
+  let restoredFiles = 0;
+
+  for (const id of input.folderIds) {
+    try {
+      await restoreFolder(id);
+      restoredFolders++;
+    } catch {
+      // skip missing or permission errors per item
+    }
+  }
+  for (const id of input.fileIds) {
+    try {
+      await restoreFile(id);
+      restoredFiles++;
+    } catch {
+      // skip
+    }
+  }
+
+  return { restoredFolders, restoredFiles };
+}
+
+export async function bulkPermanentDeleteTrash(input: {
+  folderIds: string[];
+  fileIds: string[];
+}): Promise<{ deletedFolders: number; deletedFiles: number }> {
+  let deletedFolders = 0;
+  let deletedFiles = 0;
+
+  for (const id of input.folderIds) {
+    try {
+      await permanentDeleteFolder(id);
+      deletedFolders++;
+    } catch {
+      // skip
+    }
+  }
+  for (const id of input.fileIds) {
+    try {
+      await permanentDeleteFile(id);
+      deletedFiles++;
+    } catch {
+      // skip
+    }
+  }
+
+  return { deletedFolders, deletedFiles };
+}

@@ -44,12 +44,14 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   const showAdminNav = profile.role === 'owner' || profile.role === 'admin';
   const showSettingsNav = profile.role === 'owner';
+  const showActivityNav = profile.role === 'owner' || profile.role === 'admin';
 
   return (
     <>
       <DashboardShell
         showAdminNav={showAdminNav}
         showSettingsNav={showSettingsNav}
+        showActivityNav={showActivityNav}
         userEmail={profile.email}
         userName={profile.name ?? undefined}
         userRole={profile.role}
