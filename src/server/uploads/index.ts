@@ -20,6 +20,8 @@ import {
   cancelMultipartUpload,
   MULTIPART_PART_SIZE_BYTES,
 } from '@/server/storage';
+import { normalizeUploadMime } from '@/lib/upload-mime';
+import { sanitizeUploadFilename } from '@/lib/upload-filename';
 
 const PROXY_MAX_BYTES = 4 * 1024 * 1024; // Vercel-safe proxy limit for local dev
 
@@ -34,20 +36,17 @@ async function resolveUploadedSizeBytes(
   }
 
   const stored = head.contentLength ?? 0;
-  if (stored > 0) {
-    if (clientSizeBytes > 0 && clientSizeBytes !== stored) {
-      console.warn('[upload] size mismatch — using storage ContentLength', {
-        storageKey,
-        clientSizeBytes,
-        stored,
-      });
-    }
-    return stored;
+  if (stored <= 0) {
+    throw new Error('Uploaded file is empty or size could not be verified');
   }
-
-  if (clientSizeBytes > 0) return clientSizeBytes;
-
-  throw new Error('Uploaded file is empty or size could not be verified');
+  if (clientSizeBytes > 0 && clientSizeBytes !== stored) {
+    console.warn('[upload] size mismatch — using storage ContentLength', {
+      storageKey,
+      clientSizeBytes,
+      stored,
+    });
+  }
+  return stored;
 }
 
 export type UploadInitResponse = {
@@ -55,6 +54,7 @@ export type UploadInitResponse = {
   fileId: string;
   storageKey: string;
   method: 'single' | 'multipart';
+  contentType: string;
   uploadUrl?: string;
   uploadId?: string;
   partSize?: number;
@@ -66,6 +66,7 @@ export type VersionUploadInitResponse = {
   versionNo: number;
   storageKey: string;
   method: 'single' | 'multipart';
+  contentType: string;
   uploadUrl?: string;
   uploadId?: string;
   partSize?: number;
@@ -86,11 +87,14 @@ async function validateUpload(
   sizeBytes: number,
 ): Promise<void> {
   if (!filename.trim()) throw new Error('Filename is required');
-  if (sizeBytes <= 0) throw new Error('File is empty');
+  if (sizeBytes < 0) throw new Error('Invalid file size');
 
   const fileType = getFileTypeFromName(filename, mimeType);
   const maxBytes = await getMaxUploadBytesForFile(filename, mimeType);
-  assertFileSizeWithinLimit(sizeBytes, filename, maxBytes, fileType);
+  if (sizeBytes > 0) {
+    assertFileSizeWithinLimit(sizeBytes, filename, maxBytes, fileType);
+    await assertWorkspaceQuota(sizeBytes);
+  }
 
   if (!requiresDirectUpload() && sizeBytes > PROXY_MAX_BYTES) {
     throw new Error(
@@ -98,7 +102,6 @@ async function validateUpload(
     );
   }
 
-  await assertWorkspaceQuota(sizeBytes);
 }
 
 export async function initFileUpload(input: {
@@ -108,7 +111,9 @@ export async function initFileUpload(input: {
   folderId: string | null;
 }): Promise<UploadInitResponse> {
   const user = await requirePermission('files:write');
-  await validateUpload(input.name, input.mimeType, input.sizeBytes);
+  const name = sanitizeUploadFilename(input.name);
+  const mimeType = normalizeUploadMime(name, input.mimeType);
+  await validateUpload(name, mimeType, input.sizeBytes);
 
   if (input.folderId) {
     const folder = await db.folder.findFirst({
@@ -119,14 +124,14 @@ export async function initFileUpload(input: {
 
   const file = await db.file.create({
     data: {
-      name: input.name.trim(),
-      mimeType: input.mimeType,
+      name,
+      mimeType,
       folderId: input.folderId,
       ownerId: user.id,
     },
   });
 
-  const storageKey = buildStorageKey(file.id, 1, input.name.trim());
+  const storageKey = buildStorageKey(file.id, 1, name);
 
   if (!requiresDirectUpload()) {
     return {
@@ -134,28 +139,31 @@ export async function initFileUpload(input: {
       fileId: file.id,
       storageKey,
       method: 'single',
+      contentType: mimeType,
     };
   }
 
   try {
     if (shouldUseMultipart(input.sizeBytes)) {
-      const uploadId = await startMultipartUpload(storageKey, input.mimeType);
+      const uploadId = await startMultipartUpload(storageKey, mimeType);
       return {
         mode: 'direct',
         fileId: file.id,
         storageKey,
         method: 'multipart',
+        contentType: mimeType,
         uploadId,
         partSize: MULTIPART_PART_SIZE_BYTES,
       };
     }
 
-    const uploadUrl = await createPresignedPutUrl(storageKey, input.mimeType);
+    const uploadUrl = await createPresignedPutUrl(storageKey, mimeType);
     return {
       mode: 'direct',
       fileId: file.id,
       storageKey,
       method: 'single',
+      contentType: mimeType,
       uploadUrl,
     };
   } catch (err) {
@@ -210,7 +218,7 @@ export async function completeFileUpload(input: {
 
     await db.file.update({
       where: { id: file.id },
-      data: { currentVersionId: version.id },
+      data: { currentVersionId: version.id, mimeType: input.mimeType },
     });
 
     await db.storageUsage.updateMany({
@@ -268,7 +276,8 @@ export async function initVersionUpload(input: {
   });
   if (!file) throw new Error('File not found');
 
-  await validateUpload(file.name, input.mimeType, input.sizeBytes);
+  const mimeType = normalizeUploadMime(file.name, input.mimeType);
+  await validateUpload(file.name, mimeType, input.sizeBytes);
 
   const versionNo = (file.versions[0]?.versionNo ?? 0) + 1;
   const storageKey = buildStorageKey(file.id, versionNo, file.name);
@@ -280,29 +289,32 @@ export async function initVersionUpload(input: {
       versionNo,
       storageKey,
       method: 'single',
+      contentType: mimeType,
     };
   }
 
   if (shouldUseMultipart(input.sizeBytes)) {
-    const uploadId = await startMultipartUpload(storageKey, input.mimeType);
+    const uploadId = await startMultipartUpload(storageKey, mimeType);
     return {
       mode: 'direct',
       fileId: file.id,
       versionNo,
       storageKey,
       method: 'multipart',
+      contentType: mimeType,
       uploadId,
       partSize: MULTIPART_PART_SIZE_BYTES,
     };
   }
 
-  const uploadUrl = await createPresignedPutUrl(storageKey, input.mimeType);
+  const uploadUrl = await createPresignedPutUrl(storageKey, mimeType);
   return {
     mode: 'direct',
     fileId: file.id,
     versionNo,
     storageKey,
     method: 'single',
+    contentType: mimeType,
     uploadUrl,
   };
 }

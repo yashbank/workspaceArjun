@@ -21,6 +21,7 @@ import {
 import { useRef, useState, useEffect } from 'react';
 import { getExtension, getFileTypeBadge, formatBytes, formatDate } from '@/lib/file-utils';
 import { FileMediaThumbnail } from './file-media-thumbnail';
+import { PremiumFileFallback } from './premium-file-fallback';
 import { VersionPanel } from './version-panel';
 
 export type FileItem = {
@@ -38,8 +39,8 @@ export type FileItem = {
 };
 
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'tiff', 'bmp', 'heic', 'heif']);
-const VIDEO_EXTS = new Set(['mp4', 'mov', 'webm', 'm4v']);
-const MEDIA_THUMB_EXTS = new Set([...IMAGE_EXTS, ...VIDEO_EXTS]);
+const MEDIA_THUMB_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'mp4', 'webm', 'm4v']);
+const PREMIUM_LIST_EXTS = new Set(['cdr', 'mov', 'pdf', 'xls', 'xlsx', 'csv', 'heic', 'heif']);
 const ARCHIVE_EXTS = new Set(['zip', 'rar', '7z', 'tar', 'gz']);
 const DOC_EXTS = new Set(['pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'ppt', 'pptx', 'txt']);
 const DESIGN_EXTS = new Set(['cdr', 'ai', 'eps', 'psd']);
@@ -145,6 +146,7 @@ function FileRowWithVersions({
   const badge = getFileTypeBadge(file.name);
   const versionCount = file._count?.versions ?? 1;
   const hasMediaThumb = MEDIA_THUMB_EXTS.has(ext);
+  const hasPremiumThumb = PREMIUM_LIST_EXTS.has(ext);
 
   function openMenu() {
     if (menuBtnRef.current) {
@@ -175,6 +177,8 @@ function FileRowWithVersions({
           <div className="flex items-center gap-2.5">
             {hasMediaThumb ? (
               <FileMediaThumbnail fileId={file.id} filename={file.name} variant="list" />
+            ) : hasPremiumThumb ? (
+              <PremiumFileFallback filename={file.name} variant="list" />
             ) : (
               <FileTypeIcon filename={file.name} />
             )}

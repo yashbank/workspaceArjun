@@ -14,6 +14,7 @@ import {
 import { memo, useRef } from 'react';
 import { getExtension, getFileTypeBadge, formatBytes } from '@/lib/file-utils';
 import { FileMediaThumbnail } from './file-media-thumbnail';
+import { PremiumFileFallback } from './premium-file-fallback';
 import type { FileItem } from './file-table';
 
 const PREVIEW_IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'tiff']);
@@ -22,11 +23,8 @@ const ARCHIVE_EXTS = new Set(['zip', 'rar', '7z', 'tar', 'gz']);
 const DOC_EXTS = new Set(['pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'ppt', 'pptx', 'txt']);
 const DESIGN_EXTS = new Set(['cdr', 'ai', 'eps', 'psd']);
 const VIDEO_EXTS = new Set(['mp4', 'mov', 'webm', 'm4v']);
-const MEDIA_THUMB_EXTS = new Set([
-  ...PREVIEW_IMAGE_EXTS,
-  ...IMAGE_FALLBACK_EXTS,
-  ...VIDEO_EXTS,
-]);
+const MEDIA_THUMB_EXTS = new Set([...PREVIEW_IMAGE_EXTS, 'mp4', 'webm', 'm4v']);
+const PREMIUM_CARD_EXTS = new Set(['cdr', 'mov', 'pdf', 'xls', 'xlsx', 'csv', 'heic', 'heif']);
 
 function getCardColor(ext: string): string {
   if (PREVIEW_IMAGE_EXTS.has(ext) || IMAGE_FALLBACK_EXTS.has(ext))
@@ -111,6 +109,7 @@ const FileCard = memo(function FileCard({
   const size = file.currentVersion ? Number(file.currentVersion.sizeBytes) : 0;
   const cardColor = getCardColor(ext);
   const hasMediaThumb = MEDIA_THUMB_EXTS.has(ext);
+  const hasPremiumCard = PREMIUM_CARD_EXTS.has(ext);
   const menuBtnRef = useRef<HTMLButtonElement>(null);
 
   function handleContext(e: React.MouseEvent) {
@@ -141,6 +140,8 @@ const FileCard = memo(function FileCard({
       >
         {hasMediaThumb ? (
           <FileMediaThumbnail fileId={file.id} filename={file.name} variant="grid" />
+        ) : hasPremiumCard ? (
+          <PremiumFileFallback filename={file.name} variant="grid" />
         ) : (
           <FileCardIcon ext={ext} />
         )}

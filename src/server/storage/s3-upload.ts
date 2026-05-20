@@ -20,9 +20,15 @@ export function shouldUseMultipart(sizeBytes: number): boolean {
   return sizeBytes >= MULTIPART_THRESHOLD_BYTES;
 }
 
+/**
+ * Presigned PUT without Content-Type in the signature.
+ * iOS Safari often sends a different Content-Type than reported at pick time;
+ * binding Content-Type in the signature causes 403 Forbidden on PUT.
+ * The client still sends a normalized Content-Type header for object metadata.
+ */
 export async function createPresignedPutUrl(
   key: string,
-  contentType: string,
+  _contentType: string,
   expiresIn = PRESIGN_EXPIRY_SECONDS,
 ): Promise<string> {
   if (getDriver() !== 's3') {
@@ -31,7 +37,6 @@ export async function createPresignedPutUrl(
   const command = new PutObjectCommand({
     Bucket: getBucket(),
     Key: key,
-    ContentType: contentType,
   });
   return getSignedUrl(getS3Client(), command, { expiresIn });
 }

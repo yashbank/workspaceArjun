@@ -1,5 +1,12 @@
 /** Browser → S3 direct upload (presigned single PUT or multipart). */
 
+import {
+  classifyApiUploadError,
+  classifyStoragePutError,
+  formatUploadError,
+} from '@/lib/upload-errors';
+import { normalizeUploadMime } from '@/lib/upload-mime';
+
 export type UploadConfig = {
   directUpload: boolean;
   multipartThresholdBytes: number;
@@ -14,6 +21,7 @@ type InitFileResponse = {
   fileId: string;
   storageKey: string;
   method: 'single' | 'multipart';
+  contentType: string;
   uploadUrl?: string;
   uploadId?: string;
   partSize?: number;
@@ -38,37 +46,12 @@ export function clearUploadConfigCache(): void {
   cachedConfig = null;
 }
 
-/** MIME for upload init — iOS HEIC often has empty file.type. */
-export function resolveUploadMimeType(file: File): string {
-  if (file.type) return file.type;
-  const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
-  if (ext === 'heic') return 'image/heic';
-  if (ext === 'heif') return 'image/heif';
-  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
-  if (ext === 'png') return 'image/png';
-  if (ext === 'webp') return 'image/webp';
-  if (ext === 'gif') return 'image/gif';
-  if (ext === 'pdf') return 'application/pdf';
-  if (ext === 'mp4') return 'video/mp4';
-  return 'application/octet-stream';
-}
-
-function formatUploadError(err: unknown, status?: number): string {
-  if (err instanceof Error) {
-    if (err.name === 'AbortError') return 'Upload cancelled';
-    if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
-      return 'Network error — check your connection and try again';
-    }
-    return err.message;
-  }
-  if (status === 413) return 'File exceeds the upload size limit for this file type';
-  if (status === 502) return 'Storage upload failed — try again or contact support';
-  return 'Upload failed';
-}
+export { normalizeUploadMime, normalizeUploadMime as resolveUploadMimeType };
 
 async function parseApiError(res: Response): Promise<string> {
   const payload = (await res.json().catch(() => null)) as { error?: string } | null;
-  return payload?.error ?? formatUploadError(null, res.status);
+  const classified = classifyApiUploadError(res.status, payload?.error);
+  return classified.message;
 }
 
 function putWithProgress(
@@ -81,7 +64,9 @@ function putWithProgress(
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('PUT', url);
-    xhr.setRequestHeader('Content-Type', contentType);
+    if (contentType) {
+      xhr.setRequestHeader('Content-Type', contentType);
+    }
 
     if (signal) {
       if (signal.aborted) {
@@ -102,20 +87,33 @@ function putWithProgress(
         onProgress(100);
         resolve();
       } else {
-        reject(new Error(`Storage upload failed (${xhr.status})`));
+        reject(new Error(classifyStoragePutError(xhr.status).message));
       }
     };
 
-    xhr.onerror = () => reject(new Error('Network error during storage upload'));
+    xhr.onerror = () => reject(new Error(classifyStoragePutError(0).message));
     xhr.onabort = () => reject(new DOMException('Aborted', 'AbortError'));
 
     xhr.send(body);
   });
 }
 
+async function abortUploadSession(
+  path: string,
+  body: { fileId?: string; storageKey: string; uploadId?: string },
+): Promise<void> {
+  await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(body),
+  }).catch(() => {});
+}
+
 async function uploadMultipart(
   file: File,
   init: InitFileResponse | InitVersionResponse,
+  contentType: string,
   onProgress: UploadProgressCallback,
   signal: AbortSignal | undefined,
   partUrlPath: string,
@@ -166,10 +164,10 @@ async function uploadMultipart(
           }
           resolve(raw.replace(/"/g, ''));
         } else {
-          reject(new Error(`Part ${partNumber} upload failed (${xhr.status})`));
+          reject(new Error(classifyStoragePutError(xhr.status).message));
         }
       };
-      xhr.onerror = () => reject(new Error(`Network error uploading part ${partNumber}`));
+      xhr.onerror = () => reject(new Error(classifyStoragePutError(0).message));
       xhr.onabort = () => reject(new DOMException('Aborted', 'AbortError'));
       xhr.send(chunk);
     });
@@ -213,7 +211,7 @@ export async function uploadFileDirect(
   signal?: AbortSignal,
 ): Promise<void> {
   await getUploadConfig();
-  const mimeType = resolveUploadMimeType(file);
+  const mimeType = normalizeUploadMime(file.name, file.type);
 
   const initRes = await fetch('/api/files/upload/init', {
     method: 'POST',
@@ -230,6 +228,7 @@ export async function uploadFileDirect(
 
   if (!initRes.ok) throw new Error(await parseApiError(initRes));
   const init = (await initRes.json()) as InitFileResponse;
+  const putContentType = init.contentType || mimeType;
 
   if (init.mode === 'proxy') {
     await proxyUploadFile(file, folderId, onProgress, signal);
@@ -238,7 +237,7 @@ export async function uploadFileDirect(
 
   try {
     if (init.method === 'single' && init.uploadUrl) {
-      await putWithProgress(init.uploadUrl, file, mimeType, onProgress, signal);
+      await putWithProgress(init.uploadUrl, file, putContentType, onProgress, signal);
       const completeRes = await fetch('/api/files/upload/complete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -248,7 +247,7 @@ export async function uploadFileDirect(
           fileId: init.fileId,
           storageKey: init.storageKey,
           sizeBytes: file.size,
-          mimeType,
+          mimeType: putContentType,
         }),
       });
       if (!completeRes.ok) throw new Error(await parseApiError(completeRes));
@@ -256,6 +255,7 @@ export async function uploadFileDirect(
       const parts = await uploadMultipart(
         file,
         init,
+        putContentType,
         onProgress,
         signal,
         '/api/files/upload/part-url',
@@ -270,7 +270,7 @@ export async function uploadFileDirect(
           fileId: init.fileId,
           storageKey: init.storageKey,
           sizeBytes: file.size,
-          mimeType,
+          mimeType: putContentType,
           uploadId: init.uploadId,
           parts,
         }),
@@ -281,16 +281,11 @@ export async function uploadFileDirect(
       throw new Error('Invalid upload session from server');
     }
   } catch (err) {
-    await fetch('/api/files/upload/abort', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({
-        fileId: init.fileId,
-        storageKey: init.storageKey,
-        uploadId: init.uploadId,
-      }),
-    }).catch(() => {});
+    await abortUploadSession('/api/files/upload/abort', {
+      fileId: init.fileId,
+      storageKey: init.storageKey,
+      uploadId: init.uploadId,
+    });
     throw err;
   }
 }
@@ -302,7 +297,7 @@ export async function uploadVersionDirect(
   onProgress: UploadProgressCallback,
   signal?: AbortSignal,
 ): Promise<void> {
-  const mimeType = resolveUploadMimeType(file);
+  const mimeType = normalizeUploadMime(file.name, file.type);
 
   const initRes = await fetch(`/api/files/${fileId}/versions/upload/init`, {
     method: 'POST',
@@ -314,6 +309,7 @@ export async function uploadVersionDirect(
 
   if (!initRes.ok) throw new Error(await parseApiError(initRes));
   const init = (await initRes.json()) as InitVersionResponse;
+  const putContentType = init.contentType || mimeType;
 
   if (init.mode === 'proxy') {
     const formData = new FormData();
@@ -333,7 +329,7 @@ export async function uploadVersionDirect(
 
   try {
     if (init.method === 'single' && init.uploadUrl) {
-      await putWithProgress(init.uploadUrl, file, mimeType, onProgress, signal);
+      await putWithProgress(init.uploadUrl, file, putContentType, onProgress, signal);
       const completeRes = await fetch(`/api/files/${fileId}/versions/upload/complete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -343,7 +339,7 @@ export async function uploadVersionDirect(
           versionNo: init.versionNo,
           storageKey: init.storageKey,
           sizeBytes: file.size,
-          mimeType,
+          mimeType: putContentType,
           note,
         }),
       });
@@ -352,6 +348,7 @@ export async function uploadVersionDirect(
       const parts = await uploadMultipart(
         file,
         init,
+        putContentType,
         onProgress,
         signal,
         `/api/files/${fileId}/versions/upload/part-url`,
@@ -366,7 +363,7 @@ export async function uploadVersionDirect(
           versionNo: init.versionNo,
           storageKey: init.storageKey,
           sizeBytes: file.size,
-          mimeType,
+          mimeType: putContentType,
           note,
           uploadId: init.uploadId,
           parts,
@@ -378,15 +375,10 @@ export async function uploadVersionDirect(
       throw new Error('Invalid upload session from server');
     }
   } catch (err) {
-    await fetch(`/api/files/${fileId}/versions/upload/abort`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({
-        storageKey: init.storageKey,
-        uploadId: init.uploadId,
-      }),
-    }).catch(() => {});
+    await abortUploadSession(`/api/files/${fileId}/versions/upload/abort`, {
+      storageKey: init.storageKey,
+      uploadId: init.uploadId,
+    });
     throw err;
   }
 }

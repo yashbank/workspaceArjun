@@ -56,7 +56,7 @@ export function DashboardShell({
           userRole={userRole}
           onMenuClick={() => setMobileNavOpen(true)}
         />
-        <main className="flex-1 overflow-auto p-4 sm:p-6 lg:p-8">
+        <main className="bpp-safe-bottom flex-1 overflow-auto p-4 sm:p-6 lg:p-8">
           <div className="animate-in content-reveal duration-300">{children}</div>
         </main>
       </div>

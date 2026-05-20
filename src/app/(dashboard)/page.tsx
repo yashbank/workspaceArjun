@@ -1,6 +1,12 @@
+import type { Metadata } from 'next';
 import { getCurrentUser } from '@/server/auth';
 import { loadDashboardData } from '@/server/dashboard/load-dashboard-data';
+import { PAGE_TITLES } from '@/lib/site';
 import Link from 'next/link';
+
+export const metadata: Metadata = {
+  title: PAGE_TITLES.dashboard,
+};
 import {
   FolderOpen,
   FileText,

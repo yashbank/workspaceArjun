@@ -251,3 +251,7 @@
 .dark .glass {
   background: oklch(0.155 0 0 / 0.75);
 }
+
+.bpp-safe-bottom {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+}
