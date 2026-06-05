@@ -5,7 +5,7 @@ import type { UserProfile } from '@/generated/prisma/client';
 import { extractRequestIp, ipMatchesAny } from './ip';
 import { DEVICE_COOKIE_NAME, verifyDeviceToken } from './device';
 import { isAccessBypassed, evaluateAccess } from './index';
-import { isAccessEnforced, AccessBlockedError } from './errors';
+import { isAccessEnforced, isAccessDetectionEnabled, AccessBlockedError } from './errors';
 
 export type AccessDeviceStatus = 'none' | 'pending' | 'approved' | 'revoked';
 
@@ -120,7 +120,8 @@ export async function logAccessDenial(profile: UserProfile, decision: AccessDeci
  * unrestricted members resolve to "bypass" with no DB lookup, so they pass.
  */
 export async function enforceApiAccess(profile: UserProfile): Promise<void> {
-  if (!isAccessEnforced()) return;
+  // ACCESS_DETECTION=off is a global kill-switch; enforcement also requires it.
+  if (!isAccessDetectionEnabled() || !isAccessEnforced()) return;
   const decision = await resolveAccessDecision(profile);
   if (decision.wouldBlock) {
     if (process.env.NODE_ENV !== 'production') {

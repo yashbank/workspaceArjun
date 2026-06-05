@@ -206,34 +206,56 @@ export default function SecurityPage() {
     );
   }
 
+  const runtimeMode = !data.accessDetectionEnabled
+    ? { label: 'Detection off', cls: 'bg-muted/40 text-muted-foreground ring-border/50' }
+    : data.accessEnforcementEnabled
+      ? { label: 'Enforcement active', cls: 'bg-destructive/10 text-destructive ring-destructive/20' }
+      : { label: 'Log-only', cls: 'bg-amber-500/10 text-amber-700 ring-amber-500/20 dark:text-amber-300' };
+
   return (
     <div className="mx-auto max-w-4xl space-y-6">
-      <div>
-        <h1 className="bpp-page-title flex items-center gap-2">
-          <Lock className="h-5 w-5 text-muted-foreground/50" />
-          Security &amp; access
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Office IP and device restrictions for members. Owner-only configuration.
-        </p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="bpp-page-title flex items-center gap-2">
+            <Lock className="h-5 w-5 text-muted-foreground/50" />
+            Security &amp; access
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Office IP and device restrictions for members. Owner-only configuration.
+          </p>
+        </div>
+        <span
+          className={`mt-1 shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ring-1 ${runtimeMode.cls}`}
+        >
+          {runtimeMode.label}
+        </span>
       </div>
 
-      {/* Runtime status banner — reflects the live deployed env, for verification */}
-      {data.accessEnforcementEnabled ? (
+      {/* Runtime status banner — reflects the live deployed env (not secret) */}
+      {!data.accessDetectionEnabled ? (
+        <div className="flex items-start gap-2.5 rounded-2xl border border-border/50 bg-muted/30 px-4 py-3 text-muted-foreground">
+          <Info className="mt-0.5 h-4 w-4 shrink-0" />
+          <p className="text-[13px] font-medium leading-relaxed">
+            <span className="font-bold">Detection off</span> (ACCESS_DETECTION=off): access control is
+            fully disabled — members are neither observed nor blocked. Owner and admin always have
+            access.
+          </p>
+        </div>
+      ) : data.accessEnforcementEnabled ? (
         <div className="flex items-start gap-2.5 rounded-2xl border border-destructive/25 bg-destructive/8 px-4 py-3 text-destructive">
           <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
           <p className="text-[13px] font-medium leading-relaxed">
-            Enforcement active (ACCESS_ENFORCE=true): restricted members are blocked from unapproved
-            IPs/devices. Owner and admin always have access.
+            <span className="font-bold">Enforcement active</span> (ACCESS_ENFORCE=true): restricted
+            members are blocked from unapproved IPs/devices. Owner and admin always have access.
           </p>
         </div>
       ) : (
         <div className="flex items-start gap-2.5 rounded-2xl border border-amber-500/20 bg-amber-500/8 px-4 py-3 text-amber-800 dark:text-amber-300">
           <Info className="mt-0.5 h-4 w-4 shrink-0" />
           <p className="text-[13px] font-medium leading-relaxed">
-            Log-only mode (ACCESS_ENFORCE is off): access restrictions are observed, not enforced.
-            Members are not blocked — denied attempts are recorded below.
-            {!data.accessDetectionEnabled && ' Detection is also OFF (ACCESS_DETECTION=off).'}
+            <span className="font-bold">Log-only mode</span> (ACCESS_ENFORCE is off): restrictions are
+            observed and recorded below, but members are not blocked. Owner and admin always have
+            access.
           </p>
         </div>
       )}
@@ -315,6 +337,10 @@ export default function SecurityPage() {
       <section className="bpp-card overflow-hidden">
         <div className="border-b border-border/30 px-5 py-3.5">
           <span className="text-sm font-semibold">Allowed IP ranges</span>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground/70">
+            For reliable office-only access, use the office broadband static public IP. Mobile
+            hotspot IPs may change.
+          </p>
         </div>
         <div className="space-y-4 p-5">
           <form onSubmit={addIp} className="flex flex-col gap-2 sm:flex-row sm:items-end">
@@ -507,7 +533,7 @@ export default function SecurityPage() {
                           : 'bg-muted/40 text-muted-foreground/50'
                       }`}
                     >
-                      {d.meta?.enforced ? 'blocked' : 'log-only'}
+                      {d.meta?.enforced ? 'Blocked' : 'Log-only'}
                     </span>
                     <span className="text-[10px] tabular-nums text-muted-foreground/40">
                       {formatTs(d.createdAt)}
