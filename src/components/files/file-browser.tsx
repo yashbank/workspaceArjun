@@ -75,6 +75,15 @@ type Folder = {
 
 type Crumb = { id: string; name: string };
 
+// P3: one entry of the small in-memory stale-while-revalidate folder cache.
+type FolderCacheEntry = {
+  folders: Folder[];
+  files: FileItem[];
+  breadcrumbs: Crumb[];
+  truncated: boolean;
+  ts: number;
+};
+
 type SortOption = { by: string; dir: 'asc' | 'desc'; label: string };
 
 const SORT_OPTIONS: SortOption[] = [
@@ -193,18 +202,36 @@ export function FileBrowser({
   const { toast } = useToast();
 
   const fetchIdRef = useRef(0);
+  // P3: in-memory stale-while-revalidate cache keyed by folderId ("root" for the
+  // top level). Lets revisited folders render instantly while a background
+  // revalidation runs. Invalidated on mutations (see the mutation handlers).
+  const cacheRef = useRef<Map<string, FolderCacheEntry>>(new Map());
 
   const loadContents = useCallback(
     async (folderId: string | null, opts?: { silent?: boolean }) => {
     const fetchId = ++fetchIdRef.current;
     setError(null);
 
+    const cacheKey = folderId ?? 'root';
+    const cached = cacheRef.current.get(cacheKey);
+
+    // P3: on navigation (not a silent post-mutation refetch), if this folder is
+    // cached, show it immediately and revalidate in the background.
+    const showCached = !opts?.silent && !!cached;
+    if (showCached && cached) {
+      setFolders(cached.folders);
+      setFiles(cached.files);
+      setTruncated(cached.truncated);
+      setBreadcrumbs(cached.breadcrumbs);
+      setLoading(false);
+    }
+
     // P1: silent refetches (after a mutation) keep the current files/folders
     // visible — no skeleton — until fresh data replaces them.
-    // P2: for visible loads (navigation), delay the skeleton so a fast load
-    // never flashes it.
+    // P2: for visible loads with nothing to show yet, delay the skeleton so a
+    // fast load never flashes it (cached loads never show it at all).
     let skeletonTimer: ReturnType<typeof setTimeout> | undefined;
-    if (!opts?.silent) {
+    if (!opts?.silent && !cached) {
       skeletonTimer = setTimeout(() => {
         if (fetchId === fetchIdRef.current) setLoading(true);
       }, SKELETON_DELAY_MS);
@@ -247,13 +274,25 @@ export function FileBrowser({
         return true;
       });
 
+      const isTruncated = uniqueFiles.length >= FILES_LIST_LIMIT;
       setFolders(uniqueFolders);
       setFiles(uniqueFiles);
-      setTruncated(uniqueFiles.length >= FILES_LIST_LIMIT);
+      setTruncated(isTruncated);
       setBreadcrumbs(crumbData);
+      cacheRef.current.set(cacheKey, {
+        folders: uniqueFolders,
+        files: uniqueFiles,
+        breadcrumbs: crumbData,
+        truncated: isTruncated,
+        ts: Date.now(),
+      });
     } catch (e: unknown) {
       if (fetchId !== fetchIdRef.current) return;
-      setError(e instanceof Error ? e.message : 'Failed to load');
+      // If cached content is already on screen, keep it on a revalidation
+      // failure; only surface an error when there was nothing to show.
+      if (!showCached) {
+        setError(e instanceof Error ? e.message : 'Failed to load');
+      }
     } finally {
       if (skeletonTimer) clearTimeout(skeletonTimer);
       if (fetchId === fetchIdRef.current) {
@@ -521,6 +560,8 @@ export function FileBrowser({
     try {
       await apiFetch(`/api/folders/${id}`, { method: 'DELETE' });
       toast('success', 'Folder moved to trash');
+      // A trashed folder + its subtree are no longer reachable; clear the cache.
+      cacheRef.current.clear();
       await loadContents(currentFolderId, { silent: true });
     } catch (e: unknown) {
       toast('error', e instanceof Error ? e.message : 'Could not delete folder');
@@ -574,8 +615,11 @@ export function FileBrowser({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newName }),
       });
+      const renamedFolder = renameTarget.type === 'folder';
       setRenameTarget(null);
       toast('success', `Renamed to "${newName}"`);
+      // A renamed folder changes its breadcrumb label across its subtree.
+      if (renamedFolder) cacheRef.current.clear();
       await loadContents(currentFolderId, { silent: true });
     } catch (e: unknown) {
       toast('error', e instanceof Error ? e.message : 'Rename failed');
@@ -626,8 +670,16 @@ export function FileBrowser({
           body: JSON.stringify({ parentId: targetFolderId }),
         });
       }
-      setMoveTarget(null);
       toast('success', `${moveTarget.type === 'file' ? 'File' : 'Folder'} moved`);
+      // The source folder (current) is revalidated below; invalidate the
+      // destination too. A folder move shifts subtrees/breadcrumbs broadly, so
+      // clear the whole cache to stay safe.
+      if (moveTarget.type === 'file') {
+        cacheRef.current.delete(targetFolderId ?? 'root');
+      } else {
+        cacheRef.current.clear();
+      }
+      setMoveTarget(null);
       await loadContents(currentFolderId, { silent: true });
     } catch (e: unknown) {
       toast('error', e instanceof Error ? e.message : 'Move failed');
@@ -963,7 +1015,7 @@ export function FileBrowser({
         <FolderImportDialog
           files={folderImportFiles}
           parentFolderId={currentFolderId}
-          onComplete={() => { setFolderImportFiles(null); loadContents(currentFolderId, { silent: true }); }}
+          onComplete={() => { setFolderImportFiles(null); cacheRef.current.clear(); loadContents(currentFolderId, { silent: true }); }}
           onCancel={() => setFolderImportFiles(null)}
         />
       )}
