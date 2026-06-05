@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, FolderOpen, Trash2, Shield, Settings, Activity } from 'lucide-react';
+import { LayoutDashboard, FolderOpen, Trash2, Shield, Settings, Activity, Lock } from 'lucide-react';
 import { BppMonogram } from './bpp-monogram';
 
 const NAV_ITEMS = [
@@ -15,13 +15,23 @@ const ADMIN_NAV = {
   label: 'Admin',
   href: '/admin',
   icon: Shield,
-  match: (p: string) => p === '/admin' || (p.startsWith('/admin') && !p.startsWith('/admin/settings')),
+  match: (p: string) =>
+    p === '/admin' ||
+    (p.startsWith('/admin') &&
+      !p.startsWith('/admin/settings') &&
+      !p.startsWith('/admin/security')),
 };
 const SETTINGS_NAV = {
   label: 'Settings',
   href: '/admin/settings',
   icon: Settings,
   match: (p: string) => p.startsWith('/admin/settings'),
+};
+const SECURITY_NAV = {
+  label: 'Security',
+  href: '/admin/security',
+  icon: Lock,
+  match: (p: string) => p.startsWith('/admin/security'),
 };
 
 const ACTIVITY_NAV = {
@@ -72,6 +82,7 @@ export function Sidebar({
             <div className="my-4 border-t border-border/35" />
             <p className="bpp-label-caps mb-2 px-3">Administration</p>
             <NavLink {...ADMIN_NAV} active={ADMIN_NAV.match(pathname)} onNavigate={onNavigate} />
+            <NavLink {...SECURITY_NAV} active={SECURITY_NAV.match(pathname)} onNavigate={onNavigate} />
             {showSettingsNav && (
               <NavLink {...SETTINGS_NAV} active={SETTINGS_NAV.match(pathname)} onNavigate={onNavigate} />
             )}

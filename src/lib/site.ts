@@ -7,5 +7,6 @@ export const PAGE_TITLES = {
   trash: `Trash | BPP Workspace`,
   admin: `Admin | BPP Workspace`,
   settings: `Settings | BPP Workspace`,
+  security: `Security | BPP Workspace`,
   accountName: `Display name | BPP Workspace`,
 } as const;
