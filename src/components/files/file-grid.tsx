@@ -180,6 +180,7 @@ const FileCard = memo(function FileCard({
       >
         {hasMediaThumb ? (
           <FileMediaThumbnail
+            key={file.currentVersionId ?? file.id}
             fileId={file.id}
             filename={file.name}
             versionKey={file.currentVersionId}

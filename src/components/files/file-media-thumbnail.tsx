@@ -4,6 +4,8 @@ import { Film, Smartphone } from 'lucide-react';
 import { memo, useState } from 'react';
 import { getExtension } from '@/lib/file-utils';
 import { filePreviewUrl } from '@/lib/preview-url';
+import { fileThumbnailUrl } from '@/lib/thumbnail-url';
+import { isThumbnailable } from '@/lib/thumbnail-format';
 
 const PREVIEW_IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'tiff']);
 const IMAGE_FALLBACK_EXTS = new Set(['heic', 'heif']);
@@ -43,8 +45,18 @@ export const FileMediaThumbnail = memo(function FileMediaThumbnail({
   const previewSrc = filePreviewUrl(fileId, versionKey);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
+  const [thumbFailed, setThumbFailed] = useState(false);
 
+  // NOTE: transient state (loaded/error/thumbFailed) is reset on a version change
+  // by remounting — call sites pass `key={currentVersionId}` — so a new upload or
+  // replace re-attempts the optimized thumbnail and clears any prior error.
   const isImage = PREVIEW_IMAGE_EXTS.has(ext);
+  // Use the small optimized thumbnail for supported raster images (svg/heic are
+  // not thumbnailable and keep the preview/card path). 256px in grid, 96px in list.
+  const canThumbnail = isThumbnailable(ext);
+  const thumbWidth = variant === 'list' ? 96 : 256;
+  const imageSrc =
+    canThumbnail && !thumbFailed ? fileThumbnailUrl(fileId, versionKey, thumbWidth) : previewSrc;
   const isHeic = IMAGE_FALLBACK_EXTS.has(ext);
   const isVideoThumb = VIDEO_THUMB_EXTS.has(ext);
   const isMov = ext === MOV_EXT;
@@ -136,12 +148,17 @@ export const FileMediaThumbnail = memo(function FileMediaThumbnail({
       )}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={previewSrc}
+        src={imageSrc}
         alt=""
         className={`${sizeClass} object-cover transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`}
         loading="lazy"
         onLoad={() => setLoaded(true)}
-        onError={() => setError(true)}
+        onError={() => {
+          // Optimized thumbnail failed → fall back to the full preview URL; if
+          // that also fails, give up gracefully (no broken-image icon).
+          if (canThumbnail && !thumbFailed) setThumbFailed(true);
+          else setError(true);
+        }}
       />
       {loaded && variant === 'grid' && (
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/10 via-transparent to-transparent" />

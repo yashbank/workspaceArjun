@@ -172,6 +172,7 @@ function FileRowWithVersions({
           <div className="flex items-center gap-2.5">
             {hasMediaThumb ? (
               <FileMediaThumbnail
+                key={file.currentVersionId ?? file.id}
                 fileId={file.id}
                 filename={file.name}
                 versionKey={file.currentVersionId}

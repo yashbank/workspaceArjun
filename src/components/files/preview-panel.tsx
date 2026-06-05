@@ -34,6 +34,8 @@ import { memo, useEffect, useRef, useState } from 'react';
 import type { FileItem } from './file-table';
 import { Lightbox } from './lightbox';
 import { filePreviewUrl } from '@/lib/preview-url';
+import { fileThumbnailUrl } from '@/lib/thumbnail-url';
+import { isThumbnailable } from '@/lib/thumbnail-format';
 
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'tiff']);
 const HEIC_EXTS = new Set(['heic', 'heif']);
@@ -506,8 +508,12 @@ export const PreviewPanel = memo(function PreviewPanel({
                     title={f.name}
                   >
                     {isImg ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={filePreviewUrl(f.id, f.currentVersionId)} alt="" className="h-10 w-10 object-cover" loading="lazy" />
+                      <FilmstripThumb
+                        key={f.currentVersionId ?? f.id}
+                        fileId={f.id}
+                        versionKey={f.currentVersionId}
+                        ext={fExt}
+                      />
                     ) : (
                       <div className="flex h-10 w-10 items-center justify-center bg-muted/20 text-[8px] font-bold uppercase text-muted-foreground/60">
                         {fExt.slice(0, 3) || (i + 1).toString()}
@@ -533,6 +539,40 @@ export const PreviewPanel = memo(function PreviewPanel({
     </>
   );
 });
+
+/**
+ * Filmstrip thumbnail: uses the small optimized thumbnail (w=96) for supported
+ * images, falling back to the full preview URL if the thumbnail request fails.
+ * Both URLs are version-keyed so they refresh on new versions.
+ */
+function FilmstripThumb({
+  fileId,
+  versionKey,
+  ext,
+}: {
+  fileId: string;
+  versionKey?: string | null;
+  ext: string;
+}) {
+  const canThumbnail = isThumbnailable(ext);
+  const [thumbFailed, setThumbFailed] = useState(false);
+  const src =
+    canThumbnail && !thumbFailed
+      ? fileThumbnailUrl(fileId, versionKey, 96)
+      : filePreviewUrl(fileId, versionKey);
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt=""
+      className="h-10 w-10 object-cover"
+      loading="lazy"
+      onError={() => {
+        if (canThumbnail && !thumbFailed) setThumbFailed(true);
+      }}
+    />
+  );
+}
 
 function MetaRow({ icon: Icon, label, value, border }: { icon: React.ComponentType<{ className?: string }>; label: string; value: string; border?: boolean }) {
   return (
