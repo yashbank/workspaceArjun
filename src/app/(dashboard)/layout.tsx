@@ -11,6 +11,7 @@ import { DisplayNameGuard } from '@/components/shell/display-name-guard';
 import { needsDisplayNameSetup } from '@/lib/user-display';
 import { userHasDuplicateDisplayName } from '@/server/profile';
 import { resolveAccessDecision, logAccessDenial } from '@/server/access/decision';
+import { isAccessEnforced, isAccessDetectionEnabled } from '@/server/access';
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createSupabaseServerClient();
@@ -46,21 +47,29 @@ export default async function DashboardLayout({ children }: { children: React.Re
     redirect('/unauthorized');
   }
 
-  // Access control — Phase 2 (LOG-ONLY): observe the IP/device policy and record
-  // would-be denials, but never block, redirect, or throw. Wrapped so access
-  // observation can never break the dashboard; an off-switch (ACCESS_DETECTION=off)
-  // disables it entirely.
-  if (process.env.ACCESS_DETECTION !== 'off') {
+  // Access control — observe the IP/device policy and record would-be denials.
+  // When ACCESS_ENFORCE=true, a blocked member is redirected to the block screen
+  // (covering Files/Dashboard/Admin/Activity/Trash, all under this layout);
+  // otherwise it stays log-only. The decision runs inside try/catch so a lookup
+  // failure can never break the dashboard, while redirect() is called OUTSIDE the
+  // try so its NEXT_REDIRECT control flow is never swallowed. ACCESS_DETECTION=off
+  // disables observation entirely.
+  let accessBlocked = false;
+  if (isAccessDetectionEnabled()) {
     try {
       const decision = await resolveAccessDecision(profile);
       if (decision.wouldBlock) {
         await logAccessDenial(profile, decision);
+        accessBlocked = true;
       }
     } catch (error) {
       if (process.env.NODE_ENV === 'development') {
-        console.error('[access] log-only observation failed:', error);
+        console.error('[access] observation failed:', error);
       }
     }
+  }
+  if (accessBlocked && isAccessEnforced()) {
+    redirect('/access-blocked');
   }
 
   const showAdminNav = profile.role === 'owner' || profile.role === 'admin';

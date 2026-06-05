@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { isAccessBlockedError, accessBlockedResponse } from '@/lib/api-error';
 import { getCurrentUser } from '@/server/auth';
 import { hasPermission } from '@/server/rbac/permissions';
 import { listActivity } from '@/server/activity';
@@ -42,6 +43,7 @@ export async function GET(request: NextRequest) {
       { headers: NO_STORE },
     );
   } catch (e: unknown) {
+    if (isAccessBlockedError(e)) return accessBlockedResponse();
     const msg = e instanceof Error ? e.message : 'Unknown error';
     const status = msg === 'Unauthorized' ? 401 : msg === 'Forbidden' ? 403 : 400;
     return NextResponse.json({ error: msg }, { status, headers: NO_STORE });

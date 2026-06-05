@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { UserProfile } from '@/generated/prisma/client';
 import { hashDeviceToken, DEVICE_COOKIE_NAME } from './device';
 
@@ -21,7 +21,7 @@ vi.mock('@/server/db', () => ({
 const mockLog = vi.fn();
 vi.mock('@/server/audit', () => ({ logAuditEvent: (...a: unknown[]) => mockLog(...a) }));
 
-import { resolveAccessDecision, logAccessDenial } from './decision';
+import { resolveAccessDecision, logAccessDenial, enforceApiAccess } from './decision';
 
 function setRequest(opts: { ip?: string; device?: string } = {}) {
   const h = new Headers({ 'user-agent': 'Mozilla/5.0 Test' });
@@ -123,5 +123,37 @@ describe('logAccessDenial (throttled, log-only)', () => {
     expect(arg.action).toBe('access.denied');
     expect(arg.ip).toBe('8.8.8.8');
     expect(arg.meta.enforced).toBe(false);
+  });
+});
+
+describe('enforceApiAccess (env-gated)', () => {
+  const orig = process.env.ACCESS_ENFORCE;
+  afterEach(() => {
+    if (orig === undefined) delete process.env.ACCESS_ENFORCE;
+    else process.env.ACCESS_ENFORCE = orig;
+  });
+
+  it('is a no-op (no DB lookup, no throw) when ACCESS_ENFORCE is not "true"', async () => {
+    delete process.env.ACCESS_ENFORCE;
+    await expect(enforceApiAccess(profile({ id: 'en1', accessMode: 'ip' }))).resolves.toBeUndefined();
+    expect(mockAllowedFindMany).not.toHaveBeenCalled();
+  });
+
+  it('does not throw for a bypassed owner even when enforcing', async () => {
+    process.env.ACCESS_ENFORCE = 'true';
+    await expect(
+      enforceApiAccess(profile({ id: 'en2', role: 'owner', accessMode: 'ip_and_device' })),
+    ).resolves.toBeUndefined();
+  });
+
+  it('throws AccessBlockedError and logs enforced=true for a blocked member', async () => {
+    process.env.ACCESS_ENFORCE = 'true';
+    setRequest({ ip: '8.8.8.8' });
+    mockAllowedFindMany.mockResolvedValue([{ value: '203.0.113.0/24' }]);
+    await expect(enforceApiAccess(profile({ id: 'en3', accessMode: 'ip' }))).rejects.toMatchObject({
+      code: 'ACCESS_RESTRICTED',
+    });
+    expect(mockLog).toHaveBeenCalled();
+    expect(mockLog.mock.calls[0][0].meta.enforced).toBe(true);
   });
 });

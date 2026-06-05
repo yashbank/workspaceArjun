@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { isAccessBlockedError, accessBlockedResponse } from '@/lib/api-error';
 import { renameFile, softDeleteFile, permanentlyDeleteFile } from '@/server/files';
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -13,6 +14,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const file = await renameFile(id, name);
     return NextResponse.json(file);
   } catch (e: unknown) {
+    if (isAccessBlockedError(e)) return accessBlockedResponse();
     const msg = e instanceof Error ? e.message : 'Unknown error';
     const status = msg === 'Unauthorized' ? 401 : msg === 'Forbidden' ? 403 : 400;
     return NextResponse.json({ error: msg }, { status });
@@ -30,6 +32,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     }
     return NextResponse.json({ ok: true });
   } catch (e: unknown) {
+    if (isAccessBlockedError(e)) return accessBlockedResponse();
     const msg = e instanceof Error ? e.message : 'Unknown error';
     const status = msg === 'Unauthorized' ? 401 : msg === 'Forbidden' ? 403 : 400;
     return NextResponse.json({ error: msg }, { status });

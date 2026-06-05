@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { isAccessBlockedError, accessBlockedResponse } from '@/lib/api-error';
 import { listFiles, createFileWithContent } from '@/server/files';
 
 const NO_STORE = { 'Cache-Control': 'no-store, no-cache, must-revalidate' };
@@ -46,6 +47,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(serialized, { headers: NO_STORE });
   } catch (e: unknown) {
+    if (isAccessBlockedError(e)) return accessBlockedResponse();
     const msg = e instanceof Error ? e.message : 'Unknown error';
     const status = msg === 'Unauthorized' ? 401 : msg === 'Forbidden' ? 403 : 500;
     return NextResponse.json({ error: msg }, { status, headers: NO_STORE });
@@ -75,6 +77,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ file: result.file, storageKey: result.storageKey }, { status: 201 });
   } catch (e: unknown) {
+    if (isAccessBlockedError(e)) return accessBlockedResponse();
     const msg = e instanceof Error ? e.message : 'Unknown error';
     if (msg.includes('Object storage is not configured')) {
       return NextResponse.json({ error: msg }, { status: 503 });

@@ -482,8 +482,14 @@ export default function SecurityPage() {
                     )}
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-1">
-                    <span className="rounded-md bg-muted/40 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-muted-foreground/50">
-                      log-only
+                    <span
+                      className={`rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
+                        d.meta?.enforced
+                          ? 'bg-destructive/10 text-destructive'
+                          : 'bg-muted/40 text-muted-foreground/50'
+                      }`}
+                    >
+                      {d.meta?.enforced ? 'blocked' : 'log-only'}
                     </span>
                     <span className="text-[10px] tabular-nums text-muted-foreground/40">
                       {formatTs(d.createdAt)}

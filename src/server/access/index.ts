@@ -14,6 +14,14 @@ export {
   hashDeviceToken,
   verifyDeviceToken,
 } from './device';
+export {
+  AccessBlockedError,
+  ACCESS_BLOCKED_MESSAGE,
+  ACCESS_BLOCKED_CODE,
+  isAccessBlockedError,
+  isAccessEnforced,
+  isAccessDetectionEnabled,
+} from './errors';
 
 /** Owner and admin always bypass access restrictions. */
 export function isAccessBypassed(role: UserRole): boolean {

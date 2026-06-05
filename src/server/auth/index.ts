@@ -4,6 +4,7 @@ import { db } from '@/server/db';
 import { parseInvitedRole, resolveProfileRole } from '@/server/users';
 import { throwMappedInviteError } from '@/server/auth/invite-errors';
 import { getInviteAuthCallbackUrl, logAuthEmailRedirect } from '@/lib/app-url';
+import { enforceApiAccess } from '@/server/access/decision';
 import type { UserProfile, UserRole } from '@/generated/prisma/client';
 
 const INVITE_ACCEPT_PATH = '/invite/accept';
@@ -119,6 +120,10 @@ export async function requireUser(): Promise<UserProfile> {
   if (user.status === 'deactivated') {
     throw new Error('Account deactivated');
   }
+  // Access enforcement (no-op unless ACCESS_ENFORCE=true). Throws
+  // AccessBlockedError for restricted users on an unapproved IP/device so every
+  // protected API (all gate through requireUser) returns 403. Owner/admin bypass.
+  await enforceApiAccess(user);
   return user;
 }
 

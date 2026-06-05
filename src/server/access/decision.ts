@@ -5,6 +5,7 @@ import type { UserProfile } from '@/generated/prisma/client';
 import { extractRequestIp, ipMatchesAny } from './ip';
 import { DEVICE_COOKIE_NAME, verifyDeviceToken } from './device';
 import { isAccessBypassed, evaluateAccess } from './index';
+import { isAccessEnforced, AccessBlockedError } from './errors';
 
 export type AccessDeviceStatus = 'none' | 'pending' | 'approved' | 'revoked';
 
@@ -85,10 +86,10 @@ const DENIAL_LOG_WINDOW_MS = 5 * 60 * 1000;
 const lastDenialLogAt = new Map<string, number>();
 
 /**
- * Log-only denial recorder. Writes an `access.denied` audit event the first time
- * a user would be blocked within a short window (throttled per user to avoid
- * noisy duplicate logs across a page's many requests). Never blocks — Phase 2 is
- * observation only, so the event is tagged `enforced: false`.
+ * Denial recorder. Writes an `access.denied` audit event the first time a user
+ * would be blocked within a short window (throttled per user to avoid noisy
+ * duplicate logs across a page's many requests). `meta.enforced` reflects whether
+ * blocking is actually active (ACCESS_ENFORCE=true) — false means log-only.
  */
 export async function logAccessDenial(profile: UserProfile, decision: AccessDecision): Promise<void> {
   const now = Date.now();
@@ -104,9 +105,25 @@ export async function logAccessDenial(profile: UserProfile, decision: AccessDeci
       mode: profile.accessMode,
       reason: decision.reason,
       deviceStatus: decision.deviceStatus,
-      enforced: false,
+      enforced: isAccessEnforced(),
     },
     ip: decision.ip ?? undefined,
     userAgent: decision.userAgent ?? undefined,
   });
+}
+
+/**
+ * API enforcement guard. A no-op when enforcement is off (log-only is handled by
+ * the dashboard layout). When ACCESS_ENFORCE=true, it resolves the access
+ * decision and, if the user would be blocked, logs the denial and throws
+ * AccessBlockedError so protected routes return a 403. Owner/admin and
+ * unrestricted members resolve to "bypass" with no DB lookup, so they pass.
+ */
+export async function enforceApiAccess(profile: UserProfile): Promise<void> {
+  if (!isAccessEnforced()) return;
+  const decision = await resolveAccessDecision(profile);
+  if (decision.wouldBlock) {
+    await logAccessDenial(profile, decision);
+    throw new AccessBlockedError();
+  }
 }
