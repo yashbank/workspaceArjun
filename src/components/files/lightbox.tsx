@@ -13,6 +13,7 @@ import {
   RotateCw,
 } from 'lucide-react';
 import { getExtension } from '@/lib/file-utils';
+import { filePreviewUrl } from '@/lib/preview-url';
 import type { FileItem } from './file-table';
 
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp']);
@@ -125,7 +126,7 @@ export function Lightbox({
     }
   }
 
-  const previewSrc = `/api/files/${file.id}/preview`;
+  const previewSrc = filePreviewUrl(file.id, file.currentVersionId);
   const displayZoom = isFit ? 'Fit' : `${Math.round(zoom * 100)}%`;
 
   const imgStyle: React.CSSProperties = isFit
@@ -239,7 +240,7 @@ export function Lightbox({
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={`/api/files/${f.id}/preview`}
+                  src={filePreviewUrl(f.id, f.currentVersionId)}
                   alt=""
                   className="h-10 w-10 object-cover"
                   loading="lazy"

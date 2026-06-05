@@ -3,6 +3,7 @@
 import { Film, Smartphone } from 'lucide-react';
 import { memo, useState } from 'react';
 import { getExtension } from '@/lib/file-utils';
+import { filePreviewUrl } from '@/lib/preview-url';
 
 const PREVIEW_IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'tiff']);
 const IMAGE_FALLBACK_EXTS = new Set(['heic', 'heif']);
@@ -12,6 +13,8 @@ const MOV_EXT = 'mov';
 type FileMediaThumbnailProps = {
   fileId: string;
   filename: string;
+  /** Current version id — keys the thumbnail URL so it refreshes on new versions. */
+  versionKey?: string | null;
   className?: string;
   variant?: 'grid' | 'list';
 };
@@ -32,11 +35,12 @@ function MovFallback({ variant }: { variant: 'grid' | 'list' }) {
 export const FileMediaThumbnail = memo(function FileMediaThumbnail({
   fileId,
   filename,
+  versionKey,
   className = '',
   variant = 'grid',
 }: FileMediaThumbnailProps) {
   const ext = getExtension(filename);
-  const previewSrc = `/api/files/${fileId}/preview`;
+  const previewSrc = filePreviewUrl(fileId, versionKey);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
 

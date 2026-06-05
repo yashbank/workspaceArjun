@@ -33,6 +33,7 @@ import {
 import { memo, useEffect, useRef, useState } from 'react';
 import type { FileItem } from './file-table';
 import { Lightbox } from './lightbox';
+import { filePreviewUrl } from '@/lib/preview-url';
 
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'tiff']);
 const HEIC_EXTS = new Set(['heic', 'heif']);
@@ -120,7 +121,7 @@ export const PreviewPanel = memo(function PreviewPanel({
   const currentIdx = files.findIndex((f) => f.id === file.id);
   const hasPrev = currentIdx > 0;
   const hasNext = currentIdx < files.length - 1;
-  const previewSrc = `/api/files/${file.id}/preview`;
+  const previewSrc = filePreviewUrl(file.id, file.currentVersionId);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reset on file change
@@ -506,7 +507,7 @@ export const PreviewPanel = memo(function PreviewPanel({
                   >
                     {isImg ? (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={`/api/files/${f.id}/preview`} alt="" className="h-10 w-10 object-cover" loading="lazy" />
+                      <img src={filePreviewUrl(f.id, f.currentVersionId)} alt="" className="h-10 w-10 object-cover" loading="lazy" />
                     ) : (
                       <div className="flex h-10 w-10 items-center justify-center bg-muted/20 text-[8px] font-bold uppercase text-muted-foreground/60">
                         {fExt.slice(0, 3) || (i + 1).toString()}

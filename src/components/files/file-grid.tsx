@@ -179,7 +179,12 @@ const FileCard = memo(function FileCard({
         className={`relative flex aspect-[4/3] items-center justify-center overflow-hidden bg-gradient-to-br ${cardColor}`}
       >
         {hasMediaThumb ? (
-          <FileMediaThumbnail fileId={file.id} filename={file.name} variant="grid" />
+          <FileMediaThumbnail
+            fileId={file.id}
+            filename={file.name}
+            versionKey={file.currentVersionId}
+            variant="grid"
+          />
         ) : hasPremiumCard ? (
           <PremiumFileFallback filename={file.name} variant="grid" />
         ) : (

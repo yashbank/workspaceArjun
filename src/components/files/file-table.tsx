@@ -171,7 +171,12 @@ function FileRowWithVersions({
         <td className="px-4 py-2.5">
           <div className="flex items-center gap-2.5">
             {hasMediaThumb ? (
-              <FileMediaThumbnail fileId={file.id} filename={file.name} variant="list" />
+              <FileMediaThumbnail
+                fileId={file.id}
+                filename={file.name}
+                versionKey={file.currentVersionId}
+                variant="list"
+              />
             ) : hasPremiumThumb ? (
               <PremiumFileFallback filename={file.name} variant="list" />
             ) : (
