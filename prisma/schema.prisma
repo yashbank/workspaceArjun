@@ -29,15 +29,35 @@ enum UserInviteStatus {
   cancelled
 }
 
+// ---------------------------------------------------------------------------
+// Access control (office IP / device restriction) — Phase 1 schema only.
+// Nothing enforces these yet; helpers and enforcement land in later phases.
+// ---------------------------------------------------------------------------
+
+enum AccessMode {
+  unrestricted
+  ip
+  device
+  ip_and_device
+  ip_or_device
+}
+
+enum DeviceStatus {
+  pending
+  approved
+  revoked
+}
+
 model UserProfile {
-  id        String     @id @default(uuid()) @db.Uuid
-  authId    String     @unique @map("auth_id") @db.Uuid
-  email     String     @unique
-  name      String?
-  role      UserRole   @default(member)
-  status    UserStatus @default(active)
-  createdAt DateTime   @default(now()) @map("created_at")
-  updatedAt DateTime   @updatedAt @map("updated_at")
+  id         String     @id @default(uuid()) @db.Uuid
+  authId     String     @unique @map("auth_id") @db.Uuid
+  email      String     @unique
+  name       String?
+  role       UserRole   @default(member)
+  status     UserStatus @default(active)
+  accessMode AccessMode @default(unrestricted) @map("access_mode")
+  createdAt  DateTime   @default(now()) @map("created_at")
+  updatedAt  DateTime   @updatedAt @map("updated_at")
 
   folders       Folder[]
   files         File[]
@@ -47,7 +67,55 @@ model UserProfile {
   notifications Notification[]
   invitesSent   UserInvite[] @relation("InvitedBy")
 
+  allowedIpRanges   AllowedIpRange[] @relation("UserAllowedIps")
+  allowedIpsCreated AllowedIpRange[] @relation("AllowedIpCreatedBy")
+  approvedDevices   ApprovedDevice[] @relation("UserApprovedDevices")
+  devicesApproved   ApprovedDevice[] @relation("DeviceApprovedBy")
+
   @@map("user_profiles")
+}
+
+// Allowed IP/CIDR ranges. `userId` null means the range applies workspace-wide
+// (e.g. the shared office IP); a set `userId` scopes it to one member.
+model AllowedIpRange {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String?  @map("user_id") @db.Uuid
+  value       String
+  label       String?
+  createdById String   @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user      UserProfile? @relation("UserAllowedIps", fields: [userId], references: [id], onDelete: Cascade)
+  createdBy UserProfile  @relation("AllowedIpCreatedBy", fields: [createdById], references: [id])
+
+  @@index([userId])
+  @@map("allowed_ip_ranges")
+}
+
+// Browser-bound approved devices. `userId` null means a shared office device
+// usable by any restricted member; a set `userId` scopes it to one member.
+// Only the SHA-256 hash of the device token is stored.
+model ApprovedDevice {
+  id           String       @id @default(uuid()) @db.Uuid
+  userId       String?      @map("user_id") @db.Uuid
+  tokenHash    String       @unique @map("token_hash")
+  status       DeviceStatus @default(pending)
+  userAgent    String?      @map("user_agent")
+  browser      String?
+  deviceLabel  String?      @map("device_label")
+  lastIp       String?      @map("last_ip")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  approvedAt   DateTime?    @map("approved_at")
+  approvedById String?      @map("approved_by_id") @db.Uuid
+  lastSeenAt   DateTime?    @map("last_seen_at")
+  revokedAt    DateTime?    @map("revoked_at")
+
+  user       UserProfile? @relation("UserApprovedDevices", fields: [userId], references: [id], onDelete: Cascade)
+  approvedBy UserProfile? @relation("DeviceApprovedBy", fields: [approvedById], references: [id])
+
+  @@index([userId])
+  @@index([status])
+  @@map("approved_devices")
 }
 
 model UserInvite {

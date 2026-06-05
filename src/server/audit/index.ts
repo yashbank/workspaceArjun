@@ -33,7 +33,13 @@ type AuditAction =
   | 'version.upload'
   | 'version.restore'
   | 'version.purge'
-  | 'settings.change';
+  | 'settings.change'
+  // Access control (office IP / device restriction) — defined for later phases;
+  // not logged yet.
+  | 'access.denied'
+  | 'device.request'
+  | 'device.approve'
+  | 'device.revoke';
 
 interface AuditLogInput {
   actor?: UserProfile | null;
