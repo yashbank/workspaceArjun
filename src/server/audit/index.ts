@@ -17,6 +17,7 @@ type AuditAction =
   | 'user.reactivate'
   | 'user.remove'
   | 'user.ownership_transfer'
+  | 'user.access_mode_change'
   | 'file.upload'
   | 'file.download'
   | 'file.rename'

@@ -44,6 +44,11 @@ export function formatAuditAction(
     'user.reactivate': 'reactivated a user',
     'user.remove': 'removed a user',
     'user.ownership_transfer': 'transferred ownership',
+    'user.access_mode_change': 'changed a user access mode',
+    'access.denied': 'was blocked from an unapproved IP/device',
+    'device.request': 'requested device approval',
+    'device.approve': 'approved a device',
+    'device.revoke': 'revoked a device',
     'settings.change': 'updated workspace settings',
     'login.success': 'signed in',
   };

@@ -1,12 +1,21 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { changeUserRole, setUserStatus, removeUser } from '@/server/admin';
+import { setUserAccessMode, isValidAccessMode } from '@/server/access/admin';
 import type { UserRole } from '@/generated/prisma/client';
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const body = (await request.json()) as { role?: string; status?: string };
+    const body = (await request.json()) as { role?: string; status?: string; accessMode?: string };
+
+    if (body.accessMode) {
+      if (!isValidAccessMode(body.accessMode)) {
+        return NextResponse.json({ error: 'Invalid access mode' }, { status: 400 });
+      }
+      const user = await setUserAccessMode(id, body.accessMode);
+      return NextResponse.json(user);
+    }
 
     if (body.role) {
       const validRoles: UserRole[] = ['owner', 'admin', 'member', 'viewer'];
