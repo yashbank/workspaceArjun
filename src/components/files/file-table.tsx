@@ -63,6 +63,7 @@ export function FileTable({
   canMove = true,
   canPermanentDelete = false,
   onPermanentDelete,
+  onVersionRestored,
 }: {
   files: FileItem[];
   onRename: (f: FileItem) => void;
@@ -76,6 +77,7 @@ export function FileTable({
   canMove?: boolean;
   canPermanentDelete?: boolean;
   onPermanentDelete?: (id: string) => void;
+  onVersionRestored?: () => void;
 }) {
   if (files.length === 0) return null;
 
@@ -111,6 +113,7 @@ export function FileTable({
                 canMove={canMove}
                 canPermanentDelete={canPermanentDelete}
                 onPermanentDelete={onPermanentDelete ? () => onPermanentDelete(file.id) : undefined}
+                onVersionRestored={onVersionRestored}
               />
             ))}
           </tbody>
@@ -133,6 +136,7 @@ function FileRowWithVersions({
   canMove,
   canPermanentDelete,
   onPermanentDelete,
+  onVersionRestored,
 }: {
   file: FileItem;
   onRename: () => void;
@@ -146,6 +150,7 @@ function FileRowWithVersions({
   canMove: boolean;
   canPermanentDelete: boolean;
   onPermanentDelete?: () => void;
+  onVersionRestored?: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -244,6 +249,7 @@ function FileRowWithVersions({
               fileId={file.id}
               fileName={file.name}
               currentVersionId={file.currentVersionId}
+              onVersionRestored={onVersionRestored}
             />
           </td>
         </tr>

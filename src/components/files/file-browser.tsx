@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from
 import dynamic from 'next/dynamic';
 import { apiFetch } from '@/lib/api';
 import { sortFiles } from '@/lib/sort-files';
+import { resolveActivePreview } from '@/lib/active-preview';
 import { useUpload } from '@/lib/use-upload';
 import { uploadVersionDirect, formatUploadError } from '@/lib/direct-upload';
 import { withCopySuffix } from '@/lib/upload-filename';
@@ -170,6 +171,16 @@ export function FileBrowser({
     const sort = SORT_OPTIONS[sortIdx];
     return sortFiles(files, sort.by, sort.dir);
   }, [files, sortIdx, truncated]);
+
+  // Keep the open preview in sync with refreshed list data: after a version
+  // restore/replace changes the file's currentVersionId, re-derive the preview
+  // from the latest list so its hero image and filmstrip show the current
+  // version. Derived (not stored), so there's no update loop; falls back to the
+  // captured object if the file is no longer in the current list.
+  const activePreviewFile = useMemo(
+    () => resolveActivePreview(previewFile, sortedFiles),
+    [previewFile, sortedFiles],
+  );
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -850,6 +861,7 @@ export function FileBrowser({
                     canMove={canMoveFiles}
                     canPermanentDelete={canPermanentDelete}
                     onPermanentDelete={handlePermanentDeleteFile}
+                    onVersionRestored={() => loadContents(currentFolderId)}
                   />
                 ) : (
                   <FileGrid
@@ -886,17 +898,17 @@ export function FileBrowser({
             onClick={() => setPreviewFile(null)}
           />
         )}
-        {previewFile && (
+        {activePreviewFile && (
           <PreviewPanel
-            file={previewFile}
+            file={activePreviewFile}
             files={sortedFiles}
             canDiagnose={canDiagnose}
             onClose={() => setPreviewFile(null)}
             onNavigate={setPreviewFile}
-            onDownload={() => handleDownloadFile(previewFile.id)}
-            onNewVersion={() => { setPreviewFile(null); setVersionTarget({ id: previewFile.id, name: previewFile.name }); }}
-            onFavorite={() => toggleFavorite(previewFile.id)}
-            isFavorited={favorites.has(previewFile.id)}
+            onDownload={() => handleDownloadFile(activePreviewFile.id)}
+            onNewVersion={() => { setPreviewFile(null); setVersionTarget({ id: activePreviewFile.id, name: activePreviewFile.name }); }}
+            onFavorite={() => toggleFavorite(activePreviewFile.id)}
+            isFavorited={favorites.has(activePreviewFile.id)}
           />
         )}
       </div>
