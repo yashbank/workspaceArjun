@@ -1,4 +1,23 @@
 import { headObject, isStorageConfigured } from '@/server/storage';
+import type { Prisma } from '@/generated/prisma/client';
+
+/**
+ * Shared DB predicate for a "listable" (valid) file: has a current version
+ * whose stored size is greater than zero. This is the single source of truth
+ * used to count/list real files across Settings, the Dashboard, and the file
+ * browser so they never disagree (e.g. after demo cleanup leaves orphan rows).
+ *
+ * Callers combine it with `deletedAt: null` (and `folderId`/`id` as needed):
+ *   db.file.count({ where: { deletedAt: null, ...LISTABLE_FILE_WHERE } })
+ *
+ * Note: this mirrors the fast checks in `getSyncFileHealth` that are expressible
+ * in SQL. The empty-`storageKey` guard cannot be expressed here, so the
+ * authoritative per-row check for listing remains `isListableFile`.
+ */
+export const LISTABLE_FILE_WHERE = {
+  currentVersionId: { not: null },
+  currentVersion: { is: { sizeBytes: { gt: 0 } } },
+} satisfies Prisma.FileWhereInput;
 
 export type FileHealthReason =
   | 'ok'

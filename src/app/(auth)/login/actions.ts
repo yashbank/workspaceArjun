@@ -2,6 +2,7 @@
 
 import { db } from '@/server/db';
 import { createSupabaseAdminClient } from '@/lib/supabase/server';
+import { validatePassword } from '@/lib/password-policy';
 
 export async function checkBootstrapNeeded(): Promise<boolean> {
   if (process.env.ALLOW_BOOTSTRAP !== 'true') return false;
@@ -36,8 +37,11 @@ export async function bootstrapFirstUser(
     return { error: 'Database is not reachable. Start local services first.' };
   }
 
-  if (password.length < 8) {
-    return { error: 'Password must be at least 8 characters.' };
+  const passwordCheck = validatePassword(password);
+  if (!passwordCheck.ok) {
+    return {
+      error: `Password is too weak. Needs: ${passwordCheck.errors.join(', ').toLowerCase()}.`,
+    };
   }
 
   const admin = await createSupabaseAdminClient();

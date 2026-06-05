@@ -1,6 +1,7 @@
 import { db } from '@/server/db';
 import { getWorkspaceQuotaBytes } from '@/server/settings';
 import { fetchRecentActivity, type ActivityListItem } from '@/server/activity';
+import { LISTABLE_FILE_WHERE } from '@/server/files/file-health';
 import type { UserProfile } from '@/generated/prisma/client';
 
 export type DashboardRecentFile = {
@@ -64,22 +65,14 @@ export async function loadDashboardData(profile: UserProfile | null): Promise<Da
     pinnedFilesResult,
   ] = await Promise.allSettled([
     db.file.count({
-      where: {
-        deletedAt: null,
-        currentVersionId: { not: null },
-        currentVersion: { is: { sizeBytes: { gt: 0 } } },
-      },
+      where: { deletedAt: null, ...LISTABLE_FILE_WHERE },
     }),
     db.folder.count({ where: { deletedAt: null } }),
     db.fileVersion.count(),
     db.storageUsage.findFirst(),
     getWorkspaceQuotaBytes(),
     db.file.findMany({
-      where: {
-        deletedAt: null,
-        currentVersionId: { not: null },
-        currentVersion: { is: { sizeBytes: { gt: 0 } } },
-      },
+      where: { deletedAt: null, ...LISTABLE_FILE_WHERE },
       orderBy: { updatedAt: 'desc' },
       take: 8,
       select: {
@@ -154,8 +147,7 @@ export async function loadDashboardData(profile: UserProfile | null): Promise<Da
         where: {
           id: { in: ids },
           deletedAt: null,
-          currentVersionId: { not: null },
-          currentVersion: { is: { sizeBytes: { gt: 0 } } },
+          ...LISTABLE_FILE_WHERE,
         },
         select: { id: true, name: true, mimeType: true },
       });

@@ -6,6 +6,8 @@ import { useSearchParams } from 'next/navigation';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { AlertCircle, Loader2, Lock } from 'lucide-react';
 import { AuthCard } from '@/components/auth/auth-card';
+import { PasswordChecklist } from '@/components/auth/password-checklist';
+import { validatePassword, isPasswordValid } from '@/lib/password-policy';
 
 type InviteStatus =
   | { status: 'loading' }
@@ -88,8 +90,9 @@ function InviteAcceptContent() {
     e.preventDefault();
     setError(null);
 
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters.');
+    const pw = validatePassword(password);
+    if (!pw.ok) {
+      setError(`Password must include: ${pw.errors.join(', ').toLowerCase()}.`);
       return;
     }
     if (password !== confirm) {
@@ -204,6 +207,9 @@ function InviteAcceptContent() {
             onChange={(e) => setPassword(e.target.value)}
             className={inputClass}
           />
+          <div className="mt-2.5">
+            <PasswordChecklist password={password} />
+          </div>
         </div>
 
         <div>
@@ -230,7 +236,7 @@ function InviteAcceptContent() {
 
         <button
           type="submit"
-          disabled={submitting}
+          disabled={submitting || !isPasswordValid(password) || password !== confirm}
           className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-card transition-all hover:shadow-elevated disabled:opacity-50 active:scale-[0.98]"
         >
           {submitting ? (
