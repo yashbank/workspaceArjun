@@ -19,6 +19,30 @@ export const LISTABLE_FILE_WHERE = {
   currentVersion: { is: { sizeBytes: { gt: 0 } } },
 } satisfies Prisma.FileWhereInput;
 
+/**
+ * Shared DB predicate for a "visible" file — what Dashboard, Settings, and the
+ * Files page should agree on. A file is visible when it is:
+ *   - not itself in trash (`deletedAt: null`),
+ *   - listable (has a current version with size > 0), and
+ *   - reachable: either a root file (`folderId: null`) or inside a folder that
+ *     is not trashed (`folder.deletedAt: null`).
+ *
+ * The reachability check excludes files stranded inside a trashed folder whose
+ * own `deletedAt` was never set (e.g. legacy folders trashed before the
+ * delete-cascade). Because trashing a folder now cascades `deletedAt` to its
+ * whole subtree, the immediate-parent check is exact for current data.
+ *
+ * Use directly as the full `where` (it already includes `deletedAt: null`):
+ *   db.file.count({ where: VISIBLE_FILE_WHERE })
+ *   db.fileVersion.count({ where: { file: VISIBLE_FILE_WHERE } })
+ */
+export const VISIBLE_FILE_WHERE = {
+  deletedAt: null,
+  currentVersionId: { not: null },
+  currentVersion: { is: { sizeBytes: { gt: 0 } } },
+  OR: [{ folderId: null }, { folder: { is: { deletedAt: null } } }],
+} satisfies Prisma.FileWhereInput;
+
 export type FileHealthReason =
   | 'ok'
   | 'no_version'

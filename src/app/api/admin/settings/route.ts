@@ -16,7 +16,7 @@ import {
   UPLOAD_LIMIT_OPTIONS,
   type UploadLimitsConfig,
 } from '@/server/settings/upload-limits';
-import { LISTABLE_FILE_WHERE } from '@/server/files/file-health';
+import { VISIBLE_FILE_WHERE } from '@/server/files/file-health';
 
 export async function GET() {
   try {
@@ -24,9 +24,9 @@ export async function GET() {
 
     const [totalFiles, totalFolders, totalVersions, storageRow, fileSizeCap, versionRetention, quota, uploadLimits] =
       await Promise.all([
-        db.file.count({ where: { deletedAt: null, ...LISTABLE_FILE_WHERE } }),
+        db.file.count({ where: VISIBLE_FILE_WHERE }),
         db.folder.count({ where: { deletedAt: null } }),
-        db.fileVersion.count({ where: { file: { deletedAt: null, ...LISTABLE_FILE_WHERE } } }),
+        db.fileVersion.count({ where: { file: VISIBLE_FILE_WHERE } }),
         db.storageUsage.findFirst(),
         getFileSizeCapBytes(),
         getVersionRetentionCount(),

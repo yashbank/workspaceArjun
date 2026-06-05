@@ -1,7 +1,7 @@
 import { db } from '@/server/db';
 import { getWorkspaceQuotaBytes } from '@/server/settings';
 import { fetchRecentActivity, type ActivityListItem } from '@/server/activity';
-import { LISTABLE_FILE_WHERE } from '@/server/files/file-health';
+import { VISIBLE_FILE_WHERE } from '@/server/files/file-health';
 import type { UserProfile } from '@/generated/prisma/client';
 
 export type DashboardRecentFile = {
@@ -23,6 +23,8 @@ export type DashboardData = {
   fileCount: number;
   folderCount: number;
   versionCount: number;
+  /** Number of activity events in the last 7 days (a real metric, not list size). */
+  activityCount: number;
   totalBytes: number;
   quotaBytes: number;
   recentFiles: DashboardRecentFile[];
@@ -30,10 +32,13 @@ export type DashboardData = {
   pinnedFileDetails: DashboardPinnedFile[];
 };
 
+const ACTIVITY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
 const EMPTY: DashboardData = {
   fileCount: 0,
   folderCount: 0,
   versionCount: 0,
+  activityCount: 0,
   totalBytes: 0,
   quotaBytes: 10 * 1024 * 1024 * 1024,
   recentFiles: [],
@@ -54,6 +59,8 @@ function toNumber(value: bigint | number | null | undefined): number {
 export async function loadDashboardData(profile: UserProfile | null): Promise<DashboardData> {
   const errors: string[] = [];
 
+  const activitySince = new Date(Date.now() - ACTIVITY_WINDOW_MS);
+
   const [
     fileCountResult,
     folderCountResult,
@@ -63,16 +70,15 @@ export async function loadDashboardData(profile: UserProfile | null): Promise<Da
     recentFilesResult,
     recentActivityResult,
     pinnedFilesResult,
+    activityCountResult,
   ] = await Promise.allSettled([
-    db.file.count({
-      where: { deletedAt: null, ...LISTABLE_FILE_WHERE },
-    }),
+    db.file.count({ where: VISIBLE_FILE_WHERE }),
     db.folder.count({ where: { deletedAt: null } }),
-    db.fileVersion.count(),
+    db.fileVersion.count({ where: { file: VISIBLE_FILE_WHERE } }),
     db.storageUsage.findFirst(),
     getWorkspaceQuotaBytes(),
     db.file.findMany({
-      where: { deletedAt: null, ...LISTABLE_FILE_WHERE },
+      where: VISIBLE_FILE_WHERE,
       orderBy: { updatedAt: 'desc' },
       take: 8,
       select: {
@@ -91,6 +97,7 @@ export async function loadDashboardData(profile: UserProfile | null): Promise<Da
           select: { targetId: true },
         })
       : Promise.resolve([]),
+    db.auditEvent.count({ where: { createdAt: { gte: activitySince } } }),
   ]);
 
   const fileCount =
@@ -107,6 +114,11 @@ export async function loadDashboardData(profile: UserProfile | null): Promise<Da
     versionCountResult.status === 'fulfilled'
       ? versionCountResult.value
       : (errors.push(`versionCount: ${String(versionCountResult.reason)}`), 0);
+
+  const activityCount =
+    activityCountResult.status === 'fulfilled'
+      ? activityCountResult.value
+      : (errors.push(`activityCount: ${String(activityCountResult.reason)}`), 0);
 
   let totalBytes = 0;
   if (storageResult.status === 'fulfilled' && storageResult.value) {
@@ -146,8 +158,7 @@ export async function loadDashboardData(profile: UserProfile | null): Promise<Da
       const files = await db.file.findMany({
         where: {
           id: { in: ids },
-          deletedAt: null,
-          ...LISTABLE_FILE_WHERE,
+          ...VISIBLE_FILE_WHERE,
         },
         select: { id: true, name: true, mimeType: true },
       });
@@ -171,6 +182,7 @@ export async function loadDashboardData(profile: UserProfile | null): Promise<Da
     fileCount,
     folderCount,
     versionCount,
+    activityCount,
     totalBytes,
     quotaBytes,
     recentFiles,

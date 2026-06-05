@@ -47,6 +47,7 @@ export default async function DashboardHome() {
       fileCount: 0,
       folderCount: 0,
       versionCount: 0,
+      activityCount: 0,
       totalBytes: 0,
       quotaBytes: 10 * 1024 * 1024 * 1024,
       recentFiles: [],
@@ -59,6 +60,7 @@ export default async function DashboardHome() {
     fileCount,
     folderCount,
     versionCount,
+    activityCount,
     totalBytes,
     quotaBytes,
     recentFiles,
@@ -109,7 +111,7 @@ export default async function DashboardHome() {
         <StatCard icon={FileText} label="Total files" value={fileCount.toString()} />
         <StatCard icon={FolderOpen} label="Folders" value={folderCount.toString()} />
         <StatCard icon={Layers} label="Versions" value={versionCount.toString()} />
-        <StatCard icon={Activity} label="Recent activity" value={recentActivity.length.toString()} />
+        <StatCard icon={Activity} label="Activity (7d)" value={activityCount.toString()} />
         <StorageWidget usedBytes={totalBytes} quotaBytes={quotaBytes} fileCount={fileCount} />
       </div>
 
