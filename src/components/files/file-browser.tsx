@@ -1,7 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import dynamic from 'next/dynamic';
 import { apiFetch } from '@/lib/api';
+import { sortFiles } from '@/lib/sort-files';
 import { useUpload } from '@/lib/use-upload';
 import { useToast } from '@/components/ui/toast';
 import { Breadcrumbs } from './breadcrumbs';
@@ -9,18 +11,45 @@ import { FolderGrid } from './folder-grid';
 import { FileTable } from './file-table';
 import { FileGrid } from './file-grid';
 import type { FileItem } from './file-table';
-import { CreateFolderDialog } from './create-folder-dialog';
-import { RenameDialog } from './rename-dialog';
-import { NewVersionDialog } from './new-version-dialog';
 import { DropZone } from './drop-zone';
 import { UploadQueue } from './upload-queue';
-import { FolderImportDialog } from './folder-import-dialog';
-import { PreviewPanel } from './preview-panel';
 import { SearchBar } from './search-bar';
-import { DuplicateDialog, type DuplicateAction } from './duplicate-dialog';
+import type { DuplicateAction } from './duplicate-dialog';
 import { parseApiErrorMessage } from '@/lib/storage-errors';
-import { MoveDialog } from './move-dialog';
 import { FixedMenu } from '@/components/ui/fixed-menu';
+import { DialogSkeleton, PreviewPanelSkeleton } from './lazy-fallbacks';
+
+// Heavy, conditionally-rendered UI is code-split so it stays out of the initial
+// Files-page bundle and loads only when first opened (C2). ssr:false is safe —
+// these only ever render in response to client interaction.
+const PreviewPanel = dynamic(() => import('./preview-panel').then((m) => m.PreviewPanel), {
+  ssr: false,
+  loading: () => <PreviewPanelSkeleton />,
+});
+const CreateFolderDialog = dynamic(
+  () => import('./create-folder-dialog').then((m) => m.CreateFolderDialog),
+  { ssr: false, loading: () => <DialogSkeleton /> },
+);
+const RenameDialog = dynamic(() => import('./rename-dialog').then((m) => m.RenameDialog), {
+  ssr: false,
+  loading: () => <DialogSkeleton />,
+});
+const NewVersionDialog = dynamic(
+  () => import('./new-version-dialog').then((m) => m.NewVersionDialog),
+  { ssr: false, loading: () => <DialogSkeleton /> },
+);
+const FolderImportDialog = dynamic(
+  () => import('./folder-import-dialog').then((m) => m.FolderImportDialog),
+  { ssr: false, loading: () => <DialogSkeleton /> },
+);
+const DuplicateDialog = dynamic(
+  () => import('./duplicate-dialog').then((m) => m.DuplicateDialog),
+  { ssr: false, loading: () => <DialogSkeleton /> },
+);
+const MoveDialog = dynamic(() => import('./move-dialog').then((m) => m.MoveDialog), {
+  ssr: false,
+  loading: () => <DialogSkeleton />,
+});
 import {
   FolderPlus,
   Upload,
@@ -55,6 +84,12 @@ const SORT_OPTIONS: SortOption[] = [
   { by: 'type', dir: 'asc', label: 'Type' },
 ];
 
+// Mirrors FILES_LIST_LIMIT in src/server/files/index.ts. When the server returns
+// a full page, the loaded list may be a truncated top-N for the requested sort,
+// so client-side re-sorting could reorder a partial set — in that case we fall
+// back to a server refetch instead (see the sort-change effect below).
+const FILES_LIST_LIMIT = 500;
+
 export function FileBrowser({ canDiagnose = false }: { canDiagnose?: boolean }) {
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [folders, setFolders] = useState<Folder[]>([]);
@@ -70,6 +105,15 @@ export function FileBrowser({ canDiagnose = false }: { canDiagnose?: boolean }) 
   const [sortIdx, setSortIdx] = useState(0);
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [, startTransition] = useTransition();
+
+  // Whether the server returned a full (truncated) page for the current folder.
+  // When true, sorting must round-trip to the server; otherwise we sort the
+  // already-loaded list client-side with no network call.
+  const [truncated, setTruncated] = useState(false);
+  // Keep the latest sort available to the stable `loadContents` callback without
+  // making it a dependency (so changing sort doesn't recreate it / refetch).
+  const sortIdxRef = useRef(sortIdx);
+  sortIdxRef.current = sortIdx;
 
   useEffect(() => {
     const saved = localStorage.getItem('arjun-view');
@@ -107,6 +151,15 @@ export function FileBrowser({ canDiagnose = false }: { canDiagnose?: boolean }) 
 
   const fileIds = useMemo(() => files.map((f) => f.id), [files]);
 
+  // Client-side sorted view of the loaded files. When the list is truncated at
+  // the server cap, the server already ordered the correct top-N, so we keep
+  // its order; otherwise we sort locally with no network round-trip.
+  const sortedFiles = useMemo(() => {
+    if (truncated) return files;
+    const sort = SORT_OPTIONS[sortIdx];
+    return sortFiles(files, sort.by, sort.dir);
+  }, [files, sortIdx, truncated]);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const sortBtnRef = useRef<HTMLButtonElement>(null);
@@ -120,14 +173,23 @@ export function FileBrowser({ canDiagnose = false }: { canDiagnose?: boolean }) 
     setLoading(true);
     setError(null);
     try {
-      const sort = SORT_OPTIONS[sortIdx];
+      const sort = SORT_OPTIONS[sortIdxRef.current];
       const qs = folderId ? `?parentId=${folderId}` : '';
       const fqs = folderId
         ? `?folderId=${folderId}&sortBy=${sort.by}&sortDir=${sort.dir}`
         : `?sortBy=${sort.by}&sortDir=${sort.dir}`;
-      const [folderData, fileData] = await Promise.all([
+      // Fetch breadcrumbs in parallel with folders/files instead of waiting for
+      // the content to load first. Failures degrade to empty breadcrumbs.
+      const crumbReq: Promise<Crumb[]> = folderId
+        ? fetch(`/api/folders/breadcrumbs?folderId=${folderId}`)
+            .then((res) => (res.ok ? (res.json() as Promise<Crumb[]>) : []))
+            .catch(() => [])
+        : Promise.resolve([]);
+
+      const [folderData, fileData, crumbData] = await Promise.all([
         apiFetch<Folder[]>(`/api/folders${qs}`),
         apiFetch<FileItem[]>(`/api/files${fqs}`),
+        crumbReq,
       ]);
 
       // Discard stale responses from superseded fetches
@@ -149,15 +211,8 @@ export function FileBrowser({ canDiagnose = false }: { canDiagnose?: boolean }) 
 
       setFolders(uniqueFolders);
       setFiles(uniqueFiles);
-
-      if (folderId) {
-        const res = await fetch(`/api/folders/breadcrumbs?folderId=${folderId}`);
-        if (res.ok && fetchId === fetchIdRef.current) {
-          setBreadcrumbs(await res.json());
-        }
-      } else {
-        setBreadcrumbs([]);
-      }
+      setTruncated(uniqueFiles.length >= FILES_LIST_LIMIT);
+      setBreadcrumbs(crumbData);
     } catch (e: unknown) {
       if (fetchId !== fetchIdRef.current) return;
       setError(e instanceof Error ? e.message : 'Failed to load');
@@ -166,12 +221,28 @@ export function FileBrowser({ canDiagnose = false }: { canDiagnose?: boolean }) 
         setLoading(false);
       }
     }
-  }, [sortIdx]);
+  }, []);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- data fetching on navigation
     void loadContents(currentFolderId);
   }, [currentFolderId, loadContents]);
+
+  // Changing the sort re-sorts the loaded list client-side for free (see the
+  // `sortedFiles` memo). Only refetch when the list was truncated at the server
+  // cap, where the loaded rows are a partial top-N that can't be reordered locally.
+  const sortInitRef = useRef(false);
+  useEffect(() => {
+    if (!sortInitRef.current) {
+      sortInitRef.current = true;
+      return;
+    }
+    if (truncated) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- refetch only when list is server-truncated
+      void loadContents(currentFolderId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run only when sort changes
+  }, [sortIdx]);
 
   // Load favorites
   useEffect(() => {
@@ -700,7 +771,7 @@ export function FileBrowser({ canDiagnose = false }: { canDiagnose?: boolean }) 
               <div key={viewMode} className="animate-in fade-in duration-200">
                 {viewMode === 'list' ? (
                   <FileTable
-                    files={files}
+                    files={sortedFiles}
                     onRename={(f) => setRenameTarget({ type: 'file', id: f.id, name: f.name })}
                     onDelete={handleDeleteFile}
                     onDownload={handleDownloadFile}
@@ -712,7 +783,7 @@ export function FileBrowser({ canDiagnose = false }: { canDiagnose?: boolean }) 
                   />
                 ) : (
                   <FileGrid
-                    files={files}
+                    files={sortedFiles}
                     onPreview={(f) => setPreviewFile(f)}
                     onContextMenu={handleGridContextMenu}
                     selectedIds={selectedIds}
@@ -740,7 +811,7 @@ export function FileBrowser({ canDiagnose = false }: { canDiagnose?: boolean }) 
         {previewFile && (
           <PreviewPanel
             file={previewFile}
-            files={files}
+            files={sortedFiles}
             canDiagnose={canDiagnose}
             onClose={() => setPreviewFile(null)}
             onNavigate={setPreviewFile}
