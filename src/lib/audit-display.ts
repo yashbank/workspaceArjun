@@ -14,17 +14,23 @@ export function formatAuditAction(
 
   const quoted = name ? ` '${name}'` : '';
 
+  // Move actions snapshot source/destination names into meta (fromName/toName).
+  // Older events only stored ids, so fall back to no path when names are absent.
+  const fromName = typeof meta?.fromName === 'string' ? meta.fromName : null;
+  const toName = typeof meta?.toName === 'string' ? meta.toName : null;
+  const movePath = fromName && toName ? ` from ${fromName} to ${toName}` : '';
+
   const map: Record<string, string> = {
     'file.upload': `uploaded a file${quoted}`,
     'file.download': `downloaded a file${quoted}`,
     'file.rename': `renamed a file${quoted}`,
-    'file.move': `moved a file${quoted}`,
+    'file.move': `moved a file${quoted}${movePath}`,
     'file.delete': `moved a file to trash${quoted}`,
     'file.restore': `restored a file${quoted}`,
     'file.permanent_delete': `permanently deleted a file${quoted}`,
     'folder.create': `created a folder${quoted}`,
     'folder.rename': `renamed a folder${quoted}`,
-    'folder.move': `moved a folder${quoted}`,
+    'folder.move': `moved a folder${quoted}${movePath}`,
     'folder.delete': `moved a folder to trash${quoted}`,
     'folder.restore': `restored a folder${quoted}`,
     'folder.permanent_delete': `permanently deleted a folder${quoted}`,

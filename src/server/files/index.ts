@@ -14,6 +14,7 @@ import {
   logMissingStorageObject,
 } from '@/server/files/storage-errors';
 import { isListableFile } from '@/server/files/file-health';
+import { folderNameOrRoot } from '@/server/folders';
 import type { File, FileVersion } from '@/generated/prisma/client';
 
 export type FileWithVersion = File & {
@@ -267,10 +268,16 @@ export async function moveFile(id: string, targetFolderId: string | null): Promi
   const file = await db.file.findFirst({ where: { id, deletedAt: null } });
   if (!file) throw new Error('File not found');
 
+  let toName = 'Root';
   if (targetFolderId) {
-    const folder = await db.folder.findFirst({ where: { id: targetFolderId, deletedAt: null } });
+    const folder = await db.folder.findFirst({
+      where: { id: targetFolderId, deletedAt: null },
+      select: { name: true },
+    });
     if (!folder) throw new Error('Target folder not found');
+    toName = folder.name;
   }
+  const fromName = await folderNameOrRoot(file.folderId);
 
   const updated = await db.file.update({
     where: { id },
@@ -282,7 +289,13 @@ export async function moveFile(id: string, targetFolderId: string | null): Promi
     action: 'file.move',
     targetType: 'file',
     targetId: id,
-    meta: { name: file.name, fromFolder: file.folderId, toFolder: targetFolderId },
+    meta: {
+      name: file.name,
+      fromFolder: file.folderId,
+      toFolder: targetFolderId,
+      fromName,
+      toName,
+    },
   });
 
   return updated;

@@ -159,8 +159,9 @@ const FileCard = memo(function FileCard({
     setMenuOpen(true);
   }
 
-  function handleMenuClick(e: React.MouseEvent) {
+  function handleMenuMouseDown(e: React.MouseEvent) {
     e.stopPropagation();
+    e.preventDefault();
     setMenuOpen((o) => !o);
   }
 
@@ -229,7 +230,7 @@ const FileCard = memo(function FileCard({
           <button
             ref={menuBtnRef}
             type="button"
-            onClick={handleMenuClick}
+            onMouseDown={handleMenuMouseDown}
             aria-haspopup="menu"
             aria-expanded={menuOpen}
             className="absolute bottom-3 right-3 shrink-0 rounded-lg p-1 text-muted-foreground/50 transition-all hover:bg-accent hover:text-foreground"

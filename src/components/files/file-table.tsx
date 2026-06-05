@@ -199,7 +199,12 @@ function FileRowWithVersions({
         <td className="px-2 py-2.5 text-right">
           <button
             ref={menuBtnRef}
-            onClick={() => setMenuOpen((o) => !o)}
+            type="button"
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              setMenuOpen((o) => !o);
+            }}
             aria-haspopup="menu"
             aria-expanded={menuOpen}
             aria-label="File actions"

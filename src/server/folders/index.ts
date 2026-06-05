@@ -10,6 +10,20 @@ export type FolderWithCounts = Folder & {
 
 const FOLDERS_LIST_LIMIT = 500;
 
+/**
+ * Resolves a folder's display name for audit snapshots. Returns "Root" when the
+ * id is null (top level) or the folder can no longer be found. Names are
+ * captured at action time so later renames/deletes don't break activity text.
+ */
+export async function folderNameOrRoot(folderId: string | null): Promise<string> {
+  if (!folderId) return 'Root';
+  const folder = await db.folder.findUnique({
+    where: { id: folderId },
+    select: { name: true },
+  });
+  return folder?.name ?? 'Root';
+}
+
 export async function listFolders(parentId: string | null): Promise<FolderWithCounts[]> {
   await requirePermission('folders:read');
   return db.folder.findMany({
@@ -123,6 +137,9 @@ export async function moveFolder(id: string, targetParentId: string | null): Pro
     if (dupe) throw new Error(`A folder named "${folder.name}" already exists in the target location`);
   }
 
+  const fromName = await folderNameOrRoot(folder.parentId);
+  const toName = await folderNameOrRoot(targetParentId);
+
   const updated = await db.folder.update({
     where: { id },
     data: { parentId: targetParentId },
@@ -133,7 +150,13 @@ export async function moveFolder(id: string, targetParentId: string | null): Pro
     action: 'folder.move',
     targetType: 'folder',
     targetId: id,
-    meta: { name: folder.name, fromParent: folder.parentId, toParent: targetParentId },
+    meta: {
+      name: folder.name,
+      fromParent: folder.parentId,
+      toParent: targetParentId,
+      fromName,
+      toName,
+    },
   });
 
   return updated;

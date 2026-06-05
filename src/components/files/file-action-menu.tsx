@@ -126,6 +126,7 @@ function MenuItem({
       type="button"
       role="menuitem"
       disabled={disabled}
+      onMouseDown={(e) => e.stopPropagation()}
       onClick={onClick}
       className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[13px] transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 disabled:active:scale-100 ${
         destructive ? 'text-destructive hover:bg-destructive/8' : 'hover:bg-accent'

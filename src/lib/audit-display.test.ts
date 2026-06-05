@@ -11,6 +11,32 @@ describe('formatAuditAction', () => {
   it('formats folder create', () => {
     expect(formatAuditAction('folder.create', { name: 'N' })).toBe("created a folder 'N'");
   });
+
+  it('shows source and destination for a file move', () => {
+    expect(
+      formatAuditAction('file.move', {
+        name: 'file.pdf',
+        fromName: 'Root',
+        toName: 'Demo',
+      }),
+    ).toBe("moved a file 'file.pdf' from Root to Demo");
+  });
+
+  it('shows source and destination for a folder move', () => {
+    expect(
+      formatAuditAction('folder.move', {
+        name: 'Designs',
+        fromName: 'Client A',
+        toName: 'Archive',
+      }),
+    ).toBe("moved a folder 'Designs' from Client A to Archive");
+  });
+
+  it('falls back to plain move text when names are missing (old events)', () => {
+    expect(
+      formatAuditAction('file.move', { name: 'file.pdf', fromFolder: null, toFolder: 'abc' }),
+    ).toBe("moved a file 'file.pdf'");
+  });
 });
 
 describe('formatActivityLine', () => {
