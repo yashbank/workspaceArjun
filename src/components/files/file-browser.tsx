@@ -5,6 +5,8 @@ import dynamic from 'next/dynamic';
 import { apiFetch } from '@/lib/api';
 import { sortFiles } from '@/lib/sort-files';
 import { useUpload } from '@/lib/use-upload';
+import { uploadVersionDirect, formatUploadError } from '@/lib/direct-upload';
+import { withCopySuffix } from '@/lib/upload-filename';
 import { useToast } from '@/components/ui/toast';
 import { Breadcrumbs } from './breadcrumbs';
 import { FolderGrid } from './folder-grid';
@@ -148,12 +150,15 @@ export function FileBrowser({
   // Prevent double-submissions
   const [busyAction, setBusyAction] = useState(false);
 
-  // Duplicate handling
+  // Duplicate handling — every selected file is checked; conflicts are queued
+  // and resolved one at a time via the dialog. `duplicateInfo` is the conflict
+  // currently shown; `conflictQueueRef` holds the rest still to resolve.
   const [duplicateInfo, setDuplicateInfo] = useState<{
     file: File;
     existingFileId: string;
-    remaining: File[];
+    remainingCount: number;
   } | null>(null);
+  const conflictQueueRef = useRef<{ file: File; existingFileId: string }[]>([]);
 
   const fileIds = useMemo(() => files.map((f) => f.id), [files]);
 
@@ -330,48 +335,88 @@ export function FileBrowser({
   async function handleFilesSelected(selectedFiles: File[]) {
     if (selectedFiles.length === 0) return;
 
-    // Check first file for duplicates
-    const first = selectedFiles[0];
-    try {
-      const qs = currentFolderId ? `&folderId=${currentFolderId}` : '';
-      const check = await apiFetch<{ exists: boolean; existingFileId?: string }>(
-        `/api/files/check-duplicate?name=${encodeURIComponent(first.name)}${qs}`,
-      );
-      if (check.exists && check.existingFileId) {
-        setDuplicateInfo({
-          file: first,
-          existingFileId: check.existingFileId,
-          remaining: selectedFiles.slice(1),
-        });
-        return;
+    // Check EVERY selected file for a same-name conflict in the current folder
+    // (duplicate detection is scoped to the folder, so the same name in a
+    // different folder is allowed). Non-conflicting files upload right away;
+    // conflicts are queued for the resolution dialog.
+    const qs = currentFolderId ? `&folderId=${currentFolderId}` : '';
+    const conflicts: { file: File; existingFileId: string }[] = [];
+    const clear: File[] = [];
+
+    for (const file of selectedFiles) {
+      try {
+        const check = await apiFetch<{ exists: boolean; existingFileId?: string }>(
+          `/api/files/check-duplicate?name=${encodeURIComponent(file.name)}${qs}`,
+        );
+        if (check.exists && check.existingFileId) {
+          conflicts.push({ file, existingFileId: check.existingFileId });
+          continue;
+        }
+      } catch {
+        // If the check fails, fall through and upload normally.
       }
-    } catch {
-      // proceed with upload if check fails
+      clear.push(file);
     }
 
-    toast('info', `Uploading ${selectedFiles.length} file${selectedFiles.length > 1 ? 's' : ''}…`);
-    startUpload(selectedFiles);
+    if (clear.length > 0) {
+      toast('info', `Uploading ${clear.length} file${clear.length > 1 ? 's' : ''}…`);
+      startUpload(clear);
+    }
+
+    conflictQueueRef.current = conflicts;
+    showNextConflict();
+  }
+
+  function showNextConflict() {
+    const next = conflictQueueRef.current[0];
+    if (!next) {
+      setDuplicateInfo(null);
+      return;
+    }
+    setDuplicateInfo({
+      file: next.file,
+      existingFileId: next.existingFileId,
+      remainingCount: conflictQueueRef.current.length - 1,
+    });
   }
 
   function handleDuplicateAction(action: DuplicateAction) {
-    if (!duplicateInfo) return;
-    const { file, existingFileId, remaining } = duplicateInfo;
+    const current = conflictQueueRef.current.shift();
     setDuplicateInfo(null);
+    // Show the next conflict immediately; resolve this one in the background.
+    showNextConflict();
+    if (current) {
+      void resolveConflict(current.file, current.existingFileId, action);
+    }
+  }
 
+  async function resolveConflict(file: File, existingFileId: string, action: DuplicateAction) {
     if (action === 'cancel') return;
 
     if (action === 'keep-both') {
-      const nameParts = file.name.split('.');
-      const ext = nameParts.length > 1 ? '.' + nameParts.pop() : '';
-      const base = nameParts.join('.');
-      const newName = `${base} (copy)${ext}`;
-      const renamedFile = new File([file], newName, { type: file.type });
-      startUpload([renamedFile, ...remaining]);
-    } else if (action === 'new-version') {
-      setVersionTarget({ id: existingFileId, name: file.name });
-      if (remaining.length > 0) startUpload(remaining);
-    } else if (action === 'overwrite') {
-      startUpload([file, ...remaining]);
+      const renamedFile = new File([file], withCopySuffix(file.name), { type: file.type });
+      startUpload([renamedFile]);
+      return;
+    }
+
+    // 'new-version' and 'overwrite' (Replace) both upload the new content as the
+    // current version of the EXISTING file: one visible row, never a duplicate.
+    // If the upload fails or is aborted, the existing file keeps its current
+    // version untouched (the new version is only made current after it lands).
+    const replacing = action === 'overwrite';
+    try {
+      toast('info', `${replacing ? 'Replacing' : 'Updating'} "${file.name}"…`);
+      await uploadVersionDirect(file, existingFileId, undefined, () => {});
+      toast(
+        'success',
+        replacing ? `Replaced "${file.name}"` : `New version of "${file.name}" added`,
+      );
+      await loadContents(currentFolderId);
+    } catch (e: unknown) {
+      const msg = formatUploadError(e);
+      if (msg !== 'Upload cancelled') {
+        toast('error', `Could not update "${file.name}": ${msg}`);
+      }
     }
   }
 
@@ -895,6 +940,7 @@ export function FileBrowser({
         <DuplicateDialog
           fileName={duplicateInfo.file.name}
           existingFileId={duplicateInfo.existingFileId}
+          remainingCount={duplicateInfo.remainingCount}
           onAction={handleDuplicateAction}
         />
       )}
