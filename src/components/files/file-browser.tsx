@@ -954,7 +954,9 @@ export function FileBrowser({
                 )}
               </div>
 
-              {folders.length === 0 && files.length === 0 && <EmptyState />}
+              {folders.length === 0 && files.length === 0 && (
+                <EmptyState isRoot={currentFolderId === null} />
+              )}
             </>
           )}
           </div>
@@ -1038,72 +1040,127 @@ export function FileBrowser({
   );
 }
 
+const SHIMMER = 'bg-shimmer bg-[length:200%_100%] animate-shimmer';
+
+// Skeleton that mirrors the real layout (Folders section above a Files
+// section) so content does not jump when the data loads.
 function LoadingSkeleton({ mode }: { mode: 'list' | 'grid' }) {
-  if (mode === 'grid') {
-    return (
-      <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-        {Array.from({ length: 10 }).map((_, i) => (
-          <div
-            key={i}
-            className="flex flex-col overflow-hidden rounded-2xl border border-border/40 bg-card/50 shadow-card"
-          >
-            <div
-              className="aspect-[4/3] bg-shimmer bg-[length:200%_100%] animate-shimmer"
-              style={{ animationDelay: `${i * 60}ms` }}
-            />
-            <div className="space-y-2.5 p-3.5">
+  return (
+    <div className="space-y-8">
+      {/* Folders section — matches FolderGrid's label + card grid */}
+      <section>
+        <div className={`mb-3.5 h-2.5 w-16 rounded ${SHIMMER}`} />
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="bpp-card flex items-center gap-3 px-4 py-3.5">
               <div
-                className="h-3.5 w-4/5 rounded-lg bg-shimmer bg-[length:200%_100%] animate-shimmer"
-                style={{ animationDelay: `${i * 60 + 30}ms` }}
+                className={`h-10 w-10 shrink-0 rounded-xl ${SHIMMER}`}
+                style={{ animationDelay: `${i * 60}ms` }}
               />
-              <div className="flex gap-2">
+              <div className="min-w-0 flex-1 space-y-2">
                 <div
-                  className="h-4 w-10 rounded-md bg-shimmer bg-[length:200%_100%] animate-shimmer"
-                  style={{ animationDelay: `${i * 60 + 50}ms` }}
+                  className={`h-3.5 w-3/5 rounded-lg ${SHIMMER}`}
+                  style={{ animationDelay: `${i * 60 + 40}ms` }}
                 />
                 <div
-                  className="h-4 flex-1 rounded-md bg-shimmer bg-[length:200%_100%] animate-shimmer"
+                  className={`h-2.5 w-1/4 rounded-md ${SHIMMER}`}
                   style={{ animationDelay: `${i * 60 + 70}ms` }}
                 />
               </div>
             </div>
-          </div>
-        ))}
-      </div>
-    );
-  }
+          ))}
+        </div>
+      </section>
+
+      {/* Files section — matches FileTable / FileGrid's label + content */}
+      <section>
+        <div className={`mb-3.5 h-2.5 w-12 rounded ${SHIMMER}`} />
+        {mode === 'grid' ? <GridSkeleton /> : <ListSkeleton />}
+      </section>
+    </div>
+  );
+}
+
+function GridSkeleton() {
   return (
-    <div className="overflow-hidden rounded-2xl border border-border/40">
-      {Array.from({ length: 6 }).map((_, i) => (
-        <div key={i} className="flex items-center gap-4 border-b border-border/30 p-3.5 last:border-0">
-          <div className="h-4 w-4 rounded bg-shimmer bg-[length:200%_100%] animate-shimmer" style={{ animationDelay: `${i * 80}ms` }} />
-          <div className="h-3.5 flex-1 rounded-full bg-shimmer bg-[length:200%_100%] animate-shimmer" style={{ maxWidth: `${35 + i * 8}%`, animationDelay: `${i * 80}ms` }} />
-          <div className="h-3 w-16 rounded-full bg-shimmer bg-[length:200%_100%] animate-shimmer" style={{ animationDelay: `${i * 80 + 40}ms` }} />
+    <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+      {Array.from({ length: 10 }).map((_, i) => (
+        <div
+          key={i}
+          className="flex flex-col overflow-hidden rounded-2xl border border-border/40 bg-card/50 shadow-card"
+        >
+          <div className={`aspect-[4/3] ${SHIMMER}`} style={{ animationDelay: `${i * 60}ms` }} />
+          <div className="space-y-2.5 p-3.5">
+            <div
+              className={`h-3.5 w-4/5 rounded-lg ${SHIMMER}`}
+              style={{ animationDelay: `${i * 60 + 30}ms` }}
+            />
+            <div className="flex gap-2">
+              <div className={`h-4 w-10 rounded-md ${SHIMMER}`} style={{ animationDelay: `${i * 60 + 50}ms` }} />
+              <div className={`h-4 flex-1 rounded-md ${SHIMMER}`} style={{ animationDelay: `${i * 60 + 70}ms` }} />
+            </div>
+          </div>
         </div>
       ))}
     </div>
   );
 }
 
-function EmptyState() {
+// Mirrors the FileTable column layout (chevron · thumb+name · type · size ·
+// uploaded · ver · menu) with the same responsive column hiding, so the real
+// table replaces it without a structural shift.
+function ListSkeleton() {
   return (
-    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border/40 py-28">
+    <div className="bpp-card overflow-hidden">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <div
+          key={i}
+          className="flex items-center gap-2.5 border-b border-border/30 px-2 py-2.5 last:border-0 sm:gap-4 sm:px-4"
+        >
+          <div className={`h-5 w-5 shrink-0 rounded ${SHIMMER}`} style={{ animationDelay: `${i * 70}ms` }} />
+          <div className="flex min-w-0 flex-1 items-center gap-2.5">
+            <div className={`h-9 w-9 shrink-0 rounded-lg ${SHIMMER}`} style={{ animationDelay: `${i * 70}ms` }} />
+            <div
+              className={`h-3.5 rounded-full ${SHIMMER}`}
+              style={{ width: `${40 + ((i * 9) % 45)}%`, animationDelay: `${i * 70 + 20}ms` }}
+            />
+          </div>
+          <div className={`hidden h-4 w-12 shrink-0 rounded-md sm:block ${SHIMMER}`} style={{ animationDelay: `${i * 70 + 30}ms` }} />
+          <div className={`h-3 w-12 shrink-0 rounded-full ${SHIMMER}`} style={{ animationDelay: `${i * 70 + 40}ms` }} />
+          <div className={`hidden h-3 w-20 shrink-0 rounded-full md:block ${SHIMMER}`} style={{ animationDelay: `${i * 70 + 50}ms` }} />
+          <div className={`hidden h-3 w-8 shrink-0 rounded-full sm:block ${SHIMMER}`} style={{ animationDelay: `${i * 70 + 60}ms` }} />
+          <div className={`h-5 w-5 shrink-0 rounded ${SHIMMER}`} style={{ animationDelay: `${i * 70 + 70}ms` }} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function EmptyState({ isRoot }: { isRoot: boolean }) {
+  return (
+    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border/40 py-24">
       <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-primary/8 to-primary/4">
         <Upload className="h-7 w-7 text-primary/40" />
       </div>
-      <h3 className="mt-5 text-[15px] font-bold tracking-tight">No files here yet</h3>
+      <h3 className="mt-5 text-[15px] font-bold tracking-tight">
+        {isRoot ? 'Your workspace is empty' : 'This folder is empty'}
+      </h3>
       <p className="mt-2 max-w-xs text-center text-[13px] leading-relaxed text-muted-foreground/50">
-        Drag and drop files onto this area, paste from clipboard, or use the Upload button above.
+        {isRoot
+          ? 'Upload files or create a folder to get started.'
+          : 'Drag files here, paste from the clipboard, or use the Upload button.'}
       </p>
-      <div className="mt-6 flex items-center gap-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/30">
-        <span>PDF</span>
-        <span className="h-0.5 w-0.5 rounded-full bg-muted-foreground/15" />
-        <span>CDR</span>
-        <span className="h-0.5 w-0.5 rounded-full bg-muted-foreground/15" />
-        <span>Images</span>
-        <span className="h-0.5 w-0.5 rounded-full bg-muted-foreground/15" />
-        <span>All types</span>
-      </div>
+      {isRoot && (
+        <div className="mt-6 flex items-center gap-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/30">
+          <span>PDF</span>
+          <span className="h-0.5 w-0.5 rounded-full bg-muted-foreground/15" />
+          <span>CDR</span>
+          <span className="h-0.5 w-0.5 rounded-full bg-muted-foreground/15" />
+          <span>Images</span>
+          <span className="h-0.5 w-0.5 rounded-full bg-muted-foreground/15" />
+          <span>All types</span>
+        </div>
+      )}
     </div>
   );
 }

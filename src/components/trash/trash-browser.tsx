@@ -298,21 +298,29 @@ export function TrashBrowser({ canPermanentDelete }: { canPermanentDelete: boole
       )}
 
       {loading ? (
-        <div className="space-y-6">
-          {[1, 2].map((s) => (
-            <div key={s} className="bpp-card overflow-hidden p-4">
-              <div className="mb-3 h-3 w-20 rounded-full bg-shimmer bg-[length:200%_100%] animate-shimmer" />
-              {Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="flex gap-3 border-t border-border/30 py-3 first:border-0">
-                  <div className="h-4 w-4 rounded bg-shimmer bg-[length:200%_100%] animate-shimmer" />
-                  <div className="h-3 flex-1 rounded-full bg-shimmer bg-[length:200%_100%] animate-shimmer" />
-                </div>
-              ))}
-            </div>
+        <div className="space-y-8">
+          {[0, 1].map((s) => (
+            <section key={s}>
+              <div className="mb-3.5 h-2.5 w-16 rounded bg-shimmer bg-[length:200%_100%] animate-shimmer" />
+              <div className="bpp-card overflow-hidden">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center gap-3 border-b border-border/30 px-4 py-3 last:border-0"
+                  >
+                    <div className="h-4 w-4 shrink-0 rounded bg-shimmer bg-[length:200%_100%] animate-shimmer" style={{ animationDelay: `${i * 70}ms` }} />
+                    <div className="h-3.5 flex-1 rounded-full bg-shimmer bg-[length:200%_100%] animate-shimmer" style={{ maxWidth: `${40 + i * 12}%`, animationDelay: `${i * 70 + 20}ms` }} />
+                    <div className="hidden h-3 w-20 shrink-0 rounded-full bg-shimmer bg-[length:200%_100%] animate-shimmer md:block" style={{ animationDelay: `${i * 70 + 40}ms` }} />
+                    <div className="hidden h-3 w-16 shrink-0 rounded-full bg-shimmer bg-[length:200%_100%] animate-shimmer sm:block" style={{ animationDelay: `${i * 70 + 50}ms` }} />
+                    <div className="h-7 w-28 shrink-0 rounded-lg bg-shimmer bg-[length:200%_100%] animate-shimmer" style={{ animationDelay: `${i * 70 + 60}ms` }} />
+                  </div>
+                ))}
+              </div>
+            </section>
           ))}
         </div>
       ) : isEmpty ? (
-        <div className="bpp-card flex flex-col items-center justify-center border-dashed py-28 text-center">
+        <div className="bpp-card flex flex-col items-center justify-center border-dashed py-24 text-center">
           <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-muted/25">
             <Trash2 className="h-7 w-7 text-muted-foreground/25" />
           </div>
