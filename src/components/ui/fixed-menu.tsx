@@ -1,6 +1,13 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react';
 import { createPortal } from 'react-dom';
 
 type FixedMenuProps = {
@@ -22,9 +29,12 @@ export function FixedMenu({
   width = 192,
   estimatedHeight = 220,
 }: FixedMenuProps) {
-  const mounted = useSyncExternalStore(() => () => {}, () => true, () => false);
+  const mounted = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
   const [pos, setPos] = useState({ top: 0, left: 0 });
-  const backdropRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
@@ -57,49 +67,46 @@ export function FixedMenu({
     };
   }, [open, anchorRef, align, width, estimatedHeight]);
 
-  useLayoutEffect(() => {
-    const el = backdropRef.current;
-    if (!open || !el) return;
-    el.style.pointerEvents = 'none';
-    const id = requestAnimationFrame(() => {
-      if (backdropRef.current) backdropRef.current.style.pointerEvents = 'auto';
-    });
-    return () => cancelAnimationFrame(id);
-  }, [open]);
-
+  // Close on outside pointer / Escape. The listener is registered in an effect,
+  // i.e. AFTER the render that opened the menu, so the gesture that opened it is
+  // never caught (no rAF/pointer-events hack needed). Pointers inside the menu
+  // or on the trigger/anchor are ignored — so the trigger keeps its own toggle,
+  // and clicking another row's trigger closes this menu AND opens that one in a
+  // single click (the underlying click is never swallowed by a backdrop).
   useEffect(() => {
     if (!open) return;
+
+    function onPointerDown(e: PointerEvent) {
+      const target = e.target as Node | null;
+      if (!target) return;
+      if (menuRef.current?.contains(target)) return;
+      if (anchorRef.current?.contains(target)) return;
+      onClose();
+    }
+
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') onClose();
     }
+
+    document.addEventListener('pointerdown', onPointerDown, true);
     document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown, true);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open, onClose, anchorRef]);
 
   if (!mounted || !open) return null;
 
   return createPortal(
-    <>
-      <div
-        ref={backdropRef}
-        className="fixed inset-0 z-[600]"
-        style={{ pointerEvents: 'none' }}
-        onMouseDown={(e) => {
-          e.preventDefault();
-          onClose();
-        }}
-        aria-hidden
-      />
-      <div
-        ref={menuRef}
-        role="menu"
-        className="fixed z-[601] overflow-hidden rounded-xl border border-border/55 bg-popover p-1 shadow-float animate-in scale-in fade-in duration-100"
-        style={{ top: pos.top, left: pos.left, width, pointerEvents: 'auto' }}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        {children}
-      </div>
-    </>,
+    <div
+      ref={menuRef}
+      role="menu"
+      className="fixed z-[601] overflow-hidden rounded-xl border border-border/55 bg-popover p-1 shadow-float animate-in scale-in fade-in duration-100"
+      style={{ top: pos.top, left: pos.left, width }}
+    >
+      {children}
+    </div>,
     document.body,
   );
 }

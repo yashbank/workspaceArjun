@@ -214,7 +214,7 @@ function FileRowWithVersions({
             aria-haspopup="menu"
             aria-expanded={menuOpen}
             aria-label="File actions"
-            className="ml-auto rounded-lg p-1.5 text-muted-foreground/40 opacity-0 transition-all hover:bg-accent hover:text-foreground active:scale-90 group-hover:opacity-100 sm:opacity-100"
+            className="ml-auto rounded-lg p-1.5 text-muted-foreground/40 opacity-100 transition-all hover:bg-accent hover:text-foreground active:scale-90 sm:opacity-0 sm:group-hover:opacity-100"
           >
             <MoreVertical className="h-4 w-4" />
           </button>
