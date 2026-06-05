@@ -93,6 +93,10 @@ const SORT_OPTIONS: SortOption[] = [
 // back to a server refetch instead (see the sort-change effect below).
 const FILES_LIST_LIMIT = 500;
 
+// P2: only show the loading skeleton if a (non-silent) load takes longer than
+// this, so fast navigations don't flash a skeleton.
+const SKELETON_DELAY_MS = 150;
+
 export function FileBrowser({
   canDiagnose = false,
   canPermanentDelete = false,
@@ -190,10 +194,22 @@ export function FileBrowser({
 
   const fetchIdRef = useRef(0);
 
-  const loadContents = useCallback(async (folderId: string | null) => {
+  const loadContents = useCallback(
+    async (folderId: string | null, opts?: { silent?: boolean }) => {
     const fetchId = ++fetchIdRef.current;
-    setLoading(true);
     setError(null);
+
+    // P1: silent refetches (after a mutation) keep the current files/folders
+    // visible — no skeleton — until fresh data replaces them.
+    // P2: for visible loads (navigation), delay the skeleton so a fast load
+    // never flashes it.
+    let skeletonTimer: ReturnType<typeof setTimeout> | undefined;
+    if (!opts?.silent) {
+      skeletonTimer = setTimeout(() => {
+        if (fetchId === fetchIdRef.current) setLoading(true);
+      }, SKELETON_DELAY_MS);
+    }
+
     try {
       const sort = SORT_OPTIONS[sortIdxRef.current];
       const qs = folderId ? `?parentId=${folderId}` : '';
@@ -239,11 +255,14 @@ export function FileBrowser({
       if (fetchId !== fetchIdRef.current) return;
       setError(e instanceof Error ? e.message : 'Failed to load');
     } finally {
+      if (skeletonTimer) clearTimeout(skeletonTimer);
       if (fetchId === fetchIdRef.current) {
         setLoading(false);
       }
     }
-  }, []);
+    },
+    [],
+  );
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- data fetching on navigation
@@ -340,7 +359,7 @@ export function FileBrowser({
   }, [currentFolderId]);
 
   const { queue, startUpload, retry, cancel, dismiss } = useUpload(currentFolderId, () =>
-    loadContents(currentFolderId),
+    loadContents(currentFolderId, { silent: true }),
   );
 
   async function handleFilesSelected(selectedFiles: File[]) {
@@ -422,7 +441,7 @@ export function FileBrowser({
         'success',
         replacing ? `Replaced "${file.name}"` : `New version of "${file.name}" added`,
       );
-      await loadContents(currentFolderId);
+      await loadContents(currentFolderId, { silent: true });
     } catch (e: unknown) {
       const msg = formatUploadError(e);
       if (msg !== 'Upload cancelled') {
@@ -491,7 +510,7 @@ export function FileBrowser({
     if (previewFile && selectedIds.has(previewFile.id)) setPreviewFile(null);
     setSelectedIds(new Set());
     toast('success', `${count} file${count > 1 ? 's' : ''} moved to trash`);
-    await loadContents(currentFolderId);
+    await loadContents(currentFolderId, { silent: true });
     setBusyAction(false);
   }
 
@@ -502,7 +521,7 @@ export function FileBrowser({
     try {
       await apiFetch(`/api/folders/${id}`, { method: 'DELETE' });
       toast('success', 'Folder moved to trash');
-      await loadContents(currentFolderId);
+      await loadContents(currentFolderId, { silent: true });
     } catch (e: unknown) {
       toast('error', e instanceof Error ? e.message : 'Could not delete folder');
     } finally {
@@ -518,7 +537,7 @@ export function FileBrowser({
       await apiFetch(`/api/files/${id}`, { method: 'DELETE' });
       if (previewFile?.id === id) setPreviewFile(null);
       toast('success', 'File moved to trash');
-      await loadContents(currentFolderId);
+      await loadContents(currentFolderId, { silent: true });
     } catch (e: unknown) {
       toast('error', e instanceof Error ? e.message : 'Could not delete file');
     } finally {
@@ -534,7 +553,7 @@ export function FileBrowser({
       await apiFetch(`/api/files/${id}?permanent=true`, { method: 'DELETE' });
       if (previewFile?.id === id) setPreviewFile(null);
       toast('success', 'File deleted permanently');
-      await loadContents(currentFolderId);
+      await loadContents(currentFolderId, { silent: true });
     } catch (e: unknown) {
       toast('error', e instanceof Error ? e.message : 'Could not delete file');
     } finally {
@@ -557,7 +576,7 @@ export function FileBrowser({
       });
       setRenameTarget(null);
       toast('success', `Renamed to "${newName}"`);
-      await loadContents(currentFolderId);
+      await loadContents(currentFolderId, { silent: true });
     } catch (e: unknown) {
       toast('error', e instanceof Error ? e.message : 'Rename failed');
     } finally {
@@ -609,7 +628,7 @@ export function FileBrowser({
       }
       setMoveTarget(null);
       toast('success', `${moveTarget.type === 'file' ? 'File' : 'Folder'} moved`);
-      await loadContents(currentFolderId);
+      await loadContents(currentFolderId, { silent: true });
     } catch (e: unknown) {
       toast('error', e instanceof Error ? e.message : 'Move failed');
     } finally {
@@ -861,7 +880,7 @@ export function FileBrowser({
                     canMove={canMoveFiles}
                     canPermanentDelete={canPermanentDelete}
                     onPermanentDelete={handlePermanentDeleteFile}
-                    onVersionRestored={() => loadContents(currentFolderId)}
+                    onVersionRestored={() => loadContents(currentFolderId, { silent: true })}
                   />
                 ) : (
                   <FileGrid
@@ -920,7 +939,7 @@ export function FileBrowser({
       {showCreateFolder && (
         <CreateFolderDialog
           parentId={currentFolderId}
-          onCreated={() => { setShowCreateFolder(false); loadContents(currentFolderId); }}
+          onCreated={() => { setShowCreateFolder(false); loadContents(currentFolderId, { silent: true }); }}
           onClose={() => setShowCreateFolder(false)}
         />
       )}
@@ -936,7 +955,7 @@ export function FileBrowser({
         <NewVersionDialog
           fileId={versionTarget.id}
           fileName={versionTarget.name}
-          onUploaded={() => { setVersionTarget(null); loadContents(currentFolderId); }}
+          onUploaded={() => { setVersionTarget(null); loadContents(currentFolderId, { silent: true }); }}
           onClose={() => setVersionTarget(null)}
         />
       )}
@@ -944,7 +963,7 @@ export function FileBrowser({
         <FolderImportDialog
           files={folderImportFiles}
           parentFolderId={currentFolderId}
-          onComplete={() => { setFolderImportFiles(null); loadContents(currentFolderId); }}
+          onComplete={() => { setFolderImportFiles(null); loadContents(currentFolderId, { silent: true }); }}
           onCancel={() => setFolderImportFiles(null)}
         />
       )}
