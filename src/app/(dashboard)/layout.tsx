@@ -61,6 +61,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
       if (decision.wouldBlock) {
         await logAccessDenial(profile, decision);
         accessBlocked = true;
+        if (process.env.NODE_ENV !== 'production') {
+          console.warn(
+            `[access] would-block (layout) user=${profile.id} ip=${decision.ip ?? 'unknown'} mode=${profile.accessMode} enforce=${isAccessEnforced()}`,
+          );
+        }
       }
     } catch (error) {
       if (process.env.NODE_ENV === 'development') {

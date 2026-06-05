@@ -54,7 +54,14 @@ type Denial = {
   meta: { mode?: string; reason?: string; deviceStatus?: string; enforced?: boolean } | null;
   actor: { id: string; email: string; name: string | null; role: Role } | null;
 };
-type Overview = { users: OverviewUser[]; ipRanges: IpRange[]; devices: Device[]; denials: Denial[] };
+type Overview = {
+  users: OverviewUser[];
+  ipRanges: IpRange[];
+  devices: Device[];
+  denials: Denial[];
+  accessDetectionEnabled: boolean;
+  accessEnforcementEnabled: boolean;
+};
 
 const MODES: { value: Mode; label: string }[] = [
   { value: 'unrestricted', label: 'Unrestricted' },
@@ -211,14 +218,25 @@ export default function SecurityPage() {
         </p>
       </div>
 
-      {/* Log-only banner */}
-      <div className="flex items-start gap-2.5 rounded-2xl border border-amber-500/20 bg-amber-500/8 px-4 py-3 text-amber-800 dark:text-amber-300">
-        <Info className="mt-0.5 h-4 w-4 shrink-0" />
-        <p className="text-[13px] font-medium leading-relaxed">
-          Log-only mode: access restrictions are being observed, not enforced yet. Members are not
-          blocked — denied attempts are recorded below.
-        </p>
-      </div>
+      {/* Runtime status banner — reflects the live deployed env, for verification */}
+      {data.accessEnforcementEnabled ? (
+        <div className="flex items-start gap-2.5 rounded-2xl border border-destructive/25 bg-destructive/8 px-4 py-3 text-destructive">
+          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
+          <p className="text-[13px] font-medium leading-relaxed">
+            Enforcement active (ACCESS_ENFORCE=true): restricted members are blocked from unapproved
+            IPs/devices. Owner and admin always have access.
+          </p>
+        </div>
+      ) : (
+        <div className="flex items-start gap-2.5 rounded-2xl border border-amber-500/20 bg-amber-500/8 px-4 py-3 text-amber-800 dark:text-amber-300">
+          <Info className="mt-0.5 h-4 w-4 shrink-0" />
+          <p className="text-[13px] font-medium leading-relaxed">
+            Log-only mode (ACCESS_ENFORCE is off): access restrictions are observed, not enforced.
+            Members are not blocked — denied attempts are recorded below.
+            {!data.accessDetectionEnabled && ' Detection is also OFF (ACCESS_DETECTION=off).'}
+          </p>
+        </div>
+      )}
 
       {error && (
         <div className="rounded-2xl border border-destructive/15 bg-destructive/4 px-4 py-3 text-sm text-destructive">

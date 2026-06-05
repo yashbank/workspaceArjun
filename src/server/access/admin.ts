@@ -2,6 +2,7 @@ import { db } from '@/server/db';
 import { requirePermission } from '@/server/rbac';
 import { logAuditEvent } from '@/server/audit';
 import { isValidIpOrCidr } from '@/server/access/ip';
+import { isAccessEnforced, isAccessDetectionEnabled } from '@/server/access/errors';
 import type {
   AccessMode,
   AllowedIpRange,
@@ -57,6 +58,9 @@ export type AccessOverview = {
     meta: unknown;
     actor: { id: string; email: string; name: string | null; role: UserRole } | null;
   }[];
+  /** Live runtime flags so admins can verify the deployed env, not secrets. */
+  accessDetectionEnabled: boolean;
+  accessEnforcementEnabled: boolean;
 };
 
 /** Owner/admin-only snapshot for the admin security page. Read-only. */
@@ -103,7 +107,14 @@ export async function listAccessOverview(): Promise<AccessOverview> {
     }),
   ]);
 
-  return { users, ipRanges, devices, denials };
+  return {
+    users,
+    ipRanges,
+    devices,
+    denials,
+    accessDetectionEnabled: isAccessDetectionEnabled(),
+    accessEnforcementEnabled: isAccessEnforced(),
+  };
 }
 
 /**

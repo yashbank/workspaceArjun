@@ -123,6 +123,11 @@ export async function enforceApiAccess(profile: UserProfile): Promise<void> {
   if (!isAccessEnforced()) return;
   const decision = await resolveAccessDecision(profile);
   if (decision.wouldBlock) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(
+        `[access] would-block (api) user=${profile.id} ip=${decision.ip ?? 'unknown'} mode=${profile.accessMode} enforce=true`,
+      );
+    }
     await logAccessDenial(profile, decision);
     throw new AccessBlockedError();
   }

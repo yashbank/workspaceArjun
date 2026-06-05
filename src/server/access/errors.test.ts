@@ -37,11 +37,18 @@ describe('access flags', () => {
     else process.env.ACCESS_DETECTION = origDetect;
   });
 
-  it('enforces only when ACCESS_ENFORCE === "true"', () => {
-    process.env.ACCESS_ENFORCE = 'true';
-    expect(isAccessEnforced()).toBe(true);
-    process.env.ACCESS_ENFORCE = 'false';
-    expect(isAccessEnforced()).toBe(false);
+  it('enforces for "true" case-insensitively and whitespace-tolerantly', () => {
+    for (const v of ['true', 'TRUE', ' true ', 'True\n', '  TrUe']) {
+      process.env.ACCESS_ENFORCE = v;
+      expect(isAccessEnforced()).toBe(true);
+    }
+  });
+
+  it('does not enforce for false / other / empty / unset', () => {
+    for (const v of ['false', 'FALSE', '0', '1', 'yes', '']) {
+      process.env.ACCESS_ENFORCE = v;
+      expect(isAccessEnforced()).toBe(false);
+    }
     delete process.env.ACCESS_ENFORCE;
     expect(isAccessEnforced()).toBe(false);
   });

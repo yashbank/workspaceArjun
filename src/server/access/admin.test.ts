@@ -153,4 +153,22 @@ describe('listAccessOverview', () => {
     expect(args.take).toBe(100);
     expect(args.orderBy).toEqual({ createdAt: 'desc' });
   });
+
+  it('exposes live runtime flags reflecting the env', async () => {
+    mockUserFindMany.mockResolvedValue([]);
+    mockIpFindMany.mockResolvedValue([]);
+    mockDeviceFindMany.mockResolvedValue([]);
+    mockAuditFindMany.mockResolvedValue([]);
+
+    const orig = process.env.ACCESS_ENFORCE;
+    process.env.ACCESS_ENFORCE = 'true';
+    try {
+      const overview = await listAccessOverview();
+      expect(overview.accessEnforcementEnabled).toBe(true);
+      expect(typeof overview.accessDetectionEnabled).toBe('boolean');
+    } finally {
+      if (orig === undefined) delete process.env.ACCESS_ENFORCE;
+      else process.env.ACCESS_ENFORCE = orig;
+    }
+  });
 });

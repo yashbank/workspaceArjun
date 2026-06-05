@@ -17,12 +17,20 @@ export function isAccessBlockedError(e: unknown): e is AccessBlockedError {
   );
 }
 
-/** Enforcement (actual blocking) is OFF unless ACCESS_ENFORCE is exactly "true". */
-export function isAccessEnforced(): boolean {
-  return process.env.ACCESS_ENFORCE === 'true';
+/** Normalizes an env flag value: undefined-safe, trimmed, lowercased. */
+function envFlag(value: string | undefined): string {
+  return (value ?? '').trim().toLowerCase();
 }
 
-/** Detection/observation is ON unless ACCESS_DETECTION is "off". */
+/**
+ * Enforcement (actual blocking) is ON only when ACCESS_ENFORCE is "true"
+ * (case-insensitive, whitespace-tolerant — e.g. "TRUE" or " true ").
+ */
+export function isAccessEnforced(): boolean {
+  return envFlag(process.env.ACCESS_ENFORCE) === 'true';
+}
+
+/** Detection/observation is ON unless ACCESS_DETECTION is "off" (case/space-tolerant). */
 export function isAccessDetectionEnabled(): boolean {
-  return process.env.ACCESS_DETECTION !== 'off';
+  return envFlag(process.env.ACCESS_DETECTION) !== 'off';
 }
