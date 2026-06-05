@@ -10,6 +10,7 @@ import { DbConnectionIssue } from '@/components/shell/db-connection-issue';
 import { DisplayNameGuard } from '@/components/shell/display-name-guard';
 import { needsDisplayNameSetup } from '@/lib/user-display';
 import { userHasDuplicateDisplayName } from '@/server/profile';
+import { resolveAccessDecision, logAccessDenial } from '@/server/access/decision';
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createSupabaseServerClient();
@@ -43,6 +44,23 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   if (profile.status === 'deactivated') {
     redirect('/unauthorized');
+  }
+
+  // Access control — Phase 2 (LOG-ONLY): observe the IP/device policy and record
+  // would-be denials, but never block, redirect, or throw. Wrapped so access
+  // observation can never break the dashboard; an off-switch (ACCESS_DETECTION=off)
+  // disables it entirely.
+  if (process.env.ACCESS_DETECTION !== 'off') {
+    try {
+      const decision = await resolveAccessDecision(profile);
+      if (decision.wouldBlock) {
+        await logAccessDenial(profile, decision);
+      }
+    } catch (error) {
+      if (process.env.NODE_ENV === 'development') {
+        console.error('[access] log-only observation failed:', error);
+      }
+    }
   }
 
   const showAdminNav = profile.role === 'owner' || profile.role === 'admin';
