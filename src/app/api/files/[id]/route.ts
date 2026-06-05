@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { renameFile, softDeleteFile } from '@/server/files';
+import { renameFile, softDeleteFile, permanentlyDeleteFile } from '@/server/files';
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -19,10 +19,15 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   }
 }
 
-export async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    await softDeleteFile(id);
+    const permanent = request.nextUrl.searchParams.get('permanent') === 'true';
+    if (permanent) {
+      await permanentlyDeleteFile(id);
+    } else {
+      await softDeleteFile(id);
+    }
     return NextResponse.json({ ok: true });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'Unknown error';

@@ -1,6 +1,7 @@
 import { db } from '@/server/db';
 import { requirePermission } from '@/server/rbac';
 import { logAuditEvent } from '@/server/audit';
+import { collectSubtreeFolderIds } from '@/server/folders/tree';
 import type { Folder } from '@/generated/prisma/client';
 
 export type FolderWithCounts = Folder & {
@@ -138,19 +139,37 @@ export async function moveFolder(id: string, targetParentId: string | null): Pro
   return updated;
 }
 
+/**
+ * Moves a folder to trash together with its entire subtree — all nested folders
+ * and every file inside them — stamped with one shared `deletedAt` timestamp so
+ * the group can be restored as a unit. Files are never left behind active, so
+ * nothing becomes loose at the root. Only currently-active rows are stamped, so
+ * items already individually trashed keep their own (earlier) timestamp.
+ */
 export async function softDeleteFolder(id: string): Promise<void> {
   const user = await requirePermission('folders:delete');
   const folder = await db.folder.findFirst({ where: { id, deletedAt: null } });
   if (!folder) throw new Error('Folder not found');
 
   const now = new Date();
-  await db.folder.update({ where: { id }, data: { deletedAt: now } });
+  const folderIds = await collectSubtreeFolderIds(id, 'active');
+
+  const [files] = await db.$transaction([
+    db.file.updateMany({
+      where: { folderId: { in: folderIds }, deletedAt: null },
+      data: { deletedAt: now },
+    }),
+    db.folder.updateMany({
+      where: { id: { in: folderIds }, deletedAt: null },
+      data: { deletedAt: now },
+    }),
+  ]);
 
   await logAuditEvent({
     actor: user,
     action: 'folder.delete',
     targetType: 'folder',
     targetId: id,
-    meta: { name: folder.name },
+    meta: { name: folder.name, folderCount: folderIds.length, fileCount: files.count },
   });
 }

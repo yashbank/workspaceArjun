@@ -11,10 +11,11 @@ import {
   Film,
   Smartphone,
 } from 'lucide-react';
-import { memo, useRef } from 'react';
+import { memo, useRef, useState } from 'react';
 import { getExtension, getFileTypeBadge, formatBytes } from '@/lib/file-utils';
 import { FileMediaThumbnail } from './file-media-thumbnail';
 import { PremiumFileFallback } from './premium-file-fallback';
+import { FileActionMenu } from './file-action-menu';
 import type { FileItem } from './file-table';
 
 const PREVIEW_IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'tiff']);
@@ -55,17 +56,33 @@ function FileCardIcon({ ext }: { ext: string }) {
 export const FileGrid = memo(function FileGrid({
   files,
   onPreview,
-  onContextMenu,
+  onDownload,
+  onRename,
+  onDelete,
+  onNewVersion,
+  onMove,
+  onFavorite,
   selectedIds,
   onToggleSelect,
   favorites,
+  canMove = true,
+  canPermanentDelete = false,
+  onPermanentDelete,
 }: {
   files: FileItem[];
   onPreview: (f: FileItem) => void;
-  onContextMenu: (f: FileItem, pos: { x: number; y: number }) => void;
+  onDownload: (id: string) => void;
+  onRename: (f: FileItem) => void;
+  onDelete: (id: string) => void;
+  onNewVersion: (f: FileItem) => void;
+  onMove?: (f: FileItem) => void;
+  onFavorite?: (id: string) => void;
   selectedIds: Set<string>;
   onToggleSelect: (id: string) => void;
   favorites: Set<string>;
+  canMove?: boolean;
+  canPermanentDelete?: boolean;
+  onPermanentDelete?: (id: string) => void;
 }) {
   if (files.length === 0) return null;
 
@@ -81,7 +98,15 @@ export const FileGrid = memo(function FileGrid({
             favorited={favorites.has(file.id)}
             onSelect={() => onToggleSelect(file.id)}
             onOpen={() => onPreview(file)}
-            onContextMenu={onContextMenu}
+            onDownload={() => onDownload(file.id)}
+            onRename={() => onRename(file)}
+            onTrash={() => onDelete(file.id)}
+            onNewVersion={() => onNewVersion(file)}
+            onMove={onMove ? () => onMove(file) : undefined}
+            onFavorite={onFavorite ? () => onFavorite(file.id) : undefined}
+            canMove={canMove}
+            canPermanentDelete={canPermanentDelete}
+            onPermanentDelete={onPermanentDelete ? () => onPermanentDelete(file.id) : undefined}
           />
         ))}
       </div>
@@ -95,14 +120,30 @@ const FileCard = memo(function FileCard({
   favorited,
   onSelect,
   onOpen,
-  onContextMenu,
+  onDownload,
+  onRename,
+  onTrash,
+  onNewVersion,
+  onMove,
+  onFavorite,
+  canMove,
+  canPermanentDelete,
+  onPermanentDelete,
 }: {
   file: FileItem;
   selected: boolean;
   favorited: boolean;
   onSelect: () => void;
   onOpen: () => void;
-  onContextMenu: (f: FileItem, pos: { x: number; y: number }) => void;
+  onDownload: () => void;
+  onRename: () => void;
+  onTrash: () => void;
+  onNewVersion: () => void;
+  onMove?: () => void;
+  onFavorite?: () => void;
+  canMove: boolean;
+  canPermanentDelete: boolean;
+  onPermanentDelete?: () => void;
 }) {
   const ext = getExtension(file.name);
   const badge = getFileTypeBadge(file.name);
@@ -111,18 +152,16 @@ const FileCard = memo(function FileCard({
   const hasMediaThumb = MEDIA_THUMB_EXTS.has(ext);
   const hasPremiumCard = PREMIUM_CARD_EXTS.has(ext);
   const menuBtnRef = useRef<HTMLButtonElement>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   function handleContext(e: React.MouseEvent) {
     e.preventDefault();
-    onContextMenu(file, { x: e.clientX, y: e.clientY });
+    setMenuOpen(true);
   }
 
   function handleMenuClick(e: React.MouseEvent) {
     e.stopPropagation();
-    if (menuBtnRef.current) {
-      const rect = menuBtnRef.current.getBoundingClientRect();
-      onContextMenu(file, { x: rect.left, y: rect.bottom + 4 });
-    }
+    setMenuOpen((o) => !o);
   }
 
   return (
@@ -191,6 +230,8 @@ const FileCard = memo(function FileCard({
             ref={menuBtnRef}
             type="button"
             onClick={handleMenuClick}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
             className="absolute bottom-3 right-3 shrink-0 rounded-lg p-1 text-muted-foreground/50 transition-all hover:bg-accent hover:text-foreground"
             aria-label="File actions"
           >
@@ -198,6 +239,23 @@ const FileCard = memo(function FileCard({
           </button>
         </div>
       </div>
+      <FileActionMenu
+        open={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        anchorRef={menuBtnRef}
+        onPreview={onOpen}
+        onDownload={onDownload}
+        onMove={onMove}
+        canMove={canMove}
+        onRename={onRename}
+        onVersions={onOpen}
+        onNewVersion={onNewVersion}
+        onFavorite={onFavorite}
+        isFavorited={favorited}
+        onTrash={onTrash}
+        onPermanentDelete={onPermanentDelete}
+        canPermanentDelete={canPermanentDelete}
+      />
     </div>
   );
 });

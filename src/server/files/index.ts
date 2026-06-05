@@ -1,7 +1,14 @@
 import { db } from '@/server/db';
 import { requirePermission } from '@/server/rbac';
 import { logAuditEvent } from '@/server/audit';
-import { buildStorageKey, putObject, getObject, headObject } from '@/server/storage';
+import {
+  buildStorageKey,
+  putObject,
+  getObject,
+  headObject,
+  deleteObject,
+  isStorageConfigured,
+} from '@/server/storage';
 import {
   StorageContentMissingError,
   logMissingStorageObject,
@@ -294,5 +301,51 @@ export async function softDeleteFile(id: string): Promise<void> {
     targetType: 'file',
     targetId: id,
     meta: { name: file.name },
+  });
+}
+
+/**
+ * Permanently removes a file (and every version) regardless of trash state.
+ * Storage blobs are deleted best-effort and storage usage is decremented.
+ * Gated by `files:permanent_delete` (owner only) — the "Delete permanently"
+ * action surfaced in the file browser.
+ */
+export async function permanentlyDeleteFile(id: string): Promise<void> {
+  const user = await requirePermission('files:permanent_delete');
+  const file = await db.file.findUnique({
+    where: { id },
+    include: { versions: true },
+  });
+  if (!file) throw new Error('File not found');
+
+  if (isStorageConfigured()) {
+    for (const version of file.versions) {
+      try {
+        await deleteObject(version.storageKey);
+      } catch {
+        // Best-effort: continue even if a storage delete fails
+      }
+    }
+  }
+
+  const totalBytes = file.versions.reduce((sum, v) => sum + v.sizeBytes, BigInt(0));
+
+  await db.file.delete({ where: { id } });
+
+  if (totalBytes > BigInt(0)) {
+    await db.storageUsage.updateMany({
+      data: {
+        totalBytes: { decrement: totalBytes },
+        fileCount: { decrement: 1 },
+      },
+    });
+  }
+
+  await logAuditEvent({
+    actor: user,
+    action: 'file.permanent_delete',
+    targetType: 'file',
+    targetId: id,
+    meta: { name: file.name, versionsDeleted: file.versions.length },
   });
 }

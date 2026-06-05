@@ -1,28 +1,23 @@
 'use client';
 
 import {
-  Download,
   FileText,
   ImageIcon,
   FileArchive,
   FileIcon,
   MoreVertical,
-  Pencil,
-  Trash2,
   History,
-  UploadCloud,
   ChevronDown,
   ChevronRight,
-  Eye,
-  FolderInput,
   Star,
   Pen,
 } from 'lucide-react';
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState } from 'react';
 import { getExtension, getFileTypeBadge, formatBytes, formatDate } from '@/lib/file-utils';
 import { FileMediaThumbnail } from './file-media-thumbnail';
 import { PremiumFileFallback } from './premium-file-fallback';
 import { VersionPanel } from './version-panel';
+import { FileActionMenu } from './file-action-menu';
 
 export type FileItem = {
   id: string;
@@ -65,6 +60,9 @@ export function FileTable({
   onMove,
   onFavorite,
   favorites,
+  canMove = true,
+  canPermanentDelete = false,
+  onPermanentDelete,
 }: {
   files: FileItem[];
   onRename: (f: FileItem) => void;
@@ -75,6 +73,9 @@ export function FileTable({
   onMove?: (f: FileItem) => void;
   onFavorite?: (id: string) => void;
   favorites?: Set<string>;
+  canMove?: boolean;
+  canPermanentDelete?: boolean;
+  onPermanentDelete?: (id: string) => void;
 }) {
   if (files.length === 0) return null;
 
@@ -107,6 +108,9 @@ export function FileTable({
                 onMove={onMove ? () => onMove(file) : undefined}
                 onFavorite={onFavorite ? () => onFavorite(file.id) : undefined}
                 isFavorited={favorites?.has(file.id) ?? false}
+                canMove={canMove}
+                canPermanentDelete={canPermanentDelete}
+                onPermanentDelete={onPermanentDelete ? () => onPermanentDelete(file.id) : undefined}
               />
             ))}
           </tbody>
@@ -126,6 +130,9 @@ function FileRowWithVersions({
   onMove,
   onFavorite,
   isFavorited,
+  canMove,
+  canPermanentDelete,
+  onPermanentDelete,
 }: {
   file: FileItem;
   onRename: () => void;
@@ -136,10 +143,12 @@ function FileRowWithVersions({
   onMove?: () => void;
   onFavorite?: () => void;
   isFavorited: boolean;
+  canMove: boolean;
+  canPermanentDelete: boolean;
+  onPermanentDelete?: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const [menuPos, setMenuPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const menuBtnRef = useRef<HTMLButtonElement>(null);
   const ext = getExtension(file.name);
   const size = file.currentVersion ? Number(file.currentVersion.sizeBytes) : 0;
@@ -147,20 +156,6 @@ function FileRowWithVersions({
   const versionCount = file._count?.versions ?? 1;
   const hasMediaThumb = MEDIA_THUMB_EXTS.has(ext);
   const hasPremiumThumb = PREMIUM_LIST_EXTS.has(ext);
-
-  function openMenu() {
-    if (menuBtnRef.current) {
-      const rect = menuBtnRef.current.getBoundingClientRect();
-      const menuWidth = 180;
-      const menuHeight = 300;
-      let x = rect.right - menuWidth;
-      let y = rect.bottom + 4;
-      if (x < 8) x = 8;
-      if (y + menuHeight > window.innerHeight) y = rect.top - menuHeight - 4;
-      setMenuPos({ x, y });
-    }
-    setMenuOpen(true);
-  }
 
   return (
     <>
@@ -204,26 +199,31 @@ function FileRowWithVersions({
         <td className="px-2 py-2.5 text-right">
           <button
             ref={menuBtnRef}
-            onClick={openMenu}
+            onClick={() => setMenuOpen((o) => !o)}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            aria-label="File actions"
             className="ml-auto rounded-lg p-1.5 text-muted-foreground/40 opacity-0 transition-all hover:bg-accent hover:text-foreground active:scale-90 group-hover:opacity-100 sm:opacity-100"
           >
             <MoreVertical className="h-4 w-4" />
           </button>
-          {menuOpen && (
-            <ContextMenu
-              pos={menuPos}
-              onClose={() => setMenuOpen(false)}
-              onDownload={onDownload}
-              onNewVersion={onNewVersion}
-              onVersionHistory={() => setExpanded(true)}
-              onRename={onRename}
-              onDelete={onDelete}
-              onPreview={onPreview}
-              onMove={onMove}
-              onFavorite={onFavorite}
-              isFavorited={isFavorited}
-            />
-          )}
+          <FileActionMenu
+            open={menuOpen}
+            onClose={() => setMenuOpen(false)}
+            anchorRef={menuBtnRef}
+            onPreview={onPreview}
+            onDownload={onDownload}
+            onMove={onMove}
+            canMove={canMove}
+            onRename={onRename}
+            onVersions={() => setExpanded(true)}
+            onNewVersion={onNewVersion}
+            onFavorite={onFavorite}
+            isFavorited={isFavorited}
+            onTrash={onDelete}
+            onPermanentDelete={onPermanentDelete}
+            canPermanentDelete={canPermanentDelete}
+          />
         </td>
       </tr>
       {expanded && (
@@ -241,78 +241,3 @@ function FileRowWithVersions({
   );
 }
 
-function ContextMenu({
-  pos,
-  onClose,
-  onDownload,
-  onNewVersion,
-  onVersionHistory,
-  onRename,
-  onDelete,
-  onPreview,
-  onMove,
-  onFavorite,
-  isFavorited,
-}: {
-  pos: { x: number; y: number };
-  onClose: () => void;
-  onDownload: () => void;
-  onNewVersion: () => void;
-  onVersionHistory: () => void;
-  onRename: () => void;
-  onDelete: () => void;
-  onPreview?: () => void;
-  onMove?: () => void;
-  onFavorite?: () => void;
-  isFavorited: boolean;
-}) {
-  useEffect(() => {
-    function handleKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose(); }
-    document.addEventListener('keydown', handleKey);
-    return () => document.removeEventListener('keydown', handleKey);
-  }, [onClose]);
-
-  return (
-    <>
-      <div className="fixed inset-0 z-[60]" onClick={onClose} />
-      <div
-        className="fixed z-[70] w-48 overflow-hidden rounded-xl border border-border/50 bg-popover p-1 shadow-float animate-in scale-in fade-in duration-100"
-        style={{ left: pos.x, top: pos.y }}
-      >
-        {onPreview && <MenuItem icon={Eye} label="Preview" onClick={() => { onClose(); onPreview(); }} />}
-        <MenuItem icon={Download} label="Download" onClick={() => { onClose(); onDownload(); }} />
-        <MenuItem icon={UploadCloud} label="New version" onClick={() => { onClose(); onNewVersion(); }} />
-        <MenuItem icon={History} label="Version history" onClick={() => { onClose(); onVersionHistory(); }} />
-        {onMove && <MenuItem icon={FolderInput} label="Move to…" onClick={() => { onClose(); onMove(); }} />}
-        {onFavorite && (
-          <MenuItem icon={Star} label={isFavorited ? 'Remove star' : 'Add star'} onClick={() => { onClose(); onFavorite(); }} />
-        )}
-        <div className="my-1 border-t border-border/30" />
-        <MenuItem icon={Pencil} label="Rename" onClick={() => { onClose(); onRename(); }} />
-        <MenuItem icon={Trash2} label="Delete" onClick={() => { onClose(); onDelete(); }} destructive />
-      </div>
-    </>
-  );
-}
-
-function MenuItem({
-  icon: Icon,
-  label,
-  onClick,
-  destructive,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  onClick: () => void;
-  destructive?: boolean;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] transition-all active:scale-[0.98] ${destructive ? 'text-destructive hover:bg-destructive/8' : 'hover:bg-accent'}`}
-    >
-      <Icon className={`h-3.5 w-3.5 ${destructive ? '' : 'text-muted-foreground/50'}`} />
-      {label}
-    </button>
-  );
-}

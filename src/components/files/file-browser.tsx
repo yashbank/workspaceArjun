@@ -90,7 +90,13 @@ const SORT_OPTIONS: SortOption[] = [
 // back to a server refetch instead (see the sort-change effect below).
 const FILES_LIST_LIMIT = 500;
 
-export function FileBrowser({ canDiagnose = false }: { canDiagnose?: boolean }) {
+export function FileBrowser({
+  canDiagnose = false,
+  canPermanentDelete = false,
+}: {
+  canDiagnose?: boolean;
+  canPermanentDelete?: boolean;
+}) {
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [files, setFiles] = useState<FileItem[]>([]);
@@ -464,6 +470,22 @@ export function FileBrowser({ canDiagnose = false }: { canDiagnose?: boolean }) 
     }
   }
 
+  async function handlePermanentDeleteFile(id: string) {
+    if (busyAction) return;
+    if (!confirm('Delete this file permanently? This cannot be undone.')) return;
+    setBusyAction(true);
+    try {
+      await apiFetch(`/api/files/${id}?permanent=true`, { method: 'DELETE' });
+      if (previewFile?.id === id) setPreviewFile(null);
+      toast('success', 'File deleted permanently');
+      await loadContents(currentFolderId);
+    } catch (e: unknown) {
+      toast('error', e instanceof Error ? e.message : 'Could not delete file');
+    } finally {
+      setBusyAction(false);
+    }
+  }
+
   async function handleRenameConfirm(newName: string) {
     if (!renameTarget || busyAction) return;
     setBusyAction(true);
@@ -544,9 +566,9 @@ export function FileBrowser({ canDiagnose = false }: { canDiagnose?: boolean }) 
     window.open(`/api/folders/${folderId}/download`, '_blank');
   }
 
-  function handleGridContextMenu(file: FileItem, _pos: { x: number; y: number }) {
-    setPreviewFile(file);
-  }
+  // "Move to folder" is possible whenever any folder exists to move into: either
+  // we're inside a folder, or the current (root) level already shows folders.
+  const canMoveFiles = currentFolderId !== null || folders.length > 0;
 
   return (
     <DropZone onFilesDropped={handleFilesDropped}>
@@ -780,15 +802,26 @@ export function FileBrowser({ canDiagnose = false }: { canDiagnose?: boolean }) 
                     onMove={(f) => setMoveTarget({ id: f.id, name: f.name, type: 'file' })}
                     onFavorite={toggleFavorite}
                     favorites={favorites}
+                    canMove={canMoveFiles}
+                    canPermanentDelete={canPermanentDelete}
+                    onPermanentDelete={handlePermanentDeleteFile}
                   />
                 ) : (
                   <FileGrid
                     files={sortedFiles}
                     onPreview={(f) => setPreviewFile(f)}
-                    onContextMenu={handleGridContextMenu}
+                    onDownload={handleDownloadFile}
+                    onRename={(f) => setRenameTarget({ type: 'file', id: f.id, name: f.name })}
+                    onDelete={handleDeleteFile}
+                    onNewVersion={(f) => setVersionTarget({ id: f.id, name: f.name })}
+                    onMove={(f) => setMoveTarget({ id: f.id, name: f.name, type: 'file' })}
+                    onFavorite={toggleFavorite}
                     selectedIds={selectedIds}
                     onToggleSelect={toggleSelect}
                     favorites={favorites}
+                    canMove={canMoveFiles}
+                    canPermanentDelete={canPermanentDelete}
+                    onPermanentDelete={handlePermanentDeleteFile}
                   />
                 )}
               </div>
