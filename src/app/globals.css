@@ -214,7 +214,7 @@
     box-shadow: var(--shadow-card);
   }
   .bpp-card-interactive {
-    @apply rounded-2xl border border-border/60 bg-card transition-all duration-200;
+    @apply rounded-2xl border border-border/60 bg-card transition-[box-shadow,transform] duration-200;
     box-shadow: var(--shadow-card);
   }
   .bpp-card-interactive:hover {
@@ -248,4 +248,21 @@
 
 .bpp-safe-bottom {
   padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+}
+
+/* --- Respect the user's reduced-motion preference --- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* Stop the shimmer sweep but keep the static muted fill (.bg-shimmer) so
+     loading is still clearly indicated. */
+  .animate-shimmer {
+    animation: none !important;
+  }
 }

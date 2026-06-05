@@ -164,11 +164,11 @@ function FileRowWithVersions({
 
   return (
     <>
-      <tr className="group border-b border-border/30 transition-all duration-150 hover:bg-accent/15 last:border-0" onDoubleClick={onPreview}>
+      <tr className="group border-b border-border/30 transition-colors duration-150 hover:bg-accent/15 last:border-0" onDoubleClick={onPreview}>
         <td className="px-2 py-2.5">
           <button
             onClick={() => setExpanded(!expanded)}
-            className="rounded-lg p-1 text-muted-foreground/30 transition-all hover:bg-accent hover:text-foreground active:scale-90"
+            className="rounded-lg p-1 text-muted-foreground/30 transition-[color,background-color,transform] hover:bg-accent hover:text-foreground active:scale-90"
           >
             {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
           </button>
@@ -219,7 +219,7 @@ function FileRowWithVersions({
             aria-haspopup="menu"
             aria-expanded={menuOpen}
             aria-label="File actions"
-            className="ml-auto rounded-lg p-1.5 text-muted-foreground/40 opacity-100 transition-all hover:bg-accent hover:text-foreground active:scale-90 sm:opacity-0 sm:group-hover:opacity-100"
+            className="ml-auto rounded-lg p-1.5 text-muted-foreground/40 opacity-100 transition-[opacity,color,background-color,transform] hover:bg-accent hover:text-foreground active:scale-90 sm:opacity-0 sm:group-hover:opacity-100"
           >
             <MoreVertical className="h-4 w-4" />
           </button>

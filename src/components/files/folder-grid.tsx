@@ -28,7 +28,7 @@ export const FolderGrid = memo(function FolderGrid({
   return (
     <section className="relative z-0">
       <h2 className="bpp-label-caps mb-3.5">Folders</h2>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {folders.map((folder) => (
           <FolderCard
             key={folder.id}
@@ -86,7 +86,7 @@ function FolderCard({
           e.preventDefault();
           setMenuOpen((v) => !v);
         }}
-        className="shrink-0 rounded-lg p-1.5 text-muted-foreground/40 opacity-0 transition-all hover:bg-accent hover:text-foreground active:scale-90 group-hover:opacity-100"
+        className="shrink-0 rounded-lg p-1.5 text-muted-foreground/40 opacity-0 transition-[opacity,color,background-color,transform] hover:bg-accent hover:text-foreground active:scale-90 group-hover:opacity-100"
         aria-label="Folder actions"
       >
         <MoreVertical className="h-4 w-4" />
@@ -108,7 +108,7 @@ function FolderCard({
               setMenuOpen(false);
               onDownload();
             }}
-            className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] transition-all hover:bg-accent"
+            className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] transition-colors hover:bg-accent"
           >
             <Download className="h-3.5 w-3.5 text-muted-foreground/50" /> Download ZIP
           </button>
@@ -122,7 +122,7 @@ function FolderCard({
               setMenuOpen(false);
               onMove();
             }}
-            className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] transition-all hover:bg-accent"
+            className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] transition-colors hover:bg-accent"
           >
             <FolderInput className="h-3.5 w-3.5 text-muted-foreground/50" /> Move to…
           </button>
@@ -135,7 +135,7 @@ function FolderCard({
             setMenuOpen(false);
             onRename();
           }}
-          className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] transition-all hover:bg-accent"
+          className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] transition-colors hover:bg-accent"
         >
           <Pencil className="h-3.5 w-3.5 text-muted-foreground/50" /> Rename
         </button>
@@ -148,7 +148,7 @@ function FolderCard({
             setMenuOpen(false);
             onDelete();
           }}
-          className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] text-destructive transition-all hover:bg-destructive/8"
+          className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] text-destructive transition-colors hover:bg-destructive/8"
         >
           <Trash2 className="h-3.5 w-3.5" /> Delete
         </button>

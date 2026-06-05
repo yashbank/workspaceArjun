@@ -167,7 +167,7 @@ const FileCard = memo(function FileCard({
 
   return (
     <div
-      className={`group relative flex flex-col overflow-hidden rounded-2xl border bg-card shadow-card transition-all duration-250 ease-out will-change-transform hover:-translate-y-0.5 hover:shadow-elevated ${
+      className={`group relative flex flex-col overflow-hidden rounded-2xl border bg-card shadow-card transition-[transform,box-shadow] duration-250 ease-out will-change-transform hover:-translate-y-0.5 hover:shadow-elevated ${
         selected
           ? 'border-primary/35 ring-2 ring-primary/10 shadow-elevated'
           : 'border-border/55 hover:border-border/80'
@@ -193,10 +193,10 @@ const FileCard = memo(function FileCard({
         )}
 
         <label
-          className={`absolute left-2.5 top-2.5 z-10 flex h-5 w-5 cursor-pointer items-center justify-center rounded-md border backdrop-blur-sm transition-all ${
+          className={`absolute left-2.5 top-2.5 z-10 flex h-5 w-5 cursor-pointer items-center justify-center rounded-md border shadow-sm transition-opacity ${
             selected
               ? 'border-primary bg-primary'
-              : 'border-white/50 bg-white/30 opacity-0 group-hover:opacity-100 dark:border-white/20 dark:bg-black/30'
+              : 'border-white/60 bg-white/55 opacity-0 group-hover:opacity-100 dark:border-white/25 dark:bg-black/45'
           }`}
         >
           <input type="checkbox" checked={selected} onChange={onSelect} className="sr-only" />
@@ -216,7 +216,7 @@ const FileCard = memo(function FileCard({
         </label>
 
         {favorited && (
-          <div className="absolute right-2.5 top-2.5 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-black/20 backdrop-blur-md">
+          <div className="absolute right-2.5 top-2.5 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-black/40 shadow-sm">
             <Star className="h-3 w-3 fill-amber-400 text-amber-400 drop-shadow-sm" />
           </div>
         )}
@@ -239,7 +239,7 @@ const FileCard = memo(function FileCard({
             onMouseDown={handleMenuMouseDown}
             aria-haspopup="menu"
             aria-expanded={menuOpen}
-            className="absolute bottom-3 right-3 shrink-0 rounded-lg p-1 text-muted-foreground/50 transition-all hover:bg-accent hover:text-foreground"
+            className="absolute bottom-3 right-3 shrink-0 rounded-lg p-1 text-muted-foreground/50 transition-colors hover:bg-accent hover:text-foreground"
             aria-label="File actions"
           >
             <MoreVertical className="h-3.5 w-3.5" />
