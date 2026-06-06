@@ -124,6 +124,10 @@ export const PreviewPanel = memo(function PreviewPanel({
   const hasPrev = currentIdx > 0;
   const hasNext = currentIdx < files.length - 1;
   const previewSrc = filePreviewUrl(file.id, file.currentVersionId);
+  // Progressive blur-up: the small immutable-cached thumbnail (often already in
+  // the browser cache from the grid/list) shows instantly behind the full image.
+  const thumbUrl =
+    isImage && isThumbnailable(ext) ? fileThumbnailUrl(file.id, file.currentVersionId, 256) : null;
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reset on file change
@@ -260,14 +264,24 @@ export const PreviewPanel = memo(function PreviewPanel({
                 className="group relative flex min-h-[280px] flex-1 cursor-pointer items-center justify-center overflow-hidden rounded-xl bg-muted/15"
                 onClick={() => setShowLightbox(true)}
               >
-                {!imgLoaded && (
-                  <div className="absolute inset-0 z-10 bg-shimmer bg-[length:200%_100%] animate-shimmer" />
-                )}
+                {!imgLoaded &&
+                  (thumbUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={thumbUrl}
+                      alt=""
+                      aria-hidden
+                      className="absolute inset-0 z-10 h-full w-full scale-105 object-contain opacity-70 blur-xl"
+                    />
+                  ) : (
+                    <div className="absolute inset-0 z-10 bg-shimmer bg-[length:200%_100%] animate-shimmer" />
+                  ))}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   key={file.id}
                   src={previewSrc}
                   alt={file.name}
+                  decoding="async"
                   className={`max-h-[min(420px,55vh)] w-full rounded-xl shadow-elevated transition-all duration-500 ease-out ${
                     imageFit === 'cover' ? 'object-cover' : 'object-contain'
                   } ${imgLoaded ? 'opacity-100 scale-100' : 'opacity-0 scale-[0.98]'}`}

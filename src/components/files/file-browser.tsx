@@ -84,6 +84,12 @@ type FolderCacheEntry = {
   ts: number;
 };
 
+// Module-scoped so cached folder contents survive FileBrowser unmount/remount
+// (e.g. navigating Files → Admin → Files). Revisits render instantly from this
+// cache and still trigger a silent background refetch to stay fresh. Client-only
+// and per browser session; cleared on full page reload.
+const folderCache = new Map<string, FolderCacheEntry>();
+
 type SortOption = { by: string; dir: 'asc' | 'desc'; label: string };
 
 const SORT_OPTIONS: SortOption[] = [
@@ -205,7 +211,7 @@ export function FileBrowser({
   // P3: in-memory stale-while-revalidate cache keyed by folderId ("root" for the
   // top level). Lets revisited folders render instantly while a background
   // revalidation runs. Invalidated on mutations (see the mutation handlers).
-  const cacheRef = useRef<Map<string, FolderCacheEntry>>(new Map());
+  const cacheRef = useRef(folderCache);
 
   const loadContents = useCallback(
     async (folderId: string | null, opts?: { silent?: boolean }) => {
