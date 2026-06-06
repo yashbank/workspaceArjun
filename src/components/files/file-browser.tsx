@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { apiFetch } from '@/lib/api';
 import { sortFiles } from '@/lib/sort-files';
@@ -119,6 +120,10 @@ export function FileBrowser({
   canDiagnose?: boolean;
   canPermanentDelete?: boolean;
 }) {
+  const router = useRouter();
+  // After a mutation, invalidate the Router Cache so server-rendered sections
+  // (Dashboard, Activity, Trash) show fresh data on their next visit.
+  const syncSections = useCallback(() => router.refresh(), [router]);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [files, setFiles] = useState<FileItem[]>([]);
@@ -403,9 +408,10 @@ export function FileBrowser({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentFolderId]);
 
-  const { queue, startUpload, retry, cancel, dismiss } = useUpload(currentFolderId, () =>
-    loadContents(currentFolderId, { silent: true }),
-  );
+  const { queue, startUpload, retry, cancel, dismiss } = useUpload(currentFolderId, () => {
+    syncSections();
+    return loadContents(currentFolderId, { silent: true });
+  });
 
   async function handleFilesSelected(selectedFiles: File[]) {
     if (selectedFiles.length === 0) return;
@@ -555,6 +561,7 @@ export function FileBrowser({
     if (previewFile && selectedIds.has(previewFile.id)) setPreviewFile(null);
     setSelectedIds(new Set());
     toast('success', `${count} file${count > 1 ? 's' : ''} moved to trash`);
+    syncSections();
     await loadContents(currentFolderId, { silent: true });
     setBusyAction(false);
   }
@@ -566,6 +573,7 @@ export function FileBrowser({
     try {
       await apiFetch(`/api/folders/${id}`, { method: 'DELETE' });
       toast('success', 'Folder moved to trash');
+      syncSections();
       // A trashed folder + its subtree are no longer reachable; clear the cache.
       cacheRef.current.clear();
       await loadContents(currentFolderId, { silent: true });
@@ -584,6 +592,7 @@ export function FileBrowser({
       await apiFetch(`/api/files/${id}`, { method: 'DELETE' });
       if (previewFile?.id === id) setPreviewFile(null);
       toast('success', 'File moved to trash');
+      syncSections();
       await loadContents(currentFolderId, { silent: true });
     } catch (e: unknown) {
       toast('error', e instanceof Error ? e.message : 'Could not delete file');
@@ -600,6 +609,7 @@ export function FileBrowser({
       await apiFetch(`/api/files/${id}?permanent=true`, { method: 'DELETE' });
       if (previewFile?.id === id) setPreviewFile(null);
       toast('success', 'File deleted permanently');
+      syncSections();
       await loadContents(currentFolderId, { silent: true });
     } catch (e: unknown) {
       toast('error', e instanceof Error ? e.message : 'Could not delete file');
@@ -624,6 +634,7 @@ export function FileBrowser({
       const renamedFolder = renameTarget.type === 'folder';
       setRenameTarget(null);
       toast('success', `Renamed to "${newName}"`);
+      syncSections();
       // A renamed folder changes its breadcrumb label across its subtree.
       if (renamedFolder) cacheRef.current.clear();
       await loadContents(currentFolderId, { silent: true });
@@ -677,6 +688,7 @@ export function FileBrowser({
         });
       }
       toast('success', `${moveTarget.type === 'file' ? 'File' : 'Folder'} moved`);
+      syncSections();
       // The source folder (current) is revalidated below; invalidate the
       // destination too. A folder move shifts subtrees/breadcrumbs broadly, so
       // clear the whole cache to stay safe.
@@ -938,7 +950,10 @@ export function FileBrowser({
                     canMove={canMoveFiles}
                     canPermanentDelete={canPermanentDelete}
                     onPermanentDelete={handlePermanentDeleteFile}
-                    onVersionRestored={() => loadContents(currentFolderId, { silent: true })}
+                    onVersionRestored={() => {
+                      syncSections();
+                      loadContents(currentFolderId, { silent: true });
+                    }}
                   />
                 ) : (
                   <FileGrid
@@ -999,7 +1014,7 @@ export function FileBrowser({
       {showCreateFolder && (
         <CreateFolderDialog
           parentId={currentFolderId}
-          onCreated={() => { setShowCreateFolder(false); loadContents(currentFolderId, { silent: true }); }}
+          onCreated={() => { setShowCreateFolder(false); syncSections(); loadContents(currentFolderId, { silent: true }); }}
           onClose={() => setShowCreateFolder(false)}
         />
       )}
@@ -1015,7 +1030,7 @@ export function FileBrowser({
         <NewVersionDialog
           fileId={versionTarget.id}
           fileName={versionTarget.name}
-          onUploaded={() => { setVersionTarget(null); loadContents(currentFolderId, { silent: true }); }}
+          onUploaded={() => { setVersionTarget(null); syncSections(); loadContents(currentFolderId, { silent: true }); }}
           onClose={() => setVersionTarget(null)}
         />
       )}
@@ -1023,7 +1038,7 @@ export function FileBrowser({
         <FolderImportDialog
           files={folderImportFiles}
           parentFolderId={currentFolderId}
-          onComplete={() => { setFolderImportFiles(null); cacheRef.current.clear(); loadContents(currentFolderId, { silent: true }); }}
+          onComplete={() => { setFolderImportFiles(null); cacheRef.current.clear(); syncSections(); loadContents(currentFolderId, { silent: true }); }}
           onCancel={() => setFolderImportFiles(null)}
         />
       )}

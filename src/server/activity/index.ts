@@ -123,6 +123,10 @@ export async function listActivity(
 
   const { from, to } = parseActivityDateRange(query.from, query.to, query.tzOffset);
 
+  // The actor list (for the filter dropdown) is independent of the events query,
+  // so fetch it in parallel with the events chain instead of after it.
+  const actorsPromise = listActivityActors();
+
   const starredIds = query.starredOnly
     ? (
         await db.auditStar.findMany({
@@ -133,7 +137,7 @@ export async function listActivity(
     : null;
 
   if (query.starredOnly && starredIds?.length === 0) {
-    return { events: [], actors: await listActivityActors() };
+    return { events: [], actors: await actorsPromise };
   }
 
   const rows = await db.auditEvent.findMany({
@@ -170,7 +174,7 @@ export async function listActivity(
     events = events.filter((e) => matchesSearch(e, query.q!));
   }
 
-  return { events, actors: await listActivityActors() };
+  return { events, actors: await actorsPromise };
 }
 
 export async function listActivityActors(): Promise<ActivityActor[]> {

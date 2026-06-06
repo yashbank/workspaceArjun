@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { apiFetch } from '@/lib/api';
 import { formatBytes, formatDate, getFileTypeBadge } from '@/lib/file-utils';
 import {
@@ -52,6 +53,8 @@ export function TrashBrowser({ canPermanentDelete }: { canPermanentDelete: boole
     files.forEach((f) => keys.push(toKey('file', f.id)));
     return keys;
   }, [folders, files]);
+
+  const router = useRouter();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -116,6 +119,9 @@ export function TrashBrowser({ canPermanentDelete }: { canPermanentDelete: boole
     try {
       await apiFetch(`/api/trash/folders/${id}/restore`, { method: 'POST' });
       await load();
+      // Restores/deletes change Files, Dashboard counts and Activity — refresh
+      // those server-rendered sections.
+      router.refresh();
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : 'Could not restore folder.');
     } finally {
@@ -130,6 +136,9 @@ export function TrashBrowser({ canPermanentDelete }: { canPermanentDelete: boole
     try {
       await apiFetch(`/api/trash/folders/${id}`, { method: 'DELETE' });
       await load();
+      // Restores/deletes change Files, Dashboard counts and Activity — refresh
+      // those server-rendered sections.
+      router.refresh();
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : 'Could not delete folder.');
     } finally {
@@ -142,6 +151,9 @@ export function TrashBrowser({ canPermanentDelete }: { canPermanentDelete: boole
     try {
       await apiFetch(`/api/trash/files/${id}/restore`, { method: 'POST' });
       await load();
+      // Restores/deletes change Files, Dashboard counts and Activity — refresh
+      // those server-rendered sections.
+      router.refresh();
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : 'Could not restore file.');
     } finally {
@@ -162,6 +174,9 @@ export function TrashBrowser({ canPermanentDelete }: { canPermanentDelete: boole
     try {
       await apiFetch(`/api/trash/files/${id}`, { method: 'DELETE' });
       await load();
+      // Restores/deletes change Files, Dashboard counts and Activity — refresh
+      // those server-rendered sections.
+      router.refresh();
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : 'Could not delete file.');
     } finally {
@@ -180,6 +195,9 @@ export function TrashBrowser({ canPermanentDelete }: { canPermanentDelete: boole
         body: JSON.stringify({ action: 'restore', folderIds, fileIds }),
       });
       await load();
+      // Restores/deletes change Files, Dashboard counts and Activity — refresh
+      // those server-rendered sections.
+      router.refresh();
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : 'Bulk restore failed.');
     } finally {
@@ -206,6 +224,9 @@ export function TrashBrowser({ canPermanentDelete }: { canPermanentDelete: boole
         body: JSON.stringify({ action: 'permanent_delete', folderIds, fileIds }),
       });
       await load();
+      // Restores/deletes change Files, Dashboard counts and Activity — refresh
+      // those server-rendered sections.
+      router.refresh();
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : 'Bulk delete failed.');
     } finally {
