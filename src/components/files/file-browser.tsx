@@ -167,6 +167,8 @@ export function FileBrowser({
   const [previewFile, setPreviewFile] = useState<FileItem | null>(null);
   const [folderImportFiles, setFolderImportFiles] = useState<File[] | null>(null);
   const [moveTarget, setMoveTarget] = useState<{ id: string; name: string; type: 'file' | 'folder' } | null>(null);
+  // Bulk move — all selected file ids; null = dialog closed.
+  const [bulkMoveIds, setBulkMoveIds] = useState<string[] | null>(null);
 
   // Bulk select
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -552,18 +554,26 @@ export function FileBrowser({
     if (selectedIds.size === 0 || busyAction) return;
     if (!confirm(`Move ${selectedIds.size} file(s) to trash?`)) return;
     setBusyAction(true);
-    const count = selectedIds.size;
-    for (const id of selectedIds) {
-      try {
-        await apiFetch(`/api/files/${id}`, { method: 'DELETE' });
-      } catch { /* continue */ }
+    try {
+      const result = await apiFetch<{ succeeded: number; failed: number }>('/api/files/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete', fileIds: Array.from(selectedIds) }),
+      });
+      if (previewFile && selectedIds.has(previewFile.id)) setPreviewFile(null);
+      setSelectedIds(new Set());
+      if (result.failed > 0) {
+        toast('error', `${result.succeeded} moved to trash, ${result.failed} failed`);
+      } else {
+        toast('success', `${result.succeeded} file${result.succeeded === 1 ? '' : 's'} moved to trash`);
+      }
+      syncSections();
+      await loadContents(currentFolderId, { silent: true });
+    } catch (e: unknown) {
+      toast('error', e instanceof Error ? e.message : 'Could not delete files');
+    } finally {
+      setBusyAction(false);
     }
-    if (previewFile && selectedIds.has(previewFile.id)) setPreviewFile(null);
-    setSelectedIds(new Set());
-    toast('success', `${count} file${count > 1 ? 's' : ''} moved to trash`);
-    syncSections();
-    await loadContents(currentFolderId, { silent: true });
-    setBusyAction(false);
   }
 
   async function handleDeleteFolder(id: string) {
@@ -698,6 +708,34 @@ export function FileBrowser({
         cacheRef.current.clear();
       }
       setMoveTarget(null);
+      await loadContents(currentFolderId, { silent: true });
+    } catch (e: unknown) {
+      toast('error', e instanceof Error ? e.message : 'Move failed');
+    } finally {
+      setBusyAction(false);
+    }
+  }
+
+  async function handleBulkMoveConfirm(targetFolderId: string | null) {
+    if (!bulkMoveIds || busyAction) return;
+    setBusyAction(true);
+    try {
+      const result = await apiFetch<{ succeeded: number; failed: number }>('/api/files/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'move', fileIds: bulkMoveIds, targetFolderId }),
+      });
+      if (result.failed > 0) {
+        toast('error', `${result.succeeded} moved, ${result.failed} failed`);
+      } else {
+        toast('success', `${result.succeeded} file${result.succeeded === 1 ? '' : 's'} moved`);
+      }
+      syncSections();
+      // The source folder (current) is revalidated below; invalidate the
+      // destination too, mirroring the single-file move path.
+      cacheRef.current.delete(targetFolderId ?? 'root');
+      setBulkMoveIds(null);
+      setSelectedIds(new Set());
       await loadContents(currentFolderId, { silent: true });
     } catch (e: unknown) {
       toast('error', e instanceof Error ? e.message : 'Move failed');
@@ -849,11 +887,7 @@ export function FileBrowser({
                 <>
                   <div className="h-4 w-px bg-border" />
                   <button
-                    onClick={() => {
-                      const firstId = Array.from(selectedIds)[0];
-                      const firstFile = files.find((f) => f.id === firstId);
-                      if (firstFile) setMoveTarget({ id: firstId, name: firstFile.name, type: 'file' });
-                    }}
+                    onClick={() => setBulkMoveIds(Array.from(selectedIds))}
                     className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground transition-[color,background-color,transform] hover:bg-accent hover:text-foreground active:scale-[0.97]"
                   >
                     <FolderInput className="h-3.5 w-3.5" />
@@ -1055,6 +1089,13 @@ export function FileBrowser({
           itemName={moveTarget.name}
           onConfirm={handleMoveConfirm}
           onClose={() => setMoveTarget(null)}
+        />
+      )}
+      {bulkMoveIds && (
+        <MoveDialog
+          itemName={`${bulkMoveIds.length} file${bulkMoveIds.length === 1 ? '' : 's'}`}
+          onConfirm={handleBulkMoveConfirm}
+          onClose={() => setBulkMoveIds(null)}
         />
       )}
     </DropZone>
