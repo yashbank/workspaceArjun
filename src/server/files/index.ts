@@ -317,6 +317,71 @@ export async function softDeleteFile(id: string): Promise<void> {
   });
 }
 
+export type BulkFileResult = { succeeded: number; failed: number };
+
+/** Upper bound on ids per bulk request — matches the list page cap. */
+const BULK_FILES_LIMIT = FILES_LIST_LIMIT;
+
+/**
+ * Soft-deletes many files in one request. Reuses `softDeleteFile` per id so
+ * validation, permission gating and the per-file audit trail stay identical to
+ * the single-item path. Per-item failures are counted into the result instead
+ * of aborting the batch — partial success is reported, never hidden.
+ */
+export async function bulkSoftDeleteFiles(fileIds: string[]): Promise<BulkFileResult> {
+  await requirePermission('files:delete');
+  if (fileIds.length > BULK_FILES_LIMIT) {
+    throw new Error(`Too many files in one request (max ${BULK_FILES_LIMIT})`);
+  }
+
+  let succeeded = 0;
+  let failed = 0;
+  for (const id of fileIds) {
+    try {
+      await softDeleteFile(id);
+      succeeded++;
+    } catch {
+      failed++; // surfaced via the result; one bad id must not abort the rest
+    }
+  }
+  return { succeeded, failed };
+}
+
+/**
+ * Moves many files into one target folder. The target is validated once up
+ * front so a bad destination fails the whole request as a single error instead
+ * of N per-item failures; each move then reuses `moveFile` (same validation
+ * and audit as the single-item path) with partial success reported via counts.
+ */
+export async function bulkMoveFiles(
+  fileIds: string[],
+  targetFolderId: string | null,
+): Promise<BulkFileResult> {
+  await requirePermission('files:write');
+  if (fileIds.length > BULK_FILES_LIMIT) {
+    throw new Error(`Too many files in one request (max ${BULK_FILES_LIMIT})`);
+  }
+  if (targetFolderId) {
+    const folder = await db.folder.findFirst({
+      where: { id: targetFolderId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!folder) throw new Error('Target folder not found');
+  }
+
+  let succeeded = 0;
+  let failed = 0;
+  for (const id of fileIds) {
+    try {
+      await moveFile(id, targetFolderId);
+      succeeded++;
+    } catch {
+      failed++; // surfaced via the result; one bad id must not abort the rest
+    }
+  }
+  return { succeeded, failed };
+}
+
 /**
  * Permanently removes a file (and every version) regardless of trash state.
  * Storage blobs are deleted best-effort and storage usage is decremented.
