@@ -1,0 +1,71 @@
+/**
+ * Pure planning for nested folder import. Turns a flat `File[]` — where each file
+ * carries a `relativePath` (drag-drop) or `webkitRelativePath` (folder picker) —
+ * into the folder tree that must be created and the directory each file belongs
+ * in. No I/O and no React, so it is unit-testable in isolation.
+ */
+
+export type PlannedDir = {
+  /** Full slash-joined path from the import root, e.g. "Project/Docs". */
+  path: string;
+  /** Last path segment — the folder's display name. */
+  name: string;
+  /** Parent directory's full path, or null when it sits at the import target. */
+  parentPath: string | null;
+};
+
+export type PlannedFile = {
+  file: File;
+  /** Full path of the owning directory, or "" for the import target itself. */
+  dirPath: string;
+};
+
+export type ImportPlan = {
+  /** Top-level folder name (first path segment), for display. */
+  rootName: string;
+  /** Directories grouped by depth (`levels[0]` = shallowest) so a caller can
+   * create each level only after its parents already exist. */
+  levels: PlannedDir[][];
+  files: PlannedFile[];
+};
+
+function pathOf(file: File): string {
+  const f = file as File & { relativePath?: string; webkitRelativePath?: string };
+  return f.relativePath ?? f.webkitRelativePath ?? '';
+}
+
+export function planFolderImport(files: File[]): ImportPlan {
+  const dirs = new Map<string, PlannedDir>();
+  const placements: PlannedFile[] = [];
+  let rootName = 'Imported Folder';
+
+  for (const file of files) {
+    const parts = pathOf(file).split('/').filter(Boolean);
+    const dirParts = parts.slice(0, -1); // drop the filename
+    if (dirParts.length > 0 && rootName === 'Imported Folder') {
+      rootName = dirParts[0];
+    }
+    // Register every ancestor directory so intermediates that hold no direct
+    // file (e.g. "Assets" above "Assets/Icons/logo.png") are still created.
+    for (let i = 1; i <= dirParts.length; i++) {
+      const path = dirParts.slice(0, i).join('/');
+      if (!dirs.has(path)) {
+        dirs.set(path, {
+          path,
+          name: dirParts[i - 1],
+          parentPath: i === 1 ? null : dirParts.slice(0, i - 1).join('/'),
+        });
+      }
+    }
+    placements.push({ file, dirPath: dirParts.join('/') });
+  }
+
+  const all = [...dirs.values()];
+  const maxDepth = all.reduce((m, d) => Math.max(m, d.path.split('/').length), 0);
+  const levels: PlannedDir[][] = [];
+  for (let depth = 1; depth <= maxDepth; depth++) {
+    levels.push(all.filter((d) => d.path.split('/').length === depth));
+  }
+
+  return { rootName, levels, files: placements };
+}
