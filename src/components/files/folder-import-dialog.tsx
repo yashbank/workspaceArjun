@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { FolderUp, Loader2 } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { useToast } from '@/components/ui/toast';
@@ -37,26 +37,31 @@ export function FolderImportDialog({
   const [progress, setProgress] = useState(0);
   const { toast } = useToast();
 
-  const folderName = detectFolderName(files);
-  const fileCount = files.length;
+  // Plan once (pure): junk files are filtered and paths NFC-normalized here, so
+  // the header count and progress denominator reflect what will actually import.
+  const plan = useMemo(() => planFolderImport(files), [files]);
+  const folderName = plan.rootName;
+  const fileCount = plan.files.length;
 
   async function handleConfirm() {
     setUploading(true);
     setProgress(0);
 
     try {
-      const plan = planFolderImport(files);
-
       // Create folders level-by-level so a parent always exists before its
       // children. Folders within one level are independent, so create up to 3 at
       // once. A folder that fails to create is left out of the map; its children
-      // and the files under it are then skipped and counted as failures below.
+      // and the files under it are then skipped (and counted) below.
       const pathToId = new Map<string, string>();
+      let foldersFailed = 0;
       for (const level of plan.levels) {
         await runPool(level, 3, async (dir) => {
           const parentId =
             dir.parentPath === null ? parentFolderId : pathToId.get(dir.parentPath);
-          if (dir.parentPath !== null && parentId === undefined) return;
+          if (dir.parentPath !== null && parentId === undefined) {
+            foldersFailed++; // parent missing — this folder can't be created
+            return;
+          }
           try {
             const { id } = await apiFetch<{ id: string }>('/api/folders', {
               method: 'POST',
@@ -65,19 +70,20 @@ export function FolderImportDialog({
             });
             pathToId.set(dir.path, id);
           } catch {
-            // Leave unset — descendants and files under this path are skipped.
+            foldersFailed++;
           }
         });
       }
 
-      // Upload each file into its mapped folder (max 3 concurrent). A file whose
-      // directory could not be created is skipped and counted as failed.
+      // Upload each file into its mapped folder (max 3 concurrent). `skipped` =
+      // its folder could not be created; `failed` = the upload itself threw.
       let done = 0;
       let failed = 0;
+      let skipped = 0;
       await runPool(plan.files, 3, async ({ file, dirPath }) => {
         const folderId = dirPath === '' ? parentFolderId : pathToId.get(dirPath);
         if (dirPath !== '' && folderId === undefined) {
-          failed++;
+          skipped++;
           setProgress((p) => p + 1);
           return;
         }
@@ -94,10 +100,15 @@ export function FolderImportDialog({
         }
       });
 
-      if (failed > 0) {
-        toast('error', `Imported "${folderName}": ${done} uploaded, ${failed} failed`);
+      if (failed + skipped + foldersFailed > 0) {
+        const parts = [`${done} uploaded`];
+        if (failed > 0) parts.push(`${failed} failed`);
+        if (skipped > 0) parts.push(`${skipped} skipped`);
+        if (foldersFailed > 0)
+          parts.push(`${foldersFailed} folder${foldersFailed === 1 ? '' : 's'} not created`);
+        toast('error', `Imported "${folderName}": ${parts.join(', ')}`);
       } else {
-        toast('success', `Imported folder "${folderName}" with ${done} files`);
+        toast('success', `Imported folder "${folderName}" with ${done} file${done === 1 ? '' : 's'}`);
       }
       onComplete();
     } catch (e: unknown) {
@@ -132,7 +143,7 @@ export function FolderImportDialog({
             <div className="h-1.5 overflow-hidden rounded-full bg-muted/25">
               <div
                 className="h-full rounded-full bg-primary transition-all duration-300"
-                style={{ width: `${(progress / fileCount) * 100}%` }}
+                style={{ width: `${fileCount > 0 ? (progress / fileCount) * 100 : 0}%` }}
               />
             </div>
           </div>
@@ -158,21 +169,4 @@ export function FolderImportDialog({
       </div>
     </div>
   );
-}
-
-function detectFolderName(files: File[]): string {
-  const first = files[0];
-  if (!first) return 'Imported Folder';
-
-  const relativePath =
-    (first as File & { relativePath?: string }).relativePath ??
-    (first as File & { webkitRelativePath?: string }).webkitRelativePath ??
-    '';
-
-  if (relativePath) {
-    const parts = relativePath.split('/').filter(Boolean);
-    if (parts.length >= 2) return parts[0];
-  }
-
-  return 'Imported Folder';
 }

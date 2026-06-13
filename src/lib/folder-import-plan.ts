@@ -29,9 +29,23 @@ export type ImportPlan = {
   files: PlannedFile[];
 };
 
+/**
+ * Basenames that operating systems / file managers create automatically and
+ * that must never be imported as content. Exact-match allowlist only — genuine
+ * dotfiles (e.g. `.env`, `.gitignore`) are deliberately kept.
+ */
+export const IMPORT_JUNK_NAMES = new Set<string>([
+  '.DS_Store',
+  'Thumbs.db',
+  'desktop.ini',
+  '.localized',
+]);
+
 function pathOf(file: File): string {
   const f = file as File & { relativePath?: string; webkitRelativePath?: string };
-  return f.relativePath ?? f.webkitRelativePath ?? '';
+  // Normalize to NFC so macOS-decomposed (NFD) names collapse to the same folder
+  // keys/names as NFC sources, avoiding visually identical duplicate folders.
+  return (f.relativePath ?? f.webkitRelativePath ?? '').normalize('NFC');
 }
 
 export function planFolderImport(files: File[]): ImportPlan {
@@ -40,6 +54,7 @@ export function planFolderImport(files: File[]): ImportPlan {
   let rootName = 'Imported Folder';
 
   for (const file of files) {
+    if (IMPORT_JUNK_NAMES.has(file.name)) continue; // skip OS junk files
     const parts = pathOf(file).split('/').filter(Boolean);
     const dirParts = parts.slice(0, -1); // drop the filename
     if (dirParts.length > 0 && rootName === 'Imported Folder') {

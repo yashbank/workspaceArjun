@@ -512,13 +512,23 @@ export function FileBrowser({
     }
   }
 
-  function handleFilesDropped(droppedFiles: File[]) {
-    const hasRelativePath = droppedFiles.some(
-      (f) => 'relativePath' in f && typeof (f as File & { relativePath?: string }).relativePath === 'string',
-    );
-    if (hasRelativePath) {
-      setFolderImportFiles(droppedFiles);
-    } else {
+  function handleFilesDropped(
+    droppedFiles: File[],
+    meta: { directoryDropped: boolean; unreadableDir: boolean },
+  ) {
+    // A dropped folder the browser couldn't expand: tell the user explicitly
+    // rather than silently uploading a flattened/partial set.
+    if (meta.unreadableDir) {
+      toast(
+        'error',
+        'Your browser could not read the dropped folder. Use the "Upload folder" button instead.',
+      );
+    }
+    // Route by whether a directory was dropped — not by a per-file relativePath
+    // heuristic — so a capture hiccup can never silently flatten the hierarchy.
+    if (meta.directoryDropped) {
+      if (droppedFiles.length > 0) setFolderImportFiles(droppedFiles);
+    } else if (droppedFiles.length > 0) {
       handleFilesSelected(droppedFiles);
     }
   }

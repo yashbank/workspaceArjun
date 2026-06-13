@@ -3,11 +3,13 @@
 import { useCallback, useState } from 'react';
 import { Upload } from 'lucide-react';
 
+export type DropMeta = { directoryDropped: boolean; unreadableDir: boolean };
+
 export function DropZone({
   onFilesDropped,
   children,
 }: {
-  onFilesDropped: (files: File[]) => void;
+  onFilesDropped: (files: File[], meta: DropMeta) => void;
   children: React.ReactNode;
 }) {
   const [dragActive, setDragActive] = useState(false);
@@ -30,32 +32,50 @@ export function DropZone({
       setDragActive(false);
 
       const items = e.dataTransfer.items;
-      const files: File[] = [];
 
+      // DataTransferItem entries and files are only valid during the synchronous
+      // event dispatch — any await invalidates the list. Snapshot every item's
+      // entry AND file in one synchronous pass, then process with awaits.
+      const captured: { entry: FileSystemEntry | null; file: File | null }[] = [];
       if (items) {
         for (const item of Array.from(items)) {
-          if (item.kind === 'file') {
-            const entry =
-              'getAsEntry' in item
-                ? (item as DataTransferItem & { getAsEntry?: () => FileSystemEntry }).getAsEntry?.()
-                : 'webkitGetAsEntry' in item
-                  ? (item as DataTransferItem).webkitGetAsEntry?.()
-                  : null;
-
-            if (entry && entry.isDirectory) {
-              const dirFiles = await readDirectoryRecursive(entry as FileSystemDirectoryEntry, entry.name);
-              files.push(...dirFiles);
-            } else {
-              const file = item.getAsFile();
-              if (file) files.push(file);
-            }
-          }
+          if (item.kind !== 'file') continue;
+          const anyItem = item as DataTransferItem & { getAsEntry?: () => FileSystemEntry | null };
+          const entry =
+            (typeof anyItem.getAsEntry === 'function'
+              ? anyItem.getAsEntry()
+              : typeof item.webkitGetAsEntry === 'function'
+                ? item.webkitGetAsEntry()
+                : null) ?? null;
+          const file = entry && entry.isDirectory ? null : item.getAsFile();
+          captured.push({ entry, file });
         }
       } else {
-        files.push(...Array.from(e.dataTransfer.files));
+        for (const f of Array.from(e.dataTransfer.files)) {
+          captured.push({ entry: null, file: f });
+        }
       }
 
-      if (files.length > 0) onFilesDropped(files);
+      const files: File[] = [];
+      let directoryDropped = false;
+      let unreadableDir = false;
+      for (const c of captured) {
+        if (c.entry && c.entry.isDirectory) {
+          directoryDropped = true;
+          const dirFiles = await readDirectoryRecursive(c.entry as FileSystemDirectoryEntry, c.entry.name);
+          files.push(...dirFiles);
+        } else if (c.file) {
+          files.push(c.file);
+        } else {
+          // kind === 'file' but neither a readable entry nor a File: a folder the
+          // browser refused to expand (unsupported API / non-secure context).
+          unreadableDir = true;
+        }
+      }
+
+      if (files.length > 0 || unreadableDir) {
+        onFilesDropped(files, { directoryDropped, unreadableDir });
+      }
     },
     [onFilesDropped],
   );

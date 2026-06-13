@@ -86,3 +86,85 @@ describe('planFolderImport', () => {
     expect(plan.files[0].dirPath).toBe('');
   });
 });
+
+describe('planFolderImport — junk filtering', () => {
+  it('excludes OS junk files but keeps the real files', () => {
+    const plan = planFolderImport(
+      [
+        'Project/.DS_Store',
+        'Project/file1.pdf',
+        'Project/Docs/.DS_Store',
+        'Project/Docs/a.pdf',
+        'Project/Docs/Thumbs.db',
+        'Project/desktop.ini',
+        'Project/.localized',
+      ].map(dragFile),
+    );
+    const names = plan.files
+      .map((f) => (f.file as unknown as { name: string }).name)
+      .sort();
+    expect(names).toEqual(['a.pdf', 'file1.pdf']);
+    expect(names).not.toContain('.DS_Store');
+    expect(names).not.toContain('Thumbs.db');
+    expect(names).not.toContain('desktop.ini');
+    expect(names).not.toContain('.localized');
+  });
+
+  it('keeps genuine dotfiles such as .env', () => {
+    const plan = planFolderImport([dragFile('Project/.env'), dragFile('Project/app.js')]);
+    const names = plan.files
+      .map((f) => (f.file as unknown as { name: string }).name)
+      .sort();
+    expect(names).toEqual(['.env', 'app.js']);
+  });
+
+  it('still nests real files when junk is interleaved', () => {
+    const plan = planFolderImport(
+      ['Project/Docs/.DS_Store', 'Project/Docs/a.pdf'].map(dragFile),
+    );
+    expect(plan.files).toHaveLength(1);
+    expect(plan.files[0].dirPath).toBe('Project/Docs');
+    expect(plan.levels.flat().map((d) => d.path).sort()).toEqual([
+      'Project',
+      'Project/Docs',
+    ]);
+  });
+});
+
+describe('planFolderImport — NFC normalization', () => {
+  // Built from code points so this file stays ASCII:
+  // NFD = "Cafe" + combining acute accent (U+0301); NFC = precomposed form.
+  const NFD = 'Cafe' + String.fromCharCode(0x301);
+  const NFC = NFD.normalize('NFC');
+
+  it('normalizes a decomposed (NFD) path segment to NFC', () => {
+    expect(NFD).not.toBe(NFC); // sanity: the two encodings differ
+    const plan = planFolderImport([dragFile(`${NFD}/menu.txt`)]);
+    expect(plan.levels[0][0].path).toBe(NFC);
+    expect(plan.files[0].dirPath).toBe(NFC);
+  });
+
+  it('keeps a single folder regardless of NFD/NFC input form', () => {
+    const plan = planFolderImport([dragFile(`${NFD}/a.txt`), dragFile(`${NFC}/b.txt`)]);
+    expect(plan.levels[0]).toHaveLength(1);
+    expect(plan.levels[0][0].path).toBe(NFC);
+  });
+});
+
+describe('planFolderImport — nested hierarchy regression', () => {
+  it('preserves a 3-level tree end to end', () => {
+    const plan = planFolderImport(
+      ['Parent/file1', 'Parent/SubA/file2', 'Parent/SubA/SubB/file3'].map(dragFile),
+    );
+    expect(plan.levels.map((lvl) => lvl.map((d) => d.path))).toEqual([
+      ['Parent'],
+      ['Parent/SubA'],
+      ['Parent/SubA/SubB'],
+    ]);
+    const byName = (n: string) =>
+      plan.files.find((f) => (f.file as unknown as { name: string }).name === n)?.dirPath;
+    expect(byName('file1')).toBe('Parent');
+    expect(byName('file2')).toBe('Parent/SubA');
+    expect(byName('file3')).toBe('Parent/SubA/SubB');
+  });
+});
