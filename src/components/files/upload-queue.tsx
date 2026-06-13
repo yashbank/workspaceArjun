@@ -1,5 +1,6 @@
 'use client';
 
+import { memo } from 'react';
 import { CheckCircle2, AlertCircle, Loader2, X, RotateCcw, Upload } from 'lucide-react';
 import { formatBytes } from '@/lib/file-utils';
 
@@ -95,78 +96,91 @@ export function UploadQueue({
 
         <div className="max-h-[min(40vh,14rem)] overflow-y-auto overscroll-contain">
           {items.map((item) => (
-            <div
-              key={item.id}
-              className={`flex items-start gap-2.5 border-b border-border/35 px-3 py-2.5 last:border-0 sm:gap-3 sm:px-4 sm:py-3 ${
-                item.status === 'error'
-                  ? 'bg-destructive/5'
-                  : item.status === 'success'
-                    ? 'bg-emerald-500/5'
-                    : item.status === 'uploading'
-                      ? 'bg-primary/4'
-                      : ''
-              }`}
-            >
-              <StatusIcon status={item.status} />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-xs font-medium sm:text-[13px]" title={item.name}>
-                  {item.name}
-                </p>
-                {item.status === 'error' ? (
-                  <p className="mt-0.5 line-clamp-3 text-[10px] leading-snug text-destructive/90 sm:line-clamp-2">
-                    {item.error ?? 'Upload failed'}
-                  </p>
-                ) : (
-                  <p className="mt-0.5 text-[10px] tabular-nums text-muted-foreground/70">
-                    {item.size > 0 ? formatBytes(item.size) : 'Size unknown'}
-                    {item.status === 'uploading' && ` · ${item.progress ?? 0}%`}
-                    {item.status === 'pending' && ' · Waiting'}
-                    {item.status === 'success' && ' · Done'}
-                  </p>
-                )}
-                {item.status === 'uploading' && (
-                  <div className="mt-2 h-1 overflow-hidden rounded-full bg-muted/30">
-                    <div
-                      className="h-full rounded-full bg-primary transition-all duration-200"
-                      style={{ width: `${item.progress ?? 0}%` }}
-                    />
-                  </div>
-                )}
-              </div>
-              <div className="flex shrink-0 items-center gap-0.5 pt-0.5">
-                {item.status === 'error' && (
-                  <button
-                    type="button"
-                    onClick={() => onRetry(item.id)}
-                    className="rounded-lg p-2 text-muted-foreground transition-all hover:bg-accent hover:text-foreground active:scale-95"
-                    title="Retry"
-                    aria-label={`Retry ${item.name}`}
-                  >
-                    <RotateCcw className="h-4 w-4" />
-                  </button>
-                )}
-                {(item.status === 'pending' || item.status === 'uploading' || item.status === 'error') && (
-                  <button
-                    type="button"
-                    onClick={() => onCancel(item.id)}
-                    className="rounded-lg p-2 text-muted-foreground transition-all hover:bg-accent hover:text-foreground active:scale-95"
-                    title="Cancel"
-                    aria-label={`Cancel ${item.name}`}
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                )}
-                {item.status === 'success' && (
-                  <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" aria-hidden />
-                )}
-              </div>
-            </div>
+            <UploadRow key={item.id} item={item} onRetry={onRetry} onCancel={onCancel} />
           ))}
         </div>
       </div>
     </div>
   );
 }
+
+const UploadRow = memo(function UploadRow({
+  item,
+  onRetry,
+  onCancel,
+}: {
+  item: UploadItem;
+  onRetry: (id: string) => void;
+  onCancel: (id: string) => void;
+}) {
+  return (
+    <div
+      className={`flex items-start gap-2.5 border-b border-border/35 px-3 py-2.5 last:border-0 sm:gap-3 sm:px-4 sm:py-3 ${
+        item.status === 'error'
+          ? 'bg-destructive/5'
+          : item.status === 'success'
+            ? 'bg-emerald-500/5'
+            : item.status === 'uploading'
+              ? 'bg-primary/4'
+              : ''
+      }`}
+    >
+      <StatusIcon status={item.status} />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-xs font-medium sm:text-[13px]" title={item.name}>
+          {item.name}
+        </p>
+        {item.status === 'error' ? (
+          <p className="mt-0.5 line-clamp-3 text-[10px] leading-snug text-destructive/90 sm:line-clamp-2">
+            {item.error ?? 'Upload failed'}
+          </p>
+        ) : (
+          <p className="mt-0.5 text-[10px] tabular-nums text-muted-foreground/70">
+            {item.size > 0 ? formatBytes(item.size) : 'Size unknown'}
+            {item.status === 'uploading' && ` · ${item.progress ?? 0}%`}
+            {item.status === 'pending' && ' · Waiting'}
+            {item.status === 'success' && ' · Done'}
+          </p>
+        )}
+        {item.status === 'uploading' && (
+          <div className="mt-2 h-1 overflow-hidden rounded-full bg-muted/30">
+            <div
+              className="h-full rounded-full bg-primary transition-all duration-200"
+              style={{ width: `${item.progress ?? 0}%` }}
+            />
+          </div>
+        )}
+      </div>
+      <div className="flex shrink-0 items-center gap-0.5 pt-0.5">
+        {item.status === 'error' && (
+          <button
+            type="button"
+            onClick={() => onRetry(item.id)}
+            className="rounded-lg p-2 text-muted-foreground transition-all hover:bg-accent hover:text-foreground active:scale-95"
+            title="Retry"
+            aria-label={`Retry ${item.name}`}
+          >
+            <RotateCcw className="h-4 w-4" />
+          </button>
+        )}
+        {(item.status === 'pending' || item.status === 'uploading' || item.status === 'error') && (
+          <button
+            type="button"
+            onClick={() => onCancel(item.id)}
+            className="rounded-lg p-2 text-muted-foreground transition-all hover:bg-accent hover:text-foreground active:scale-95"
+            title="Cancel"
+            aria-label={`Cancel ${item.name}`}
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
+        {item.status === 'success' && (
+          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" aria-hidden />
+        )}
+      </div>
+    </div>
+  );
+});
 
 function StatusIcon({ status }: { status: UploadItem['status'] }) {
   switch (status) {

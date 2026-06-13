@@ -9,6 +9,9 @@ export function useUpload(folderId: string | null, onComplete: () => void) {
   const filesRef = useRef<Map<string, File>>(new Map());
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const cancelledRef = useRef<Set<string>>(new Set());
+  // Last displayed integer percent per upload id — gates redundant setQueue calls
+  // when many raw progress events map to the same visible percentage.
+  const lastProgressRef = useRef<Map<string, number>>(new Map());
 
   const uploadFile = useCallback(
     async (id: string, file: File, targetFolderId: string | null) => {
@@ -16,6 +19,9 @@ export function useUpload(folderId: string | null, onComplete: () => void) {
 
       const controller = new AbortController();
       abortControllersRef.current.set(id, controller);
+
+      // Progress visually resets to 0; seed the gate so a retry re-emits from 0.
+      lastProgressRef.current.set(id, 0);
 
       setQueue((q) =>
         q.map((i) =>
@@ -28,6 +34,10 @@ export function useUpload(folderId: string | null, onComplete: () => void) {
           file,
           targetFolderId,
           (percent) => {
+            // Equality gate: skip the state update when the displayed integer
+            // percent is unchanged (raw progress events fire far more often).
+            if (lastProgressRef.current.get(id) === percent) return;
+            lastProgressRef.current.set(id, percent);
             setQueue((q) =>
               q.map((i) => (i.id === id ? { ...i, progress: percent } : i)),
             );
@@ -48,6 +58,7 @@ export function useUpload(folderId: string | null, onComplete: () => void) {
         );
       } finally {
         abortControllersRef.current.delete(id);
+        lastProgressRef.current.delete(id);
       }
     },
     [],
@@ -111,6 +122,7 @@ export function useUpload(folderId: string | null, onComplete: () => void) {
     setQueue((q) => q.filter((i) => i.id !== id));
     filesRef.current.delete(id);
     abortControllersRef.current.delete(id);
+    lastProgressRef.current.delete(id);
   }, []);
 
   const cancelAll = useCallback(() => {
@@ -120,6 +132,7 @@ export function useUpload(folderId: string | null, onComplete: () => void) {
     }
     abortControllersRef.current.clear();
     filesRef.current.clear();
+    lastProgressRef.current.clear();
     setQueue([]);
   }, []);
 
