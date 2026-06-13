@@ -70,11 +70,23 @@ export function useUpload(folderId: string | null, onComplete: () => void) {
 
       setQueue((prev) => [...prev, ...items]);
 
-      for (const item of items) {
-        if (cancelledRef.current.has(item.id)) continue;
-        const file = filesRef.current.get(item.id);
-        if (file) await uploadFile(item.id, file, folderId);
+      // Bounded-concurrency pool: up to 3 files upload at once. Workers pull from
+      // a shared cursor until the list drains. Per-file progress, cancellation
+      // (cancelledRef + AbortController inside uploadFile) and the single
+      // onComplete after all finish are unchanged from the previous serial loop.
+      const MAX_CONCURRENT = 3;
+      let cursor = 0;
+      async function worker() {
+        while (cursor < items.length) {
+          const item = items[cursor++];
+          if (cancelledRef.current.has(item.id)) continue;
+          const file = filesRef.current.get(item.id);
+          if (file) await uploadFile(item.id, file, folderId);
+        }
       }
+      await Promise.all(
+        Array.from({ length: Math.min(MAX_CONCURRENT, items.length) }, () => worker()),
+      );
 
       onComplete();
     },

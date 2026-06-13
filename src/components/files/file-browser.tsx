@@ -423,22 +423,31 @@ export function FileBrowser({
     // different folder is allowed). Non-conflicting files upload right away;
     // conflicts are queued for the resolution dialog.
     const qs = currentFolderId ? `&folderId=${currentFolderId}` : '';
+
+    // Check every file for a same-name conflict in parallel (cheap metadata GETs).
+    // Order is preserved so the conflict queue resolves in the same sequence as
+    // the previous serial loop; a failed check falls through to a normal upload.
+    const checks = await Promise.all(
+      selectedFiles.map(async (file): Promise<{ file: File; existingFileId?: string }> => {
+        try {
+          const check = await apiFetch<{ exists: boolean; existingFileId?: string }>(
+            `/api/files/check-duplicate?name=${encodeURIComponent(file.name)}${qs}`,
+          );
+          if (check.exists && check.existingFileId) {
+            return { file, existingFileId: check.existingFileId };
+          }
+        } catch {
+          // If the check fails, fall through and upload normally.
+        }
+        return { file };
+      }),
+    );
+
     const conflicts: { file: File; existingFileId: string }[] = [];
     const clear: File[] = [];
-
-    for (const file of selectedFiles) {
-      try {
-        const check = await apiFetch<{ exists: boolean; existingFileId?: string }>(
-          `/api/files/check-duplicate?name=${encodeURIComponent(file.name)}${qs}`,
-        );
-        if (check.exists && check.existingFileId) {
-          conflicts.push({ file, existingFileId: check.existingFileId });
-          continue;
-        }
-      } catch {
-        // If the check fails, fall through and upload normally.
-      }
-      clear.push(file);
+    for (const r of checks) {
+      if (r.existingFileId) conflicts.push({ file: r.file, existingFileId: r.existingFileId });
+      else clear.push(r.file);
     }
 
     if (clear.length > 0) {
