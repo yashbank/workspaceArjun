@@ -12,7 +12,7 @@ import {
   Star,
   Pen,
 } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { memo, useRef, useState } from 'react';
 import { getExtension, getFileTypeBadge, formatBytes, formatDate } from '@/lib/file-utils';
 import { FileMediaThumbnail } from './file-media-thumbnail';
 import { PremiumFileFallback } from './premium-file-fallback';
@@ -50,7 +50,7 @@ function FileTypeIcon({ filename }: { filename: string }) {
   return <FileIcon className={`${cls} text-muted-foreground`} />;
 }
 
-export function FileTable({
+export const FileTable = memo(function FileTable({
   files,
   onRename,
   onDelete,
@@ -102,17 +102,17 @@ export function FileTable({
               <FileRowWithVersions
                 key={file.id}
                 file={file}
-                onRename={() => onRename(file)}
-                onDelete={() => onDelete(file.id)}
-                onDownload={() => onDownload(file.id)}
-                onNewVersion={() => onNewVersion(file)}
-                onPreview={onPreview ? () => onPreview(file) : undefined}
-                onMove={onMove ? () => onMove(file) : undefined}
-                onFavorite={onFavorite ? () => onFavorite(file.id) : undefined}
+                onRename={onRename}
+                onDelete={onDelete}
+                onDownload={onDownload}
+                onNewVersion={onNewVersion}
+                onPreview={onPreview}
+                onMove={onMove}
+                onFavorite={onFavorite}
                 isFavorited={favorites?.has(file.id) ?? false}
                 canMove={canMove}
                 canPermanentDelete={canPermanentDelete}
-                onPermanentDelete={onPermanentDelete ? () => onPermanentDelete(file.id) : undefined}
+                onPermanentDelete={onPermanentDelete}
                 onVersionRestored={onVersionRestored}
               />
             ))}
@@ -121,9 +121,13 @@ export function FileTable({
       </div>
     </div>
   );
-}
+});
 
-function FileRowWithVersions({
+// Memoized so a parent re-render (selection, favorites, upload progress) only
+// repaints rows whose own props actually changed. The handlers below are the
+// parent's STABLE callbacks (same identity for every row); each row binds them
+// to its own `file`/`id` internally, so passing them through does not defeat memo.
+const FileRowWithVersions = memo(function FileRowWithVersions({
   file,
   onRename,
   onDelete,
@@ -139,17 +143,17 @@ function FileRowWithVersions({
   onVersionRestored,
 }: {
   file: FileItem;
-  onRename: () => void;
-  onDelete: () => void;
-  onDownload: () => void;
-  onNewVersion: () => void;
-  onPreview?: () => void;
-  onMove?: () => void;
-  onFavorite?: () => void;
+  onRename: (f: FileItem) => void;
+  onDelete: (id: string) => void;
+  onDownload: (id: string) => void;
+  onNewVersion: (f: FileItem) => void;
+  onPreview?: (f: FileItem) => void;
+  onMove?: (f: FileItem) => void;
+  onFavorite?: (id: string) => void;
   isFavorited: boolean;
   canMove: boolean;
   canPermanentDelete: boolean;
-  onPermanentDelete?: () => void;
+  onPermanentDelete?: (id: string) => void;
   onVersionRestored?: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -164,7 +168,7 @@ function FileRowWithVersions({
 
   return (
     <>
-      <tr className="group border-b border-border/30 transition-colors duration-150 hover:bg-accent/15 last:border-0" onDoubleClick={onPreview}>
+      <tr className="group border-b border-border/30 transition-colors duration-150 hover:bg-accent/15 last:border-0" onDoubleClick={onPreview ? () => onPreview(file) : undefined}>
         <td className="px-2 py-2.5">
           <button
             onClick={() => setExpanded(!expanded)}
@@ -227,17 +231,17 @@ function FileRowWithVersions({
             open={menuOpen}
             onClose={() => setMenuOpen(false)}
             anchorRef={menuBtnRef}
-            onPreview={onPreview}
-            onDownload={onDownload}
-            onMove={onMove}
+            onPreview={onPreview ? () => onPreview(file) : undefined}
+            onDownload={() => onDownload(file.id)}
+            onMove={onMove ? () => onMove(file) : undefined}
             canMove={canMove}
-            onRename={onRename}
+            onRename={() => onRename(file)}
             onVersions={() => setExpanded(true)}
-            onNewVersion={onNewVersion}
-            onFavorite={onFavorite}
+            onNewVersion={() => onNewVersion(file)}
+            onFavorite={onFavorite ? () => onFavorite(file.id) : undefined}
             isFavorited={isFavorited}
-            onTrash={onDelete}
-            onPermanentDelete={onPermanentDelete}
+            onTrash={() => onDelete(file.id)}
+            onPermanentDelete={onPermanentDelete ? () => onPermanentDelete(file.id) : undefined}
             canPermanentDelete={canPermanentDelete}
           />
         </td>
@@ -256,5 +260,5 @@ function FileRowWithVersions({
       )}
     </>
   );
-}
+});
 

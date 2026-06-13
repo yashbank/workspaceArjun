@@ -33,11 +33,11 @@ export const FolderGrid = memo(function FolderGrid({
           <FolderCard
             key={folder.id}
             folder={folder}
-            onOpen={() => onOpen(folder.id)}
-            onRename={() => onRename(folder)}
-            onDelete={() => onDelete(folder.id)}
-            onMove={onMove ? () => onMove(folder) : undefined}
-            onDownload={onDownload ? () => onDownload(folder.id) : undefined}
+            onOpen={onOpen}
+            onRename={onRename}
+            onDelete={onDelete}
+            onMove={onMove}
+            onDownload={onDownload}
           />
         ))}
       </div>
@@ -45,7 +45,9 @@ export const FolderGrid = memo(function FolderGrid({
   );
 });
 
-function FolderCard({
+// Memoized + binds the parent's stable (id)/(folder) callbacks to its own folder
+// internally, so a sibling change or parent re-render doesn't repaint every card.
+const FolderCard = memo(function FolderCard({
   folder,
   onOpen,
   onRename,
@@ -54,11 +56,11 @@ function FolderCard({
   onDownload,
 }: {
   folder: FolderItem;
-  onOpen: () => void;
-  onRename: () => void;
-  onDelete: () => void;
-  onMove?: () => void;
-  onDownload?: () => void;
+  onOpen: (id: string) => void;
+  onRename: (f: FolderItem) => void;
+  onDelete: (id: string) => void;
+  onMove?: (f: FolderItem) => void;
+  onDownload?: (id: string) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuBtnRef = useRef<HTMLButtonElement>(null);
@@ -66,7 +68,7 @@ function FolderCard({
 
   return (
     <div className="bpp-card-interactive group relative flex items-center gap-3 px-4 py-3.5 hover:-translate-y-0.5">
-      <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+      <button type="button" onClick={() => onOpen(folder.id)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent ring-1 ring-border/40">
           <Folder className="h-5 w-5 text-foreground/70" />
         </div>
@@ -106,7 +108,7 @@ function FolderCard({
             onMouseDown={(e) => e.stopPropagation()}
             onClick={() => {
               setMenuOpen(false);
-              onDownload();
+              onDownload(folder.id);
             }}
             className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] transition-colors hover:bg-accent"
           >
@@ -120,7 +122,7 @@ function FolderCard({
             onMouseDown={(e) => e.stopPropagation()}
             onClick={() => {
               setMenuOpen(false);
-              onMove();
+              onMove(folder);
             }}
             className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] transition-colors hover:bg-accent"
           >
@@ -133,7 +135,7 @@ function FolderCard({
           onMouseDown={(e) => e.stopPropagation()}
           onClick={() => {
             setMenuOpen(false);
-            onRename();
+            onRename(folder);
           }}
           className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] transition-colors hover:bg-accent"
         >
@@ -146,7 +148,7 @@ function FolderCard({
           onMouseDown={(e) => e.stopPropagation()}
           onClick={() => {
             setMenuOpen(false);
-            onDelete();
+            onDelete(folder.id);
           }}
           className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] text-destructive transition-colors hover:bg-destructive/8"
         >
@@ -155,4 +157,4 @@ function FolderCard({
       </FixedMenu>
     </div>
   );
-}
+});

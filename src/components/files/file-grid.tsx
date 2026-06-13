@@ -96,17 +96,17 @@ export const FileGrid = memo(function FileGrid({
             file={file}
             selected={selectedIds.has(file.id)}
             favorited={favorites.has(file.id)}
-            onSelect={() => onToggleSelect(file.id)}
-            onOpen={() => onPreview(file)}
-            onDownload={() => onDownload(file.id)}
-            onRename={() => onRename(file)}
-            onTrash={() => onDelete(file.id)}
-            onNewVersion={() => onNewVersion(file)}
-            onMove={onMove ? () => onMove(file) : undefined}
-            onFavorite={onFavorite ? () => onFavorite(file.id) : undefined}
+            onSelect={onToggleSelect}
+            onOpen={onPreview}
+            onDownload={onDownload}
+            onRename={onRename}
+            onTrash={onDelete}
+            onNewVersion={onNewVersion}
+            onMove={onMove}
+            onFavorite={onFavorite}
             canMove={canMove}
             canPermanentDelete={canPermanentDelete}
-            onPermanentDelete={onPermanentDelete ? () => onPermanentDelete(file.id) : undefined}
+            onPermanentDelete={onPermanentDelete}
           />
         ))}
       </div>
@@ -133,17 +133,17 @@ const FileCard = memo(function FileCard({
   file: FileItem;
   selected: boolean;
   favorited: boolean;
-  onSelect: () => void;
-  onOpen: () => void;
-  onDownload: () => void;
-  onRename: () => void;
-  onTrash: () => void;
-  onNewVersion: () => void;
-  onMove?: () => void;
-  onFavorite?: () => void;
+  onSelect: (id: string) => void;
+  onOpen: (f: FileItem) => void;
+  onDownload: (id: string) => void;
+  onRename: (f: FileItem) => void;
+  onTrash: (id: string) => void;
+  onNewVersion: (f: FileItem) => void;
+  onMove?: (f: FileItem) => void;
+  onFavorite?: (id: string) => void;
   canMove: boolean;
   canPermanentDelete: boolean;
-  onPermanentDelete?: () => void;
+  onPermanentDelete?: (id: string) => void;
 }) {
   const ext = getExtension(file.name);
   const badge = getFileTypeBadge(file.name);
@@ -173,7 +173,7 @@ const FileCard = memo(function FileCard({
           : 'border-border/55 hover:border-border/80'
       }`}
       onContextMenu={handleContext}
-      onDoubleClick={onOpen}
+      onDoubleClick={() => onOpen(file)}
     >
       <div
         className={`relative flex aspect-[4/3] items-center justify-center overflow-hidden bg-gradient-to-br ${cardColor}`}
@@ -199,7 +199,7 @@ const FileCard = memo(function FileCard({
               : 'border-white/60 bg-white/55 opacity-0 group-hover:opacity-100 dark:border-white/25 dark:bg-black/45'
           }`}
         >
-          <input type="checkbox" checked={selected} onChange={onSelect} className="sr-only" />
+          <input type="checkbox" checked={selected} onChange={() => onSelect(file.id)} className="sr-only" />
           {selected && (
             <svg
               viewBox="0 0 16 16"
@@ -250,17 +250,17 @@ const FileCard = memo(function FileCard({
         open={menuOpen}
         onClose={() => setMenuOpen(false)}
         anchorRef={menuBtnRef}
-        onPreview={onOpen}
-        onDownload={onDownload}
-        onMove={onMove}
+        onPreview={() => onOpen(file)}
+        onDownload={() => onDownload(file.id)}
+        onMove={onMove ? () => onMove(file) : undefined}
         canMove={canMove}
-        onRename={onRename}
-        onVersions={onOpen}
-        onNewVersion={onNewVersion}
-        onFavorite={onFavorite}
+        onRename={() => onRename(file)}
+        onVersions={() => onOpen(file)}
+        onNewVersion={() => onNewVersion(file)}
+        onFavorite={onFavorite ? () => onFavorite(file.id) : undefined}
         isFavorited={favorited}
-        onTrash={onTrash}
-        onPermanentDelete={onPermanentDelete}
+        onTrash={() => onTrash(file.id)}
+        onPermanentDelete={onPermanentDelete ? () => onPermanentDelete(file.id) : undefined}
         canPermanentDelete={canPermanentDelete}
       />
     </div>
