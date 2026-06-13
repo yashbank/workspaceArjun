@@ -28,6 +28,17 @@ export type CleanupExecuteResult = {
   dryRun: boolean;
 };
 
+/**
+ * A version-less (`no_version`) row younger than this may be an upload still in
+ * progress: `initFileUpload` creates the File row before the bytes land, and
+ * `completeFileUpload` only sets `currentVersionId` once they do. Reclaiming such
+ * a row mid-upload would make `completeFileUpload` fail and lose the file, so
+ * recent version-less rows are left alone. Genuinely abandoned uploads age past
+ * this window and are still cleaned. Only `no_version` is transient — every other
+ * reason is real corruption and is never age-gated.
+ */
+const NO_VERSION_GRACE_MS = 60 * 60 * 1000; // 1 hour
+
 async function loadFilesForScan(includeTrash: boolean) {
   return db.file.findMany({
     where: includeTrash ? {} : { deletedAt: null },
@@ -51,6 +62,16 @@ export async function scanInvalidFiles(options?: {
       reason = await getStorageFileHealth(file);
     }
     if (reason === 'ok') continue;
+
+    // An upload in progress looks exactly like `no_version` between init and
+    // complete; don't reclaim it until it has aged past the grace window. All
+    // other reasons are genuine corruption and are flagged regardless of age.
+    if (
+      reason === 'no_version' &&
+      Date.now() - file.createdAt.getTime() < NO_VERSION_GRACE_MS
+    ) {
+      continue;
+    }
 
     invalid.push({
       fileId: file.id,
