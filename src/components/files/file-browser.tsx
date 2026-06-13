@@ -187,6 +187,22 @@ export function FileBrowser({
   } | null>(null);
   const conflictQueueRef = useRef<{ file: File; existingFileId: string }[]>([]);
 
+  // Mirror volatile state into refs so the list-facing handlers below can be
+  // wrapped in useCallback with stable (often empty) dependency lists. This keeps
+  // their identities constant for the component's lifetime, which is what lets
+  // the memoized FileTable / FileGrid / FolderGrid skip re-rendering on unrelated
+  // state changes (selection, favorites, and especially upload-progress ticks).
+  const currentFolderIdRef = useRef(currentFolderId);
+  currentFolderIdRef.current = currentFolderId;
+  const previewFileRef = useRef(previewFile);
+  previewFileRef.current = previewFile;
+  const busyActionRef = useRef(busyAction);
+  busyActionRef.current = busyAction;
+  const favoritesRef = useRef(favorites);
+  favoritesRef.current = favorites;
+  const selectedIdsRef = useRef(selectedIds);
+  selectedIdsRef.current = selectedIds;
+
   const fileIds = useMemo(() => files.map((f) => f.id), [files]);
 
   // Client-side sorted view of the loaded files. When the list is truncated at
@@ -410,10 +426,17 @@ export function FileBrowser({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentFolderId]);
 
-  const { queue, startUpload, retry, cancel, dismiss } = useUpload(currentFolderId, () => {
+  // Stable onComplete so useUpload's startUpload/retry keep a constant identity
+  // (reads the live folder id from a ref instead of closing over it).
+  const handleUploadComplete = useCallback(() => {
     syncSections();
-    return loadContents(currentFolderId, { silent: true });
-  });
+    return loadContents(currentFolderIdRef.current, { silent: true });
+  }, [syncSections, loadContents]);
+
+  const { queue, startUpload, retry, cancel, dismiss } = useUpload(
+    currentFolderId,
+    handleUploadComplete,
+  );
 
   async function handleFilesSelected(selectedFiles: File[]) {
     if (selectedFiles.length === 0) return;
@@ -533,23 +556,23 @@ export function FileBrowser({
     }
   }
 
-  function navigateTo(folderId: string | null) {
+  const navigateTo = useCallback((folderId: string | null) => {
     setCurrentFolderId(folderId);
     setPreviewFile(null);
     setSelectedIds(new Set());
-  }
+  }, []);
 
-  function toggleSelect(id: string) {
+  const toggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
-  }
+  }, []);
 
-  async function toggleFavorite(fileId: string) {
-    const isFav = favorites.has(fileId);
+  const toggleFavorite = useCallback(async (fileId: string) => {
+    const isFav = favoritesRef.current.has(fileId);
     try {
       if (isFav) {
         await apiFetch('/api/favorites', {
@@ -567,19 +590,20 @@ export function FileBrowser({
         setFavorites((prev) => new Set(prev).add(fileId));
       }
     } catch { /* ignore */ }
-  }
+  }, []);
 
-  async function handleBulkDelete() {
-    if (selectedIds.size === 0 || busyAction) return;
-    if (!confirm(`Move ${selectedIds.size} file(s) to trash?`)) return;
+  const handleBulkDelete = useCallback(async () => {
+    if (selectedIdsRef.current.size === 0 || busyActionRef.current) return;
+    if (!confirm(`Move ${selectedIdsRef.current.size} file(s) to trash?`)) return;
     setBusyAction(true);
     try {
       const result = await apiFetch<{ succeeded: number; failed: number }>('/api/files/bulk', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'delete', fileIds: Array.from(selectedIds) }),
+        body: JSON.stringify({ action: 'delete', fileIds: Array.from(selectedIdsRef.current) }),
       });
-      if (previewFile && selectedIds.has(previewFile.id)) setPreviewFile(null);
+      const preview = previewFileRef.current;
+      if (preview && selectedIdsRef.current.has(preview.id)) setPreviewFile(null);
       setSelectedIds(new Set());
       if (result.failed > 0) {
         toast('error', `${result.succeeded} moved to trash, ${result.failed} failed`);
@@ -587,16 +611,16 @@ export function FileBrowser({
         toast('success', `${result.succeeded} file${result.succeeded === 1 ? '' : 's'} moved to trash`);
       }
       syncSections();
-      await loadContents(currentFolderId, { silent: true });
+      await loadContents(currentFolderIdRef.current, { silent: true });
     } catch (e: unknown) {
       toast('error', e instanceof Error ? e.message : 'Could not delete files');
     } finally {
       setBusyAction(false);
     }
-  }
+  }, [toast, syncSections, loadContents]);
 
-  async function handleDeleteFolder(id: string) {
-    if (busyAction) return;
+  const handleDeleteFolder = useCallback(async (id: string) => {
+    if (busyActionRef.current) return;
     if (!confirm('Move this folder to trash?')) return;
     setBusyAction(true);
     try {
@@ -605,47 +629,47 @@ export function FileBrowser({
       syncSections();
       // A trashed folder + its subtree are no longer reachable; clear the cache.
       cacheRef.current.clear();
-      await loadContents(currentFolderId, { silent: true });
+      await loadContents(currentFolderIdRef.current, { silent: true });
     } catch (e: unknown) {
       toast('error', e instanceof Error ? e.message : 'Could not delete folder');
     } finally {
       setBusyAction(false);
     }
-  }
+  }, [toast, syncSections, loadContents]);
 
-  async function handleDeleteFile(id: string) {
-    if (busyAction) return;
+  const handleDeleteFile = useCallback(async (id: string) => {
+    if (busyActionRef.current) return;
     if (!confirm('Move this file to trash?')) return;
     setBusyAction(true);
     try {
       await apiFetch(`/api/files/${id}`, { method: 'DELETE' });
-      if (previewFile?.id === id) setPreviewFile(null);
+      if (previewFileRef.current?.id === id) setPreviewFile(null);
       toast('success', 'File moved to trash');
       syncSections();
-      await loadContents(currentFolderId, { silent: true });
+      await loadContents(currentFolderIdRef.current, { silent: true });
     } catch (e: unknown) {
       toast('error', e instanceof Error ? e.message : 'Could not delete file');
     } finally {
       setBusyAction(false);
     }
-  }
+  }, [toast, syncSections, loadContents]);
 
-  async function handlePermanentDeleteFile(id: string) {
-    if (busyAction) return;
+  const handlePermanentDeleteFile = useCallback(async (id: string) => {
+    if (busyActionRef.current) return;
     if (!confirm('Delete this file permanently? This cannot be undone.')) return;
     setBusyAction(true);
     try {
       await apiFetch(`/api/files/${id}?permanent=true`, { method: 'DELETE' });
-      if (previewFile?.id === id) setPreviewFile(null);
+      if (previewFileRef.current?.id === id) setPreviewFile(null);
       toast('success', 'File deleted permanently');
       syncSections();
-      await loadContents(currentFolderId, { silent: true });
+      await loadContents(currentFolderIdRef.current, { silent: true });
     } catch (e: unknown) {
       toast('error', e instanceof Error ? e.message : 'Could not delete file');
     } finally {
       setBusyAction(false);
     }
-  }
+  }, [toast, syncSections, loadContents]);
 
   async function handleRenameConfirm(newName: string) {
     if (!renameTarget || busyAction) return;
@@ -674,7 +698,7 @@ export function FileBrowser({
     }
   }
 
-  async function handleDownloadFile(id: string) {
+  const handleDownloadFile = useCallback(async (id: string) => {
     try {
       const res = await fetch(`/api/files/${id}/download`);
       if (!res.ok) {
@@ -697,7 +721,7 @@ export function FileBrowser({
     } catch {
       toast('error', 'Download failed — check your connection');
     }
-  }
+  }, [toast]);
 
   async function handleMoveConfirm(targetFolderId: string | null) {
     if (!moveTarget || busyAction) return;
@@ -763,10 +787,38 @@ export function FileBrowser({
     }
   }
 
-  function handleDownloadFolder(folderId: string) {
+  const handleDownloadFolder = useCallback((folderId: string) => {
     toast('info', 'Preparing ZIP download…');
     window.open(`/api/folders/${folderId}/download`, '_blank');
-  }
+  }, [toast]);
+
+  // Stable dialog-openers and the version-restored handler passed to the
+  // memoized list components (replace the per-render inline arrows below).
+  const openFileRename = useCallback(
+    (f: FileItem) => setRenameTarget({ type: 'file', id: f.id, name: f.name }),
+    [],
+  );
+  const openFileMove = useCallback(
+    (f: FileItem) => setMoveTarget({ id: f.id, name: f.name, type: 'file' }),
+    [],
+  );
+  const openNewVersion = useCallback(
+    (f: FileItem) => setVersionTarget({ id: f.id, name: f.name }),
+    [],
+  );
+  const openPreview = useCallback((f: FileItem) => setPreviewFile(f), []);
+  const openFolderRename = useCallback(
+    (f: { id: string; name: string }) => setRenameTarget({ type: 'folder', id: f.id, name: f.name }),
+    [],
+  );
+  const openFolderMove = useCallback(
+    (f: { id: string; name: string }) => setMoveTarget({ id: f.id, name: f.name, type: 'folder' }),
+    [],
+  );
+  const handleVersionRestored = useCallback(() => {
+    syncSections();
+    loadContents(currentFolderIdRef.current, { silent: true });
+  }, [syncSections, loadContents]);
 
   // "Move to folder" is possible whenever any folder exists to move into: either
   // we're inside a folder, or the current (root) level already shows folders.
@@ -981,9 +1033,9 @@ export function FileBrowser({
                 <FolderGrid
                   folders={folders}
                   onOpen={navigateTo}
-                  onRename={(f) => setRenameTarget({ type: 'folder', id: f.id, name: f.name })}
+                  onRename={openFolderRename}
                   onDelete={handleDeleteFolder}
-                  onMove={(f) => setMoveTarget({ id: f.id, name: f.name, type: 'folder' })}
+                  onMove={openFolderMove}
                   onDownload={handleDownloadFolder}
                 />
               )}
@@ -992,31 +1044,28 @@ export function FileBrowser({
                 {viewMode === 'list' ? (
                   <FileTable
                     files={sortedFiles}
-                    onRename={(f) => setRenameTarget({ type: 'file', id: f.id, name: f.name })}
+                    onRename={openFileRename}
                     onDelete={handleDeleteFile}
                     onDownload={handleDownloadFile}
-                    onNewVersion={(f) => setVersionTarget({ id: f.id, name: f.name })}
-                    onPreview={(f) => setPreviewFile(f)}
-                    onMove={(f) => setMoveTarget({ id: f.id, name: f.name, type: 'file' })}
+                    onNewVersion={openNewVersion}
+                    onPreview={openPreview}
+                    onMove={openFileMove}
                     onFavorite={toggleFavorite}
                     favorites={favorites}
                     canMove={canMoveFiles}
                     canPermanentDelete={canPermanentDelete}
                     onPermanentDelete={handlePermanentDeleteFile}
-                    onVersionRestored={() => {
-                      syncSections();
-                      loadContents(currentFolderId, { silent: true });
-                    }}
+                    onVersionRestored={handleVersionRestored}
                   />
                 ) : (
                   <FileGrid
                     files={sortedFiles}
-                    onPreview={(f) => setPreviewFile(f)}
+                    onPreview={openPreview}
                     onDownload={handleDownloadFile}
-                    onRename={(f) => setRenameTarget({ type: 'file', id: f.id, name: f.name })}
+                    onRename={openFileRename}
                     onDelete={handleDeleteFile}
-                    onNewVersion={(f) => setVersionTarget({ id: f.id, name: f.name })}
-                    onMove={(f) => setMoveTarget({ id: f.id, name: f.name, type: 'file' })}
+                    onNewVersion={openNewVersion}
+                    onMove={openFileMove}
                     onFavorite={toggleFavorite}
                     selectedIds={selectedIds}
                     onToggleSelect={toggleSelect}
