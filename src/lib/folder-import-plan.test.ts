@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { planFolderImport } from './folder-import-plan';
+import { planFolderImport, hasImportPath } from './folder-import-plan';
 
 /** Minimal File stand-in carrying a drag-drop relativePath. */
 function dragFile(relativePath: string): File {
@@ -148,6 +148,20 @@ describe('planFolderImport — NFC normalization', () => {
     const plan = planFolderImport([dragFile(`${NFD}/a.txt`), dragFile(`${NFC}/b.txt`)]);
     expect(plan.levels[0]).toHaveLength(1);
     expect(plan.levels[0][0].path).toBe(NFC);
+  });
+});
+
+describe('hasImportPath', () => {
+  it('detects a folder-picker file via webkitRelativePath', () => {
+    expect(hasImportPath(pickerFile('Project/Docs/a.pdf'))).toBe(true);
+  });
+
+  it('detects a drag-import file via relativePath', () => {
+    expect(hasImportPath(dragFile('Project/a.pdf'))).toBe(true);
+  });
+
+  it('is false for a plain file with no relative path', () => {
+    expect(hasImportPath({ name: 'a.pdf' } as unknown as File)).toBe(false);
   });
 });
 

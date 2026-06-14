@@ -48,6 +48,17 @@ function pathOf(file: File): string {
   return (f.relativePath ?? f.webkitRelativePath ?? '').normalize('NFC');
 }
 
+/**
+ * True when a File carries folder-structure info — a drag-import `relativePath`
+ * or a folder-picker `webkitRelativePath`. Such files originate from a folder
+ * import and must go through {@link planFolderImport} (which filters OS junk and
+ * rebuilds the hierarchy), never the flat uploader.
+ */
+export function hasImportPath(file: File): boolean {
+  const f = file as File & { relativePath?: string };
+  return Boolean(f.relativePath || file.webkitRelativePath);
+}
+
 export function planFolderImport(files: File[]): ImportPlan {
   const dirs = new Map<string, PlannedDir>();
   const placements: PlannedFile[] = [];

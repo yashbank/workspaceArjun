@@ -10,6 +10,7 @@ import { useUpload } from '@/lib/use-upload';
 import { uploadVersionDirect, formatUploadError } from '@/lib/direct-upload';
 import { withCopySuffix } from '@/lib/upload-filename';
 import type { DndPayload } from '@/lib/dnd';
+import { hasImportPath } from '@/lib/folder-import-plan';
 import { useToast } from '@/components/ui/toast';
 import { Breadcrumbs } from './breadcrumbs';
 import { FolderGrid } from './folder-grid';
@@ -441,6 +442,16 @@ export function FileBrowser({
 
   async function handleFilesSelected(selectedFiles: File[]) {
     if (selectedFiles.length === 0) return;
+
+    // Safety net: any file carrying folder-structure info (webkitRelativePath /
+    // relativePath) must go through the planner-backed import flow — never this
+    // flat uploader — so nested hierarchy is preserved and OS junk (.DS_Store,
+    // Thumbs.db, …) is filtered. Guards against folder files ever reaching here,
+    // regardless of which input/handler delivered them.
+    if (selectedFiles.some(hasImportPath)) {
+      setFolderImportFiles(selectedFiles);
+      return;
+    }
 
     // Check EVERY selected file for a same-name conflict in the current folder
     // (duplicate detection is scoped to the folder, so the same name in a
