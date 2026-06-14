@@ -3,6 +3,14 @@
 import { Folder, MoreVertical, Pencil, Trash2, FolderInput, Download } from 'lucide-react';
 import { memo, useRef, useState } from 'react';
 import { FixedMenu } from '@/components/ui/fixed-menu';
+import {
+  type DndPayload,
+  startDrag,
+  endDrag,
+  getActiveDrag,
+  isInternalDrag,
+  readDragPayload,
+} from '@/lib/dnd';
 
 type FolderItem = {
   id: string;
@@ -17,6 +25,7 @@ export const FolderGrid = memo(function FolderGrid({
   onDelete,
   onMove,
   onDownload,
+  onDropOnFolder,
 }: {
   folders: FolderItem[];
   onOpen: (id: string) => void;
@@ -24,6 +33,7 @@ export const FolderGrid = memo(function FolderGrid({
   onDelete: (id: string) => void;
   onMove?: (f: FolderItem) => void;
   onDownload?: (id: string) => void;
+  onDropOnFolder?: (item: DndPayload, targetFolderId: string) => void;
 }) {
   return (
     <section className="relative z-0">
@@ -38,6 +48,7 @@ export const FolderGrid = memo(function FolderGrid({
             onDelete={onDelete}
             onMove={onMove}
             onDownload={onDownload}
+            onDropOnFolder={onDropOnFolder}
           />
         ))}
       </div>
@@ -54,6 +65,7 @@ const FolderCard = memo(function FolderCard({
   onDelete,
   onMove,
   onDownload,
+  onDropOnFolder,
 }: {
   folder: FolderItem;
   onOpen: (id: string) => void;
@@ -61,13 +73,52 @@ const FolderCard = memo(function FolderCard({
   onDelete: (id: string) => void;
   onMove?: (f: FolderItem) => void;
   onDownload?: (id: string) => void;
+  onDropOnFolder?: (item: DndPayload, targetFolderId: string) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  // Local hover state for the drop affordance — kept here (not in FileBrowser) so
+  // a dragover only re-renders the card under the cursor, never the whole grid.
+  const [isDropTarget, setIsDropTarget] = useState(false);
   const menuBtnRef = useRef<HTMLButtonElement>(null);
   const itemCount = folder._count.children + folder._count.files;
 
+  // True only when this card is a legal target for the in-flight internal drag
+  // (an internal item that isn't this very folder).
+  function canAccept(e: React.DragEvent): boolean {
+    if (!onDropOnFolder || !isInternalDrag(e)) return false;
+    const active = getActiveDrag();
+    return active === null || active.id !== folder.id; // suppress self-drop
+  }
+
   return (
-    <div className="bpp-card-interactive group relative flex items-center gap-3 px-4 py-3.5 hover:-translate-y-0.5">
+    <div
+      className={`bpp-card-interactive group relative flex items-center gap-3 px-4 py-3.5 hover:-translate-y-0.5 ${
+        isDropTarget ? 'ring-2 ring-primary bg-primary/5' : ''
+      }`}
+      draggable
+      onDragStart={(e) => startDrag(e, { kind: 'folder', id: folder.id })}
+      onDragEnd={endDrag}
+      onDragOver={(e) => {
+        if (!canAccept(e)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+      }}
+      onDragEnter={(e) => {
+        if (canAccept(e)) setIsDropTarget(true);
+      }}
+      onDragLeave={(e) => {
+        if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+        setIsDropTarget(false);
+      }}
+      onDrop={(e) => {
+        if (!canAccept(e)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDropTarget(false);
+        const payload = readDragPayload(e);
+        if (payload && payload.id !== folder.id) onDropOnFolder?.(payload, folder.id);
+      }}
+    >
       <button type="button" onClick={() => onOpen(folder.id)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent ring-1 ring-border/40">
           <Folder className="h-5 w-5 text-foreground/70" />

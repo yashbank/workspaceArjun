@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from 'react';
 import { Upload } from 'lucide-react';
+import { isInternalDrag } from '@/lib/dnd';
 
 export type DropMeta = { directoryDropped: boolean; unreadableDir: boolean };
 
@@ -15,6 +16,9 @@ export function DropZone({
   const [dragActive, setDragActive] = useState(false);
 
   const handleDrag = useCallback((e: React.DragEvent) => {
+    // Internal item drags (file/folder → folder) are handled by FolderCard; never
+    // show the upload overlay for them.
+    if (isInternalDrag(e)) return;
     e.preventDefault();
     e.stopPropagation();
     if (e.type === 'dragenter' || e.type === 'dragover') {
@@ -27,6 +31,9 @@ export function DropZone({
 
   const handleDrop = useCallback(
     async (e: React.DragEvent) => {
+      // Internal item drops are handled by FolderCard; ignore here so we never
+      // treat them as an upload.
+      if (isInternalDrag(e)) return;
       e.preventDefault();
       e.stopPropagation();
       setDragActive(false);

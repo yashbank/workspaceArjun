@@ -9,6 +9,7 @@ import { resolveActivePreview } from '@/lib/active-preview';
 import { useUpload } from '@/lib/use-upload';
 import { uploadVersionDirect, formatUploadError } from '@/lib/direct-upload';
 import { withCopySuffix } from '@/lib/upload-filename';
+import type { DndPayload } from '@/lib/dnd';
 import { useToast } from '@/components/ui/toast';
 import { Breadcrumbs } from './breadcrumbs';
 import { FolderGrid } from './folder-grid';
@@ -727,31 +728,8 @@ export function FileBrowser({
     if (!moveTarget || busyAction) return;
     setBusyAction(true);
     try {
-      if (moveTarget.type === 'file') {
-        await apiFetch(`/api/files/${moveTarget.id}/move`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ folderId: targetFolderId }),
-        });
-      } else {
-        await apiFetch(`/api/folders/${moveTarget.id}/move`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ parentId: targetFolderId }),
-        });
-      }
-      toast('success', `${moveTarget.type === 'file' ? 'File' : 'Folder'} moved`);
-      syncSections();
-      // The source folder (current) is revalidated below; invalidate the
-      // destination too. A folder move shifts subtrees/breadcrumbs broadly, so
-      // clear the whole cache to stay safe.
-      if (moveTarget.type === 'file') {
-        cacheRef.current.delete(targetFolderId ?? 'root');
-      } else {
-        cacheRef.current.clear();
-      }
+      await moveItem(moveTarget.type, moveTarget.id, targetFolderId);
       setMoveTarget(null);
-      await loadContents(currentFolderId, { silent: true });
     } catch (e: unknown) {
       toast('error', e instanceof Error ? e.message : 'Move failed');
     } finally {
@@ -819,6 +797,58 @@ export function FileBrowser({
     syncSections();
     loadContents(currentFolderIdRef.current, { silent: true });
   }, [syncSections, loadContents]);
+
+  // Single source of truth for moving an item — used by both the Move dialog and
+  // drag-and-drop. Calls the existing move APIs, then invalidates the affected
+  // cache and silently revalidates the current folder. Caller owns busyAction +
+  // any dialog/selection cleanup; this throws on failure so the caller can toast.
+  const moveItem = useCallback(
+    async (kind: 'file' | 'folder', id: string, targetFolderId: string | null) => {
+      if (kind === 'file') {
+        await apiFetch(`/api/files/${id}/move`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ folderId: targetFolderId }),
+        });
+      } else {
+        await apiFetch(`/api/folders/${id}/move`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ parentId: targetFolderId }),
+        });
+      }
+      toast('success', `${kind === 'file' ? 'File' : 'Folder'} moved`);
+      syncSections();
+      // A file move only changes the destination listing; a folder move shifts
+      // subtrees/breadcrumbs broadly, so clear the whole cache to stay safe.
+      if (kind === 'file') {
+        cacheRef.current.delete(targetFolderId ?? 'root');
+      } else {
+        cacheRef.current.clear();
+      }
+      await loadContents(currentFolderIdRef.current, { silent: true });
+    },
+    [toast, syncSections, loadContents],
+  );
+
+  // Drag-and-drop drop handler (stable; passed to FolderGrid → FolderCard). The
+  // self-drop guard short-circuits before any request; the server still enforces
+  // illegal folder moves (e.g. into a descendant), surfaced as an error toast.
+  const handleDropOnFolder = useCallback(
+    async (item: DndPayload, targetFolderId: string) => {
+      if (busyActionRef.current) return;
+      if (item.id === targetFolderId) return; // self-drop → no request
+      setBusyAction(true);
+      try {
+        await moveItem(item.kind, item.id, targetFolderId);
+      } catch (e: unknown) {
+        toast('error', e instanceof Error ? e.message : 'Move failed');
+      } finally {
+        setBusyAction(false);
+      }
+    },
+    [moveItem, toast],
+  );
 
   // "Move to folder" is possible whenever any folder exists to move into: either
   // we're inside a folder, or the current (root) level already shows folders.
@@ -1037,6 +1067,7 @@ export function FileBrowser({
                   onDelete={handleDeleteFolder}
                   onMove={openFolderMove}
                   onDownload={handleDownloadFolder}
+                  onDropOnFolder={handleDropOnFolder}
                 />
               )}
 

@@ -18,6 +18,7 @@ import { FileMediaThumbnail } from './file-media-thumbnail';
 import { PremiumFileFallback } from './premium-file-fallback';
 import { VersionPanel } from './version-panel';
 import { FileActionMenu } from './file-action-menu';
+import { startDrag, endDrag } from '@/lib/dnd';
 
 export type FileItem = {
   id: string;
@@ -168,7 +169,13 @@ const FileRowWithVersions = memo(function FileRowWithVersions({
 
   return (
     <>
-      <tr className="group border-b border-border/30 transition-colors duration-150 hover:bg-accent/15 last:border-0" onDoubleClick={onPreview ? () => onPreview(file) : undefined}>
+      <tr
+        className="group border-b border-border/30 transition-colors duration-150 hover:bg-accent/15 last:border-0"
+        onDoubleClick={onPreview ? () => onPreview(file) : undefined}
+        draggable
+        onDragStart={(e) => startDrag(e, { kind: 'file', id: file.id })}
+        onDragEnd={endDrag}
+      >
         <td className="px-2 py-2.5">
           <button
             onClick={() => setExpanded(!expanded)}

@@ -17,6 +17,7 @@ import { FileMediaThumbnail } from './file-media-thumbnail';
 import { PremiumFileFallback } from './premium-file-fallback';
 import { FileActionMenu } from './file-action-menu';
 import type { FileItem } from './file-table';
+import { startDrag, endDrag } from '@/lib/dnd';
 
 const PREVIEW_IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'tiff']);
 const IMAGE_FALLBACK_EXTS = new Set(['heic', 'heif']);
@@ -174,6 +175,9 @@ const FileCard = memo(function FileCard({
       }`}
       onContextMenu={handleContext}
       onDoubleClick={() => onOpen(file)}
+      draggable
+      onDragStart={(e) => startDrag(e, { kind: 'file', id: file.id })}
+      onDragEnd={endDrag}
     >
       <div
         className={`relative flex aspect-[4/3] items-center justify-center overflow-hidden bg-gradient-to-br ${cardColor}`}
