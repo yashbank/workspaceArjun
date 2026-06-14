@@ -441,6 +441,14 @@ export function FileBrowser({
   );
 
   async function handleFilesSelected(selectedFiles: File[]) {
+    // TEMP [FOLDER-IMPORT] diagnostic — remove before merge
+    console.log('[FOLDER-IMPORT] HANDLE_FILES_SELECTED', {
+      count: selectedFiles.length,
+      samplePaths: selectedFiles.slice(0, 3).map(
+        (f) => (f as File & { relativePath?: string }).relativePath ?? f.webkitRelativePath,
+      ),
+      guardWouldFire: selectedFiles.some(hasImportPath),
+    });
     if (selectedFiles.length === 0) return;
 
     // Safety net: any file carrying folder-structure info (webkitRelativePath /

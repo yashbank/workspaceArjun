@@ -40,6 +40,13 @@ export function FolderImportDialog({
   // Plan once (pure): junk files are filtered and paths NFC-normalized here, so
   // the header count and progress denominator reflect what will actually import.
   const plan = useMemo(() => planFolderImport(files), [files]);
+  // TEMP [FOLDER-IMPORT] diagnostic — remove before merge
+  console.log('[FOLDER-IMPORT] PLANNER', {
+    rawFiles: files.length,
+    plannedFiles: plan.files.length,
+    rootName: plan.rootName,
+    levels: plan.levels.length,
+  });
   const folderName = plan.rootName;
   const fileCount = plan.files.length;
 

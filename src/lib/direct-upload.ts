@@ -210,6 +210,11 @@ export async function uploadFileDirect(
   onProgress: UploadProgressCallback,
   signal?: AbortSignal,
 ): Promise<void> {
+  // TEMP [FOLDER-IMPORT] diagnostic — remove before merge
+  console.log('[FOLDER-IMPORT] UPLOAD', {
+    name: file.name,
+    folderId,
+  });
   await getUploadConfig();
   const mimeType = normalizeUploadMime(file.name, file.type);
 
