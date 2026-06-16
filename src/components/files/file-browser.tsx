@@ -10,7 +10,7 @@ import { useUpload } from '@/lib/use-upload';
 import { uploadVersionDirect, formatUploadError } from '@/lib/direct-upload';
 import { withCopySuffix } from '@/lib/upload-filename';
 import type { DndPayload } from '@/lib/dnd';
-import { hasImportPath } from '@/lib/folder-import-plan';
+import { hasImportPath, isJunkFile } from '@/lib/folder-import-plan';
 import { useToast } from '@/components/ui/toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Breadcrumbs } from './breadcrumbs';
@@ -466,6 +466,13 @@ export function FileBrowser({
       return;
     }
 
+    // Defense in depth: drop OS junk (.DS_Store, ._* AppleDouble, Thumbs.db, …)
+    // before the flat uploader ever sees it. The folder-import dialog filters
+    // these already, but loose files (file picker, paste, single dropped files)
+    // arrive here — this is what stops junk from being created as real files.
+    const cleanFiles = selectedFiles.filter((f) => !isJunkFile(f.name));
+    if (cleanFiles.length === 0) return;
+
     // Check EVERY selected file for a same-name conflict in the current folder
     // (duplicate detection is scoped to the folder, so the same name in a
     // different folder is allowed). Non-conflicting files upload right away;
@@ -476,7 +483,7 @@ export function FileBrowser({
     // Order is preserved so the conflict queue resolves in the same sequence as
     // the previous serial loop; a failed check falls through to a normal upload.
     const checks = await Promise.all(
-      selectedFiles.map(async (file): Promise<{ file: File; existingFileId?: string }> => {
+      cleanFiles.map(async (file): Promise<{ file: File; existingFileId?: string }> => {
         try {
           const check = await apiFetch<{ exists: boolean; existingFileId?: string }>(
             `/api/files/check-duplicate?name=${encodeURIComponent(file.name)}${qs}`,
@@ -952,7 +959,7 @@ export function FileBrowser({
             </div>
 
             {/* Toolbar row — relative z-20 so portaled menus stack above folder grid */}
-            <div className="relative z-20 flex flex-wrap items-center gap-2 rounded-2xl border border-border/50 bg-card/80 p-2 shadow-card backdrop-blur-sm">
+            <div className="relative z-20 flex flex-wrap items-center gap-2 rounded-2xl border border-border/50 bg-card p-2 shadow-card">
               <button
                 onClick={() => setShowCreateFolder(true)}
                 className="flex items-center gap-1.5 rounded-xl border border-border/50 bg-card px-3 py-2 text-xs font-medium shadow-card transition-[box-shadow,transform] hover:shadow-elevated active:scale-[0.97]"
@@ -1193,7 +1200,7 @@ export function FileBrowser({
           <button
             type="button"
             aria-label="Close preview"
-            className="fixed inset-0 z-40 bg-black/35 backdrop-blur-[1px] lg:hidden"
+            className="fixed inset-0 z-40 bg-black/45 lg:hidden"
             onClick={() => setPreviewFile(null)}
           />
         )}

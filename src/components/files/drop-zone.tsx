@@ -97,7 +97,7 @@ export function DropZone({
     >
       {children}
       {dragActive && (
-        <div className="absolute inset-0 z-40 flex items-center justify-center rounded-2xl border-2 border-dashed border-primary/50 bg-primary/4 backdrop-blur-md animate-in fade-in duration-150">
+        <div className="absolute inset-0 z-40 flex items-center justify-center rounded-2xl border-2 border-dashed border-primary/50 bg-background/80 animate-in fade-in duration-150">
           <div className="flex flex-col items-center gap-3.5">
             <div className="flex h-16 w-16 items-center justify-center rounded-[22px] bg-primary/10 shadow-card">
               <Upload className="h-7 w-7 text-primary" />

@@ -120,12 +120,12 @@ const FolderCard = memo(function FolderCard({
       }}
     >
       <button type="button" onClick={() => onOpen(folder.id)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent ring-1 ring-border/40">
-          <Folder className="h-5 w-5 text-foreground/70" />
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary/15 to-primary/5 ring-1 ring-primary/20">
+          <Folder className="h-5 w-5 text-primary" />
         </div>
         <div className="min-w-0">
           <p
-            className="line-clamp-2 pr-2 text-[13px] font-semibold tracking-tight"
+            className="pr-2 text-[13px] font-semibold tracking-tight break-words [overflow-wrap:anywhere]"
             title={folder.name}
           >
             {folder.name}

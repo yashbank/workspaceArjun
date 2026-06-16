@@ -227,7 +227,7 @@ const FileCard = memo(function FileCard({
       </div>
 
       <div className="relative flex flex-1 flex-col gap-2 px-3.5 py-3">
-        <p className="line-clamp-2 min-h-[2.5rem] pr-7 text-[13px] font-semibold leading-tight tracking-tight" title={file.name}>
+        <p className="min-h-[2.5rem] break-words pr-7 text-[13px] font-semibold leading-tight tracking-tight [overflow-wrap:anywhere]" title={file.name}>
           {file.name}
         </p>
         <div className="flex min-w-0 items-center gap-2">

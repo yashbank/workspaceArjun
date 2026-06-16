@@ -90,7 +90,7 @@ export const FileTable = memo(function FileTable({
           <thead>
             <tr className="border-b border-border/50 bg-muted/30 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/55">
               <th className="w-10 px-2 py-3" />
-              <th className="w-[min(40%,320px)] px-4 py-3">Name</th>
+              <th className="w-[min(48%,460px)] px-4 py-3">Name</th>
               <th className="hidden w-24 px-4 py-3 sm:table-cell">Type</th>
               <th className="w-24 px-4 py-3 text-right">Size</th>
               <th className="hidden w-32 px-4 py-3 md:table-cell">Uploaded</th>
@@ -199,7 +199,7 @@ const FileRowWithVersions = memo(function FileRowWithVersions({
             ) : (
               <FileTypeIcon filename={file.name} />
             )}
-            <span className="truncate text-[13px] font-semibold tracking-tight" title={file.name}>{file.name}</span>
+            <span className="min-w-0 break-words text-[13px] font-semibold tracking-tight [overflow-wrap:anywhere]" title={file.name}>{file.name}</span>
             {isFavorited && <Star className="h-3 w-3 shrink-0 fill-amber-400 text-amber-400 drop-shadow-sm" />}
           </div>
         </td>

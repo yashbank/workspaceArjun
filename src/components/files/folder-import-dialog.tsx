@@ -55,23 +55,25 @@ export function FolderImportDialog({
     setUploading(true);
     setProgress(0);
 
-    // TEMP [IMPORT-TRACE] — production instrumentation. Logs the REAL input each
-    // file arrives with (relativePath / webkitRelativePath) and the plan derived
-    // from it, so a production-only hierarchy loss can be pinpointed to either the
-    // input (paths missing) or the plan (wrong dirPath). Remove once confirmed.
-    console.log(
-      '[IMPORT-TRACE] raw input',
-      files.map((f) => ({
-        name: f.name,
-        relativePath: (f as File & { relativePath?: string }).relativePath ?? '(none)',
-        webkitRelativePath: f.webkitRelativePath || '(none)',
-      })),
-    );
-    console.log('[IMPORT-TRACE] plan', {
-      rootName: plan.rootName,
-      levels: plan.levels.map((l) => l.map((d) => `${d.path} (parent=${d.parentPath ?? 'ROOT'})`)),
-      files: plan.files.map((p) => ({ name: p.file.name, parent: p.dirPath || '(import root)' })),
-    });
+    // [IMPORT-TRACE] dev-only diagnostics. Logs the REAL input each file arrives
+    // with (relativePath / webkitRelativePath) and the derived plan, so a
+    // hierarchy loss can be pinpointed to the input (paths missing) or the plan
+    // (wrong dirPath). Gated to development so production never logs file names.
+    if (process.env.NODE_ENV === 'development') {
+      console.log(
+        '[IMPORT-TRACE] raw input',
+        files.map((f) => ({
+          name: f.name,
+          relativePath: (f as File & { relativePath?: string }).relativePath ?? '(none)',
+          webkitRelativePath: f.webkitRelativePath || '(none)',
+        })),
+      );
+      console.log('[IMPORT-TRACE] plan', {
+        rootName: plan.rootName,
+        levels: plan.levels.map((l) => l.map((d) => `${d.path} (parent=${d.parentPath ?? 'ROOT'})`)),
+        files: plan.files.map((p) => ({ name: p.file.name, parent: p.dirPath || '(import root)' })),
+      });
+    }
 
     try {
       // Create folders level-by-level so a parent always exists before its
@@ -112,12 +114,14 @@ export function FolderImportDialog({
       let skipped = 0;
       await runPool(plan.files, 3, async ({ file, dirPath }) => {
         const folderId = dirPath === '' ? parentFolderId : pathToId.get(dirPath);
-        // TEMP [IMPORT-TRACE] — per-file destination. Remove once confirmed.
-        console.log('[IMPORT-TRACE] upload', {
-          name: file.name,
-          parent: dirPath || '(import root)',
-          destinationFolderId: folderId ?? '(import target / root)',
-        });
+        if (process.env.NODE_ENV === 'development') {
+          // [IMPORT-TRACE] per-file destination (dev only).
+          console.log('[IMPORT-TRACE] upload', {
+            name: file.name,
+            parent: dirPath || '(import root)',
+            destinationFolderId: folderId ?? '(import target / root)',
+          });
+        }
         if (dirPath !== '' && folderId === undefined) {
           skipped++;
           setProgress((p) => p + 1);
@@ -162,7 +166,7 @@ export function FolderImportDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm animate-in fade-in duration-150">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 animate-in fade-in duration-150">
       <div className="mx-4 w-full max-w-md overflow-hidden rounded-2xl border border-border/50 bg-card shadow-float animate-in scale-in fade-in duration-200">
         <div className="flex items-center gap-3 border-b border-border/30 px-5 py-4">
           <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary/8">

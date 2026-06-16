@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { planFolderImport, hasImportPath } from './folder-import-plan';
+import { planFolderImport, hasImportPath, isJunkFile } from './folder-import-plan';
 
 /** Minimal File stand-in carrying a drag-drop relativePath. */
 function dragFile(relativePath: string): File {
@@ -128,6 +128,42 @@ describe('planFolderImport — junk filtering', () => {
       'Project',
       'Project/Docs',
     ]);
+  });
+});
+
+describe('isJunkFile — robust OS-metadata detection', () => {
+  it('flags exact known junk names', () => {
+    for (const n of ['.DS_Store', 'Thumbs.db', 'desktop.ini', '.localized', '.Spotlight-V100']) {
+      expect(isJunkFile(n)).toBe(true);
+    }
+  });
+
+  it('flags junk case-insensitively', () => {
+    expect(isJunkFile('.ds_store')).toBe(true);
+    expect(isJunkFile('THUMBS.DB')).toBe(true);
+  });
+
+  it('flags AppleDouble sidecars (._name) and the custom-icon file', () => {
+    expect(isJunkFile('._photo.jpg')).toBe(true);
+    expect(isJunkFile('._')).toBe(true);
+    expect(isJunkFile('Icon\r')).toBe(true);
+  });
+
+  it('keeps genuine dotfiles and real files', () => {
+    for (const n of ['.env', '.gitignore', '.npmrc', 'report.pdf', 'design.cdr']) {
+      expect(isJunkFile(n)).toBe(false);
+    }
+  });
+
+  it('drops files nested under a __MACOSX wrapper folder', () => {
+    const plan = planFolderImport([
+      { relativePath: 'Project/__MACOSX/._file', name: '._file' },
+      { relativePath: 'Project/__MACOSX/file.pdf', name: 'file.pdf' },
+      { relativePath: 'Project/real.pdf', name: 'real.pdf' },
+    ] as unknown as File[]);
+    const names = plan.files.map((f) => (f.file as unknown as { name: string }).name);
+    expect(names).toEqual(['real.pdf']);
+    expect(plan.levels.flat().map((d) => d.path)).not.toContain('Project/__MACOSX');
   });
 });
 

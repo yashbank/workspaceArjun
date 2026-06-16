@@ -21,6 +21,12 @@ type PendingConfirm = { opts: ConfirmOptions; resolve: (ok: boolean) => void };
  * (a delete click sat on confirm() reads as a ~1s "slow" interaction). This yields
  * to the event loop instead, so the triggering interaction paints immediately.
  *
+ * The scrim is a plain translucent layer — deliberately NOT `backdrop-blur`. A
+ * full-viewport backdrop filter forces the browser to rasterize a blurred copy
+ * of the entire (thumbnail-heavy) page on the dialog's first paint, which is the
+ * long task that shows up as a high-INP "Event handlers blocked UI updates" on
+ * the delete button. Keep it blur-free.
+ *
  * Usage:
  *   const { confirm, confirmDialog } = useConfirm();
  *   // in JSX: {confirmDialog}
@@ -75,7 +81,7 @@ function ConfirmDialog({
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 p-4 backdrop-blur-sm animate-in fade-in duration-150"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/45 p-4 animate-in fade-in duration-150"
       onMouseDown={onCancel}
       role="dialog"
       aria-modal="true"

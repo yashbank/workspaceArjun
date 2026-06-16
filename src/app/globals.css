@@ -46,7 +46,7 @@
   --card-foreground: var(--bpp-graphite);
   --popover: var(--bpp-surface);
   --popover-foreground: var(--bpp-graphite);
-  --primary: #181919;
+  --primary: #4f46e5;
   --primary-foreground: #ffffff;
   --secondary: var(--bpp-ivory);
   --secondary-foreground: var(--bpp-graphite);
@@ -58,7 +58,7 @@
   --destructive-foreground: oklch(0.577 0.245 27.325);
   --border: color-mix(in oklab, var(--bpp-outline) 55%, transparent);
   --input: var(--bpp-outline);
-  --ring: #747878;
+  --ring: #6366f1;
   --shadow-card: 0 1px 2px rgb(27 28 28 / 0.04), 0 1px 3px rgb(27 28 28 / 0.03);
   --shadow-elevated: 0 4px 16px rgb(27 28 28 / 0.06), 0 1px 3px rgb(27 28 28 / 0.04);
   --shadow-float: 0 12px 40px rgb(27 28 28 / 0.1), 0 4px 12px rgb(27 28 28 / 0.05);
@@ -78,8 +78,8 @@
   --card-foreground: var(--bpp-graphite);
   --popover: var(--bpp-surface);
   --popover-foreground: var(--bpp-graphite);
-  --primary: #f2f0f0;
-  --primary-foreground: #181919;
+  --primary: #6366f1;
+  --primary-foreground: #ffffff;
   --secondary: var(--bpp-ivory);
   --secondary-foreground: var(--bpp-graphite);
   --muted: var(--bpp-ivory);
@@ -90,7 +90,7 @@
   --destructive-foreground: oklch(0.637 0.237 25.331);
   --border: oklch(0.24 0 0);
   --input: oklch(0.24 0 0);
-  --ring: oklch(0.439 0 0);
+  --ring: #818cf8;
   --shadow-card: 0 1px 3px oklch(0 0 0 / 0.2), 0 1px 2px oklch(0 0 0 / 0.12);
   --shadow-elevated: 0 3px 12px oklch(0 0 0 / 0.25), 0 1px 3px oklch(0 0 0 / 0.15);
   --shadow-float: 0 12px 40px oklch(0 0 0 / 0.35), 0 4px 12px oklch(0 0 0 / 0.2);
