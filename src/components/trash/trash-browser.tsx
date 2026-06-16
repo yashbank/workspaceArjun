@@ -3,6 +3,7 @@
 import { memo, startTransition, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiFetch } from '@/lib/api';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import { formatBytes, formatDate, getFileTypeBadge } from '@/lib/file-utils';
 import {
   Folder,
@@ -221,6 +222,9 @@ export function TrashBrowser({ canPermanentDelete }: { canPermanentDelete: boole
   }, [folders, files]);
 
   const router = useRouter();
+  // Non-blocking confirmation (replaces window.confirm, which blocks the main
+  // thread and inflates INP on delete interactions).
+  const { confirm, confirmDialog } = useConfirm();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -358,7 +362,15 @@ export function TrashBrowser({ canPermanentDelete }: { canPermanentDelete: boole
   const handlePermanentDeleteFolder = useCallback(
     async (id: string) => {
       if (!canPermanentDelete) return;
-      if (!confirm('Permanently delete this folder? This cannot be undone.')) return;
+      if (
+        !(await confirm({
+          title: 'Delete folder permanently',
+          message: 'Permanently delete this folder? This cannot be undone.',
+          confirmLabel: 'Delete permanently',
+          destructive: true,
+        }))
+      )
+        return;
       markBusy(id);
       try {
         // Route through the bulk path so the server-reported subtree ids drop
@@ -374,7 +386,7 @@ export function TrashBrowser({ canPermanentDelete }: { canPermanentDelete: boole
         clearBusy(id);
       }
     },
-    [canPermanentDelete, markBusy, clearBusy, load, router, executeOptimisticPermanentDelete],
+    [canPermanentDelete, markBusy, clearBusy, load, router, executeOptimisticPermanentDelete, confirm],
   );
 
   const handleRestoreFile = useCallback(
@@ -399,9 +411,13 @@ export function TrashBrowser({ canPermanentDelete }: { canPermanentDelete: boole
     async (id: string) => {
       if (!canPermanentDelete) return;
       if (
-        !confirm(
-          'This permanently removes the file from storage and cannot be undone. Delete this file and all its versions?',
-        )
+        !(await confirm({
+          title: 'Delete file permanently',
+          message:
+            'This permanently removes the file from storage and cannot be undone. Delete this file and all its versions?',
+          confirmLabel: 'Delete permanently',
+          destructive: true,
+        }))
       ) {
         return;
       }
@@ -418,7 +434,7 @@ export function TrashBrowser({ canPermanentDelete }: { canPermanentDelete: boole
         clearBusy(id);
       }
     },
-    [canPermanentDelete, markBusy, clearBusy, load, router, executeOptimisticPermanentDelete],
+    [canPermanentDelete, markBusy, clearBusy, load, router, executeOptimisticPermanentDelete, confirm],
   );
 
   async function handleBulkRestore() {
@@ -448,9 +464,12 @@ export function TrashBrowser({ canPermanentDelete }: { canPermanentDelete: boole
     const n = folderIds.length + fileIds.length;
     if (n === 0) return;
     if (
-      !confirm(
-        `This permanently removes ${n} selected item${n === 1 ? '' : 's'} from storage and cannot be undone. Continue?`,
-      )
+      !(await confirm({
+        title: 'Delete permanently',
+        message: `This permanently removes ${n} selected item${n === 1 ? '' : 's'} from storage and cannot be undone. Continue?`,
+        confirmLabel: 'Delete permanently',
+        destructive: true,
+      }))
     ) {
       return;
     }
@@ -481,6 +500,7 @@ export function TrashBrowser({ canPermanentDelete }: { canPermanentDelete: boole
 
   return (
     <div className="mx-auto max-w-5xl">
+      {confirmDialog}
       <div className="mb-6">
         <h1 className="bpp-page-title">Trash</h1>
         <p className="mt-1 text-sm text-muted-foreground">

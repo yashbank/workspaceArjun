@@ -12,6 +12,7 @@ import { withCopySuffix } from '@/lib/upload-filename';
 import type { DndPayload } from '@/lib/dnd';
 import { hasImportPath } from '@/lib/folder-import-plan';
 import { useToast } from '@/components/ui/toast';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Breadcrumbs } from './breadcrumbs';
 import { FolderGrid } from './folder-grid';
 import { FileTable } from './file-table';
@@ -126,6 +127,9 @@ export function FileBrowser({
   // After a mutation, invalidate the Router Cache so server-rendered sections
   // (Dashboard, Activity, Trash) show fresh data on their next visit.
   const syncSections = useCallback(() => router.refresh(), [router]);
+  // Non-blocking confirmation (replaces window.confirm, which blocks the main
+  // thread and inflates INP on delete interactions).
+  const { confirm, confirmDialog } = useConfirm();
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [files, setFiles] = useState<FileItem[]>([]);
@@ -615,7 +619,15 @@ export function FileBrowser({
 
   const handleBulkDelete = useCallback(async () => {
     if (selectedIdsRef.current.size === 0 || busyActionRef.current) return;
-    if (!confirm(`Move ${selectedIdsRef.current.size} file(s) to trash?`)) return;
+    if (
+      !(await confirm({
+        title: 'Move to trash',
+        message: `Move ${selectedIdsRef.current.size} file(s) to trash?`,
+        confirmLabel: 'Move to trash',
+        destructive: true,
+      }))
+    )
+      return;
     const ids = new Set(selectedIdsRef.current);
     setBusyAction(true);
     try {
@@ -644,11 +656,19 @@ export function FileBrowser({
     } finally {
       setBusyAction(false);
     }
-  }, [toast, router, loadContents]);
+  }, [toast, router, loadContents, confirm]);
 
   const handleDeleteFolder = useCallback(async (id: string) => {
     if (busyActionRef.current) return;
-    if (!confirm('Move this folder to trash?')) return;
+    if (
+      !(await confirm({
+        title: 'Move folder to trash',
+        message: 'Move this folder to trash?',
+        confirmLabel: 'Move to trash',
+        destructive: true,
+      }))
+    )
+      return;
     setBusyAction(true);
     try {
       await apiFetch(`/api/folders/${id}`, { method: 'DELETE' });
@@ -664,11 +684,19 @@ export function FileBrowser({
     } finally {
       setBusyAction(false);
     }
-  }, [toast, router]);
+  }, [toast, router, confirm]);
 
   const handleDeleteFile = useCallback(async (id: string) => {
     if (busyActionRef.current) return;
-    if (!confirm('Move this file to trash?')) return;
+    if (
+      !(await confirm({
+        title: 'Move file to trash',
+        message: 'Move this file to trash?',
+        confirmLabel: 'Move to trash',
+        destructive: true,
+      }))
+    )
+      return;
     setBusyAction(true);
     try {
       await apiFetch(`/api/files/${id}`, { method: 'DELETE' });
@@ -683,11 +711,19 @@ export function FileBrowser({
     } finally {
       setBusyAction(false);
     }
-  }, [toast, router]);
+  }, [toast, router, confirm]);
 
   const handlePermanentDeleteFile = useCallback(async (id: string) => {
     if (busyActionRef.current) return;
-    if (!confirm('Delete this file permanently? This cannot be undone.')) return;
+    if (
+      !(await confirm({
+        title: 'Delete permanently',
+        message: 'Delete this file permanently? This cannot be undone.',
+        confirmLabel: 'Delete permanently',
+        destructive: true,
+      }))
+    )
+      return;
     setBusyAction(true);
     try {
       await apiFetch(`/api/files/${id}?permanent=true`, { method: 'DELETE' });
@@ -702,7 +738,7 @@ export function FileBrowser({
     } finally {
       setBusyAction(false);
     }
-  }, [toast, router]);
+  }, [toast, router, confirm]);
 
   async function handleRenameConfirm(newName: string) {
     if (!renameTarget || busyAction) return;
@@ -1180,6 +1216,8 @@ export function FileBrowser({
       <UploadQueue items={queue} onRetry={retry} onCancel={cancel} onDismiss={dismiss} />
 
       {/* Dialogs */}
+      {confirmDialog}
+
       {showCreateFolder && (
         <CreateFolderDialog
           parentId={currentFolderId}

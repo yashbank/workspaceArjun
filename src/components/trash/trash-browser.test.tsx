@@ -56,7 +56,6 @@ import { TrashBrowser } from './trash-browser';
 beforeEach(() => {
   vi.clearAllMocks();
   apiCalls.length = 0;
-  vi.spyOn(window, 'confirm').mockReturnValue(true);
 });
 afterEach(cleanup);
 
@@ -69,10 +68,14 @@ describe('TrashBrowser — single-item permanent delete (optimistic, bulk path)'
     expect(screen.getByText('Child')).toBeTruthy();
     expect(screen.getByText('a.pdf')).toBeTruthy();
 
-    // Click the Parent folder row's Delete button.
+    // Click the Parent folder row's Delete button → opens the (non-blocking)
+    // confirm modal; then click its destructive confirm.
     const parentRow = screen.getByText('Parent').closest('tr') as HTMLElement;
     await act(async () => {
-      fireEvent.click(within(parentRow).getByRole('button', { name: /delete/i }));
+      fireEvent.click(within(parentRow).getByRole('button', { name: /^delete$/i }));
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'Delete permanently' }));
     });
 
     // The clicked folder AND its server-reported descendants disappear optimistically.

@@ -55,6 +55,24 @@ export function FolderImportDialog({
     setUploading(true);
     setProgress(0);
 
+    // TEMP [IMPORT-TRACE] — production instrumentation. Logs the REAL input each
+    // file arrives with (relativePath / webkitRelativePath) and the plan derived
+    // from it, so a production-only hierarchy loss can be pinpointed to either the
+    // input (paths missing) or the plan (wrong dirPath). Remove once confirmed.
+    console.log(
+      '[IMPORT-TRACE] raw input',
+      files.map((f) => ({
+        name: f.name,
+        relativePath: (f as File & { relativePath?: string }).relativePath ?? '(none)',
+        webkitRelativePath: f.webkitRelativePath || '(none)',
+      })),
+    );
+    console.log('[IMPORT-TRACE] plan', {
+      rootName: plan.rootName,
+      levels: plan.levels.map((l) => l.map((d) => `${d.path} (parent=${d.parentPath ?? 'ROOT'})`)),
+      files: plan.files.map((p) => ({ name: p.file.name, parent: p.dirPath || '(import root)' })),
+    });
+
     try {
       // Create folders level-by-level so a parent always exists before its
       // children. Folders within one level are independent, so create up to 3 at
@@ -94,6 +112,12 @@ export function FolderImportDialog({
       let skipped = 0;
       await runPool(plan.files, 3, async ({ file, dirPath }) => {
         const folderId = dirPath === '' ? parentFolderId : pathToId.get(dirPath);
+        // TEMP [IMPORT-TRACE] — per-file destination. Remove once confirmed.
+        console.log('[IMPORT-TRACE] upload', {
+          name: file.name,
+          parent: dirPath || '(import root)',
+          destinationFolderId: folderId ?? '(import target / root)',
+        });
         if (dirPath !== '' && folderId === undefined) {
           skipped++;
           setProgress((p) => p + 1);
