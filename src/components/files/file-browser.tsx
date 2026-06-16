@@ -607,29 +607,35 @@ export function FileBrowser({
   const handleBulkDelete = useCallback(async () => {
     if (selectedIdsRef.current.size === 0 || busyActionRef.current) return;
     if (!confirm(`Move ${selectedIdsRef.current.size} file(s) to trash?`)) return;
+    const ids = new Set(selectedIdsRef.current);
     setBusyAction(true);
     try {
       const result = await apiFetch<{ succeeded: number; failed: number }>('/api/files/bulk', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'delete', fileIds: Array.from(selectedIdsRef.current) }),
+        body: JSON.stringify({ action: 'delete', fileIds: Array.from(ids) }),
       });
       const preview = previewFileRef.current;
-      if (preview && selectedIdsRef.current.has(preview.id)) setPreviewFile(null);
+      if (preview && ids.has(preview.id)) setPreviewFile(null);
       setSelectedIds(new Set());
       if (result.failed > 0) {
         toast('error', `${result.succeeded} moved to trash, ${result.failed} failed`);
+        // The endpoint returns counts only (no per-id results), so resync to
+        // restore whichever files survived a partial failure.
+        await loadContents(currentFolderIdRef.current, { silent: true });
       } else {
         toast('success', `${result.succeeded} file${result.succeeded === 1 ? '' : 's'} moved to trash`);
+        // All succeeded — drop the deleted files optimistically, no refetch needed.
+        startTransition(() => setFiles((prev) => prev.filter((f) => !ids.has(f.id))));
       }
-      syncSections();
-      await loadContents(currentFolderIdRef.current, { silent: true });
+      // One deferred refresh for the server-rendered sections, off the paint path.
+      startTransition(() => router.refresh());
     } catch (e: unknown) {
       toast('error', e instanceof Error ? e.message : 'Could not delete files');
     } finally {
       setBusyAction(false);
     }
-  }, [toast, syncSections, loadContents]);
+  }, [toast, router, loadContents]);
 
   const handleDeleteFolder = useCallback(async (id: string) => {
     if (busyActionRef.current) return;
@@ -638,16 +644,18 @@ export function FileBrowser({
     try {
       await apiFetch(`/api/folders/${id}`, { method: 'DELETE' });
       toast('success', 'Folder moved to trash');
-      syncSections();
+      // Optimistically drop the folder from the current view.
+      startTransition(() => setFolders((prev) => prev.filter((f) => f.id !== id)));
       // A trashed folder + its subtree are no longer reachable; clear the cache.
       cacheRef.current.clear();
-      await loadContents(currentFolderIdRef.current, { silent: true });
+      // One deferred refresh for the server-rendered sections, off the paint path.
+      startTransition(() => router.refresh());
     } catch (e: unknown) {
       toast('error', e instanceof Error ? e.message : 'Could not delete folder');
     } finally {
       setBusyAction(false);
     }
-  }, [toast, syncSections, loadContents]);
+  }, [toast, router]);
 
   const handleDeleteFile = useCallback(async (id: string) => {
     if (busyActionRef.current) return;
@@ -657,14 +665,16 @@ export function FileBrowser({
       await apiFetch(`/api/files/${id}`, { method: 'DELETE' });
       if (previewFileRef.current?.id === id) setPreviewFile(null);
       toast('success', 'File moved to trash');
-      syncSections();
-      await loadContents(currentFolderIdRef.current, { silent: true });
+      // Optimistically drop the file from the current view.
+      startTransition(() => setFiles((prev) => prev.filter((f) => f.id !== id)));
+      // One deferred refresh for the server-rendered sections, off the paint path.
+      startTransition(() => router.refresh());
     } catch (e: unknown) {
       toast('error', e instanceof Error ? e.message : 'Could not delete file');
     } finally {
       setBusyAction(false);
     }
-  }, [toast, syncSections, loadContents]);
+  }, [toast, router]);
 
   const handlePermanentDeleteFile = useCallback(async (id: string) => {
     if (busyActionRef.current) return;
@@ -674,14 +684,16 @@ export function FileBrowser({
       await apiFetch(`/api/files/${id}?permanent=true`, { method: 'DELETE' });
       if (previewFileRef.current?.id === id) setPreviewFile(null);
       toast('success', 'File deleted permanently');
-      syncSections();
-      await loadContents(currentFolderIdRef.current, { silent: true });
+      // Optimistically drop the file from the current view.
+      startTransition(() => setFiles((prev) => prev.filter((f) => f.id !== id)));
+      // One deferred refresh for the server-rendered sections, off the paint path.
+      startTransition(() => router.refresh());
     } catch (e: unknown) {
       toast('error', e instanceof Error ? e.message : 'Could not delete file');
     } finally {
       setBusyAction(false);
     }
-  }, [toast, syncSections, loadContents]);
+  }, [toast, router]);
 
   async function handleRenameConfirm(newName: string) {
     if (!renameTarget || busyAction) return;
@@ -1262,11 +1274,11 @@ function GridSkeleton() {
           className="flex flex-col overflow-hidden rounded-2xl border border-border/40 bg-card/50 shadow-card"
         >
           <div className={`aspect-[4/3] ${SHIMMER}`} style={{ animationDelay: `${i * 60}ms` }} />
-          <div className="space-y-2.5 p-3.5">
-            <div
-              className={`h-3.5 w-4/5 rounded-lg ${SHIMMER}`}
-              style={{ animationDelay: `${i * 60 + 30}ms` }}
-            />
+          <div className="flex flex-col gap-2 px-3.5 py-3">
+            <div className="min-h-[2.5rem] space-y-1.5">
+              <div className={`h-3 w-4/5 rounded-md ${SHIMMER}`} style={{ animationDelay: `${i * 60 + 30}ms` }} />
+              <div className={`h-3 w-3/5 rounded-md ${SHIMMER}`} style={{ animationDelay: `${i * 60 + 45}ms` }} />
+            </div>
             <div className="flex gap-2">
               <div className={`h-4 w-10 rounded-md ${SHIMMER}`} style={{ animationDelay: `${i * 60 + 50}ms` }} />
               <div className={`h-4 flex-1 rounded-md ${SHIMMER}`} style={{ animationDelay: `${i * 60 + 70}ms` }} />

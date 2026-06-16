@@ -168,7 +168,7 @@ const FileCard = memo(function FileCard({
 
   return (
     <div
-      className={`group relative flex flex-col overflow-hidden rounded-2xl border bg-card shadow-card transition-[transform,box-shadow] duration-250 ease-out will-change-transform hover:-translate-y-0.5 hover:shadow-elevated ${
+      className={`group relative flex flex-col overflow-hidden rounded-2xl border bg-card shadow-card transition-[box-shadow,border-color] duration-250 ease-out hover:shadow-elevated ${
         selected
           ? 'border-primary/35 ring-2 ring-primary/10 shadow-elevated'
           : 'border-border/55 hover:border-border/80'
@@ -231,10 +231,10 @@ const FileCard = memo(function FileCard({
           {file.name}
         </p>
         <div className="flex min-w-0 items-center gap-2">
-          <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${badge.color}`}>
+          <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${badge.color}`}>
             {badge.label}
           </span>
-          <span className="min-w-0 flex-1 truncate text-right text-[10px] tabular-nums text-muted-foreground/55">
+          <span className="min-w-0 flex-1 truncate text-right text-[10px] tabular-nums text-muted-foreground/70">
             {size > 0 ? formatBytes(size) : '—'}
           </span>
           <button

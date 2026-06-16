@@ -204,16 +204,16 @@ const FileRowWithVersions = memo(function FileRowWithVersions({
           </div>
         </td>
         <td className="hidden px-4 py-2.5 sm:table-cell">
-          <span className={`inline-block rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${badge.color}`}>
+          <span className={`inline-block rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${badge.color}`}>
             {badge.label}
           </span>
         </td>
-        <td className="px-4 py-2.5 text-right text-xs tabular-nums text-muted-foreground/60">{formatBytes(size)}</td>
-        <td className="hidden px-4 py-2.5 text-xs text-muted-foreground/60 md:table-cell">
+        <td className="px-4 py-2.5 text-right text-xs tabular-nums text-muted-foreground/70">{formatBytes(size)}</td>
+        <td className="hidden px-4 py-2.5 text-xs text-muted-foreground/70 md:table-cell">
           {formatDate(file.currentVersion?.createdAt ?? file.createdAt)}
         </td>
         <td className="hidden px-4 py-2.5 text-center sm:table-cell">
-          <span className="inline-flex items-center justify-center gap-1 text-[11px] tabular-nums text-muted-foreground/50">
+          <span className="inline-flex items-center justify-center gap-1 text-[11px] tabular-nums text-muted-foreground/65">
             <History className="h-3 w-3 shrink-0" />
             {versionCount}
           </span>

@@ -130,7 +130,7 @@ const FolderCard = memo(function FolderCard({
           >
             {folder.name}
           </p>
-          <p className="text-[11px] text-muted-foreground/50">
+          <p className="text-[11px] text-muted-foreground/70">
             {itemCount} item{itemCount !== 1 ? 's' : ''}
           </p>
         </div>
