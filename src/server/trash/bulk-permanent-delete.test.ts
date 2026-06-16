@@ -7,6 +7,7 @@ const mockFolderDeleteMany = vi.fn();
 const mockStorageUsageUpdateMany = vi.fn();
 const mockDeleteObjects = vi.fn();
 const mockLogAuditEvent = vi.fn();
+const mockLogAuditEvents = vi.fn();
 const callOrder: string[] = [];
 
 vi.mock('@/server/db', () => ({
@@ -33,7 +34,10 @@ vi.mock('@/server/db', () => ({
 vi.mock('@/server/rbac', () => ({
   requirePermission: vi.fn().mockResolvedValue({ id: 'owner-1', role: 'owner', email: 'o@e.com' }),
 }));
-vi.mock('@/server/audit', () => ({ logAuditEvent: (...a: unknown[]) => mockLogAuditEvent(...a) }));
+vi.mock('@/server/audit', () => ({
+  logAuditEvent: (...a: unknown[]) => mockLogAuditEvent(...a),
+  logAuditEvents: (...a: unknown[]) => mockLogAuditEvents(...a),
+}));
 vi.mock('@/server/storage', () => ({
   deleteObjects: (...a: unknown[]) => {
     callOrder.push('deleteObjects');
@@ -110,12 +114,26 @@ describe('bulkPermanentDeleteTrash (set-based)', () => {
     expect(storageIdx).toBeGreaterThan(folderIdx);
   });
 
-  it('emits one audit event per top-level item (folder + file)', async () => {
+  it('writes one audit event per top-level item in a single batched call', async () => {
     await bulkPermanentDeleteTrash({ folderIds: ['F1'], fileIds: ['fileX'] });
-    const actions = mockLogAuditEvent.mock.calls.map((c) => c[0].action);
+
+    // ONE batched insert (not N single inserts), and never the single-row path.
+    expect(mockLogAuditEvents).toHaveBeenCalledTimes(1);
+    expect(mockLogAuditEvent).not.toHaveBeenCalled();
+
+    const entries = mockLogAuditEvents.mock.calls[0][0] as Array<{
+      action: string;
+      targetId: string;
+      meta: Record<string, unknown>;
+    }>;
+    const actions = entries.map((e) => e.action);
     expect(actions).toContain('folder.permanent_delete');
     expect(actions).toContain('file.permanent_delete');
-    const folderEvent = mockLogAuditEvent.mock.calls.find((c) => c[0].action === 'folder.permanent_delete')![0];
+
+    // Identical metadata to the previous per-item events is preserved.
+    const folderEvent = entries.find((e) => e.action === 'folder.permanent_delete')!;
     expect(folderEvent.meta).toMatchObject({ name: 'Root', folderCount: 3, fileCount: 1 });
+    const fileEvent = entries.find((e) => e.action === 'file.permanent_delete')!;
+    expect(fileEvent.meta).toMatchObject({ name: 'x.pdf', versionsDeleted: 1 });
   });
 });

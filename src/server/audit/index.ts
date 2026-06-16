@@ -52,17 +52,29 @@ interface AuditLogInput {
   userAgent?: string;
 }
 
+function toAuditRow(input: AuditLogInput) {
+  return {
+    actorId: input.actor?.id ?? null,
+    role: input.actor?.role ?? null,
+    action: input.action,
+    targetType: input.targetType ?? null,
+    targetId: input.targetId ?? null,
+    meta: (input.meta as Prisma.InputJsonValue) ?? undefined,
+    ip: input.ip ?? null,
+    userAgent: input.userAgent ?? null,
+  };
+}
+
 export async function logAuditEvent(input: AuditLogInput) {
-  await db.auditEvent.create({
-    data: {
-      actorId: input.actor?.id ?? null,
-      role: input.actor?.role ?? null,
-      action: input.action,
-      targetType: input.targetType ?? null,
-      targetId: input.targetId ?? null,
-      meta: (input.meta as Prisma.InputJsonValue) ?? undefined,
-      ip: input.ip ?? null,
-      userAgent: input.userAgent ?? null,
-    },
-  });
+  await db.auditEvent.create({ data: toAuditRow(input) });
+}
+
+/**
+ * Writes many audit events in a single `createMany` insert. Each input maps to
+ * exactly the same row a `logAuditEvent` call would produce — use this for bulk
+ * operations to avoid N sequential inserts. No-op on an empty array.
+ */
+export async function logAuditEvents(inputs: AuditLogInput[]) {
+  if (inputs.length === 0) return;
+  await db.auditEvent.createMany({ data: inputs.map(toAuditRow) });
 }

@@ -1,6 +1,6 @@
 import { db } from '@/server/db';
 import { requirePermission } from '@/server/rbac';
-import { logAuditEvent } from '@/server/audit';
+import { logAuditEvent, logAuditEvents } from '@/server/audit';
 import { deleteObjects } from '@/server/storage';
 import { isStorageConfigured } from '@/server/storage';
 import { collectSubtreeFolderIds } from '@/server/folders/tree';
@@ -323,11 +323,13 @@ export async function bulkPermanentDeleteTrash(input: {
     await deleteObjects(storageKeys);
   }
 
-  // 9. Per-top-level-item audit events (preserves existing audit behavior).
+  // 9. Per-top-level-item audit events (preserves existing audit behavior),
+  //    written in ONE batched insert instead of N sequential ones.
+  const auditEntries: Parameters<typeof logAuditEvents>[0] = [];
   for (const root of perRoot) {
     const subtreeSet = new Set(root.subtree);
     const filesUnderRoot = allFiles.filter((f) => f.folderId && subtreeSet.has(f.folderId)).length;
-    await logAuditEvent({
+    auditEntries.push({
       actor: user,
       action: 'folder.permanent_delete',
       targetType: 'folder',
@@ -336,7 +338,7 @@ export async function bulkPermanentDeleteTrash(input: {
     });
   }
   for (const f of selectedFiles) {
-    await logAuditEvent({
+    auditEntries.push({
       actor: user,
       action: 'file.permanent_delete',
       targetType: 'file',
@@ -344,6 +346,7 @@ export async function bulkPermanentDeleteTrash(input: {
       meta: { name: f.name, versionsDeleted: f.versions.length },
     });
   }
+  await logAuditEvents(auditEntries);
 
   return {
     deletedFolders: roots.length,
