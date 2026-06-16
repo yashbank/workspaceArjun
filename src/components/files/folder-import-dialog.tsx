@@ -7,6 +7,14 @@ import { useToast } from '@/components/ui/toast';
 import { formatUploadError, uploadFileDirect } from '@/lib/direct-upload';
 import { planFolderImport } from '@/lib/folder-import-plan';
 
+/** Human-readable reason for a folder-create failure, for the import summary. */
+function describeFolderFailure(err: unknown): string {
+  const msg = err instanceof Error ? err.message : '';
+  if (msg === 'Unauthorized') return 'your session has expired — sign in again';
+  if (msg === 'Forbidden') return "you don't have permission to create folders here";
+  return 'a network or server error occurred';
+}
+
 /** Run `fn` over `items` with at most `limit` in flight at once. */
 async function runPool<T>(
   items: T[],
@@ -54,6 +62,8 @@ export function FolderImportDialog({
       // and the files under it are then skipped (and counted) below.
       const pathToId = new Map<string, string>();
       let foldersFailed = 0;
+      let firstFolderError: unknown;
+      const failedFolderPaths: string[] = [];
       for (const level of plan.levels) {
         await runPool(level, 3, async (dir) => {
           const parentId =
@@ -69,8 +79,10 @@ export function FolderImportDialog({
               body: JSON.stringify({ name: dir.name, parentId: parentId ?? null }),
             });
             pathToId.set(dir.path, id);
-          } catch {
+          } catch (e) {
             foldersFailed++;
+            firstFolderError ??= e; // keep the first real error to explain the failure
+            failedFolderPaths.push(dir.path);
           }
         });
       }
@@ -106,7 +118,13 @@ export function FolderImportDialog({
         if (skipped > 0) parts.push(`${skipped} skipped`);
         if (foldersFailed > 0)
           parts.push(`${foldersFailed} folder${foldersFailed === 1 ? '' : 's'} not created`);
-        toast('error', `Imported "${folderName}": ${parts.join(', ')}`);
+        let message = `Imported "${folderName}": ${parts.join(', ')}`;
+        if (foldersFailed > 0) {
+          message += ` — ${describeFolderFailure(firstFolderError)}`;
+          const sample = failedFolderPaths.slice(0, 2);
+          if (sample.length > 0) message += ` (${sample.join(', ')})`;
+        }
+        toast('error', message);
       } else {
         toast('success', `Imported folder "${folderName}" with ${done} file${done === 1 ? '' : 's'}`);
       }
