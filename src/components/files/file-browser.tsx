@@ -1132,7 +1132,11 @@ export function FileBrowser({
               </div>
 
               {folders.length === 0 && files.length === 0 && (
-                <EmptyState isRoot={currentFolderId === null} />
+                <EmptyState
+                  isRoot={currentFolderId === null}
+                  onUpload={() => fileInputRef.current?.click()}
+                  onNewFolder={() => setShowCreateFolder(true)}
+                />
               )}
             </>
           )}
@@ -1320,7 +1324,15 @@ function ListSkeleton() {
   );
 }
 
-function EmptyState({ isRoot }: { isRoot: boolean }) {
+function EmptyState({
+  isRoot,
+  onUpload,
+  onNewFolder,
+}: {
+  isRoot: boolean;
+  onUpload: () => void;
+  onNewFolder: () => void;
+}) {
   return (
     <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border/40 py-24">
       <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-primary/8 to-primary/4">
@@ -1334,17 +1346,24 @@ function EmptyState({ isRoot }: { isRoot: boolean }) {
           ? 'Upload files or create a folder to get started.'
           : 'Drag files here, paste from the clipboard, or use the Upload button.'}
       </p>
-      {isRoot && (
-        <div className="mt-6 flex items-center gap-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/30">
-          <span>PDF</span>
-          <span className="h-0.5 w-0.5 rounded-full bg-muted-foreground/15" />
-          <span>CDR</span>
-          <span className="h-0.5 w-0.5 rounded-full bg-muted-foreground/15" />
-          <span>Images</span>
-          <span className="h-0.5 w-0.5 rounded-full bg-muted-foreground/15" />
-          <span>All types</span>
-        </div>
-      )}
+      <div className="mt-6 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={onUpload}
+          className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-semibold text-primary-foreground shadow-card transition-[box-shadow,transform] hover:shadow-elevated active:scale-[0.97]"
+        >
+          <Upload className="h-3.5 w-3.5" />
+          Upload files
+        </button>
+        <button
+          type="button"
+          onClick={onNewFolder}
+          className="flex items-center gap-1.5 rounded-xl border border-border/50 bg-card px-4 py-2.5 text-xs font-medium shadow-card transition-[box-shadow,transform] hover:shadow-elevated active:scale-[0.97]"
+        >
+          <FolderPlus className="h-3.5 w-3.5 text-muted-foreground/60" />
+          New folder
+        </button>
+      </div>
     </div>
   );
 }
