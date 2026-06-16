@@ -77,7 +77,10 @@ const TrashFolderRow = memo(function TrashFolderRow({
           <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-500/8">
             <Folder className="h-3.5 w-3.5 text-blue-500/50" />
           </div>
-          <span className="truncate font-medium text-muted-foreground line-through decoration-muted-foreground/30">
+          <span
+            className="truncate font-medium text-muted-foreground line-through decoration-muted-foreground/30"
+            title={folder.name}
+          >
             {folder.name}
           </span>
         </div>

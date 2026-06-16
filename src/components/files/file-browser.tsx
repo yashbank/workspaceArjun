@@ -141,6 +141,19 @@ export function FileBrowser({
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [, startTransition] = useTransition();
 
+  // Mirror viewMode in a ref so the keydown handler (whose effect deps don't
+  // include viewMode) can read the current value without a stale closure.
+  const viewModeRef = useRef(viewMode);
+  viewModeRef.current = viewMode;
+
+  // Persist the preference synchronously, then apply the (heavy, full-remount)
+  // view switch as a non-urgent transition so it stays off the interaction's
+  // paint path — reduces INP on the grid/list toggle.
+  const setViewModeWithTransition = useCallback((mode: 'list' | 'grid') => {
+    localStorage.setItem('arjun-view', mode);
+    startTransition(() => setViewMode(mode));
+  }, [startTransition]);
+
   // Whether the server returned a full (truncated) page for the current folder.
   // When true, sorting must round-trip to the server; otherwise we sort the
   // already-loaded list client-side with no network call.
@@ -383,11 +396,7 @@ export function FileBrowser({
       }
       if (e.key === 'v' && !isCmd) {
         e.preventDefault();
-        setViewMode((m) => {
-          const next = m === 'list' ? 'grid' : 'list';
-          localStorage.setItem('arjun-view', next);
-          return next;
-        });
+        setViewModeWithTransition(viewModeRef.current === 'list' ? 'grid' : 'list');
         return;
       }
       if (e.key === 'a' && isCmd && files.length > 0) {
@@ -967,14 +976,14 @@ export function FileBrowser({
               {/* View toggle */}
               <div className="flex items-center overflow-hidden rounded-xl border border-border/50 bg-card shadow-card">
                 <button
-                  onClick={() => { setViewMode('list'); localStorage.setItem('arjun-view', 'list'); }}
+                  onClick={() => setViewModeWithTransition('list')}
                   className={`p-2 transition-colors ${viewMode === 'list' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
                   title="List view (V)"
                 >
                   <LayoutList className="h-3.5 w-3.5" />
                 </button>
                 <button
-                  onClick={() => { setViewMode('grid'); localStorage.setItem('arjun-view', 'grid'); }}
+                  onClick={() => setViewModeWithTransition('grid')}
                   className={`p-2 transition-colors ${viewMode === 'grid' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
                   title="Grid view (V)"
                 >

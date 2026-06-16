@@ -129,7 +129,7 @@ export function SearchBar({
                   <FileText className="h-3.5 w-3.5 text-muted-foreground" />
                 )}
               </div>
-              <span className="truncate text-sm font-medium">{r.name}</span>
+              <span className="truncate text-sm font-medium" title={r.name}>{r.name}</span>
               <span className="ml-auto rounded-md bg-muted/50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-muted-foreground/60">{r.type}</span>
             </button>
           ))}

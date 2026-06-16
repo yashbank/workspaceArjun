@@ -338,7 +338,7 @@ export const PreviewPanel = memo(function PreviewPanel({
                 <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-red-500/10">
                   <FileText className="h-3.5 w-3.5 text-red-500" />
                 </div>
-                <span className="truncate text-[11px] font-semibold text-muted-foreground/70">{file.name}</span>
+                <span className="truncate text-[11px] font-semibold text-muted-foreground/70" title={file.name}>{file.name}</span>
                 <span className="ml-auto shrink-0 rounded-md bg-red-500/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-red-600">PDF</span>
               </div>
               {!pdfLoaded && (

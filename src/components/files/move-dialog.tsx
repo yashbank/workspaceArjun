@@ -104,7 +104,7 @@ export function MoveDialog({
                   <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-500/8">
                     <Folder className="h-3.5 w-3.5 text-blue-500" />
                   </div>
-                  <span className="truncate text-[13px] font-medium">{f.name}</span>
+                  <span className="truncate text-[13px] font-medium" title={f.name}>{f.name}</span>
                 </button>
                 <button
                   onClick={() => navigateInto(f)}

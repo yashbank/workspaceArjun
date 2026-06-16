@@ -147,7 +147,7 @@ export function Lightbox({
             <X className="h-5 w-5" />
           </button>
           <div className="hidden items-center gap-1.5 sm:flex">
-            <span className="max-w-[300px] truncate text-sm font-medium text-white/90">{file.name}</span>
+            <span className="max-w-[300px] truncate text-sm font-medium text-white/90" title={file.name}>{file.name}</span>
             <span className="text-xs text-white/40">
               {currentIdx + 1} / {files.length}
             </span>
