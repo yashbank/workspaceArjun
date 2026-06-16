@@ -289,6 +289,51 @@ export function TrashBrowser({ canPermanentDelete }: { canPermanentDelete: boole
     return { folderIds, fileIds };
   }
 
+  // Shared optimistic permanent-delete core: chunk the selection, POST each chunk
+  // to the bulk endpoint, and drop the EXACT rows the server reports as removed —
+  // a trashed folder's descendants also appear in this list, so we rely on the
+  // server-returned subtree ids rather than just the clicked id. Removal runs in a
+  // transition. Owns neither the busy/progress UI nor the refresh (callers do), so
+  // single-item and bulk deletes share the core while keeping their own
+  // affordances. Throws on the first failed chunk so the caller can resync.
+  const executeOptimisticPermanentDelete = useCallback(
+    async (folderIds: string[], fileIds: string[], onChunkDone?: (count: number) => void) => {
+      const items: Array<['folder' | 'file', string]> = [
+        ...folderIds.map((id) => ['folder', id] as ['folder', string]),
+        ...fileIds.map((id) => ['file', id] as ['file', string]),
+      ];
+      for (let i = 0; i < items.length; i += CHUNK_SIZE) {
+        const slice = items.slice(i, i + CHUNK_SIZE);
+        const chunk = {
+          folderIds: slice.filter(([t]) => t === 'folder').map(([, id]) => id),
+          fileIds: slice.filter(([t]) => t === 'file').map(([, id]) => id),
+        };
+        const res = await apiFetch<{ deletedFolderIds: string[]; deletedFileIds: string[] }>(
+          '/api/trash/bulk',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'permanent_delete', ...chunk }),
+          },
+        );
+        const removedFolders = new Set(res.deletedFolderIds);
+        const removedFiles = new Set(res.deletedFileIds);
+        startTransition(() => {
+          setFolders((prev) => prev.filter((f) => !removedFolders.has(f.id)));
+          setFiles((prev) => prev.filter((f) => !removedFiles.has(f.id)));
+          setSelected((prev) => {
+            const next = new Set(prev);
+            chunk.folderIds.forEach((id) => next.delete(toKey('folder', id)));
+            chunk.fileIds.forEach((id) => next.delete(toKey('file', id)));
+            return next;
+          });
+        });
+        onChunkDone?.(chunk.folderIds.length + chunk.fileIds.length);
+      }
+    },
+    [],
+  );
+
   const handleRestoreFolder = useCallback(
     async (id: string) => {
       markBusy(id);
@@ -313,18 +358,20 @@ export function TrashBrowser({ canPermanentDelete }: { canPermanentDelete: boole
       if (!confirm('Permanently delete this folder? This cannot be undone.')) return;
       markBusy(id);
       try {
-        await apiFetch(`/api/trash/folders/${id}`, { method: 'DELETE' });
-        await load();
-        // Restores/deletes change Files, Dashboard counts and Activity — refresh
-        // those server-rendered sections.
-        router.refresh();
+        // Route through the bulk path so the server-reported subtree ids drop
+        // optimistically (descendants of a trashed folder also appear in this list).
+        await executeOptimisticPermanentDelete([id], []);
+        // One deferred refresh for the other server-rendered sections (Files,
+        // Dashboard counts, Activity), off the interaction's paint path.
+        startTransition(() => router.refresh());
       } catch (e: unknown) {
         alert(e instanceof Error ? e.message : 'Could not delete folder.');
+        await load(); // resync the list to whatever actually completed
       } finally {
         clearBusy(id);
       }
     },
-    [canPermanentDelete, markBusy, clearBusy, load, router],
+    [canPermanentDelete, markBusy, clearBusy, load, router, executeOptimisticPermanentDelete],
   );
 
   const handleRestoreFile = useCallback(
@@ -357,18 +404,18 @@ export function TrashBrowser({ canPermanentDelete }: { canPermanentDelete: boole
       }
       markBusy(id);
       try {
-        await apiFetch(`/api/trash/files/${id}`, { method: 'DELETE' });
-        await load();
-        // Restores/deletes change Files, Dashboard counts and Activity — refresh
-        // those server-rendered sections.
-        router.refresh();
+        await executeOptimisticPermanentDelete([], [id]);
+        // One deferred refresh for the other server-rendered sections, off the
+        // interaction's paint path.
+        startTransition(() => router.refresh());
       } catch (e: unknown) {
         alert(e instanceof Error ? e.message : 'Could not delete file.');
+        await load(); // resync the list to whatever actually completed
       } finally {
         clearBusy(id);
       }
     },
-    [canPermanentDelete, markBusy, clearBusy, load, router],
+    [canPermanentDelete, markBusy, clearBusy, load, router, executeOptimisticPermanentDelete],
   );
 
   async function handleBulkRestore() {
@@ -405,60 +452,22 @@ export function TrashBrowser({ canPermanentDelete }: { canPermanentDelete: boole
       return;
     }
 
-    // Chunk the selection so each request is small (bounded server time) and the
-    // UI can show determinate progress; rows are removed optimistically as each
-    // chunk confirms, so the list never does a full refetch re-render.
-    const items: Array<['folder' | 'file', string]> = [
-      ...folderIds.map((id) => ['folder', id] as ['folder', string]),
-      ...fileIds.map((id) => ['file', id] as ['file', string]),
-    ];
-    const chunks: { folderIds: string[]; fileIds: string[] }[] = [];
-    for (let i = 0; i < items.length; i += CHUNK_SIZE) {
-      const slice = items.slice(i, i + CHUNK_SIZE);
-      chunks.push({
-        folderIds: slice.filter(([t]) => t === 'folder').map(([, id]) => id),
-        fileIds: slice.filter(([t]) => t === 'file').map(([, id]) => id),
-      });
-    }
-
     setBulkBusy(true);
     setProgress({ done: 0, total: n });
     try {
-      for (const chunk of chunks) {
-        const res = await apiFetch<{ deletedFolderIds: string[]; deletedFileIds: string[] }>(
-          '/api/trash/bulk',
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'permanent_delete', ...chunk }),
-          },
-        );
-        const removedFolders = new Set(res.deletedFolderIds);
-        const removedFiles = new Set(res.deletedFileIds);
-        // Optimistically drop the exact rows the server removed (subtree included).
-        startTransition(() => {
-          setFolders((prev) => prev.filter((f) => !removedFolders.has(f.id)));
-          setFiles((prev) => prev.filter((f) => !removedFiles.has(f.id)));
-          setSelected((prev) => {
-            const next = new Set(prev);
-            chunk.folderIds.forEach((id) => next.delete(toKey('folder', id)));
-            chunk.fileIds.forEach((id) => next.delete(toKey('file', id)));
-            return next;
-          });
-        });
-        setProgress((p) =>
-          p ? { ...p, done: p.done + chunk.folderIds.length + chunk.fileIds.length } : p,
-        );
-      }
+      // Same optimistic core as single-item delete; advance the progress bar as
+      // each chunk confirms.
+      await executeOptimisticPermanentDelete(folderIds, fileIds, (count) => {
+        setProgress((p) => (p ? { ...p, done: p.done + count } : p));
+      });
+      // One deferred refresh on success, off the interaction's paint path, so the
+      // server-rendered sections (Files, Dashboard counts, Activity) stay fresh.
+      startTransition(() => router.refresh());
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : 'Bulk delete failed.');
       // Resync from the server so the list reflects whatever did complete.
       await load();
     } finally {
-      // Refresh server-rendered sections (Files, Dashboard counts, Activity)
-      // exactly once — whether the batch fully succeeded or partially failed,
-      // so those counts can never go stale.
-      router.refresh();
       setBulkBusy(false);
       setProgress(null);
     }
