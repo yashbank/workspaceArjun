@@ -124,7 +124,12 @@ const FolderCard = memo(function FolderCard({
           <Folder className="h-5 w-5 text-foreground/70" />
         </div>
         <div className="min-w-0">
-          <p className="truncate pr-2 text-[13px] font-semibold tracking-tight">{folder.name}</p>
+          <p
+            className="line-clamp-2 pr-2 text-[13px] font-semibold tracking-tight"
+            title={folder.name}
+          >
+            {folder.name}
+          </p>
           <p className="text-[11px] text-muted-foreground/50">
             {itemCount} item{itemCount !== 1 ? 's' : ''}
           </p>

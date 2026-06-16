@@ -8,7 +8,7 @@ const mockFileUpdateMany = vi.fn();
 const mockFileFindMany = vi.fn();
 const mockFileDeleteMany = vi.fn();
 const mockStorageUsageUpdateMany = vi.fn();
-const mockDeleteObject = vi.fn();
+const mockDeleteObjects = vi.fn();
 
 vi.mock('@/server/db', () => ({
   db: {
@@ -33,7 +33,7 @@ vi.mock('@/server/rbac', () => ({
 }));
 vi.mock('@/server/audit', () => ({ logAuditEvent: vi.fn() }));
 vi.mock('@/server/storage', () => ({
-  deleteObject: (...a: unknown[]) => mockDeleteObject(...a),
+  deleteObjects: (...a: unknown[]) => mockDeleteObjects(...a),
   isStorageConfigured: () => true,
 }));
 
@@ -118,9 +118,9 @@ describe('permanentDeleteFolder (cascade purge)', () => {
 
     await permanentDeleteFolder('F1');
 
-    // Storage blobs removed best-effort.
-    expect(mockDeleteObject).toHaveBeenCalledWith('k1');
-    expect(mockDeleteObject).toHaveBeenCalledWith('k2');
+    // Storage blobs removed best-effort, in ONE batched call.
+    expect(mockDeleteObjects).toHaveBeenCalledTimes(1);
+    expect(mockDeleteObjects).toHaveBeenCalledWith(['k1', 'k2']);
 
     // Files deleted explicitly so none get SetNull-orphaned to the root.
     const fileDelArgs = mockFileDeleteMany.mock.calls[0][0];
@@ -142,7 +142,7 @@ describe('permanentDeleteFolder (cascade purge)', () => {
 
     await permanentDeleteFolder('F1');
 
-    expect(mockDeleteObject).not.toHaveBeenCalled();
+    expect(mockDeleteObjects).not.toHaveBeenCalled();
     expect(mockStorageUsageUpdateMany).not.toHaveBeenCalled();
     // Folders are still purged.
     expect(mockFolderDeleteMany).toHaveBeenCalled();

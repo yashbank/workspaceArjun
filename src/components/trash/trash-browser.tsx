@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, startTransition, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiFetch } from '@/lib/api';
 import { formatBytes, formatDate, getFileTypeBadge } from '@/lib/file-utils';
@@ -38,6 +38,168 @@ function toKey(type: 'folder' | 'file', id: string): SelectedKey {
   return `${type}:${id}`;
 }
 
+const CHUNK_SIZE = 100;
+
+// Memoized rows — receive their own item + per-row booleans + the parent's stable
+// callbacks, so a selection/optimistic-removal re-render only repaints the rows
+// whose props actually changed (not the whole table).
+const TrashFolderRow = memo(function TrashFolderRow({
+  folder,
+  selected,
+  busy,
+  disabled,
+  canPermanentDelete,
+  onToggle,
+  onRestore,
+  onDelete,
+}: {
+  folder: TrashedFolder;
+  selected: boolean;
+  busy: boolean;
+  disabled: boolean;
+  canPermanentDelete: boolean;
+  onToggle: (key: SelectedKey) => void;
+  onRestore: (id: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  return (
+    <tr className="border-b border-border/30 transition-colors hover:bg-accent/15 last:border-0">
+      <td className="px-4 py-3">
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={() => onToggle(toKey('folder', folder.id))}
+          className="h-4 w-4 rounded accent-primary"
+        />
+      </td>
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-500/8">
+            <Folder className="h-3.5 w-3.5 text-blue-500/50" />
+          </div>
+          <span className="truncate font-medium text-muted-foreground line-through decoration-muted-foreground/30">
+            {folder.name}
+          </span>
+        </div>
+      </td>
+      <td className="hidden px-4 py-3 text-xs text-muted-foreground md:table-cell">
+        {formatDate(folder.deletedAt)}
+      </td>
+      <td className="hidden px-4 py-3 text-xs text-muted-foreground sm:table-cell">
+        {folder.owner.name ?? folder.owner.email}
+      </td>
+      <td className="px-4 py-3">
+        <div className="flex items-center justify-end gap-1">
+          <button
+            type="button"
+            onClick={() => onRestore(folder.id)}
+            disabled={disabled}
+            className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-40"
+          >
+            {busy ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RotateCcw className="h-3.5 w-3.5" />
+            )}{' '}
+            Restore
+          </button>
+          {canPermanentDelete && (
+            <button
+              type="button"
+              onClick={() => onDelete(folder.id)}
+              disabled={disabled}
+              className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:opacity-40"
+            >
+              <AlertTriangle className="h-3.5 w-3.5" /> Delete
+            </button>
+          )}
+        </div>
+      </td>
+    </tr>
+  );
+});
+
+const TrashFileRow = memo(function TrashFileRow({
+  file,
+  selected,
+  busy,
+  disabled,
+  canPermanentDelete,
+  onToggle,
+  onRestore,
+  onDelete,
+}: {
+  file: TrashedFile;
+  selected: boolean;
+  busy: boolean;
+  disabled: boolean;
+  canPermanentDelete: boolean;
+  onToggle: (key: SelectedKey) => void;
+  onRestore: (id: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  const badge = getFileTypeBadge(file.name);
+  const size = file.currentVersion ? Number(file.currentVersion.sizeBytes) : 0;
+  return (
+    <tr className="border-b border-border/30 transition-colors hover:bg-accent/15 last:border-0">
+      <td className="px-4 py-3">
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={() => onToggle(toKey('file', file.id))}
+          className="h-4 w-4 rounded accent-primary"
+        />
+      </td>
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-2.5">
+          <FileText className="h-4 w-4 shrink-0 text-muted-foreground/40" />
+          <span className="truncate font-medium text-muted-foreground line-through" title={file.name}>
+            {file.name}
+          </span>
+        </div>
+      </td>
+      <td className="hidden px-4 py-3 sm:table-cell">
+        <span className={`rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase opacity-50 ${badge.color}`}>
+          {badge.label}
+        </span>
+      </td>
+      <td className="hidden px-4 py-3 text-xs tabular-nums text-muted-foreground md:table-cell">
+        {size > 0 ? formatBytes(size) : '—'}
+      </td>
+      <td className="hidden px-4 py-3 text-xs text-muted-foreground md:table-cell">
+        {formatDate(file.deletedAt)}
+      </td>
+      <td className="px-4 py-3">
+        <div className="flex items-center justify-end gap-1">
+          <button
+            type="button"
+            onClick={() => onRestore(file.id)}
+            disabled={disabled}
+            className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-40"
+          >
+            {busy ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RotateCcw className="h-3.5 w-3.5" />
+            )}{' '}
+            Restore
+          </button>
+          {canPermanentDelete && (
+            <button
+              type="button"
+              onClick={() => onDelete(file.id)}
+              disabled={disabled}
+              className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:opacity-40"
+            >
+              <AlertTriangle className="h-3.5 w-3.5" /> Delete
+            </button>
+          )}
+        </div>
+      </td>
+    </tr>
+  );
+});
+
 export function TrashBrowser({ canPermanentDelete }: { canPermanentDelete: boolean }) {
   const [folders, setFolders] = useState<TrashedFolder[]>([]);
   const [files, setFiles] = useState<TrashedFile[]>([]);
@@ -46,6 +208,7 @@ export function TrashBrowser({ canPermanentDelete }: { canPermanentDelete: boole
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Set<SelectedKey>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
 
   const allKeys = useMemo(() => {
     const keys: SelectedKey[] = [];
@@ -76,25 +239,37 @@ export function TrashBrowser({ canPermanentDelete }: { canPermanentDelete: boole
     void load();
   }, [load]);
 
-  function markBusy(id: string) {
+  // Warn on accidental refresh/navigation while a bulk operation is mid-flight.
+  // Active only during the operation; removed as soon as it settles.
+  useEffect(() => {
+    if (!bulkBusy) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [bulkBusy]);
+
+  const markBusy = useCallback((id: string) => {
     setBusyIds((s) => new Set(s).add(id));
-  }
-  function clearBusy(id: string) {
+  }, []);
+  const clearBusy = useCallback((id: string) => {
     setBusyIds((s) => {
       const n = new Set(s);
       n.delete(id);
       return n;
     });
-  }
+  }, []);
 
-  function toggleSelect(key: SelectedKey) {
+  const toggleSelect = useCallback((key: SelectedKey) => {
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
       else next.add(key);
       return next;
     });
-  }
+  }, []);
 
   function selectAll() {
     setSelected(new Set(allKeys));
@@ -114,75 +289,87 @@ export function TrashBrowser({ canPermanentDelete }: { canPermanentDelete: boole
     return { folderIds, fileIds };
   }
 
-  async function handleRestoreFolder(id: string) {
-    markBusy(id);
-    try {
-      await apiFetch(`/api/trash/folders/${id}/restore`, { method: 'POST' });
-      await load();
-      // Restores/deletes change Files, Dashboard counts and Activity — refresh
-      // those server-rendered sections.
-      router.refresh();
-    } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : 'Could not restore folder.');
-    } finally {
-      clearBusy(id);
-    }
-  }
+  const handleRestoreFolder = useCallback(
+    async (id: string) => {
+      markBusy(id);
+      try {
+        await apiFetch(`/api/trash/folders/${id}/restore`, { method: 'POST' });
+        await load();
+        // Restores/deletes change Files, Dashboard counts and Activity — refresh
+        // those server-rendered sections.
+        router.refresh();
+      } catch (e: unknown) {
+        alert(e instanceof Error ? e.message : 'Could not restore folder.');
+      } finally {
+        clearBusy(id);
+      }
+    },
+    [markBusy, clearBusy, load, router],
+  );
 
-  async function handlePermanentDeleteFolder(id: string) {
-    if (!canPermanentDelete) return;
-    if (!confirm('Permanently delete this folder? This cannot be undone.')) return;
-    markBusy(id);
-    try {
-      await apiFetch(`/api/trash/folders/${id}`, { method: 'DELETE' });
-      await load();
-      // Restores/deletes change Files, Dashboard counts and Activity — refresh
-      // those server-rendered sections.
-      router.refresh();
-    } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : 'Could not delete folder.');
-    } finally {
-      clearBusy(id);
-    }
-  }
+  const handlePermanentDeleteFolder = useCallback(
+    async (id: string) => {
+      if (!canPermanentDelete) return;
+      if (!confirm('Permanently delete this folder? This cannot be undone.')) return;
+      markBusy(id);
+      try {
+        await apiFetch(`/api/trash/folders/${id}`, { method: 'DELETE' });
+        await load();
+        // Restores/deletes change Files, Dashboard counts and Activity — refresh
+        // those server-rendered sections.
+        router.refresh();
+      } catch (e: unknown) {
+        alert(e instanceof Error ? e.message : 'Could not delete folder.');
+      } finally {
+        clearBusy(id);
+      }
+    },
+    [canPermanentDelete, markBusy, clearBusy, load, router],
+  );
 
-  async function handleRestoreFile(id: string) {
-    markBusy(id);
-    try {
-      await apiFetch(`/api/trash/files/${id}/restore`, { method: 'POST' });
-      await load();
-      // Restores/deletes change Files, Dashboard counts and Activity — refresh
-      // those server-rendered sections.
-      router.refresh();
-    } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : 'Could not restore file.');
-    } finally {
-      clearBusy(id);
-    }
-  }
+  const handleRestoreFile = useCallback(
+    async (id: string) => {
+      markBusy(id);
+      try {
+        await apiFetch(`/api/trash/files/${id}/restore`, { method: 'POST' });
+        await load();
+        // Restores/deletes change Files, Dashboard counts and Activity — refresh
+        // those server-rendered sections.
+        router.refresh();
+      } catch (e: unknown) {
+        alert(e instanceof Error ? e.message : 'Could not restore file.');
+      } finally {
+        clearBusy(id);
+      }
+    },
+    [markBusy, clearBusy, load, router],
+  );
 
-  async function handlePermanentDeleteFile(id: string) {
-    if (!canPermanentDelete) return;
-    if (
-      !confirm(
-        'This permanently removes the file from storage and cannot be undone. Delete this file and all its versions?',
-      )
-    ) {
-      return;
-    }
-    markBusy(id);
-    try {
-      await apiFetch(`/api/trash/files/${id}`, { method: 'DELETE' });
-      await load();
-      // Restores/deletes change Files, Dashboard counts and Activity — refresh
-      // those server-rendered sections.
-      router.refresh();
-    } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : 'Could not delete file.');
-    } finally {
-      clearBusy(id);
-    }
-  }
+  const handlePermanentDeleteFile = useCallback(
+    async (id: string) => {
+      if (!canPermanentDelete) return;
+      if (
+        !confirm(
+          'This permanently removes the file from storage and cannot be undone. Delete this file and all its versions?',
+        )
+      ) {
+        return;
+      }
+      markBusy(id);
+      try {
+        await apiFetch(`/api/trash/files/${id}`, { method: 'DELETE' });
+        await load();
+        // Restores/deletes change Files, Dashboard counts and Activity — refresh
+        // those server-rendered sections.
+        router.refresh();
+      } catch (e: unknown) {
+        alert(e instanceof Error ? e.message : 'Could not delete file.');
+      } finally {
+        clearBusy(id);
+      }
+    },
+    [canPermanentDelete, markBusy, clearBusy, load, router],
+  );
 
   async function handleBulkRestore() {
     const { folderIds, fileIds } = parseSelection();
@@ -209,6 +396,7 @@ export function TrashBrowser({ canPermanentDelete }: { canPermanentDelete: boole
     if (!canPermanentDelete) return;
     const { folderIds, fileIds } = parseSelection();
     const n = folderIds.length + fileIds.length;
+    if (n === 0) return;
     if (
       !confirm(
         `This permanently removes ${n} selected item${n === 1 ? '' : 's'} from storage and cannot be undone. Continue?`,
@@ -216,21 +404,63 @@ export function TrashBrowser({ canPermanentDelete }: { canPermanentDelete: boole
     ) {
       return;
     }
-    setBulkBusy(true);
-    try {
-      await apiFetch('/api/trash/bulk', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'permanent_delete', folderIds, fileIds }),
+
+    // Chunk the selection so each request is small (bounded server time) and the
+    // UI can show determinate progress; rows are removed optimistically as each
+    // chunk confirms, so the list never does a full refetch re-render.
+    const items: Array<['folder' | 'file', string]> = [
+      ...folderIds.map((id) => ['folder', id] as ['folder', string]),
+      ...fileIds.map((id) => ['file', id] as ['file', string]),
+    ];
+    const chunks: { folderIds: string[]; fileIds: string[] }[] = [];
+    for (let i = 0; i < items.length; i += CHUNK_SIZE) {
+      const slice = items.slice(i, i + CHUNK_SIZE);
+      chunks.push({
+        folderIds: slice.filter(([t]) => t === 'folder').map(([, id]) => id),
+        fileIds: slice.filter(([t]) => t === 'file').map(([, id]) => id),
       });
-      await load();
-      // Restores/deletes change Files, Dashboard counts and Activity — refresh
-      // those server-rendered sections.
-      router.refresh();
+    }
+
+    setBulkBusy(true);
+    setProgress({ done: 0, total: n });
+    try {
+      for (const chunk of chunks) {
+        const res = await apiFetch<{ deletedFolderIds: string[]; deletedFileIds: string[] }>(
+          '/api/trash/bulk',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'permanent_delete', ...chunk }),
+          },
+        );
+        const removedFolders = new Set(res.deletedFolderIds);
+        const removedFiles = new Set(res.deletedFileIds);
+        // Optimistically drop the exact rows the server removed (subtree included).
+        startTransition(() => {
+          setFolders((prev) => prev.filter((f) => !removedFolders.has(f.id)));
+          setFiles((prev) => prev.filter((f) => !removedFiles.has(f.id)));
+          setSelected((prev) => {
+            const next = new Set(prev);
+            chunk.folderIds.forEach((id) => next.delete(toKey('folder', id)));
+            chunk.fileIds.forEach((id) => next.delete(toKey('file', id)));
+            return next;
+          });
+        });
+        setProgress((p) =>
+          p ? { ...p, done: p.done + chunk.folderIds.length + chunk.fileIds.length } : p,
+        );
+      }
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : 'Bulk delete failed.');
+      // Resync from the server so the list reflects whatever did complete.
+      await load();
     } finally {
+      // Refresh server-rendered sections (Files, Dashboard counts, Activity)
+      // exactly once — whether the batch fully succeeded or partially failed,
+      // so those counts can never go stale.
+      router.refresh();
       setBulkBusy(false);
+      setProgress(null);
     }
   }
 
@@ -301,9 +531,18 @@ export function TrashBrowser({ canPermanentDelete }: { canPermanentDelete: boole
                   onClick={() => void handleBulkPermanentDelete()}
                   className="inline-flex items-center gap-1.5 rounded-xl border border-destructive/30 px-3 py-1.5 text-xs font-semibold text-destructive transition-all hover:bg-destructive/10 disabled:opacity-50"
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
+                  {bulkBusy && progress ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-3.5 w-3.5" />
+                  )}
                   Delete forever
                 </button>
+              )}
+              {progress && (
+                <span className="text-xs font-medium tabular-nums text-muted-foreground">
+                  {progress.done}/{progress.total}
+                </span>
               )}
               <button
                 type="button"
@@ -365,67 +604,19 @@ export function TrashBrowser({ canPermanentDelete }: { canPermanentDelete: boole
                     </tr>
                   </thead>
                   <tbody>
-                    {folders.map((f) => {
-                      const key = toKey('folder', f.id);
-                      return (
-                        <tr
-                          key={f.id}
-                          className="border-b border-border/30 transition-colors hover:bg-accent/15 last:border-0"
-                        >
-                          <td className="px-4 py-3">
-                            <input
-                              type="checkbox"
-                              checked={selected.has(key)}
-                              onChange={() => toggleSelect(key)}
-                              className="h-4 w-4 rounded accent-primary"
-                            />
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-2.5">
-                              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-500/8">
-                                <Folder className="h-3.5 w-3.5 text-blue-500/50" />
-                              </div>
-                              <span className="truncate font-medium text-muted-foreground line-through decoration-muted-foreground/30">
-                                {f.name}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="hidden px-4 py-3 text-xs text-muted-foreground md:table-cell">
-                            {formatDate(f.deletedAt)}
-                          </td>
-                          <td className="hidden px-4 py-3 text-xs text-muted-foreground sm:table-cell">
-                            {f.owner.name ?? f.owner.email}
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center justify-end gap-1">
-                              <button
-                                type="button"
-                                onClick={() => handleRestoreFolder(f.id)}
-                                disabled={busyIds.has(f.id) || bulkBusy}
-                                className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-40"
-                              >
-                                {busyIds.has(f.id) ? (
-                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                ) : (
-                                  <RotateCcw className="h-3.5 w-3.5" />
-                                )}{' '}
-                                Restore
-                              </button>
-                              {canPermanentDelete && (
-                                <button
-                                  type="button"
-                                  onClick={() => handlePermanentDeleteFolder(f.id)}
-                                  disabled={busyIds.has(f.id) || bulkBusy}
-                                  className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:opacity-40"
-                                >
-                                  <AlertTriangle className="h-3.5 w-3.5" /> Delete
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                    {folders.map((f) => (
+                      <TrashFolderRow
+                        key={f.id}
+                        folder={f}
+                        selected={selected.has(toKey('folder', f.id))}
+                        busy={busyIds.has(f.id)}
+                        disabled={busyIds.has(f.id) || bulkBusy}
+                        canPermanentDelete={canPermanentDelete}
+                        onToggle={toggleSelect}
+                        onRestore={handleRestoreFolder}
+                        onDelete={handlePermanentDeleteFolder}
+                      />
+                    ))}
                   </tbody>
                 </table>
               </div>
@@ -448,72 +639,19 @@ export function TrashBrowser({ canPermanentDelete }: { canPermanentDelete: boole
                     </tr>
                   </thead>
                   <tbody>
-                    {files.map((f) => {
-                      const badge = getFileTypeBadge(f.name);
-                      const size = f.currentVersion ? Number(f.currentVersion.sizeBytes) : 0;
-                      const key = toKey('file', f.id);
-                      return (
-                        <tr
-                          key={f.id}
-                          className="border-b border-border/30 transition-colors hover:bg-accent/15 last:border-0"
-                        >
-                          <td className="px-4 py-3">
-                            <input
-                              type="checkbox"
-                              checked={selected.has(key)}
-                              onChange={() => toggleSelect(key)}
-                              className="h-4 w-4 rounded accent-primary"
-                            />
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-2.5">
-                              <FileText className="h-4 w-4 shrink-0 text-muted-foreground/40" />
-                              <span className="truncate font-medium text-muted-foreground line-through" title={f.name}>
-                                {f.name}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="hidden px-4 py-3 sm:table-cell">
-                            <span className={`rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase opacity-50 ${badge.color}`}>
-                              {badge.label}
-                            </span>
-                          </td>
-                          <td className="hidden px-4 py-3 text-xs tabular-nums text-muted-foreground md:table-cell">
-                            {size > 0 ? formatBytes(size) : '—'}
-                          </td>
-                          <td className="hidden px-4 py-3 text-xs text-muted-foreground md:table-cell">
-                            {formatDate(f.deletedAt)}
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center justify-end gap-1">
-                              <button
-                                type="button"
-                                onClick={() => handleRestoreFile(f.id)}
-                                disabled={busyIds.has(f.id) || bulkBusy}
-                                className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-40"
-                              >
-                                {busyIds.has(f.id) ? (
-                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                ) : (
-                                  <RotateCcw className="h-3.5 w-3.5" />
-                                )}{' '}
-                                Restore
-                              </button>
-                              {canPermanentDelete && (
-                                <button
-                                  type="button"
-                                  onClick={() => handlePermanentDeleteFile(f.id)}
-                                  disabled={busyIds.has(f.id) || bulkBusy}
-                                  className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:opacity-40"
-                                >
-                                  <AlertTriangle className="h-3.5 w-3.5" /> Delete
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                    {files.map((f) => (
+                      <TrashFileRow
+                        key={f.id}
+                        file={f}
+                        selected={selected.has(toKey('file', f.id))}
+                        busy={busyIds.has(f.id)}
+                        disabled={busyIds.has(f.id) || bulkBusy}
+                        canPermanentDelete={canPermanentDelete}
+                        onToggle={toggleSelect}
+                        onRestore={handleRestoreFile}
+                        onDelete={handlePermanentDeleteFile}
+                      />
+                    ))}
                   </tbody>
                 </table>
               </div>

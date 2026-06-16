@@ -4,6 +4,7 @@ import {
   PutObjectCommand,
   GetObjectCommand,
   DeleteObjectCommand,
+  DeleteObjectsCommand,
   HeadObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getDriver, getS3Client, getBucket, LOCAL_ROOT } from '@/server/storage/driver';
@@ -111,6 +112,47 @@ export async function deleteObject(key: string): Promise<void> {
   await getS3Client().send(
     new DeleteObjectCommand({ Bucket: getBucket(), Key: key }),
   );
+}
+
+// Batch delete many objects in one go. S3 uses DeleteObjects (≤1000 keys/call);
+// local deletes in bounded-parallel batches. Best-effort like deleteObject: a
+// failed key leaves a reclaimable orphan, it never throws — callers rely on this
+// so a storage hiccup can't roll back an already-committed DB delete.
+const S3_DELETE_BATCH = 1000;
+const LOCAL_DELETE_CONCURRENCY = 16;
+
+export async function deleteObjects(keys: string[]): Promise<void> {
+  if (keys.length === 0) return;
+
+  if (getDriver() === 'local') {
+    for (let i = 0; i < keys.length; i += LOCAL_DELETE_CONCURRENCY) {
+      const slice = keys.slice(i, i + LOCAL_DELETE_CONCURRENCY);
+      await Promise.all(
+        slice.map(async (key) => {
+          const filePath = await localPath(key);
+          await fs.unlink(filePath).catch(() => {});
+          await fs.unlink(filePath + CONTENT_TYPE_FILE).catch(() => {});
+        }),
+      );
+    }
+    return;
+  }
+
+  const client = getS3Client();
+  const bucket = getBucket();
+  for (let i = 0; i < keys.length; i += S3_DELETE_BATCH) {
+    const slice = keys.slice(i, i + S3_DELETE_BATCH);
+    try {
+      await client.send(
+        new DeleteObjectsCommand({
+          Bucket: bucket,
+          Delete: { Objects: slice.map((Key) => ({ Key })), Quiet: true },
+        }),
+      );
+    } catch {
+      // Best-effort: leave reclaimable orphans rather than fail the operation.
+    }
+  }
 }
 
 export async function headObject(
