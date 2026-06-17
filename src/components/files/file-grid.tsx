@@ -15,6 +15,7 @@ import { memo, useRef, useState } from 'react';
 import { getExtension, getFileTypeBadge, formatBytes } from '@/lib/file-utils';
 import { FileMediaThumbnail } from './file-media-thumbnail';
 import { PremiumFileFallback } from './premium-file-fallback';
+import { PdfThumbnail } from './pdf-thumbnail';
 import { FileActionMenu } from './file-action-menu';
 import type { FileItem } from './file-table';
 import { startDrag, endDrag } from '@/lib/dnd';
@@ -151,6 +152,7 @@ const FileCard = memo(function FileCard({
   const size = file.currentVersion ? Number(file.currentVersion.sizeBytes) : 0;
   const cardColor = getCardColor(ext);
   const hasMediaThumb = MEDIA_THUMB_EXTS.has(ext);
+  const isPdf = ext === 'pdf';
   const hasPremiumCard = PREMIUM_CARD_EXTS.has(ext);
   const menuBtnRef = useRef<HTMLButtonElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -189,6 +191,13 @@ const FileCard = memo(function FileCard({
             filename={file.name}
             versionKey={file.currentVersionId}
             variant="grid"
+          />
+        ) : isPdf ? (
+          <PdfThumbnail
+            key={file.currentVersionId ?? file.id}
+            fileId={file.id}
+            filename={file.name}
+            versionKey={file.currentVersionId}
           />
         ) : hasPremiumCard ? (
           <PremiumFileFallback filename={file.name} variant="grid" />
