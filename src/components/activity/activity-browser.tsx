@@ -61,6 +61,9 @@ export function ActivityBrowser({ isOwner }: { isOwner?: boolean }) {
   const [q, setQ] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [starredOnly, setStarredOnly] = useState(false);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [pageSize, setPageSize] = useState(50);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -75,18 +78,30 @@ export function ActivityBrowser({ isOwner }: { isOwner?: boolean }) {
       params.set('tzOffset', String(getClientTzOffset()));
       if (q) params.set('q', q);
       if (starredOnly) params.set('starredOnly', 'true');
+      params.set('page', String(page));
       params.set('_', String(Date.now()));
 
-      const data = await apiFetch<{ events: ActivityEvent[]; actors: Actor[] }>(
-        `/api/activity?${params.toString()}`,
-      );
+      const data = await apiFetch<{
+        events: ActivityEvent[];
+        actors: Actor[];
+        total: number;
+        pageSize: number;
+      }>(`/api/activity?${params.toString()}`);
       setEvents(data.events);
       setActors(data.actors);
+      setTotal(data.total ?? data.events.length);
+      setPageSize(data.pageSize ?? 50);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load activity');
     } finally {
       setLoading(false);
     }
+  }, [actorId, action, targetType, from, to, q, starredOnly, page]);
+
+  // Any filter change resets to the first page.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset paging when filters change
+    setPage(1);
   }, [actorId, action, targetType, from, to, q, starredOnly]);
 
   useEffect(() => {
@@ -118,6 +133,19 @@ export function ActivityBrowser({ isOwner }: { isOwner?: boolean }) {
       setEvents(prevEvents);
       toast('error', 'Could not update star. Try again.');
     });
+  }
+
+  async function deleteEvent(event: ActivityEvent) {
+    const prevEvents = events;
+    setEvents((prev) => prev.filter((e) => e.id !== event.id));
+    setTotal((t) => Math.max(0, t - 1));
+    try {
+      await apiFetch(`/api/activity/${event.id}`, { method: 'DELETE' });
+    } catch (e) {
+      setEvents(prevEvents);
+      setTotal((t) => t + 1);
+      toast('error', e instanceof Error ? e.message : 'Could not delete activity');
+    }
   }
 
   function handleSearchSubmit(e: React.FormEvent) {
@@ -329,16 +357,47 @@ export function ActivityBrowser({ isOwner }: { isOwner?: boolean }) {
                 >
                   <Star className={`h-4 w-4 ${event.starred ? 'fill-current' : ''}`} />
                 </button>
+                {isOwner && (
+                  <button
+                    type="button"
+                    onClick={() => void deleteEvent(event)}
+                    className="shrink-0 rounded-lg p-2 text-muted-foreground/30 transition-all hover:bg-destructive/10 hover:text-destructive"
+                    title="Delete activity"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                )}
               </li>
             ))}
           </ul>
         )}
       </div>
 
-      {!loading && events.length > 0 && (
-        <p className="text-center text-[11px] text-muted-foreground/40">
-          Showing {events.length} events (newest first, max 200 in range)
-        </p>
+      {!loading && total > 0 && (
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[11px] tabular-nums text-muted-foreground/45">
+            {total.toLocaleString()} event{total === 1 ? '' : 's'} · page {page} of{' '}
+            {Math.max(1, Math.ceil(total / pageSize))}
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              className="rounded-lg border border-border/50 px-3 py-1.5 text-xs font-medium transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Previous
+            </button>
+            <button
+              type="button"
+              disabled={page >= Math.ceil(total / pageSize)}
+              onClick={() => setPage((p) => p + 1)}
+              className="rounded-lg border border-border/50 px-3 py-1.5 text-xs font-medium transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Next
+            </button>
+          </div>
+        </div>
       )}
 
       {clearOpen && (

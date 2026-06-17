@@ -20,6 +20,8 @@ export async function GET(request: NextRequest) {
     const sp = request.nextUrl.searchParams;
     const tzRaw = sp.get('tzOffset');
     const tzOffset = tzRaw != null && tzRaw !== '' ? Number(tzRaw) : undefined;
+    const pageRaw = sp.get('page');
+    const page = pageRaw ? Number(pageRaw) : undefined;
 
     const data = await listActivity(user, {
       actorId: sp.get('actorId') ?? undefined,
@@ -30,6 +32,7 @@ export async function GET(request: NextRequest) {
       tzOffset: Number.isFinite(tzOffset) ? tzOffset : undefined,
       q: sp.get('q') ?? undefined,
       starredOnly: sp.get('starredOnly') === 'true',
+      page: page && Number.isFinite(page) ? page : undefined,
     });
 
     return NextResponse.json(
@@ -39,6 +42,9 @@ export async function GET(request: NextRequest) {
           createdAt: e.createdAt.toISOString(),
         })),
         actors: data.actors,
+        total: data.total,
+        page: data.page,
+        pageSize: data.pageSize,
       },
       { headers: NO_STORE },
     );

@@ -1,12 +1,12 @@
 import { db } from '@/server/db';
 import { requirePermission } from '@/server/rbac';
-import type { UserProfile } from '@/generated/prisma/client';
+import type { Prisma, UserProfile } from '@/generated/prisma/client';
 import {
   defaultActivityFromDate,
   parseActivityDateRange,
 } from '@/lib/activity-dates';
 
-const MAX_RESULTS = 200;
+const PAGE_SIZE = 50;
 const RECENT_DEFAULT = 8;
 
 export type ActivityActor = {
@@ -36,6 +36,8 @@ export type ActivityListQuery = {
   tzOffset?: number;
   q?: string;
   starredOnly?: boolean;
+  /** 1-based page number (50 events per page). */
+  page?: number;
 };
 
 export {
@@ -58,27 +60,6 @@ export function parseMeta(meta: unknown): Record<string, unknown> | null {
     return meta as Record<string, unknown>;
   }
   return null;
-}
-
-function matchesSearch(
-  event: {
-    action: string;
-    meta: Record<string, unknown> | null;
-    actor: ActivityActor | null;
-  },
-  q: string,
-): boolean {
-  const lower = q.toLowerCase();
-  const resourceName =
-    (typeof event.meta?.name === 'string' && event.meta.name) ||
-    (typeof event.meta?.fileName === 'string' && event.meta.fileName) ||
-    '';
-  return (
-    event.action.toLowerCase().includes(lower) ||
-    resourceName.toLowerCase().includes(lower) ||
-    (event.actor?.email?.toLowerCase().includes(lower) ?? false) ||
-    (event.actor?.name?.toLowerCase().includes(lower) ?? false)
-  );
 }
 
 function mapRowsToEvents(
@@ -115,13 +96,22 @@ export async function fetchRecentActivity(limit = RECENT_DEFAULT): Promise<Activ
   return mapRowsToEvents(rows, new Set());
 }
 
+export type ActivityListResult = {
+  events: ActivityListItem[];
+  actors: ActivityActor[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
 export async function listActivity(
   user: UserProfile,
   query: ActivityListQuery,
-): Promise<{ events: ActivityListItem[]; actors: ActivityActor[] }> {
+): Promise<ActivityListResult> {
   await requirePermission('audit:read');
 
   const { from, to } = parseActivityDateRange(query.from, query.to, query.tzOffset);
+  const page = Math.max(1, Math.floor(query.page ?? 1));
 
   // The actor list (for the filter dropdown) is independent of the events query,
   // so fetch it in parallel with the events chain instead of after it.
@@ -137,30 +127,40 @@ export async function listActivity(
     : null;
 
   if (query.starredOnly && starredIds?.length === 0) {
-    return { events: [], actors: await actorsPromise };
+    return { events: [], actors: await actorsPromise, total: 0, page, pageSize: PAGE_SIZE };
   }
 
-  const rows = await db.auditEvent.findMany({
-    where: {
-      createdAt: { gte: from, lte: to },
-      ...(query.actorId ? { actorId: query.actorId } : {}),
-      ...(query.action ? { action: query.action } : {}),
-      ...(query.targetType ? { targetType: query.targetType } : {}),
-      ...(starredIds ? { id: { in: starredIds } } : {}),
-      ...(query.q
-        ? {
-            OR: [
-              { action: { contains: query.q, mode: 'insensitive' } },
-              { actor: { email: { contains: query.q, mode: 'insensitive' } } },
-              { actor: { name: { contains: query.q, mode: 'insensitive' } } },
-            ],
-          }
-        : {}),
-    },
-    orderBy: { createdAt: 'desc' },
-    take: MAX_RESULTS,
-    select: activitySelect,
-  });
+  // All filtering happens in SQL (incl. file/folder name search via the meta
+  // JSON path) so that count + skip/take pagination stay consistent.
+  const where: Prisma.AuditEventWhereInput = {
+    createdAt: { gte: from, lte: to },
+    ...(query.actorId ? { actorId: query.actorId } : {}),
+    ...(query.action ? { action: query.action } : {}),
+    ...(query.targetType ? { targetType: query.targetType } : {}),
+    ...(starredIds ? { id: { in: starredIds } } : {}),
+    ...(query.q
+      ? {
+          OR: [
+            { action: { contains: query.q, mode: 'insensitive' } },
+            { actor: { email: { contains: query.q, mode: 'insensitive' } } },
+            { actor: { name: { contains: query.q, mode: 'insensitive' } } },
+            { meta: { path: ['name'], string_contains: query.q } },
+            { meta: { path: ['fileName'], string_contains: query.q } },
+          ],
+        }
+      : {}),
+  };
+
+  const [total, rows] = await Promise.all([
+    db.auditEvent.count({ where }),
+    db.auditEvent.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip: (page - 1) * PAGE_SIZE,
+      take: PAGE_SIZE,
+      select: activitySelect,
+    }),
+  ]);
 
   const userStars = await db.auditStar.findMany({
     where: { userId: user.id, auditEventId: { in: rows.map((r) => r.id) } },
@@ -168,13 +168,13 @@ export async function listActivity(
   });
   const starSet = new Set(userStars.map((s) => s.auditEventId));
 
-  let events = mapRowsToEvents(rows, starSet);
-
-  if (query.q) {
-    events = events.filter((e) => matchesSearch(e, query.q!));
-  }
-
-  return { events, actors: await actorsPromise };
+  return {
+    events: mapRowsToEvents(rows, starSet),
+    actors: await actorsPromise,
+    total,
+    page,
+    pageSize: PAGE_SIZE,
+  };
 }
 
 export async function listActivityActors(): Promise<ActivityActor[]> {
@@ -204,6 +204,16 @@ export async function unstarActivityEvent(user: UserProfile, auditEventId: strin
   await db.auditStar.deleteMany({
     where: { userId: user.id, auditEventId },
   });
+}
+
+/** Owner-only: delete a single audit event (and any stars on it). */
+export async function deleteActivityEvent(actor: UserProfile, eventId: string): Promise<void> {
+  if (actor.role !== 'owner') {
+    throw new Error('Forbidden');
+  }
+  await db.auditStar.deleteMany({ where: { auditEventId: eventId } });
+  // deleteMany (not delete) so a missing id is a no-op rather than a throw.
+  await db.auditEvent.deleteMany({ where: { id: eventId } });
 }
 
 /** Owner-only: wipe all audit stars and events (demo reset). */
