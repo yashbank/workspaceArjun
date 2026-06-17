@@ -123,7 +123,8 @@ async function uploadMultipart(
   const parts: { partNumber: number; etag: string }[] = [];
   let uploaded = 0;
 
-  for (let partNumber = 1; partNumber <= totalParts; partNumber++) {
+  // Uploads a single part: fetch its presigned URL, then PUT the chunk.
+  async function uploadOnePart(partNumber: number): Promise<void> {
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
     const start = (partNumber - 1) * partSize;
@@ -177,7 +178,24 @@ async function uploadMultipart(
     onProgress(Math.min(99, Math.round((uploaded / file.size) * 100)));
   }
 
+  // Upload parts with bounded concurrency — far faster than sequential for large
+  // files. Workers pull the next part number from a shared cursor; any part
+  // failure rejects the whole upload so the caller aborts the multipart session.
+  const MAX_CONCURRENT_PARTS = 3;
+  let nextPart = 1;
+  async function worker() {
+    while (nextPart <= totalParts) {
+      await uploadOnePart(nextPart++);
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(MAX_CONCURRENT_PARTS, totalParts) }, () => worker()),
+  );
+
   onProgress(100);
+  // S3 requires parts ordered by partNumber at completion; parallel uploads
+  // finish out of order, so sort before returning.
+  parts.sort((a, b) => a.partNumber - b.partNumber);
   return parts;
 }
 

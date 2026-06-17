@@ -81,11 +81,11 @@ export function useUpload(folderId: string | null, onComplete: () => void) {
 
       setQueue((prev) => [...prev, ...items]);
 
-      // Bounded-concurrency pool: up to 3 files upload at once. Workers pull from
+      // Bounded-concurrency pool: up to 4 files upload at once. Workers pull from
       // a shared cursor until the list drains. Per-file progress, cancellation
       // (cancelledRef + AbortController inside uploadFile) and the single
       // onComplete after all finish are unchanged from the previous serial loop.
-      const MAX_CONCURRENT = 3;
+      const MAX_CONCURRENT = 4;
       let cursor = 0;
       async function worker() {
         while (cursor < items.length) {

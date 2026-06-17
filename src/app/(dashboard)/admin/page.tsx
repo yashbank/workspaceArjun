@@ -88,9 +88,11 @@ export default function AdminPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [removeTarget, setRemoveTarget] = useState<UserItem | null>(null);
 
-  const loadUsers = useCallback(async () => {
+  const loadUsers = useCallback(async (opts?: { silent?: boolean }) => {
     try {
-      setLoading(true);
+      // Silent refreshes (after a mutation) keep the table on screen instead of
+      // replacing it with the full-page spinner — the page feels instant.
+      if (!opts?.silent) setLoading(true);
       setError(null);
       const payload = await apiFetch<AdminUsersPayload>('/api/admin/users');
       setData(payload);
@@ -116,7 +118,19 @@ export default function AdminPage() {
   const canRemoveUsers = actorRole === 'owner';
 
   const handleRoleChange = async (userId: string, newRole: string, currentRole: string) => {
-    if (currentRole === 'owner') return;
+    if (currentRole === 'owner' || newRole === currentRole) return;
+    setRoleMenu(null);
+    // Optimistic: reflect the new role instantly; revert on failure.
+    setData((prev) =>
+      prev
+        ? {
+            ...prev,
+            users: prev.users.map((u) =>
+              u.id === userId ? { ...u, role: newRole as UserItem['role'] } : u,
+            ),
+          }
+        : prev,
+    );
     try {
       setBusyId(userId);
       await apiFetch(`/api/admin/users/${userId}`, {
@@ -124,9 +138,19 @@ export default function AdminPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role: newRole }),
       });
-      setRoleMenu(null);
-      await loadUsers();
+      // Re-sync in the background (no spinner) to pick up any derived changes.
+      void loadUsers({ silent: true });
     } catch (err) {
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              users: prev.users.map((u) =>
+                u.id === userId ? { ...u, role: currentRole as UserItem['role'] } : u,
+              ),
+            }
+          : prev,
+      );
       toast('error', err instanceof Error ? err.message : 'Failed to change role');
     } finally {
       setBusyId(null);
@@ -153,7 +177,7 @@ export default function AdminPage() {
       });
       setActionMenu(null);
       toast('success', newStatus === 'active' ? 'User reactivated' : 'User deactivated');
-      await loadUsers();
+      await loadUsers({ silent: true });
     } catch (err) {
       toast('error', err instanceof Error ? err.message : `Failed to ${label} user`);
     } finally {
@@ -174,7 +198,7 @@ export default function AdminPage() {
       });
       setActionMenu(null);
       toast('success', 'Invite sent');
-      await loadUsers();
+      await loadUsers({ silent: true });
     } catch (err) {
       toast('error', err instanceof Error ? err.message : 'Failed to invite again');
     } finally {
@@ -191,7 +215,7 @@ export default function AdminPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId }),
       });
-      await loadUsers();
+      await loadUsers({ silent: true });
     } catch (err) {
       toast('error', err instanceof Error ? err.message : 'Failed to transfer ownership');
     } finally {
@@ -207,7 +231,7 @@ export default function AdminPage() {
       setRemoveTarget(null);
       setActionMenu(null);
       toast('success', 'User removed permanently');
-      await loadUsers();
+      await loadUsers({ silent: true });
     } catch (err) {
       toast('error', err instanceof Error ? err.message : 'Failed to remove user');
     } finally {
@@ -220,7 +244,7 @@ export default function AdminPage() {
       setBusyId(inviteId);
       await apiFetch(`/api/admin/users/invites/${inviteId}/resend`, { method: 'POST' });
       toast('success', 'Invite email resent');
-      await loadUsers();
+      await loadUsers({ silent: true });
     } catch (err) {
       toast('error', err instanceof Error ? err.message : 'Failed to resend invite');
     } finally {
@@ -234,7 +258,7 @@ export default function AdminPage() {
       setBusyId(inviteId);
       await apiFetch(`/api/admin/users/invites/${inviteId}/cancel`, { method: 'POST' });
       toast('success', 'Invite cancelled');
-      await loadUsers();
+      await loadUsers({ silent: true });
     } catch (err) {
       toast('error', err instanceof Error ? err.message : 'Failed to cancel invite');
     } finally {
