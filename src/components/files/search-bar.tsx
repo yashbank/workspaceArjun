@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Search, FileText, Folder, X, Loader2 } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
+import { useModKey } from '@/lib/platform';
 
 type SearchResult = {
   id: string;
@@ -24,6 +25,7 @@ export function SearchBar({
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const mod = useModKey();
 
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
@@ -83,7 +85,7 @@ export function SearchBar({
         <Search className="h-3.5 w-3.5 text-muted-foreground/60" />
         <span className="hidden sm:inline">Search</span>
         <kbd className="ml-2 hidden rounded-md border border-border/40 bg-muted/30 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground/70 sm:inline">
-          ⌘K
+          {mod === '⌘' ? '⌘K' : 'Ctrl K'}
         </kbd>
       </button>
     );

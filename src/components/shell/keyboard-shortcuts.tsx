@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { X, Keyboard } from 'lucide-react';
+import { useModKey } from '@/lib/platform';
 
 type ShortcutGroup = {
   title: string;
@@ -49,6 +50,7 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
 
 export function KeyboardShortcuts() {
   const [open, setOpen] = useState(false);
+  const mod = useModKey();
 
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
@@ -101,7 +103,7 @@ export function KeyboardShortcuts() {
                             key={j}
                             className="flex h-5 min-w-[20px] items-center justify-center rounded-md border border-border/40 bg-muted/30 px-1.5 text-[10px] font-medium text-muted-foreground/70"
                           >
-                            {key}
+                            {key === '⌘' ? mod : key}
                           </kbd>
                         )
                       ))}
