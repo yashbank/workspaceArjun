@@ -7,6 +7,7 @@ import { KeyboardShortcuts } from '@/components/shell/keyboard-shortcuts';
 import { GlobalKeys } from '@/components/shell/global-keys';
 import { GuidedTour } from '@/components/shell/guided-tour';
 import { RoutePrefetcher } from '@/components/shell/route-prefetcher';
+import { SecurityAlertWatcher } from '@/components/shell/security-alert-watcher';
 import { DbConnectionIssue } from '@/components/shell/db-connection-issue';
 import { DisplayNameGuard } from '@/components/shell/display-name-guard';
 import { needsDisplayNameSetup } from '@/lib/user-display';
@@ -114,6 +115,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <KeyboardShortcuts />
       <GlobalKeys />
       <GuidedTour />
+      {profile.role === 'owner' && <SecurityAlertWatcher ownerId={profile.id} />}
     </>
   );
 }

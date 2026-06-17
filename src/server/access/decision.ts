@@ -7,6 +7,7 @@ import { DEVICE_COOKIE_NAME, verifyDeviceToken } from './device';
 import { isAccessBypassed, evaluateAccess } from './index';
 import { isAccessDetectionEnabled, AccessBlockedError } from './errors';
 import { getAccessEnforced } from '@/server/settings';
+import { notifyOwners } from '@/server/notifications';
 
 export type AccessDeviceStatus = 'none' | 'pending' | 'approved' | 'revoked';
 
@@ -98,6 +99,7 @@ export async function logAccessDenial(profile: UserProfile, decision: AccessDeci
   if (now - last < DENIAL_LOG_WINDOW_MS) return;
   lastDenialLogAt.set(profile.id, now);
 
+  const enforced = await getAccessEnforced();
   await logAuditEvent({
     actor: profile,
     action: 'access.denied',
@@ -106,11 +108,30 @@ export async function logAccessDenial(profile: UserProfile, decision: AccessDeci
       mode: profile.accessMode,
       reason: decision.reason,
       deviceStatus: decision.deviceStatus,
-      enforced: await getAccessEnforced(),
+      enforced,
     },
     ip: decision.ip ?? undefined,
     userAgent: decision.userAgent ?? undefined,
   });
+
+  // Push a durable, Owner-only security alert (Realtime delivers it live). Never
+  // let notification fan-out break the access flow.
+  try {
+    await notifyOwners('security.access_denied', {
+      actorId: profile.id,
+      actorName: profile.name ?? null,
+      actorEmail: profile.email,
+      actorRole: profile.role,
+      ip: decision.ip ?? null,
+      mode: profile.accessMode,
+      deviceStatus: decision.deviceStatus,
+      userAgent: decision.userAgent ?? null,
+      enforced,
+      at: new Date().toISOString(),
+    });
+  } catch {
+    // best-effort
+  }
 }
 
 /**
