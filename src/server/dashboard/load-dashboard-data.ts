@@ -19,6 +19,9 @@ export type DashboardPinnedFile = {
   mimeType: string | null;
 };
 
+export type ActivityDayPoint = { date: string; count: number };
+export type FileTypeSlice = { key: string; count: number };
+
 export type DashboardData = {
   fileCount: number;
   folderCount: number;
@@ -30,9 +33,14 @@ export type DashboardData = {
   recentFiles: DashboardRecentFile[];
   recentActivity: DashboardActivity[];
   pinnedFileDetails: DashboardPinnedFile[];
+  /** Owner/admin only — events per day (last 30d) for the activity graph. */
+  activityByDay: ActivityDayPoint[];
+  /** Owner/admin only — file counts per type category for the pie. */
+  fileTypes: FileTypeSlice[];
 };
 
 const ACTIVITY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const ACTIVITY_GRAPH_DAYS = 30;
 
 const EMPTY: DashboardData = {
   fileCount: 0,
@@ -44,7 +52,58 @@ const EMPTY: DashboardData = {
   recentFiles: [],
   recentActivity: [],
   pinnedFileDetails: [],
+  activityByDay: [],
+  fileTypes: [],
 };
+
+/** Buckets a file into a coarse type category for the dashboard pie. */
+function categorizeFile(name: string, mimeType: string | null): string {
+  const ext = name.split('.').pop()?.toLowerCase() ?? '';
+  if (mimeType?.startsWith('image/') || ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'tiff', 'heic', 'heif'].includes(ext))
+    return 'image';
+  if (ext === 'pdf') return 'pdf';
+  if (mimeType?.startsWith('video/') || ['mp4', 'mov', 'webm', 'm4v', 'avi'].includes(ext)) return 'video';
+  if (['cdr', 'ai', 'eps', 'psd'].includes(ext)) return 'design';
+  if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) return 'archive';
+  if (['doc', 'docx', 'xls', 'xlsx', 'csv', 'ppt', 'pptx', 'txt'].includes(ext)) return 'document';
+  return 'other';
+}
+
+/** Events grouped by UTC day for the last `days` days, zero-filled. */
+async function fetchActivityByDay(days = ACTIVITY_GRAPH_DAYS): Promise<ActivityDayPoint[]> {
+  const since = new Date();
+  since.setUTCHours(0, 0, 0, 0);
+  since.setUTCDate(since.getUTCDate() - (days - 1));
+  const rows = await db.$queryRaw<{ day: string; count: number }[]>`
+    SELECT to_char(date_trunc('day', created_at), 'YYYY-MM-DD') AS day, count(*)::int AS count
+    FROM audit_events
+    WHERE created_at >= ${since}
+    GROUP BY 1`;
+  const map = new Map(rows.map((r) => [r.day, Number(r.count)]));
+  const out: ActivityDayPoint[] = [];
+  for (let i = 0; i < days; i++) {
+    const d = new Date(since);
+    d.setUTCDate(since.getUTCDate() + i);
+    const key = d.toISOString().slice(0, 10);
+    out.push({ date: key, count: map.get(key) ?? 0 });
+  }
+  return out;
+}
+
+/** File counts per type category (capped sample for very large workspaces). */
+async function fetchFileTypeDistribution(): Promise<FileTypeSlice[]> {
+  const files = await db.file.findMany({
+    where: VISIBLE_FILE_WHERE,
+    select: { name: true, mimeType: true },
+    take: 20000,
+  });
+  const counts = new Map<string, number>();
+  for (const f of files) {
+    const key = categorizeFile(f.name ?? '', f.mimeType);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return [...counts.entries()].map(([key, count]) => ({ key, count }));
+}
 
 function toNumber(value: bigint | number | null | undefined): number {
   if (value == null) return 0;
@@ -60,6 +119,7 @@ export async function loadDashboardData(profile: UserProfile | null): Promise<Da
   const errors: string[] = [];
 
   const activitySince = new Date(Date.now() - ACTIVITY_WINDOW_MS);
+  const canSeeAnalytics = profile?.role === 'owner' || profile?.role === 'admin';
 
   const [
     fileCountResult,
@@ -71,6 +131,8 @@ export async function loadDashboardData(profile: UserProfile | null): Promise<Da
     recentActivityResult,
     pinnedFilesResult,
     activityCountResult,
+    activityByDayResult,
+    fileTypesResult,
   ] = await Promise.allSettled([
     db.file.count({ where: VISIBLE_FILE_WHERE }),
     db.folder.count({ where: { deletedAt: null } }),
@@ -98,6 +160,8 @@ export async function loadDashboardData(profile: UserProfile | null): Promise<Da
         })
       : Promise.resolve([]),
     db.auditEvent.count({ where: { createdAt: { gte: activitySince } } }),
+    canSeeAnalytics ? fetchActivityByDay() : Promise.resolve([]),
+    canSeeAnalytics ? fetchFileTypeDistribution() : Promise.resolve([]),
   ]);
 
   const fileCount =
@@ -174,6 +238,16 @@ export async function loadDashboardData(profile: UserProfile | null): Promise<Da
     errors.push(`pinnedFiles: ${String(pinnedFilesResult.reason)}`);
   }
 
+  const activityByDay: ActivityDayPoint[] =
+    activityByDayResult.status === 'fulfilled'
+      ? (activityByDayResult.value as ActivityDayPoint[])
+      : (errors.push(`activityByDay: ${String(activityByDayResult.reason)}`), []);
+
+  const fileTypes: FileTypeSlice[] =
+    fileTypesResult.status === 'fulfilled'
+      ? (fileTypesResult.value as FileTypeSlice[])
+      : (errors.push(`fileTypes: ${String(fileTypesResult.reason)}`), []);
+
   if (errors.length > 0 && process.env.NODE_ENV === 'development') {
     console.warn('[dashboard] partial data load:', errors);
   }
@@ -188,5 +262,7 @@ export async function loadDashboardData(profile: UserProfile | null): Promise<Da
     recentFiles,
     recentActivity,
     pinnedFileDetails,
+    activityByDay,
+    fileTypes,
   };
 }

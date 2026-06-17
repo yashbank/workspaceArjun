@@ -18,13 +18,10 @@ import {
   Layers,
   ArrowRight,
   Sparkles,
-  ImageIcon,
-  FileArchive,
-  Pen,
 } from 'lucide-react';
 import { StorageWidget } from '@/components/dashboard/storage-widget';
 import { ClientGreeting, ClientDate } from '@/components/dashboard/client-greeting';
-import { formatActivityLine, getAuditActionColor } from '@/lib/audit-display';
+import { ActivityLineChart, FileTypePie } from '@/components/dashboard/charts';
 
 export default async function DashboardHome() {
   let profile = null;
@@ -53,6 +50,8 @@ export default async function DashboardHome() {
       recentFiles: [],
       recentActivity: [],
       pinnedFileDetails: [],
+      activityByDay: [],
+      fileTypes: [],
     };
   }
 
@@ -63,12 +62,13 @@ export default async function DashboardHome() {
     activityCount,
     totalBytes,
     quotaBytes,
-    recentFiles,
-    recentActivity,
     pinnedFileDetails,
+    activityByDay,
+    fileTypes,
   } = data;
 
   const isNewWorkspace = fileCount === 0 && folderCount === 0;
+  const canSeeAnalytics = profile?.role === 'owner' || profile?.role === 'admin';
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -111,150 +111,53 @@ export default async function DashboardHome() {
         <StatCard icon={FileText} label="Total files" value={fileCount.toString()} />
         <StatCard icon={FolderOpen} label="Folders" value={folderCount.toString()} />
         <StatCard icon={Layers} label="Versions" value={versionCount.toString()} />
-        <StatCard icon={Activity} label="Activity (7d)" value={activityCount.toString()} />
+        {canSeeAnalytics && (
+          <StatCard icon={Activity} label="Activity (7d)" value={activityCount.toString()} />
+        )}
         <StorageWidget usedBytes={totalBytes} quotaBytes={quotaBytes} fileCount={fileCount} />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-4">
-        <div className="space-y-4">
-          <div className="bpp-card p-5 transition-all duration-200 hover:shadow-elevated">
-            <h2 className="bpp-label-caps">Quick actions</h2>
-            <div className="mt-3 space-y-0.5">
-              <QuickAction href="/files" icon={Upload} label="Upload files" />
-              <QuickAction href="/files" icon={Plus} label="New folder" />
-              <QuickAction href="/trash" icon={Trash2} label="View trash" />
-            </div>
+      {/* Analytics — Owner/Admin only */}
+      {canSeeAnalytics && (
+        <div className="grid gap-4 lg:grid-cols-3">
+          <div className="lg:col-span-2">
+            <ActivityLineChart data={activityByDay} />
           </div>
+          <FileTypePie data={fileTypes} />
+        </div>
+      )}
 
-          {pinnedFileDetails.length > 0 && (
-            <div className="bpp-card p-5 transition-all duration-200 hover:shadow-elevated">
-              <h2 className="bpp-label-caps">Starred files</h2>
-              <div className="mt-3 space-y-0.5">
-                {pinnedFileDetails.map((f) => (
-                  <div
-                    key={f.id}
-                    className="flex items-center gap-2.5 rounded-lg px-3 py-2 transition-colors hover:bg-accent/30"
-                  >
-                    <Star className="h-3 w-3 shrink-0 fill-amber-400 text-amber-400" />
-                    <span className="truncate text-xs font-medium" title={f.name}>{f.name}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="bpp-card p-5 transition-all duration-200 hover:shadow-elevated">
+          <h2 className="bpp-label-caps">Quick actions</h2>
+          <div className="mt-3 space-y-0.5">
+            <QuickAction href="/files" icon={Upload} label="Upload files" />
+            <QuickAction href="/files" icon={Plus} label="New folder" />
+            <QuickAction href="/trash" icon={Trash2} label="View trash" />
+          </div>
         </div>
 
-        <div className="bpp-card p-5 transition-all duration-200 hover:shadow-elevated lg:col-span-3">
-          <div className="flex items-center justify-between">
-            <h2 className="bpp-label-caps">Recent files</h2>
-            {recentFiles.length > 0 && (
-              <Link href="/files" className="text-[11px] font-semibold text-primary transition-colors hover:text-primary/70">
-                View all →
-              </Link>
-            )}
-          </div>
-          {recentFiles.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-14 text-center">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted/30">
-                <FileText className="h-6 w-6 text-muted-foreground/30" />
-              </div>
-              <p className="mt-3 text-sm font-semibold text-muted-foreground/60">No files yet</p>
-              <p className="mt-1 text-xs text-muted-foreground/40">
-                Upload your first file to see it here.
-              </p>
-              <Link
-                href="/files"
-                className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground shadow-card transition-all hover:shadow-elevated active:scale-[0.97]"
-              >
-                <Upload className="h-3.5 w-3.5" />
-                Upload a file
-              </Link>
-            </div>
-          ) : (
-            <div className="mt-3 space-y-0.5">
-              {recentFiles.map((file) => (
+        {pinnedFileDetails.length > 0 && (
+          <div className="bpp-card p-5 transition-all duration-200 hover:shadow-elevated lg:col-span-2">
+            <h2 className="bpp-label-caps">Starred files</h2>
+            <div className="mt-3 grid gap-0.5 sm:grid-cols-2">
+              {pinnedFileDetails.map((f) => (
                 <div
-                  key={file.id}
-                  className="flex items-center justify-between rounded-xl px-3 py-2.5 transition-all hover:bg-accent/20"
+                  key={f.id}
+                  className="flex items-center gap-2.5 rounded-lg px-3 py-2 transition-colors hover:bg-accent/30"
                 >
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted/30">
-                      <RecentFileIcon mimeType={file.mimeType} name={file.name} />
-                    </div>
-                    <span className="truncate text-[13px] font-medium tracking-tight" title={file.name}>{file.name}</span>
-                  </div>
-                  <span className="shrink-0 pl-3 text-[10px] tabular-nums text-muted-foreground/40">
-                    {new Date(file.updatedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                  <Star className="h-3 w-3 shrink-0 fill-amber-400 text-amber-400" />
+                  <span className="truncate text-xs font-medium" title={f.name}>
+                    {f.name}
                   </span>
                 </div>
               ))}
             </div>
-          )}
-        </div>
-      </div>
-
-      <div className="bpp-card p-5 transition-all duration-200 hover:shadow-elevated">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="bpp-label-caps">Recent activity</h2>
-          <div className="flex items-center gap-3">
-            {recentActivity.length > 0 && (
-              <span className="text-[10px] tabular-nums text-muted-foreground/30">{recentActivity.length} events</span>
-            )}
-            {(profile?.role === 'owner' || profile?.role === 'admin') && (
-              <Link
-                href="/activity"
-                className="text-[11px] font-semibold text-primary transition-colors hover:text-primary/80"
-              >
-                View all activity →
-              </Link>
-            )}
-          </div>
-        </div>
-        {recentActivity.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-center">
-            <Activity className="h-8 w-8 text-muted-foreground/15" />
-            <p className="mt-3 text-sm font-semibold text-muted-foreground/50">No activity yet</p>
-            <p className="mt-1 text-xs text-muted-foreground/40">Actions you take will appear here.</p>
-          </div>
-        ) : (
-          <div className="mt-3 space-y-0.5">
-            {recentActivity.map((event) => (
-              <div
-                key={event.id}
-                className="flex items-start gap-3 rounded-xl px-3 py-2.5 text-xs transition-all hover:bg-accent/15 sm:items-center"
-              >
-                <div
-                  className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full sm:mt-0 ${getAuditActionColor(event.action)}`}
-                >
-                  <Activity className="h-3 w-3" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="break-words text-[13px] leading-snug text-foreground/85">
-                    {formatActivityLine(event.actor, event.action, event.meta)}
-                  </p>
-                </div>
-                <span className="shrink-0 pt-0.5 text-[10px] tabular-nums text-muted-foreground/35 sm:pt-0">
-                  {timeAgo(event.createdAt)}
-                </span>
-              </div>
-            ))}
           </div>
         )}
       </div>
     </div>
   );
-}
-
-function RecentFileIcon({ mimeType, name }: { mimeType: string | null; name: string }) {
-  const ext = name.split('.').pop()?.toLowerCase() ?? '';
-  const cls = 'h-4 w-4';
-  if (mimeType?.startsWith('image/') || ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext))
-    return <ImageIcon className={`${cls} text-sky-500`} />;
-  if (['cdr', 'ai', 'eps', 'psd'].includes(ext))
-    return <Pen className={`${cls} text-purple-500`} />;
-  if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext))
-    return <FileArchive className={`${cls} text-amber-500`} />;
-  return <FileText className={`${cls} text-muted-foreground/60`} />;
 }
 
 function StatCard({
@@ -299,16 +202,4 @@ function QuickAction({
       {label}
     </Link>
   );
-}
-
-function timeAgo(date: Date): string {
-  const now = Date.now();
-  const diff = now - new Date(date).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
 }
