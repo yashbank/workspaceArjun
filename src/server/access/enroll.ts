@@ -1,6 +1,6 @@
 import { cookies, headers } from 'next/headers';
 import { db } from '@/server/db';
-import { requireUser } from '@/server/auth';
+import { getCurrentUser } from '@/server/auth';
 import { logAuditEvent } from '@/server/audit';
 import { extractRequestIp } from './ip';
 import { DEVICE_COOKIE_NAME, generateDeviceToken, hashDeviceToken } from './device';
@@ -17,7 +17,12 @@ const DEVICE_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
  * Approved Devices list. Throws on a missing/incorrect code.
  */
 export async function enrollDeviceWithCode(rawCode: string): Promise<{ browser: string }> {
-  const user = await requireUser();
+  // getCurrentUser (NOT requireUser) — requireUser runs enforceApiAccess, which
+  // would block the very users who need to enroll (they're on an unapproved
+  // device by definition). This endpoint is the chicken-and-egg escape hatch.
+  const user = await getCurrentUser();
+  if (!user) throw new Error('Unauthorized');
+  if (user.status === 'deactivated') throw new Error('Account deactivated');
   const code = rawCode.trim().toUpperCase();
   if (!code) throw new Error('Enter your access code');
   // Codes use an uppercase alphabet, so a case-folded exact match is correct.
