@@ -329,6 +329,30 @@ export default function SecurityPage() {
     }
   }
 
+  async function setDevice(id: string, status: 'approved' | 'revoked') {
+    try {
+      await apiFetch(`/api/admin/security/devices/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      toast('success', status === 'revoked' ? 'Device revoked' : 'Device approved');
+      await load();
+    } catch (e) {
+      toast('error', e instanceof Error ? e.message : 'Could not update device');
+    }
+  }
+
+  async function deleteDevice(id: string) {
+    try {
+      await apiFetch(`/api/admin/security/devices/${id}`, { method: 'DELETE' });
+      toast('success', 'Device removed');
+      await load();
+    } catch (e) {
+      toast('error', e instanceof Error ? e.message : 'Could not remove device');
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-24">
@@ -602,6 +626,7 @@ export default function SecurityPage() {
                     <th className="px-3 py-2">Label</th>
                     <th className="hidden px-3 py-2 md:table-cell">Last IP</th>
                     <th className="hidden px-3 py-2 lg:table-cell">Last seen</th>
+                    <th className="px-3 py-2 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -630,6 +655,32 @@ export default function SecurityPage() {
                       </td>
                       <td className="hidden px-3 py-2.5 text-[11px] text-muted-foreground/55 lg:table-cell">
                         {formatTs(d.lastSeenAt)}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {d.status === 'approved' ? (
+                            <button
+                              onClick={() => setDevice(d.id, 'revoked')}
+                              className="rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                            >
+                              Revoke
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => setDevice(d.id, 'approved')}
+                              className="rounded-md px-2 py-1 text-[11px] font-medium text-emerald-600 transition-colors hover:bg-emerald-500/10"
+                            >
+                              Approve
+                            </button>
+                          )}
+                          <button
+                            onClick={() => deleteDevice(d.id)}
+                            aria-label="Remove device"
+                            className="rounded-lg p-1.5 text-muted-foreground/40 transition-colors hover:bg-destructive/10 hover:text-destructive"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}

@@ -6,6 +6,7 @@ import { getCurrentUser } from '@/server/auth';
 import { extractRequestIp } from '@/server/access';
 import { getAccessEnforced } from '@/server/settings';
 import { resolveAccessDecision } from '@/server/access/decision';
+import { DeviceEnrollForm } from './device-enroll-form';
 
 export const metadata: Metadata = {
   title: 'Access blocked | BPP Workspace',
@@ -28,6 +29,10 @@ export default async function AccessBlockedPage() {
   }
 
   const ip = extractRequestIp(await headers());
+  const deviceRelevant =
+    profile.accessMode === 'device' ||
+    profile.accessMode === 'ip_and_device' ||
+    profile.accessMode === 'ip_or_device';
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -52,6 +57,8 @@ export default async function AccessBlockedPage() {
             <span className="font-mono">{ip ?? 'unknown'}</span>
           </div>
         </div>
+
+        {deviceRelevant && <DeviceEnrollForm />}
 
         <p className="mt-6 text-xs leading-relaxed text-muted-foreground/70">
           If you believe this is a mistake, contact your workspace owner or administrator to

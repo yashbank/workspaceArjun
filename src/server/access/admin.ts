@@ -246,6 +246,52 @@ export async function addAllowedIpRange(input: {
   return range;
 }
 
+/** Approves or revokes an enrolled device (Owner/admin). Audited. */
+export async function setDeviceStatus(id: string, status: 'approved' | 'revoked'): Promise<void> {
+  const actor = await requirePermission('users:manage');
+  const device = await db.approvedDevice.findUnique({
+    where: { id },
+    select: { id: true, userId: true },
+  });
+  if (!device) throw new Error('Device not found');
+
+  await db.approvedDevice.update({
+    where: { id },
+    data:
+      status === 'revoked'
+        ? { status: 'revoked', revokedAt: new Date() }
+        : { status: 'approved', approvedAt: new Date(), approvedById: actor.id, revokedAt: null },
+  });
+
+  await logAuditEvent({
+    actor,
+    action: status === 'revoked' ? 'device.revoke' : 'device.approve',
+    targetType: 'device',
+    targetId: id,
+    meta: { userId: device.userId },
+  });
+}
+
+/** Permanently removes a device record (Owner/admin). Audited. */
+export async function removeDevice(id: string): Promise<void> {
+  const actor = await requirePermission('users:manage');
+  const device = await db.approvedDevice.findUnique({
+    where: { id },
+    select: { id: true, userId: true },
+  });
+  if (!device) throw new Error('Device not found');
+
+  await db.approvedDevice.delete({ where: { id } });
+
+  await logAuditEvent({
+    actor,
+    action: 'device.revoke',
+    targetType: 'device',
+    targetId: id,
+    meta: { userId: device.userId, removed: true },
+  });
+}
+
 export async function removeAllowedIpRange(id: string): Promise<void> {
   const actor = await requirePermission('users:manage');
 
