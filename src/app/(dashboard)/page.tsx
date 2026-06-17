@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { getCurrentUser } from '@/server/auth';
-import { loadDashboardData } from '@/server/dashboard/load-dashboard-data';
+import { loadDashboardData, type ActivityDayPoint } from '@/server/dashboard/load-dashboard-data';
 import { PAGE_TITLES } from '@/lib/site';
 import Link from 'next/link';
 
@@ -107,57 +107,134 @@ export default async function DashboardHome() {
         </div>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      {/* Stat tiles */}
+      <div className={`grid gap-4 sm:grid-cols-2 ${canSeeAnalytics ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}`}>
         <StatCard icon={FileText} label="Total files" value={fileCount.toString()} tone="blue" />
         <StatCard icon={FolderOpen} label="Folders" value={folderCount.toString()} tone="violet" />
         <StatCard icon={Layers} label="Versions" value={versionCount.toString()} tone="amber" />
         {canSeeAnalytics && (
           <StatCard icon={Activity} label="Activity (7d)" value={activityCount.toString()} tone="emerald" />
         )}
-        <StorageWidget usedBytes={totalBytes} quotaBytes={quotaBytes} fileCount={fileCount} />
       </div>
 
-      {/* Analytics — Owner/Admin only */}
-      {canSeeAnalytics && (
-        <div className="space-y-4">
-          <div className="grid gap-4 lg:grid-cols-3">
-            <div className="lg:col-span-2">
-              <ActivityAreaChart data={activityByDay} />
-            </div>
+      {canSeeAnalytics ? (
+        /* Bento — varied sizes: big chart, square widgets, circular gauge, long heatmap */
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-6 lg:items-start">
+          <Reveal i={0} className="lg:col-span-4">
+            <ActivityAreaChart data={activityByDay} />
+          </Reveal>
+          <Reveal i={1} className="lg:col-span-2">
             <FileTypePie data={fileTypes} />
-          </div>
-          <ActivityHeatmap data={activityByDay} />
+          </Reveal>
+          <Reveal i={2} className="lg:col-span-2">
+            <StorageWidget usedBytes={totalBytes} quotaBytes={quotaBytes} fileCount={fileCount} />
+          </Reveal>
+          <Reveal i={3} className="lg:col-span-2">
+            <BusiestDayCard data={activityByDay} />
+          </Reveal>
+          <Reveal i={4} className="lg:col-span-2">
+            <QuickActionsCard />
+          </Reveal>
+          <Reveal i={5} className="lg:col-span-6">
+            <ActivityHeatmap data={activityByDay} />
+          </Reveal>
+          {pinnedFileDetails.length > 0 && (
+            <Reveal i={6} className="lg:col-span-6">
+              <StarredCard files={pinnedFileDetails} />
+            </Reveal>
+          )}
+        </div>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <StorageWidget usedBytes={totalBytes} quotaBytes={quotaBytes} fileCount={fileCount} />
+          <QuickActionsCard />
+          {pinnedFileDetails.length > 0 && <StarredCard files={pinnedFileDetails} />}
         </div>
       )}
+    </div>
+  );
+}
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <div className="bpp-card p-5 transition-all duration-200 hover:shadow-elevated">
-          <h2 className="bpp-label-caps">Quick actions</h2>
-          <div className="mt-3 space-y-0.5">
-            <QuickAction href="/files" icon={Upload} label="Upload files" />
-            <QuickAction href="/files" icon={Plus} label="New folder" />
-            <QuickAction href="/trash" icon={Trash2} label="View trash" />
-          </div>
+/** Staggered first-load reveal wrapper for bento widgets. */
+function Reveal({
+  i = 0,
+  className = '',
+  children,
+}: {
+  i?: number;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className={`animate-in content-reveal duration-500 ${className}`}
+      style={{ animationDelay: `${i * 70}ms` }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function BusiestDayCard({ data }: { data: ActivityDayPoint[] }) {
+  const busiest = data.reduce<ActivityDayPoint>(
+    (m, d) => (d.count > m.count ? d : m),
+    { date: '', count: 0 },
+  );
+  const label = busiest.date
+    ? new Date(`${busiest.date}T00:00:00Z`).toLocaleDateString('en-IN', {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+        timeZone: 'UTC',
+      })
+    : '';
+  return (
+    <div className="bpp-card h-full p-5 transition-all duration-200 hover:shadow-elevated">
+      <h2 className="bpp-label-caps">Busiest day</h2>
+      {busiest.count === 0 ? (
+        <p className="mt-4 text-sm text-muted-foreground/50">No activity yet</p>
+      ) : (
+        <div className="mt-4">
+          <p className="bg-gradient-to-br from-fuchsia-500 to-indigo-500 bg-clip-text text-4xl font-bold tabular-nums tracking-tight text-transparent">
+            {busiest.count}
+          </p>
+          <p className="mt-1 text-[12px] font-medium text-muted-foreground/70">events</p>
+          <p className="mt-2 text-[11px] text-muted-foreground/50">{label}</p>
         </div>
+      )}
+    </div>
+  );
+}
 
-        {pinnedFileDetails.length > 0 && (
-          <div className="bpp-card p-5 transition-all duration-200 hover:shadow-elevated lg:col-span-2">
-            <h2 className="bpp-label-caps">Starred files</h2>
-            <div className="mt-3 grid gap-0.5 sm:grid-cols-2">
-              {pinnedFileDetails.map((f) => (
-                <div
-                  key={f.id}
-                  className="flex items-center gap-2.5 rounded-lg px-3 py-2 transition-colors hover:bg-accent/30"
-                >
-                  <Star className="h-3 w-3 shrink-0 fill-amber-400 text-amber-400" />
-                  <span className="truncate text-xs font-medium" title={f.name}>
-                    {f.name}
-                  </span>
-                </div>
-              ))}
-            </div>
+function QuickActionsCard() {
+  return (
+    <div className="bpp-card h-full p-5 transition-all duration-200 hover:shadow-elevated">
+      <h2 className="bpp-label-caps">Quick actions</h2>
+      <div className="mt-3 space-y-0.5">
+        <QuickAction href="/files" icon={Upload} label="Upload files" />
+        <QuickAction href="/files" icon={Plus} label="New folder" />
+        <QuickAction href="/trash" icon={Trash2} label="View trash" />
+      </div>
+    </div>
+  );
+}
+
+function StarredCard({ files }: { files: { id: string; name: string }[] }) {
+  return (
+    <div className="bpp-card h-full p-5 transition-all duration-200 hover:shadow-elevated">
+      <h2 className="bpp-label-caps">Starred files</h2>
+      <div className="mt-3 grid gap-0.5 sm:grid-cols-2 lg:grid-cols-3">
+        {files.map((f) => (
+          <div
+            key={f.id}
+            className="flex items-center gap-2.5 rounded-lg px-3 py-2 transition-colors hover:bg-accent/30"
+          >
+            <Star className="h-3 w-3 shrink-0 fill-amber-400 text-amber-400" />
+            <span className="truncate text-xs font-medium" title={f.name}>
+              {f.name}
+            </span>
           </div>
-        )}
+        ))}
       </div>
     </div>
   );
