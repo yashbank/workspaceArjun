@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { StorageWidget } from '@/components/dashboard/storage-widget';
 import { ClientGreeting, ClientDate } from '@/components/dashboard/client-greeting';
-import { ActivityLineChart, FileTypePie } from '@/components/dashboard/charts';
+import { ActivityAreaChart, FileTypePie, ActivityHeatmap } from '@/components/dashboard/charts';
 
 export default async function DashboardHome() {
   let profile = null;
@@ -108,22 +108,25 @@ export default async function DashboardHome() {
       )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        <StatCard icon={FileText} label="Total files" value={fileCount.toString()} />
-        <StatCard icon={FolderOpen} label="Folders" value={folderCount.toString()} />
-        <StatCard icon={Layers} label="Versions" value={versionCount.toString()} />
+        <StatCard icon={FileText} label="Total files" value={fileCount.toString()} tone="blue" />
+        <StatCard icon={FolderOpen} label="Folders" value={folderCount.toString()} tone="violet" />
+        <StatCard icon={Layers} label="Versions" value={versionCount.toString()} tone="amber" />
         {canSeeAnalytics && (
-          <StatCard icon={Activity} label="Activity (7d)" value={activityCount.toString()} />
+          <StatCard icon={Activity} label="Activity (7d)" value={activityCount.toString()} tone="emerald" />
         )}
         <StorageWidget usedBytes={totalBytes} quotaBytes={quotaBytes} fileCount={fileCount} />
       </div>
 
       {/* Analytics — Owner/Admin only */}
       {canSeeAnalytics && (
-        <div className="grid gap-4 lg:grid-cols-3">
-          <div className="lg:col-span-2">
-            <ActivityLineChart data={activityByDay} />
+        <div className="space-y-4">
+          <div className="grid gap-4 lg:grid-cols-3">
+            <div className="lg:col-span-2">
+              <ActivityAreaChart data={activityByDay} />
+            </div>
+            <FileTypePie data={fileTypes} />
           </div>
-          <FileTypePie data={fileTypes} />
+          <ActivityHeatmap data={activityByDay} />
         </div>
       )}
 
@@ -160,20 +163,31 @@ export default async function DashboardHome() {
   );
 }
 
+const STAT_TONES: Record<string, string> = {
+  blue: 'from-blue-500 to-sky-400',
+  violet: 'from-violet-500 to-fuchsia-400',
+  amber: 'from-amber-500 to-orange-400',
+  emerald: 'from-emerald-500 to-teal-400',
+};
+
 function StatCard({
   icon: Icon,
   label,
   value,
+  tone = 'blue',
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: string;
+  tone?: keyof typeof STAT_TONES;
 }) {
   return (
     <div className="bpp-card-interactive p-4 hover:-translate-y-0.5 active:scale-[0.99]">
       <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent ring-1 ring-border/40">
-          <Icon className="h-[18px] w-[18px] text-foreground/75" />
+        <div
+          className={`flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br shadow-card ring-1 ring-white/15 ${STAT_TONES[tone] ?? STAT_TONES.blue}`}
+        >
+          <Icon className="h-[18px] w-[18px] text-white drop-shadow-sm" />
         </div>
         <div>
           <p className="text-2xl font-semibold tabular-nums tracking-tight">{value}</p>

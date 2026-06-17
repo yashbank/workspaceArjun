@@ -40,7 +40,8 @@ export type DashboardData = {
 };
 
 const ACTIVITY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
-const ACTIVITY_GRAPH_DAYS = 30;
+// 13 weeks powers the date-wise activity heatmap; the line graph slices the last 30.
+const ACTIVITY_GRAPH_DAYS = 91;
 
 const EMPTY: DashboardData = {
   fileCount: 0,
