@@ -1,9 +1,10 @@
 import { db } from '@/server/db';
-import { requirePermission } from '@/server/rbac';
+import { requirePermission, requireRole } from '@/server/rbac';
 import { logAuditEvent } from '@/server/audit';
 import { isValidIpOrCidr } from '@/server/access/ip';
 import { isAccessDetectionEnabled } from '@/server/access/errors';
 import { getAccessEnforced, setAccessEnforced } from '@/server/settings';
+import { generateAccessCode } from '@/server/access/code';
 import type {
   AccessMode,
   AllowedIpRange,
@@ -62,11 +63,13 @@ export type AccessOverview = {
   /** Live runtime flags so admins can verify the deployed env, not secrets. */
   accessDetectionEnabled: boolean;
   accessEnforcementEnabled: boolean;
+  /** True only for the Owner — gates visibility of per-user access codes. */
+  viewerIsOwner: boolean;
 };
 
 /** Owner/admin-only snapshot for the admin security page. Read-only. */
 export async function listAccessOverview(): Promise<AccessOverview> {
-  await requirePermission('users:manage');
+  const actor = await requirePermission('users:manage');
 
   const [users, ipRanges, devices, denials] = await Promise.all([
     db.userProfile.findMany({
@@ -115,7 +118,42 @@ export async function listAccessOverview(): Promise<AccessOverview> {
     denials,
     accessDetectionEnabled: isAccessDetectionEnabled(),
     accessEnforcementEnabled: await getAccessEnforced(),
+    viewerIsOwner: actor.role === 'owner',
   };
+}
+
+/**
+ * Owner-only: returns a member's access code, generating + persisting one on
+ * first reveal (this also backfills users created before codes existed). The
+ * code value is never written to the audit log — only that it was generated.
+ */
+export async function revealUserAccessCode(userId: string): Promise<{ code: string }> {
+  const actor = await requireRole('owner');
+  const user = await db.userProfile.findUnique({
+    where: { id: userId },
+    select: { id: true, email: true, accessCode: true },
+  });
+  if (!user) throw new Error('User not found');
+  if (user.accessCode) return { code: user.accessCode };
+
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const code = generateAccessCode();
+    try {
+      await db.userProfile.update({ where: { id: userId }, data: { accessCode: code } });
+      await logAuditEvent({
+        actor,
+        action: 'user.access_code_generate',
+        targetType: 'user',
+        targetId: userId,
+        meta: { email: user.email },
+      });
+      return { code };
+    } catch (e) {
+      if ((e as { code?: string }).code === 'P2002') continue; // unique clash — retry
+      throw e;
+    }
+  }
+  throw new Error('Could not generate a unique access code');
 }
 
 /**

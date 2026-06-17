@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Lock,
   Loader2,
@@ -10,6 +10,9 @@ import {
   Globe,
   User as UserIcon,
   Monitor,
+  Eye,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { useToast } from '@/components/ui/toast';
@@ -60,6 +63,7 @@ type Overview = {
   denials: Denial[];
   accessDetectionEnabled: boolean;
   accessEnforcementEnabled: boolean;
+  viewerIsOwner: boolean;
 };
 
 const MODES: { value: Mode; label: string }[] = [
@@ -90,6 +94,58 @@ function roleBadge(role: Role): string {
   if (role === 'owner') return 'bg-amber-500/10 text-amber-700 ring-amber-500/20 dark:text-amber-300';
   if (role === 'admin') return 'bg-blue-500/10 text-blue-700 ring-blue-500/20 dark:text-blue-300';
   return 'bg-muted/40 text-muted-foreground/70 ring-border/40';
+}
+
+function AccessCodeCell({
+  code,
+  busy,
+  onReveal,
+}: {
+  code?: string;
+  busy: boolean;
+  onReveal: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  if (code) {
+    return (
+      <div className="flex items-center gap-2">
+        <code className="rounded-md bg-muted/40 px-2 py-1 font-mono text-xs font-semibold tracking-[0.2em]">
+          {code}
+        </code>
+        <button
+          type="button"
+          aria-label="Copy access code"
+          onClick={() => {
+            navigator.clipboard?.writeText(code).catch(() => {});
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          }}
+          className="rounded-lg p-1 text-muted-foreground/50 transition-colors hover:bg-accent hover:text-foreground"
+        >
+          {copied ? (
+            <Check className="h-3.5 w-3.5 text-emerald-500" />
+          ) : (
+            <Copy className="h-3.5 w-3.5" />
+          )}
+        </button>
+        <span className="text-[10px] text-muted-foreground/40">hides in 5s</span>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onReveal}
+      disabled={busy}
+      aria-label="Reveal access code"
+      className="inline-flex items-center gap-1.5 rounded-lg border border-border/50 px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+    >
+      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Eye className="h-3.5 w-3.5" />}
+      <span className="font-mono tracking-[0.2em]">••••••••</span>
+    </button>
+  );
 }
 
 function Switch({
@@ -127,6 +183,10 @@ export default function SecurityPage() {
   const [error, setError] = useState<string | null>(null);
   const [savingUser, setSavingUser] = useState<string | null>(null);
   const [togglingEnforce, setTogglingEnforce] = useState(false);
+  // Per-user access codes revealed by the Owner; each auto-hides after 5s.
+  const [codes, setCodes] = useState<Record<string, string>>({});
+  const [revealingId, setRevealingId] = useState<string | null>(null);
+  const codeTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const [addingIp, setAddingIp] = useState(false);
   const [ipValue, setIpValue] = useState('');
   const [ipLabel, setIpLabel] = useState('');
@@ -149,6 +209,12 @@ export default function SecurityPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- data fetch on mount
     load();
   }, [load]);
+
+  // Clear any pending code-hide timers on unmount.
+  useEffect(() => {
+    const timers = codeTimers.current;
+    return () => Object.values(timers).forEach(clearTimeout);
+  }, []);
 
   const nameForUser = useCallback(
     (userId: string | null): string => {
@@ -196,6 +262,31 @@ export default function SecurityPage() {
       toast('error', e instanceof Error ? e.message : 'Could not update enforcement');
     } finally {
       setTogglingEnforce(false);
+    }
+  }
+
+  async function revealCode(userId: string) {
+    if (codes[userId]) return; // already visible
+    setRevealingId(userId);
+    try {
+      const { code } = await apiFetch<{ code: string }>(
+        `/api/admin/security/users/${userId}/access-code`,
+        { method: 'POST' },
+      );
+      setCodes((p) => ({ ...p, [userId]: code }));
+      clearTimeout(codeTimers.current[userId]);
+      // Auto-hide after 5 seconds so a code is never left on screen.
+      codeTimers.current[userId] = setTimeout(() => {
+        setCodes((p) => {
+          const next = { ...p };
+          delete next[userId];
+          return next;
+        });
+      }, 5000);
+    } catch (e) {
+      toast('error', e instanceof Error ? e.message : 'Could not reveal access code');
+    } finally {
+      setRevealingId(null);
     }
   }
 
@@ -329,6 +420,7 @@ export default function SecurityPage() {
                 <th className="px-4 py-2.5">Role</th>
                 <th className="hidden px-4 py-2.5 sm:table-cell">Status</th>
                 <th className="px-4 py-2.5">Access mode</th>
+                {data.viewerIsOwner && <th className="px-4 py-2.5">Access code</th>}
               </tr>
             </thead>
             <tbody>
@@ -375,6 +467,15 @@ export default function SecurityPage() {
                         </div>
                       )}
                     </td>
+                    {data.viewerIsOwner && (
+                      <td className="px-4 py-2.5">
+                        <AccessCodeCell
+                          code={codes[u.id]}
+                          busy={revealingId === u.id}
+                          onReveal={() => revealCode(u.id)}
+                        />
+                      </td>
+                    )}
                   </tr>
                 );
               })}

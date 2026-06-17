@@ -45,6 +45,7 @@ export function formatAuditAction(
     'user.remove': 'removed a user',
     'user.ownership_transfer': 'transferred ownership',
     'user.access_mode_change': 'changed a user access mode',
+    'user.access_code_generate': 'generated a user access code',
     'access.denied': 'was blocked from an unapproved IP/device',
     'device.request': 'requested device approval',
     'device.approve': 'approved a device',

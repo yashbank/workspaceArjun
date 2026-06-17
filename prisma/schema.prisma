@@ -56,6 +56,7 @@ model UserProfile {
   role       UserRole   @default(member)
   status     UserStatus @default(active)
   accessMode AccessMode @default(unrestricted) @map("access_mode")
+  accessCode String?    @unique @map("access_code")
   createdAt  DateTime   @default(now()) @map("created_at")
   updatedAt  DateTime   @updatedAt @map("updated_at")
 
