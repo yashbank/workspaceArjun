@@ -1137,6 +1137,7 @@ export function FileBrowser({
               {folders.length > 0 && (
                 <FolderGrid
                   folders={folders}
+                  view={viewMode}
                   onOpen={navigateTo}
                   onRename={openFolderRename}
                   onDelete={handleDeleteFolder}

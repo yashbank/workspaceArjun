@@ -224,7 +224,11 @@
     @apply text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/55;
   }
   .bpp-page-title {
-    @apply text-2xl font-semibold tracking-tight text-foreground;
+    @apply text-2xl font-semibold tracking-tight;
+    background-image: linear-gradient(100deg, var(--foreground) 30%, var(--primary) 115%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
   }
 }
 .bg-checkerboard {

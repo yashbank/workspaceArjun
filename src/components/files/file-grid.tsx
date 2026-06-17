@@ -168,7 +168,7 @@ const FileCard = memo(function FileCard({
 
   return (
     <div
-      className={`group relative flex flex-col overflow-hidden rounded-2xl border bg-card shadow-card transition-[box-shadow,border-color] duration-250 ease-out hover:shadow-elevated ${
+      className={`group relative flex cursor-grab flex-col overflow-hidden rounded-2xl border bg-card shadow-card transition-[box-shadow,border-color,transform] duration-250 ease-out hover:-translate-y-0.5 hover:shadow-elevated active:cursor-grabbing ${
         selected
           ? 'border-primary/35 ring-2 ring-primary/10 shadow-elevated'
           : 'border-border/55 hover:border-border/80'
