@@ -10,7 +10,6 @@ import {
   Globe,
   User as UserIcon,
   Monitor,
-  Info,
 } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { useToast } from '@/components/ui/toast';
@@ -93,11 +92,41 @@ function roleBadge(role: Role): string {
   return 'bg-muted/40 text-muted-foreground/70 ring-border/40';
 }
 
+function Switch({
+  checked,
+  disabled,
+  onChange,
+}: {
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+        checked ? 'bg-primary' : 'bg-muted-foreground/25'
+      }`}
+    >
+      <span
+        className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-sm transition-transform ${
+          checked ? 'translate-x-[22px]' : 'translate-x-0.5'
+        }`}
+      />
+    </button>
+  );
+}
+
 export default function SecurityPage() {
   const [data, setData] = useState<Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savingUser, setSavingUser] = useState<string | null>(null);
+  const [togglingEnforce, setTogglingEnforce] = useState(false);
   const [addingIp, setAddingIp] = useState(false);
   const [ipValue, setIpValue] = useState('');
   const [ipLabel, setIpLabel] = useState('');
@@ -148,6 +177,25 @@ export default function SecurityPage() {
       toast('error', e instanceof Error ? e.message : 'Could not update access mode');
     } finally {
       setSavingUser(null);
+    }
+  }
+
+  async function toggleEnforcement(next: boolean) {
+    setTogglingEnforce(true);
+    // Optimistic: flip immediately, revert if the request fails.
+    setData((prev) => (prev ? { ...prev, accessEnforcementEnabled: next } : prev));
+    try {
+      await apiFetch('/api/admin/security', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enforcement: next }),
+      });
+      toast('success', next ? 'Enforcement turned on' : 'Enforcement turned off');
+    } catch (e) {
+      setData((prev) => (prev ? { ...prev, accessEnforcementEnabled: !next } : prev));
+      toast('error', e instanceof Error ? e.message : 'Could not update enforcement');
+    } finally {
+      setTogglingEnforce(false);
     }
   }
 
@@ -206,11 +254,13 @@ export default function SecurityPage() {
     );
   }
 
-  const runtimeMode = !data.accessDetectionEnabled
-    ? { label: 'Detection off', cls: 'bg-muted/40 text-muted-foreground ring-border/50' }
-    : data.accessEnforcementEnabled
-      ? { label: 'Enforcement active', cls: 'bg-destructive/10 text-destructive ring-destructive/20' }
-      : { label: 'Log-only', cls: 'bg-amber-500/10 text-amber-700 ring-amber-500/20 dark:text-amber-300' };
+  const detectionOn = data.accessDetectionEnabled;
+  const enforcementOn = detectionOn && data.accessEnforcementEnabled;
+  const runtimeMode = !detectionOn
+    ? { label: 'Disabled', cls: 'bg-muted/40 text-muted-foreground ring-border/50' }
+    : enforcementOn
+      ? { label: 'Protected', cls: 'bg-primary/10 text-primary ring-primary/20' }
+      : { label: 'Monitoring', cls: 'bg-amber-500/10 text-amber-700 ring-amber-500/20 dark:text-amber-300' };
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -231,34 +281,34 @@ export default function SecurityPage() {
         </span>
       </div>
 
-      {/* Runtime status banner — reflects the live deployed env (not secret) */}
-      {!data.accessDetectionEnabled ? (
-        <div className="flex items-start gap-2.5 rounded-2xl border border-border/50 bg-muted/30 px-4 py-3 text-muted-foreground">
-          <Info className="mt-0.5 h-4 w-4 shrink-0" />
-          <p className="text-[13px] font-medium leading-relaxed">
-            <span className="font-bold">Detection off</span> (ACCESS_DETECTION=off): access control is
-            fully disabled — members are neither observed nor blocked. Owner and admin always have
-            access.
-          </p>
+      {/* Enforcement toggle — plain-language on/off control */}
+      <section className="bpp-card overflow-hidden">
+        <div className="flex items-center justify-between gap-4 px-5 py-4">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <ShieldAlert
+                className={`h-4 w-4 ${enforcementOn ? 'text-primary' : 'text-muted-foreground/50'}`}
+              />
+              <span className="text-sm font-semibold">Enforce office IP &amp; device access</span>
+            </div>
+            <p className="mt-1 max-w-xl text-[13px] leading-relaxed text-muted-foreground">
+              {!detectionOn
+                ? 'Access control is currently disabled for this workspace — members are neither checked nor blocked.'
+                : enforcementOn
+                  ? 'On — restricted members can only sign in from an approved office IP or a registered device. Owner and admin always have access.'
+                  : 'Off — sign-ins are recorded below for review, but no one is blocked yet. Turn this on to start enforcing and to configure allowed IPs and devices.'}
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {togglingEnforce && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground/40" />}
+            <Switch
+              checked={enforcementOn}
+              disabled={!detectionOn || togglingEnforce}
+              onChange={toggleEnforcement}
+            />
+          </div>
         </div>
-      ) : data.accessEnforcementEnabled ? (
-        <div className="flex items-start gap-2.5 rounded-2xl border border-destructive/25 bg-destructive/8 px-4 py-3 text-destructive">
-          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
-          <p className="text-[13px] font-medium leading-relaxed">
-            <span className="font-bold">Enforcement active</span> (ACCESS_ENFORCE=true): restricted
-            members are blocked from unapproved IPs/devices. Owner and admin always have access.
-          </p>
-        </div>
-      ) : (
-        <div className="flex items-start gap-2.5 rounded-2xl border border-amber-500/20 bg-amber-500/8 px-4 py-3 text-amber-800 dark:text-amber-300">
-          <Info className="mt-0.5 h-4 w-4 shrink-0" />
-          <p className="text-[13px] font-medium leading-relaxed">
-            <span className="font-bold">Log-only mode</span> (ACCESS_ENFORCE is off): restrictions are
-            observed and recorded below, but members are not blocked. Owner and admin always have
-            access.
-          </p>
-        </div>
-      )}
+      </section>
 
       {error && (
         <div className="rounded-2xl border border-destructive/15 bg-destructive/4 px-4 py-3 text-sm text-destructive">
@@ -333,6 +383,14 @@ export default function SecurityPage() {
         </div>
       </section>
 
+      {!enforcementOn && detectionOn && (
+        <div className="rounded-2xl border border-dashed border-border/50 bg-muted/15 px-5 py-4 text-[13px] text-muted-foreground">
+          Turn on enforcement above to configure allowed office IPs and approved devices.
+        </div>
+      )}
+
+      {enforcementOn && (
+        <>
       {/* IP allowlist */}
       <section className="bpp-card overflow-hidden">
         <div className="border-b border-border/30 px-5 py-3.5">
@@ -480,6 +538,8 @@ export default function SecurityPage() {
           )}
         </div>
       </section>
+        </>
+      )}
 
       {/* Security alerts */}
       <section className="bpp-card overflow-hidden">

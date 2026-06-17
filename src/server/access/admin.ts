@@ -2,7 +2,8 @@ import { db } from '@/server/db';
 import { requirePermission } from '@/server/rbac';
 import { logAuditEvent } from '@/server/audit';
 import { isValidIpOrCidr } from '@/server/access/ip';
-import { isAccessEnforced, isAccessDetectionEnabled } from '@/server/access/errors';
+import { isAccessDetectionEnabled } from '@/server/access/errors';
+import { getAccessEnforced, setAccessEnforced } from '@/server/settings';
 import type {
   AccessMode,
   AllowedIpRange,
@@ -113,8 +114,24 @@ export async function listAccessOverview(): Promise<AccessOverview> {
     devices,
     denials,
     accessDetectionEnabled: isAccessDetectionEnabled(),
-    accessEnforcementEnabled: isAccessEnforced(),
+    accessEnforcementEnabled: await getAccessEnforced(),
   };
+}
+
+/**
+ * Toggles workspace-wide access enforcement on/off (the Security page switch).
+ * Owner/admin only; audited. When off, restrictions are observed/logged but no
+ * one is blocked.
+ */
+export async function setAccessEnforcement(enabled: boolean): Promise<void> {
+  const actor = await requirePermission('users:manage');
+  await setAccessEnforced(enabled);
+  await logAuditEvent({
+    actor,
+    action: 'settings.change',
+    targetType: 'access_enforcement',
+    meta: { enforcement: enabled ? 'enabled' : 'disabled' },
+  });
 }
 
 /**

@@ -3,7 +3,8 @@ import { redirect } from 'next/navigation';
 import { headers } from 'next/headers';
 import { ShieldAlert } from 'lucide-react';
 import { getCurrentUser } from '@/server/auth';
-import { extractRequestIp, isAccessEnforced } from '@/server/access';
+import { extractRequestIp } from '@/server/access';
+import { getAccessEnforced } from '@/server/settings';
 import { resolveAccessDecision } from '@/server/access/decision';
 
 export const metadata: Metadata = {
@@ -18,7 +19,7 @@ export default async function AccessBlockedPage() {
 
   // Don't strand anyone here: if enforcement is off, or the user is actually
   // allowed (owner/admin or on an approved IP/device), send them to the app.
-  if (!isAccessEnforced()) {
+  if (!(await getAccessEnforced())) {
     redirect('/');
   }
   const decision = await resolveAccessDecision(profile);

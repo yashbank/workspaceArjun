@@ -12,7 +12,8 @@ import { DisplayNameGuard } from '@/components/shell/display-name-guard';
 import { needsDisplayNameSetup } from '@/lib/user-display';
 import { userHasDuplicateDisplayName } from '@/server/profile';
 import { resolveAccessDecision, logAccessDenial } from '@/server/access/decision';
-import { isAccessEnforced, isAccessDetectionEnabled } from '@/server/access';
+import { isAccessDetectionEnabled } from '@/server/access';
+import { getAccessEnforced } from '@/server/settings';
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createSupabaseServerClient();
@@ -73,13 +74,15 @@ export default async function DashboardLayout({ children }: { children: React.Re
   if (decision?.wouldBlock) {
     await logAccessDenial(profile, decision);
     accessBlocked = true;
-    if (process.env.NODE_ENV !== 'production') {
-      console.warn(
-        `[access] would-block (layout) user=${profile.id} ip=${decision.ip ?? 'unknown'} mode=${profile.accessMode} enforce=${isAccessEnforced()}`,
-      );
-    }
   }
-  if (accessBlocked && isAccessEnforced()) {
+  // Resolve the (DB-backed) enforcement toggle once; only blocked users need it.
+  const enforced = accessBlocked && (await getAccessEnforced());
+  if (accessBlocked && process.env.NODE_ENV !== 'production') {
+    console.warn(
+      `[access] would-block (layout) user=${profile.id} ip=${decision?.ip ?? 'unknown'} mode=${profile.accessMode} enforce=${enforced}`,
+    );
+  }
+  if (enforced) {
     redirect('/access-blocked');
   }
 
