@@ -33,6 +33,13 @@ describe('getFileTypeBadge — five-family palette', () => {
     }
   });
 
+  it('maps database files to the emerald family with a DB label', () => {
+    for (const name of ['inventory.db', 'app.sqlite', 'data.sqlite3', 'legacy.mdb']) {
+      expect(getFileTypeBadge(name).color).toContain('emerald');
+    }
+    expect(getFileTypeBadge('inventory.db').label).toBe('DB');
+  });
+
   it('maps unknown extensions to the slate (other) family with an uppercased label', () => {
     const badge = getFileTypeBadge('mystery.xyz');
     expect(badge.color).toContain('slate');

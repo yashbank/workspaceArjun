@@ -9,12 +9,14 @@ const IMAGE_EXTS = new Set([
 ]);
 const MEDIA_EXTS = new Set(['mp4', 'mov', 'webm', 'm4v', 'mp3', 'wav']);
 const ARCHIVE_EXTS = new Set(['zip', 'rar', '7z', 'tar', 'gz']);
+const DATABASE_EXTS = new Set(['db', 'sqlite', 'sqlite3', 'mdb', 'accdb']);
 
 const FAMILY_COLORS = {
   documents: 'bg-blue-500/10 text-blue-700 dark:text-blue-300',
   images: 'bg-sky-500/10 text-sky-700 dark:text-sky-300',
   media: 'bg-violet-500/10 text-violet-700 dark:text-violet-300',
   archives: 'bg-amber-500/10 text-amber-700 dark:text-amber-300',
+  database: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
   other: 'bg-slate-500/10 text-slate-600 dark:text-slate-300',
 } as const;
 
@@ -23,8 +25,12 @@ function badgeColor(ext: string): string {
   if (IMAGE_EXTS.has(ext)) return FAMILY_COLORS.images;
   if (MEDIA_EXTS.has(ext)) return FAMILY_COLORS.media;
   if (ARCHIVE_EXTS.has(ext)) return FAMILY_COLORS.archives;
+  if (DATABASE_EXTS.has(ext)) return FAMILY_COLORS.database;
   return FAMILY_COLORS.other;
 }
+
+/** Database / data-file extensions (treated as a first-class family). */
+export const DB_FILE_EXTS = DATABASE_EXTS;
 
 export function getExtension(filename: string): string {
   const dot = filename.lastIndexOf('.');

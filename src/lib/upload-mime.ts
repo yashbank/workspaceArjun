@@ -22,6 +22,11 @@ const EXT_MIME: Record<string, string> = {
   mov: 'video/quicktime',
   webm: 'video/webm',
   zip: 'application/zip',
+  db: 'application/octet-stream',
+  sqlite: 'application/octet-stream',
+  sqlite3: 'application/octet-stream',
+  mdb: 'application/octet-stream',
+  accdb: 'application/octet-stream',
 };
 
 const GENERIC_MIMES = new Set([

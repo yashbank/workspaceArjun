@@ -11,6 +11,7 @@ import {
   ChevronRight,
   Star,
   Pen,
+  Database,
 } from 'lucide-react';
 import { memo, useRef, useState } from 'react';
 import { getExtension, getFileTypeBadge, formatBytes, formatDate } from '@/lib/file-utils';
@@ -40,6 +41,7 @@ const PREMIUM_LIST_EXTS = new Set(['cdr', 'mov', 'pdf', 'xls', 'xlsx', 'csv', 'h
 const ARCHIVE_EXTS = new Set(['zip', 'rar', '7z', 'tar', 'gz']);
 const DOC_EXTS = new Set(['pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'ppt', 'pptx', 'txt']);
 const DESIGN_EXTS = new Set(['cdr', 'ai', 'eps', 'psd']);
+const DB_EXTS = new Set(['db', 'sqlite', 'sqlite3', 'mdb', 'accdb']);
 
 function FileTypeIcon({ filename }: { filename: string }) {
   const ext = getExtension(filename);
@@ -47,6 +49,7 @@ function FileTypeIcon({ filename }: { filename: string }) {
   if (IMAGE_EXTS.has(ext)) return <ImageIcon className={`${cls} text-sky-500`} />;
   if (ARCHIVE_EXTS.has(ext)) return <FileArchive className={`${cls} text-amber-600`} />;
   if (DESIGN_EXTS.has(ext)) return <Pen className={`${cls} text-purple-500`} />;
+  if (DB_EXTS.has(ext)) return <Database className={`${cls} text-emerald-600`} />;
   if (DOC_EXTS.has(ext)) return <FileText className={`${cls} text-blue-500`} />;
   return <FileIcon className={`${cls} text-muted-foreground`} />;
 }

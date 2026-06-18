@@ -23,6 +23,7 @@ import {
   Expand,
   Film,
   Smartphone,
+  Database,
 } from 'lucide-react';
 import { getExtension, getFileTypeBadge, formatBytes, formatDate } from '@/lib/file-utils';
 import {
@@ -43,6 +44,7 @@ const VIDEO_EXTS = new Set(['mp4', 'mov', 'webm', 'm4v']);
 const PDF_EXT = 'pdf';
 const DESIGN_EXTS = new Set(['cdr', 'ai', 'eps', 'psd', 'indd', 'sketch', 'fig', 'xd']);
 const SPREADSHEET_EXTS = new Set(['xls', 'xlsx', 'csv']);
+const DB_EXTS = new Set(['db', 'sqlite', 'sqlite3', 'mdb', 'accdb']);
 
 const EXT_META: Record<string, { label: string; app: string }> = {
   cdr: { label: 'CorelDRAW', app: 'CorelDRAW' },
@@ -64,6 +66,7 @@ function getFileIcon(ext: string) {
   if (DESIGN_EXTS.has(ext)) return <Pen className="h-11 w-11 text-purple-500 drop-shadow-sm" />;
   if (SPREADSHEET_EXTS.has(ext)) return <FileSpreadsheet className="h-11 w-11 text-emerald-500 drop-shadow-sm" />;
   if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) return <FileArchive className="h-11 w-11 text-amber-500 drop-shadow-sm" />;
+  if (DB_EXTS.has(ext)) return <Database className="h-11 w-11 text-emerald-500 drop-shadow-sm" />;
   return <FileIcon className="h-11 w-11 text-muted-foreground drop-shadow-sm" />;
 }
 
@@ -73,6 +76,7 @@ function getIconBgColor(ext: string) {
   if (DESIGN_EXTS.has(ext)) return 'bg-gradient-to-br from-purple-100 to-purple-50 dark:from-purple-900/30 dark:to-purple-800/20';
   if (SPREADSHEET_EXTS.has(ext)) return 'bg-gradient-to-br from-emerald-100 to-emerald-50 dark:from-emerald-900/30 dark:to-emerald-800/20';
   if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) return 'bg-gradient-to-br from-amber-100 to-amber-50 dark:from-amber-900/30 dark:to-amber-800/20';
+  if (DB_EXTS.has(ext)) return 'bg-gradient-to-br from-emerald-100 to-emerald-50 dark:from-emerald-900/30 dark:to-emerald-800/20';
   return 'bg-muted/40';
 }
 

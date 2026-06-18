@@ -18,4 +18,10 @@ describe('normalizeUploadMime', () => {
     expect(normalizeUploadMime('photo.jpg', '')).toBe('image/jpeg');
     expect(normalizeUploadMime('doc.pdf', 'application/octet-stream')).toBe('application/pdf');
   });
+
+  it('accepts database files (.db / .sqlite) as octet-stream', () => {
+    expect(normalizeUploadMime('inventory.db', '')).toBe('application/octet-stream');
+    expect(normalizeUploadMime('app.sqlite3', 'application/octet-stream')).toBe('application/octet-stream');
+    expect(normalizeUploadMime('records.DB', '')).toBe('application/octet-stream');
+  });
 });

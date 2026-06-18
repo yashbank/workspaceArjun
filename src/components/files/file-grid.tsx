@@ -10,6 +10,7 @@ import {
   Pen,
   Film,
   Smartphone,
+  Database,
 } from 'lucide-react';
 import { memo, useRef, useState } from 'react';
 import { getExtension, getFileTypeBadge, formatBytes } from '@/lib/file-utils';
@@ -25,6 +26,7 @@ const IMAGE_FALLBACK_EXTS = new Set(['heic', 'heif']);
 const ARCHIVE_EXTS = new Set(['zip', 'rar', '7z', 'tar', 'gz']);
 const DOC_EXTS = new Set(['pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'ppt', 'pptx', 'txt']);
 const DESIGN_EXTS = new Set(['cdr', 'ai', 'eps', 'psd']);
+const DB_EXTS = new Set(['db', 'sqlite', 'sqlite3', 'mdb', 'accdb']);
 const VIDEO_EXTS = new Set(['mp4', 'mov', 'webm', 'm4v']);
 const MEDIA_THUMB_EXTS = new Set([...PREVIEW_IMAGE_EXTS, 'mp4', 'webm', 'm4v']);
 const PREMIUM_CARD_EXTS = new Set(['cdr', 'mov', 'pdf', 'xls', 'xlsx', 'csv', 'heic', 'heif']);
@@ -41,6 +43,8 @@ function getCardColor(ext: string): string {
     return 'from-amber-50 to-amber-100/60 dark:from-amber-950/30 dark:to-amber-900/20 text-amber-600 dark:text-amber-400';
   if (DOC_EXTS.has(ext))
     return 'from-blue-50 to-blue-100/60 dark:from-blue-950/30 dark:to-blue-900/20 text-blue-600 dark:text-blue-400';
+  if (DB_EXTS.has(ext))
+    return 'from-emerald-50 to-emerald-100/60 dark:from-emerald-950/30 dark:to-emerald-900/20 text-emerald-600 dark:text-emerald-400';
   return 'from-muted/40 to-muted/60 text-muted-foreground';
 }
 
@@ -51,6 +55,7 @@ function FileCardIcon({ ext }: { ext: string }) {
   if (VIDEO_EXTS.has(ext)) return <Film className={cls} />;
   if (ARCHIVE_EXTS.has(ext)) return <FileArchive className={cls} />;
   if (DESIGN_EXTS.has(ext)) return <Pen className={cls} />;
+  if (DB_EXTS.has(ext)) return <Database className={cls} />;
   if (DOC_EXTS.has(ext)) return <FileText className={cls} />;
   return <FileIcon className={cls} />;
 }
