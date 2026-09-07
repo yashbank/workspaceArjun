@@ -71,3 +71,38 @@ Tests are colocated as `*.test.ts` next to the module.
 - Never run `pnpm demo:seed` / `demo:reset` against production.
 - First admin: set `ALLOW_BOOTSTRAP=true`, create account at `/login`, then disable it. Users are invite-only (max 15 seats).
 - Treat `docs/` as the source of truth; log meaningful changes in `CHANGELOG.md`.
+
+---
+
+# MIS module — standing rules
+
+Applies to every MIS ticket. Read `MIS_CODE_STRUCTURE.md` once per session.
+
+## Where code goes
+`src/app/(mis)/` pages · `src/components/mis/` React · `src/lib/mis/` pure (no Prisma/React) · `src/server/mis/` DB, permissions, money · `prisma/schema.prisma` `Mis*` models.
+A path without a `mis` segment is wrong — ask.
+
+## Reuse, never fork
+`src/components/ui/` (toast, confirm-dialog, fixed-menu) and `src/server/rbac/` already exist. Extend them. Do not build a second Toast or a parallel RBAC.
+
+## Invariants
+- Tests live beside code (`x.ts` + `x.test.ts`). Filenames kebab-case.
+- Money computed in `server/mis/`, sent down as a formatted string. Never derived client-side.
+- Colour/spacing/type only from the `01-Foundations` tokens. No new hex.
+- 44px tap targets, 48px inputs, 16px input text.
+- Existing test suite stays green. Never "fix" a failing existing test by editing it.
+- One ticket = one branch = one PR. Editing any file outside a `mis` folder needs a PR line saying why.
+
+## Per-ticket loop
+1. `git checkout Development && git pull` → `git checkout -b mis/MIS-<n>-<slug>`
+2. Read the ticket **and its comments** (screens + file paths are in comments). State files to create. **Stop for approval.**
+3. Build.
+4. `pnpm lint && pnpm typecheck && pnpm test && pnpm build` — all pass.
+5. Commit `MIS-<n>: <one line>`.
+6. `git fetch && git rebase origin/Development` → resolve in-branch → **re-run step 4**.
+7. Push, PR into `Development`, return the link.
+8. Stop. Next ticket only on my word.
+
+## Order
+Yash: 26 → 29 → 30 → 31 → 32 → 35 → 38 → 39 → 53 → 55
+Sanket: 80 → 77 → 33 → 36 → 54
