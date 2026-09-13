@@ -1,45 +1,28 @@
 /**
- * MIS Feature Flag Helper
+ * MIS feature flag — pure predicate, no I/O.
  *
- * Determines if the MIS (Management Information System) is enabled for a given user.
- * Reads from two sources in order:
- * 1. Environment variable MIS_ENABLED_ACCOUNTS (comma-separated user IDs)
- * 2. Per-user database flag (future implementation)
+ * The MIS module ships to production dark: merged, deployed, and invisible to
+ * every existing client account until an id is added to MIS_ENABLED_ACCOUNTS.
+ * Flipping an account on is an env change, not a redeploy.
  *
- * Default: OFF (feature disabled unless explicitly enabled)
+ * Read on the server only (see ./guard). The value is never serialised into a
+ * client payload, so the browser bundle carries no hint the module exists.
  */
+
+/** Parse the comma-separated allow-list. Unset or blank means nobody. */
+function enabledAccountIds(): string[] {
+  return (process.env.MIS_ENABLED_ACCOUNTS ?? '')
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean);
+}
 
 /**
- * Check if MIS is enabled for a specific user
+ * Is the MIS enabled for this user id?
  *
- * @param userId - The user ID to check
- * @returns true if MIS is enabled for this user, false otherwise
+ * Default is OFF. A flag that defaults on is not a flag.
  */
-export function isMisEnabled(userId: string): boolean {
-  // Default: feature is OFF
-  if (!userId) {
-    return false;
-  }
-
-  // Check environment variable allow-list
-  const enabledAccounts = process.env.MIS_ENABLED_ACCOUNTS || '';
-  if (enabledAccounts) {
-    const allowedIds = enabledAccounts
-      .split(',')
-      .map((id) => id.trim())
-      .filter((id) => id.length > 0);
-
-    if (allowedIds.includes(userId)) {
-      return true;
-    }
-  }
-
-  // Future: check per-user database flag here
-  // const userFlag = await prisma.userProfile.findUnique({
-  //   where: { id: userId },
-  //   select: { misFlagEnabled: true },
-  // });
-  // if (userFlag?.misFlagEnabled) return true;
-
-  return false;
+export function isMisEnabled(userId: string | null | undefined): boolean {
+  if (!userId) return false;
+  return enabledAccountIds().includes(userId);
 }
