@@ -1,0 +1,68 @@
+import { db } from '@/server/db';
+
+/**
+ * Fields that must never reach the audit table for an entity a non-owner can
+ * read back (S9). Wages are the factory's most sensitive number; an audit diff
+ * is the easiest place to leak one by accident.
+ */
+const REDACTED_KEYS = new Set([
+  'wage',
+  'wageAmount',
+  'dailyWage',
+  'rate',
+  'salary',
+  'amount',
+  'netPay',
+]);
+
+type Diff = Record<string, unknown> | null | undefined;
+
+/** Replace sensitive values with a marker, keeping the shape of the diff. */
+export function redact(input: Diff): Record<string, unknown> | null {
+  if (!input) return null;
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(input)) {
+    out[key] = REDACTED_KEYS.has(key) ? '[redacted]' : value;
+  }
+  return out;
+}
+
+export type AuditEntry = {
+  actorId: string | null;
+  action: string;
+  entity: string;
+  entityId?: string | null;
+  before?: Diff;
+  after?: Diff;
+  ip?: string | null;
+};
+
+/**
+ * Write an audit row.
+ *
+ * Deliberately never throws. An audit table that can fail a user's save turns a
+ * logging problem into an outage — so a failed write is reported to the server
+ * log and the caller carries on. It is not swallowed silently.
+ */
+export async function logAuditEvent(entry: AuditEntry): Promise<void> {
+  try {
+    await db.misAuditLog.create({
+      data: {
+        actorId: entry.actorId,
+        action: entry.action,
+        entity: entry.entity,
+        entityId: entry.entityId ?? null,
+        before: redact(entry.before) ?? undefined,
+        after: redact(entry.after) ?? undefined,
+        ip: entry.ip ?? null,
+      },
+    });
+  } catch (error) {
+    console.error('[mis-audit] failed to write audit row', {
+      action: entry.action,
+      entity: entry.entity,
+      entityId: entry.entityId,
+      error,
+    });
+  }
+}

@@ -73,6 +73,12 @@ model UserProfile {
   approvedDevices   ApprovedDevice[] @relation("UserApprovedDevices")
   devicesApproved   ApprovedDevice[] @relation("DeviceApprovedBy")
 
+
+  // --- MIS (additive; no column is added to user_profiles by these) ---
+  misEmployee    MisEmployee?
+  misPreference  MisUserPreference?
+  misAuditEvents MisAuditLog[]     @relation("MisAuditActor")
+
   @@map("user_profiles")
 }
 
@@ -307,4 +313,110 @@ model Notification {
   @@index([userId])
   @@index([createdAt])
   @@map("notifications")
+}
+
+// ---------------------------------------------------------------------------
+// MIS — Factory Management Information System
+//
+// Everything below is prefixed Mis* and is a PARALLEL system. The existing
+// UserRole enum and the live file-management tables are not touched: adding a
+// value to a live enum is the fastest way to break a running product.
+// ---------------------------------------------------------------------------
+
+/// The seven MIS roles. Deliberately separate from UserRole.
+enum MisRole {
+  OWNER
+  ADMIN
+  SUPERVISOR
+  QC
+  ATTENDANCE_OPERATOR
+  SUPER_ATTENDANCE_OPERATOR
+  WORKER
+}
+
+/// A person on the factory roll.
+///
+/// userProfileId is NULLABLE on purpose: a WORKER has no login at all. That is
+/// the normal case, not an error case — most of the roll will never sign in.
+model MisEmployee {
+  id            String   @id @default(uuid()) @db.Uuid
+  userProfileId String?  @unique @map("user_profile_id") @db.Uuid
+  employeeCode  String   @unique @map("employee_code")
+  name          String
+  nameHi        String?  @map("name_hi")
+  role          MisRole  @default(WORKER)
+  managerId     String?  @map("manager_id") @db.Uuid
+  isActive      Boolean  @default(true) @map("is_active")
+  deletedAt     DateTime? @map("deleted_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  userProfile UserProfile?  @relation(fields: [userProfileId], references: [id], onDelete: SetNull)
+  manager     MisEmployee?  @relation("MisReports", fields: [managerId], references: [id], onDelete: SetNull)
+  reports     MisEmployee[] @relation("MisReports")
+
+  @@index([role])
+  @@index([managerId])
+  @@index([deletedAt])
+  @@map("mis_employees")
+}
+
+/// Per-user MIS preferences.
+///
+/// A separate table rather than a column on user_profiles, so the live product's
+/// own table keeps exactly the shape it has today.
+model MisUserPreference {
+  userProfileId String   @id @map("user_profile_id") @db.Uuid
+  locale        String   @default("en")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  userProfile UserProfile @relation(fields: [userProfileId], references: [id], onDelete: Cascade)
+
+  @@map("mis_user_preferences")
+}
+
+/// Every write the MIS makes, with a before/after diff.
+///
+/// Wage amounts are never written into `before`/`after` for an entity a
+/// non-owner can read back (S9). The redaction happens in server/mis/audit.ts.
+model MisAuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  actorId   String?  @map("actor_id") @db.Uuid
+  action    String
+  entity    String
+  entityId  String?  @map("entity_id")
+  before    Json?
+  after     Json?
+  ip        String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  actor UserProfile? @relation("MisAuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entity, entityId])
+  @@index([actorId])
+  @@index([createdAt])
+  @@map("mis_audit_logs")
+}
+
+/// One row per option in every simple dropdown in the system.
+///
+/// `group` is a String, not an enum, so an eighth group costs a row rather than
+/// a migration — which is the whole point of this table.
+model MisMasterOption {
+  id        String    @id @default(uuid()) @db.Uuid
+  group     String
+  value     String
+  label     String
+  labelHi   String?   @map("label_hi")
+  sortOrder Int       @default(0) @map("sort_order")
+  isActive  Boolean   @default(true) @map("is_active")
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  // A value is unique within its group among rows that are not soft-deleted.
+  // Postgres treats NULLs as distinct, so a deleted row never blocks a re-add.
+  @@unique([group, value, deletedAt])
+  @@index([group, sortOrder])
+  @@map("mis_master_options")
 }
