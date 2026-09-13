@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { isMisEnabled } from './flags';
 
 describe('isMisEnabled', () => {

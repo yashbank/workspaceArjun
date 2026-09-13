@@ -80,6 +80,10 @@ export function Select({
           onChange={(e) => setQuery(e.target.value)}
           placeholder={t('action.search')}
           disabled={disabled}
+          // Named after its field: a form full of dropdowns would otherwise
+          // present several identical "Search" boxes with nothing to tell them
+          // apart, by voice or by screen reader.
+          aria-label={label + ': ' + t('action.search')}
           className="min-h-12 w-full rounded-lg border border-slate-300 px-3 text-base"
         />
       )}
