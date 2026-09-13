@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/src/server/auth';
-import { isMisEnabled } from '@/src/server/mis/flags';
+import { auth } from '@/server/auth';
+import { isMisEnabled } from '@/server/mis/flags';
 
 /**
  * Next.js Middleware
