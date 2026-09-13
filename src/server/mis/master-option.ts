@@ -207,3 +207,16 @@ export async function addOptionInline(group: string, label: string): Promise<str
   const created = await createOption({ group, label });
   return created.value;
 }
+
+/** Live option count per group, for the masters index. One query, not seven. */
+export async function countsByGroup(): Promise<Record<string, number>> {
+  await requirePermission('masters.read');
+
+  const rows = await db.misMasterOption.groupBy({
+    by: ['group'],
+    where: { deletedAt: null },
+    _count: { _all: true },
+  });
+
+  return Object.fromEntries(rows.map((r) => [r.group, r._count._all]));
+}

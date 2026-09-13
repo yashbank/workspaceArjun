@@ -1,3 +1,4 @@
+import type { Prisma } from '@/generated/prisma/client';
 import { db } from '@/server/db';
 
 /**
@@ -52,8 +53,12 @@ export async function logAuditEvent(entry: AuditEntry): Promise<void> {
         action: entry.action,
         entity: entry.entity,
         entityId: entry.entityId ?? null,
-        before: redact(entry.before) ?? undefined,
-        after: redact(entry.after) ?? undefined,
+        // Prisma types a JSON column as InputJsonValue, which a plain
+        // Record<string, unknown> does not satisfy structurally. The value is
+        // JSON by construction — redact() only ever returns primitives and
+        // values that came out of a JSON-shaped diff.
+        before: (redact(entry.before) ?? undefined) as Prisma.InputJsonValue | undefined,
+        after: (redact(entry.after) ?? undefined) as Prisma.InputJsonValue | undefined,
         ip: entry.ip ?? null,
       },
     });

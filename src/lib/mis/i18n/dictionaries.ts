@@ -22,6 +22,17 @@ export const LOCALE_LABELS: Record<Locale, string> = {
 };
 
 const en = {
+  'masters.title': 'Masters',
+  'masters.GSM': 'GSM',
+  'masters.SIZE': 'Size',
+  'masters.SUBSTRATE': 'Substrate',
+  'masters.COATING': 'Coating',
+  'masters.COLOUR': 'Colour',
+  'masters.UNIT': 'Unit',
+  'masters.ITEM_TYPE': 'Item Type',
+  'masters.label': 'Label',
+  'masters.optionCount': 'options',
+
   'app.title': 'Factory MIS',
   'app.loading': 'Loading',
 
@@ -82,6 +93,17 @@ const en = {
 export type TranslationKey = keyof typeof en;
 
 const hi: Record<TranslationKey, string> = {
+  'masters.title': 'मास्टर',
+  'masters.GSM': 'जीएसएम',
+  'masters.SIZE': 'साइज़',
+  'masters.SUBSTRATE': 'सब्सट्रेट',
+  'masters.COATING': 'कोटिंग',
+  'masters.COLOUR': 'रंग',
+  'masters.UNIT': 'इकाई',
+  'masters.ITEM_TYPE': 'वस्तु प्रकार',
+  'masters.label': 'नाम',
+  'masters.optionCount': 'विकल्प',
+
   'app.title': 'फैक्ट्री एमआईएस',
   'app.loading': 'लोड हो रहा है',
 
