@@ -1,7 +1,24 @@
 import { db } from '@/server/db';
 import type { Prisma } from '@/generated/prisma/client';
 
-export type NotificationType = 'security.access_denied';
+/**
+ * `mis.phase_ready` is written by `src/server/mis/job-phases.ts` inside the
+ * sign-off transaction, so it cannot fire on a rollback. MIS-163 asked for the
+ * existing table rather than a second notification system — note that
+ * `listSecurityNotifications` filters on the `security.` prefix, so MIS rows
+ * never reach the Owner's security modal.
+ */
+export type NotificationType = 'security.access_denied' | 'mis.phase_ready';
+
+/** Details carried by a phase-ready notification (the next section's in-charge). */
+export type PhaseReadyPayload = {
+  orderId: string;
+  orderNumber: string;
+  phaseId: string;
+  processName: string;
+  previousProcessName: string;
+  signedOffAt: string;
+};
 
 /** Details carried by a security alert notification (rendered in the Owner modal). */
 export type SecurityAlertPayload = {
