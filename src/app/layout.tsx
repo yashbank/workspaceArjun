@@ -15,6 +15,7 @@ export const metadata: Metadata = {
   },
   description: 'Premium asset workspace for Bhaskar Paper Products',
   applicationName: 'BPP Workspace',
+  manifest: '/manifest.json',
   icons: {
     icon: [{ url: '/icon.svg', type: 'image/svg+xml' }],
   },

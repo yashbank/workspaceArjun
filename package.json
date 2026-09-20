@@ -14,7 +14,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate dev",
+    "db:migrate": "prisma migrate deploy",
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
@@ -23,7 +23,9 @@
     "demo:clear-activity": "tsx scripts/clear-activity-demo.ts",
     "demo:cleanup-files": "tsx scripts/cleanup-demo-files.ts",
     "workspace:reset": "tsx prisma/reset-production-workspace.ts",
-    "prepare": "husky"
+    "prepare": "husky",
+    "db:deploy": "prisma migrate deploy",
+    "db:migrate:dev": "echo \"REFUSED: migrate dev uses a shadow DB with no Supabase auth schema and always fails (P3006/3F000). This project hand-writes migrations in prisma/migrations-pending/. Use pnpm db:deploy. See docs/MIS_UI_SPEC.md 7.\" && exit 1"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1045.0",
@@ -35,6 +37,7 @@
     "archiver": "^8.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "date-fns": "^4.4.0",
     "ipaddr.js": "^2.4.0",
     "lucide-react": "^1.14.0",
     "next": "16.2.6",
@@ -43,6 +46,7 @@
     "react-dom": "19.2.4",
     "sharp": "^0.34.5",
     "tailwind-merge": "^3.6.0",
+    "xlsx": "^0.18.5",
     "zod": "^4.4.3"
   },
   "devDependencies": {
