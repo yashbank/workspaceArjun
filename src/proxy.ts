@@ -7,6 +7,9 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|healthz|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    // sw.js is public and static. A service-worker script that is redirected — to
+    // /login, for a signed-out request — is rejected by the browser outright, so it
+    // is exempt like the other static files (D16).
+    '/((?!_next/static|_next/image|favicon.ico|healthz|sw\\.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 };

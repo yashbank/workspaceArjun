@@ -196,8 +196,252 @@ async function main() {
   }
   console.log(`Created ${actions.length} audit events.`);
 
+  await seedMis(owner.id);
+
   console.log('\nDemo seed complete! Open http://localhost:3000 to see the populated workspace.');
 }
+
+// ─── MIS DEMO DATA ───────────────────────────────────────────────────────────
+async function seedMis(ownerId: string) {
+  // Departments
+  const depts = await Promise.all([
+    prisma.misDepartment.upsert({ where: { code: 'PROD' }, update: {}, create: { code: 'PROD', name: 'Production', nameHi: 'उत्पादन', sortOrder: 1 } }),
+    prisma.misDepartment.upsert({ where: { code: 'STORE' }, update: {}, create: { code: 'STORE', name: 'Store', nameHi: 'स्टोर', sortOrder: 2 } }),
+    prisma.misDepartment.upsert({ where: { code: 'QC' }, update: {}, create: { code: 'QC', name: 'Quality Control', nameHi: 'गुणवत्ता नियंत्रण', sortOrder: 3 } }),
+    prisma.misDepartment.upsert({ where: { code: 'MGMT' }, update: {}, create: { code: 'MGMT', name: 'Management', sortOrder: 4 } }),
+  ]);
+  console.log(`Created ${depts.length} MIS departments`);
+
+  // Machines
+  const machines = await Promise.all([
+    prisma.misMachine.upsert({ where: { code: 'M-01' }, update: {}, create: { code: 'M-01', name: 'Offset Press A', departmentId: depts[0].id, machineType: 'OFFSET', capacityPerDay: 500 } }),
+    prisma.misMachine.upsert({ where: { code: 'M-02' }, update: {}, create: { code: 'M-02', name: 'Flexo Press B', departmentId: depts[0].id, machineType: 'FLEXO', capacityPerDay: 800 } }),
+    prisma.misMachine.upsert({ where: { code: 'M-03' }, update: {}, create: { code: 'M-03', name: 'Die Cutter', departmentId: depts[0].id, machineType: 'DIE_CUT', capacityPerDay: 1200 } }),
+  ]);
+  console.log(`Created ${machines.length} MIS machines`);
+
+  // Employees
+  const employees = await Promise.all([
+    prisma.misEmployee.upsert({ where: { employeeCode: 'EMP-001' }, update: {}, create: { employeeCode: 'EMP-001', name: 'Arjun Bhaskar', role: 'OWNER', departmentId: depts[3].id } }),
+    prisma.misEmployee.upsert({ where: { employeeCode: 'EMP-002' }, update: {}, create: { employeeCode: 'EMP-002', name: 'Rajan Sharma', role: 'ADMIN', departmentId: depts[0].id } }),
+    prisma.misEmployee.upsert({ where: { employeeCode: 'EMP-003' }, update: {}, create: { employeeCode: 'EMP-003', name: 'Mohan Tiwari', role: 'STORE_GUY', departmentId: depts[1].id } }),
+    prisma.misEmployee.upsert({ where: { employeeCode: 'EMP-004' }, update: {}, create: { employeeCode: 'EMP-004', name: 'Priya Gupta', role: 'QC', departmentId: depts[2].id } }),
+    prisma.misEmployee.upsert({ where: { employeeCode: 'EMP-005' }, update: {}, create: { employeeCode: 'EMP-005', name: 'Suresh Kumar', role: 'WORKER', departmentId: depts[0].id } }),
+    prisma.misEmployee.upsert({ where: { employeeCode: 'EMP-006' }, update: {}, create: { employeeCode: 'EMP-006', name: 'Deepak Yadav', role: 'WORKER', departmentId: depts[0].id } }),
+    prisma.misEmployee.upsert({ where: { employeeCode: 'EMP-007' }, update: {}, create: { employeeCode: 'EMP-007', name: 'Kavita Singh', role: 'SUPERVISOR', departmentId: depts[0].id } }),
+  ]);
+  console.log(`Created ${employees.length} MIS employees`);
+
+  // Items
+  const items = await Promise.all([
+    prisma.misItem.upsert({ where: { code: 'ITM-001' }, update: {}, create: { code: 'ITM-001', name: 'Art Paper 90 GSM', category: 'RAW_MATERIAL', gsm: '90', unit: 'KG', pricePerUnit: 85, reorderLevel: 500 } }),
+    prisma.misItem.upsert({ where: { code: 'ITM-002' }, update: {}, create: { code: 'ITM-002', name: 'Art Paper 120 GSM', category: 'RAW_MATERIAL', gsm: '120', unit: 'KG', pricePerUnit: 110, reorderLevel: 300 } }),
+    prisma.misItem.upsert({ where: { code: 'ITM-003' }, update: {}, create: { code: 'ITM-003', name: 'Kraft Paper Board', category: 'RAW_MATERIAL', unit: 'KG', pricePerUnit: 65, reorderLevel: 1000 } }),
+    prisma.misItem.upsert({ where: { code: 'ITM-004' }, update: {}, create: { code: 'ITM-004', name: 'BOPP Film Clear', category: 'CONSUMABLE', unit: 'KG', pricePerUnit: 180, reorderLevel: 200 } }),
+    prisma.misItem.upsert({ where: { code: 'ITM-005' }, update: {}, create: { code: 'ITM-005', name: 'Flexo Ink Black', category: 'CONSUMABLE', unit: 'KG', pricePerUnit: 320, reorderLevel: 50 } }),
+    prisma.misItem.upsert({ where: { code: 'ITM-006' }, update: {}, create: { code: 'ITM-006', name: 'Flexo Ink Cyan', category: 'CONSUMABLE', unit: 'KG', pricePerUnit: 380, reorderLevel: 50 } }),
+    prisma.misItem.upsert({ where: { code: 'ITM-007' }, update: {}, create: { code: 'ITM-007', name: 'Corrugation Glue', category: 'CONSUMABLE', unit: 'KG', pricePerUnit: 45, reorderLevel: 200 } }),
+    prisma.misItem.upsert({ where: { code: 'ITM-008' }, update: {}, create: { code: 'ITM-008', name: 'Packaging Tape 48mm', category: 'CONSUMABLE', unit: 'PIECE', pricePerUnit: 35, reorderLevel: 500 } }),
+    prisma.misItem.upsert({ where: { code: 'ITM-009' }, update: {}, create: { code: 'ITM-009', name: 'Printed Box — Model A', category: 'OTHER', unit: 'PIECE', pricePerUnit: 12, reorderLevel: 2000 } }),
+    prisma.misItem.upsert({ where: { code: 'ITM-010' }, update: {}, create: { code: 'ITM-010', name: 'Die Board 4mm', category: 'EQUIPMENT', unit: 'PIECE', pricePerUnit: 1200, reorderLevel: 5 } }),
+  ]);
+  console.log(`Created ${items.length} MIS items`);
+
+  // Inventory ledger opening balances + store transactions
+  const txns: Array<{ code: string; itemIdx: number; qty: number; balance: number }> = [
+    { code: 'STN-001', itemIdx: 0, qty: 1200, balance: 1200 },
+    { code: 'STN-002', itemIdx: 1, qty: 600, balance: 600 },
+    { code: 'STN-003', itemIdx: 2, qty: 2500, balance: 2500 },
+    { code: 'STN-004', itemIdx: 3, qty: 350, balance: 350 },
+    { code: 'STN-005', itemIdx: 4, qty: 120, balance: 120 },
+    { code: 'STN-006', itemIdx: 5, qty: 80, balance: 80 },
+    { code: 'STN-007', itemIdx: 6, qty: 450, balance: 450 },
+    { code: 'STN-008', itemIdx: 7, qty: 1500, balance: 1500 },
+    { code: 'STN-009', itemIdx: 8, qty: 8000, balance: 8000 },
+    { code: 'STN-010', itemIdx: 9, qty: 12, balance: 12 },
+  ];
+
+  for (const t of txns) {
+    const item = items[t.itemIdx];
+    await prisma.misInventoryLedger.create({
+      data: {
+        itemId: item.id,
+        changeQty: t.qty,
+        balanceQty: t.balance,
+        source: 'OPENING_BALANCE',
+        notes: 'Demo opening stock',
+      },
+    });
+    await prisma.misStoreTransaction.upsert({
+      where: { txnNumber: t.code },
+      update: {},
+      create: {
+        txnNumber: t.code,
+        itemId: item.id,
+        type: 'IN',
+        quantity: t.qty,
+        balanceQty: t.balance,
+        referenceNo: 'OPENING',
+        reason: 'Demo opening stock',
+        createdById: ownerId,
+      },
+    });
+  }
+  console.log('Created MIS inventory opening balances');
+
+  // Customer + Supplier
+  const customer = await prisma.misCustomer.upsert({
+    where: { code: 'CUST-001' },
+    update: {},
+    create: { code: 'CUST-001', name: 'Hindustan Unilever Ltd', phone: '9876543210', city: 'Mumbai', gstNo: '27AAACH1011A1ZK' },
+  });
+  const supplier = await prisma.misSupplier.upsert({
+    where: { code: 'SUP-001' },
+    update: {},
+    create: { code: 'SUP-001', name: 'Star Paper Mills', phone: '9123456789', city: 'Ahmedabad', gstNo: '24AAACS6588M1ZP', paymentTermsDays: 30 },
+  });
+  console.log('Created MIS customer & supplier');
+
+  // Purchase Order
+  const po = await prisma.misPurchaseOrder.upsert({
+    where: { poNumber: 'PO-2025-001' },
+    update: {},
+    create: {
+      poNumber: 'PO-2025-001',
+      supplierId: supplier.id,
+      status: 'RECEIVED',
+      notes: 'Demo purchase order for Art Paper',
+    },
+  });
+  const poItem = await prisma.misPoItem.create({
+    data: {
+      poId: po.id,
+      itemId: items[0].id,
+      description: 'Art Paper 90 GSM',
+      quantity: 2000,
+      ratePerUnit: 85,
+      receivedQuantity: 2000,
+    },
+  });
+
+  // GRN
+  const grn = await prisma.misGrn.upsert({
+    where: { grnNumber: 'GRN-2025-001' },
+    update: {},
+    create: {
+      grnNumber: 'GRN-2025-001',
+      poId: po.id,
+      status: 'ACCEPTED',
+      receivedAt: new Date(),
+      notes: 'Received in good condition',
+    },
+  });
+  await prisma.misGrnItem.create({
+    data: {
+      grnId: grn.id,
+      poItemId: poItem.id,
+      receivedQty: 2000,
+      type: 'GENERAL',
+      batchNo: 'BATCH-2025-01',
+    },
+  });
+  console.log('Created MIS PO + GRN');
+
+  // Processes
+  const processes = await Promise.all([
+    prisma.misProcess.upsert({ where: { code: 'PROC-PRINT' }, update: {}, create: { code: 'PROC-PRINT', name: 'Printing', nameHi: 'प्रिंटिंग', departmentId: depts[0].id, standardTimeMinutes: 60, sortOrder: 1 } }),
+    prisma.misProcess.upsert({ where: { code: 'PROC-DIE' }, update: {}, create: { code: 'PROC-DIE', name: 'Die Cutting', departmentId: depts[0].id, standardTimeMinutes: 45, sortOrder: 2 } }),
+    prisma.misProcess.upsert({ where: { code: 'PROC-FOLD' }, update: {}, create: { code: 'PROC-FOLD', name: 'Folding & Gluing', departmentId: depts[0].id, standardTimeMinutes: 30, sortOrder: 3 } }),
+    prisma.misProcess.upsert({ where: { code: 'PROC-QC' }, update: {}, create: { code: 'PROC-QC', name: 'Quality Inspection', departmentId: depts[2].id, standardTimeMinutes: 20, sortOrder: 4 } }),
+  ]);
+
+  // Production Order + BOM
+  const order = await prisma.misOrder.upsert({
+    where: { orderNumber: 'ORD-2025-001' },
+    update: {},
+    create: {
+      orderNumber: 'ORD-2025-001',
+      customerId: customer.id,
+      status: 'IN_PROGRESS',
+      description: 'HUL Soap Box — 10,000 pcs',
+      deliveryDate: new Date(Date.now() + 7 * 24 * 3600_000),
+    },
+  });
+
+  const bom = await prisma.misBom.create({
+    data: {
+      orderId: order.id,
+      bomNumber: 'BOM-2025-001',
+      description: 'BOM for HUL Soap Box',
+      status: 'APPROVED',
+    },
+  });
+
+  // BOM stages
+  const stages = await Promise.all(
+    processes.map((proc, i) =>
+      prisma.misBomStage.create({
+        data: {
+          bomId: bom.id,
+          processId: proc.id,
+          stageNo: i + 1,
+          plannedQty: 10000,
+          completedQty: i < 2 ? 10000 : 0,
+          status: i < 2 ? 'DONE' : 'PENDING',
+        },
+      })
+    )
+  );
+
+  // BOM materials
+  await Promise.all([
+    prisma.misBomMaterial.create({ data: { bomId: bom.id, itemId: items[1].id, requiredQty: 500, issuedQty: 500, unit: 'KG' } }),
+    prisma.misBomMaterial.create({ data: { bomId: bom.id, itemId: items[4].id, requiredQty: 20, issuedQty: 15, unit: 'KG' } }),
+    prisma.misBomMaterial.create({ data: { bomId: bom.id, itemId: items[6].id, requiredQty: 80, issuedQty: 80, unit: 'KG' } }),
+  ]);
+  console.log('Created MIS Order + BOM with stages & materials');
+
+  // Business rules defaults
+  const rules = [
+    { key: 'over_issue_threshold_pct', value: '10', label: 'Over-issue threshold %' },
+    { key: 'reorder_alert_enabled', value: 'true', label: 'Reorder alerts enabled' },
+    { key: 'attendance_grace_minutes', value: '15', label: 'Attendance grace minutes' },
+    { key: 'shift_start_time', value: '08:00', label: 'Default shift start' },
+    { key: 'shift_end_time', value: '17:00', label: 'Default shift end' },
+  ];
+  for (const r of rules) {
+    await prisma.misBusinessRule.upsert({
+      where: { key: r.key },
+      update: {},
+      create: { key: r.key, value: r.value, label: r.label },
+    });
+  }
+  console.log('Created MIS business rules');
+
+  // Sample attendance (last 3 days for all workers)
+  const workers = employees.filter(e => ['WORKER', 'SUPERVISOR', 'STORE_GUY', 'QC'].includes(e.role));
+  for (let d = 0; d < 3; d++) {
+    const date = new Date();
+    date.setDate(date.getDate() - d);
+    date.setHours(0, 0, 0, 0);
+    for (const emp of workers) {
+      const existing = await prisma.misAttendance.findFirst({ where: { employeeId: emp.id, date } });
+      if (!existing) {
+        await prisma.misAttendance.create({
+          data: {
+            employeeId: emp.id,
+            date,
+            status: Math.random() > 0.15 ? 'PRESENT' : 'ABSENT',
+            inTime: new Date(date.getTime() + 8 * 3600_000),
+            outTime: new Date(date.getTime() + 17 * 3600_000),
+          },
+        });
+      }
+    }
+  }
+  console.log('Created MIS attendance records');
+}
+
 
 main()
   .catch((e) => {

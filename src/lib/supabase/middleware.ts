@@ -1,6 +1,8 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
+import { isKioskDeviceRoute } from '@/lib/mis/kiosk-routes';
+
 const PUBLIC_ROUTES = [
   '/login',
   '/forgot-password',
@@ -16,6 +18,14 @@ function isPublicRoute(pathname: string): boolean {
 }
 
 export async function updateSession(request: NextRequest) {
+  // A gate tablet has no browser session. Its three API doors — an EXACT list, see
+  // src/lib/mis/kiosk-routes.ts — skip this login redirect and authenticate by
+  // device credential inside the route (D18). Nothing else is exempt, and the
+  // session is not even read for these: a device request never carries one.
+  if (isKioskDeviceRoute(request.nextUrl.pathname)) {
+    return NextResponse.next({ request });
+  }
+
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(

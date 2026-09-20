@@ -1,0 +1,61 @@
+-- NOT APPLIED. Deliberately parked outside prisma/migrations/ so `prisma migrate`
+-- never picks it up. See app/docs/DEVELOPMENT_GUIDE.md Phase 9 for when to
+-- promote it (after the human runs `pnpm db:deploy && pnpm db:generate`).
+--
+-- Phase 9 · wire allocations to the job card and phase (MIS-261/265).
+--
+-- "jobCardId" per the ticket is orderId, not a new column — there is no
+-- MisJobCard model (D9, docs/DECISIONS.md): the order IS the job card.
+-- orderId has been a real FK on this table since E4-01 already (all 14 live
+-- rows have one set — verified against the live DB), so the only genuinely
+-- new link here is job_phase_id.
+--
+-- Additive and nullable, per this phase's own instruction: never NOT NULL
+-- against live rows. job_ref (the pre-phase free-text reference) is kept,
+-- read-only, as history — nothing new reads it.
+--
+-- NO BACKFILL — and this is a deliberate zero, not a skipped step. MIS-265
+-- asks the migration to match existing text references to a job card
+-- "exactly, or leave it for a person, never fuzzy". There is no field to
+-- exactly match: mis_job_phases did not exist when any of the 14 live
+-- allocations were created, so job_ref names something (a hand-typed job
+-- number) that has no corresponding phase row to link to at all — not "an
+-- unmatched reference", a reference from before phases existed. All 14 stay
+-- NULL, correctly, and that is the honest answer MIS-265 asks for rather than
+-- a guess.
+
+ALTER TABLE mis_machine_allocations
+  ADD COLUMN job_phase_id uuid REFERENCES mis_job_phases(id) ON DELETE SET NULL;
+
+CREATE INDEX mis_machine_allocations_job_phase_idx ON mis_machine_allocations (job_phase_id);
+
+-- Prisma side (schema.prisma), added in the same commit:
+--
+--   model MisMachineAllocation {
+--     ...
+--     jobPhaseId String? @map("job_phase_id") @db.Uuid
+--     jobPhase   MisJobPhase? @relation(fields: [jobPhaseId], references: [id], onDelete: SetNull)
+--     @@index([jobPhaseId])
+--     ...
+--   }
+--
+--   // on MisJobPhase: machineAllocations MisMachineAllocation[]
+--
+-- No GiST exclusion constraint exists on this table for machine/time-range
+-- concurrency, and this migration does not add one — MIS-265 asks to
+-- "re-run its concurrency test", but there is no such constraint to re-run
+-- against. Machine-allocation overlap is refused in application code
+-- (`allocateMachine()` in machines-board.ts, a read-then-write check), the
+-- same finding Phase 8 already recorded when correcting its own acceptance
+-- check. Adding a real exclusion constraint is a genuine, separate piece of
+-- work — out of scope here, and not silently assumed away: see the Phase 9
+-- report.
+--
+-- Then `pnpm db:generate`. `prisma generate`/`migrate` cannot run from the
+-- agent shell (engine download is 403-blocked), so this must be run on the
+-- Mac before any code references `MisMachineAllocation.jobPhaseId` — tsc
+-- will not compile against a client that lacks it.
+--
+-- Rollback:
+--   DROP INDEX IF EXISTS mis_machine_allocations_job_phase_idx;
+--   ALTER TABLE mis_machine_allocations DROP COLUMN job_phase_id;

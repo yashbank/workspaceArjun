@@ -220,3 +220,40 @@ export async function countsByGroup(): Promise<Record<string, number>> {
 
   return Object.fromEntries(rows.map((r) => [r.group, r._count._all]));
 }
+
+export type HindiNameGap = {
+  total: number;
+  options: number;
+  departments: number;
+  processes: number;
+  customers: number;
+};
+
+/**
+ * Masters that have no Hindi name yet.
+ *
+ * A worker on the Hindi side of the language toggle sees an English label
+ * wherever one of these is missing, so this is a data-health number the admin
+ * home can act on — not a warning about the system being broken.
+ */
+export async function countMastersMissingHindiName(): Promise<HindiNameGap> {
+  await requirePermission('masters.read');
+
+  const missing = { OR: [{ labelHi: null }, { labelHi: '' }] };
+  const missingName = { OR: [{ nameHi: null }, { nameHi: '' }] };
+
+  const [options, departments, processes, customers] = await Promise.all([
+    db.misMasterOption.count({ where: { deletedAt: null, isActive: true, ...missing } }),
+    db.misDepartment.count({ where: { deletedAt: null, isActive: true, ...missingName } }),
+    db.misProcess.count({ where: { deletedAt: null, isActive: true, ...missingName } }),
+    db.misCustomer.count({ where: { deletedAt: null, isActive: true, ...missingName } }),
+  ]);
+
+  return {
+    total: options + departments + processes + customers,
+    options,
+    departments,
+    processes,
+    customers,
+  };
+}

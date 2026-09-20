@@ -16,6 +16,7 @@ export const MIS_ROLES = [
   'QC',
   'ATTENDANCE_OPERATOR',
   'SUPER_ATTENDANCE_OPERATOR',
+  'STORE_GUY',
   'WORKER',
 ] as const;
 
@@ -46,6 +47,8 @@ export function roleTone(role: MisRoleName): BadgeTone {
       return 'info';
     case 'QC':
       return 'good';
+    case 'STORE_GUY':
+      return 'info';
     case 'ATTENDANCE_OPERATOR':
     case 'SUPER_ATTENDANCE_OPERATOR':
       return 'neutral';

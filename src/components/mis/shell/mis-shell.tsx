@@ -7,18 +7,24 @@ import type { MisRoleName } from '@/lib/mis/roles';
 import type { NavEntry } from '@/server/mis/navigation';
 
 import { RoleBadge } from '../roles/role-badge';
-import { BottomNav, SideNav } from './bottom-nav';
+import { BottomNav as RoleBottomNav } from '../home/bottom-nav';
+import { SideNav } from './bottom-nav';
 import { LangToggle } from './lang-toggle';
+import { ServiceWorkerRegistration } from './service-worker-registration';
+import { SyncIndicator } from './sync-indicator';
 import { MisLocaleProvider, useT } from './locale-provider';
 
 export type MisShellProps = {
   factoryName: string;
+  /** The signed-in user's id — announced to the offline worker so cached pages stay tied to one person (D16). */
+  userId: string;
   userName: string;
   role: MisRoleName | null;
   locale: Locale;
   /** Already filtered by the server to what this user may open. */
-  navPrimary: NavEntry[];
   navAll: NavEntry[];
+  /** Counts for the bottom bar, keyed by tab id. Computed once in the layout. */
+  navBadges?: Record<string, number>;
   onLocaleChange: (locale: Locale) => Promise<void>;
   children: ReactNode;
 };
@@ -32,16 +38,18 @@ export type MisShellProps = {
  */
 export function MisShell({
   factoryName,
+  userId,
   userName,
   role,
   locale,
-  navPrimary,
   navAll,
+  navBadges,
   onLocaleChange,
   children,
 }: MisShellProps) {
   return (
     <MisLocaleProvider initialLocale={locale}>
+      <ServiceWorkerRegistration userId={userId} />
       <div className="flex min-h-dvh flex-col bg-slate-50">
         <Header factoryName={factoryName} userName={userName} role={role} onLocaleChange={onLocaleChange} />
 
@@ -52,7 +60,7 @@ export function MisShell({
           <main className="min-w-0 flex-1 px-4 py-4 pb-20 md:pb-4">{children}</main>
         </div>
 
-        <BottomNav entries={navPrimary} />
+        <RoleBottomNav role={role} badges={navBadges} />
       </div>
     </MisLocaleProvider>
   );
@@ -81,6 +89,8 @@ function Header({
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {/* Always visible, never a surprise (08-Empty-error-offline.png). */}
+          <SyncIndicator />
           <RoleBadge role={role} />
           <LangToggle onPersist={onLocaleChange} />
         </div>

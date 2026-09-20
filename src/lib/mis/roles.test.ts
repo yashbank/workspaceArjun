@@ -4,9 +4,10 @@ import { MIS_ROLES, assignableRoles, isMisRole, roleLabelKey, roleTone } from '.
 import { DICTIONARIES } from './i18n/dictionaries';
 
 describe('role vocabulary', () => {
-  it('has exactly the seven roles from the spec', () => {
-    expect(MIS_ROLES).toHaveLength(7);
+  it('has exactly the eight roles from the spec', () => {
+    expect(MIS_ROLES).toHaveLength(8);
     expect(MIS_ROLES).toContain('SUPER_ATTENDANCE_OPERATOR');
+    expect(MIS_ROLES).toContain('STORE_GUY');
   });
 
   it('recognises its own roles and rejects anything else', () => {
@@ -32,13 +33,13 @@ describe('role vocabulary', () => {
 
 describe('assignableRoles', () => {
   it('lets an owner assign anything', () => {
-    expect(assignableRoles('OWNER')).toHaveLength(7);
+    expect(assignableRoles('OWNER')).toHaveLength(8);
   });
 
   it('never lets an admin create an owner', () => {
     const list = assignableRoles('ADMIN');
     expect(list).not.toContain('OWNER');
-    expect(list).toHaveLength(6);
+    expect(list).toHaveLength(7);
   });
 
   it('gives everyone else nothing to assign', () => {

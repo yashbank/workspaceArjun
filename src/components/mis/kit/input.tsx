@@ -1,6 +1,6 @@
 'use client';
 
-import { forwardRef, useId, type InputHTMLAttributes } from 'react';
+import { forwardRef, useId, type InputHTMLAttributes, type ChangeEvent, type ReactNode } from 'react';
 
 import { cn } from '@/lib/utils';
 
@@ -94,3 +94,33 @@ export const TimeInput = forwardRef<HTMLInputElement, InputProps>(function TimeI
   const generated = useId();
   return <Field {...props} type="time" id={props.id ?? generated} />;
 });
+
+// ── SelectField ──────────────────────────────────────────────────────────────
+type SelectProps = {
+  label: string;
+  value: string;
+  onChange: (e: ChangeEvent<HTMLSelectElement>) => void;
+  children: ReactNode;
+  error?: string | null;
+  hint?: string;
+};
+
+export function Select({ label, value, onChange, children, error, hint }: SelectProps) {
+  const generatedId = useId();
+  const id = generatedId;
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label htmlFor={id} className="text-sm font-medium text-slate-700">{label}</label>
+      <select
+        id={id}
+        value={value}
+        onChange={onChange}
+        className="min-h-12 w-full rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-2 focus:outline-offset-0 focus:outline-slate-900"
+      >
+        {children}
+      </select>
+      {hint && !error && <p className="text-sm text-slate-500">{hint}</p>}
+      {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+    </div>
+  );
+}

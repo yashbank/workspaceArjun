@@ -332,6 +332,7 @@ enum MisRole {
   ATTENDANCE_OPERATOR
   SUPER_ATTENDANCE_OPERATOR
   WORKER
+  STORE_GUY
 }
 
 /// A person on the factory roll.
@@ -346,17 +347,26 @@ model MisEmployee {
   nameHi        String?  @map("name_hi")
   role          MisRole  @default(WORKER)
   managerId     String?  @map("manager_id") @db.Uuid
+  departmentId  String?  @map("department_id") @db.Uuid
   isActive      Boolean  @default(true) @map("is_active")
   deletedAt     DateTime? @map("deleted_at")
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
-  userProfile UserProfile?  @relation(fields: [userProfileId], references: [id], onDelete: SetNull)
-  manager     MisEmployee?  @relation("MisReports", fields: [managerId], references: [id], onDelete: SetNull)
-  reports     MisEmployee[] @relation("MisReports")
+  userProfile   UserProfile?      @relation(fields: [userProfileId], references: [id], onDelete: SetNull)
+  manager       MisEmployee?      @relation("MisReports", fields: [managerId], references: [id], onDelete: SetNull)
+  reports       MisEmployee[]     @relation("MisReports")
+  department    MisDepartment?    @relation(fields: [departmentId], references: [id])
+  attendance    MisAttendance[]
+  leaveRequests MisLeaveRequest[]
+  productionLogs MisProductionLog[]
+  jobPhasesInCharge MisJobPhase[] @relation("MisJobPhaseInCharge")
+  workerAllocations MisWorkerAllocation[]
+  punches       MisAttendancePunch[]
 
   @@index([role])
   @@index([managerId])
+  @@index([departmentId])
   @@index([deletedAt])
   @@map("mis_employees")
 }
@@ -419,4 +429,894 @@ model MisMasterOption {
   @@unique([group, value, deletedAt])
   @@index([group, sortOrder])
   @@map("mis_master_options")
+}
+
+// ---------------------------------------------------------------------------
+// MIS Entity Masters — Phase 2
+// ---------------------------------------------------------------------------
+
+enum MisPoStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  RECEIVING
+  PARTIAL
+  COMPLETE
+  CANCELLED
+  @@map("mis_po_status")
+}
+
+enum MisGrnStatus {
+  DRAFT
+  CONFIRMED
+  @@map("mis_grn_status")
+}
+
+enum MisGrnItemType {
+  GENERAL
+  FOR_ORDER
+  @@map("mis_grn_item_type")
+}
+
+enum MisItemCategory {
+  RAW_MATERIAL
+  CONSUMABLE
+  EQUIPMENT
+  OTHER
+}
+
+enum MisItemUnit {
+  KG
+  LITRE
+  PIECE
+  REAM
+}
+
+enum MisStoreTxnType {
+  IN
+  OUT
+}
+
+model MisDepartment {
+  id        String    @id @default(uuid()) @db.Uuid
+  code      String    @unique @map("code")
+  name      String
+  nameHi    String?   @map("name_hi")
+  isActive  Boolean   @default(true) @map("is_active")
+  sortOrder Int       @default(0) @map("sort_order")
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  machines  MisMachine[]
+  processes MisProcess[]
+  employees MisEmployee[]
+  @@map("mis_departments")
+}
+
+model MisDefectType {
+  id        String              @id @default(uuid()) @db.Uuid
+  code      String              @unique @map("code")
+  name      String
+  nameHi    String?             @map("name_hi")
+  severity  MisDefectSeverity   @map("severity")
+  isActive  Boolean             @default(true) @map("is_active")
+  sortOrder Int                 @default(0) @map("sort_order")
+  deletedAt DateTime?           @map("deleted_at")
+  createdAt DateTime            @default(now()) @map("created_at")
+  updatedAt DateTime            @updatedAt @map("updated_at")
+  @@map("mis_defect_types")
+}
+
+model MisMachine {
+  id             String         @id @default(uuid()) @db.Uuid
+  code           String         @unique
+  name           String
+  departmentId   String?        @map("department_id") @db.Uuid
+  machineType    String?        @map("machine_type")
+  capacityPerDay Decimal?       @map("capacity_per_day") @db.Decimal(12,2)
+  isActive       Boolean        @default(true) @map("is_active")
+  sortOrder      Int            @default(0) @map("sort_order")
+  deletedAt      DateTime?      @map("deleted_at")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+  department     MisDepartment? @relation(fields: [departmentId], references: [id])
+  allocations    MisMachineAllocation[]
+  productionLogs MisProductionLog[]
+  lineClearances MisLineClearance[]
+  @@map("mis_machines")
+}
+
+model MisCustomer {
+  id        String    @id @default(uuid()) @db.Uuid
+  code      String    @unique
+  name      String
+  nameHi    String?   @map("name_hi")
+  phone     String?
+  address   String?
+  city      String?
+  gstNo     String?   @map("gst_no")
+  isActive  Boolean   @default(true) @map("is_active")
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  orders    MisOrder[]
+  @@map("mis_customers")
+}
+
+model MisSupplier {
+  id               String    @id @default(uuid()) @db.Uuid
+  code             String    @unique
+  name             String
+  phone            String?
+  address          String?
+  city             String?
+  gstNo            String?   @map("gst_no")
+  paymentTermsDays Int?      @map("payment_terms_days")
+  isActive         Boolean   @default(true) @map("is_active")
+  deletedAt        DateTime? @map("deleted_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+  purchaseOrders   MisPurchaseOrder[]
+  @@map("mis_suppliers")
+}
+
+model MisItem {
+  id             String           @id @default(uuid()) @db.Uuid
+  code           String           @unique
+  sku            String?          @unique @map("sku")
+  name           String
+  category       MisItemCategory  @default(OTHER)
+  gsm            String?
+  size           String?
+  substrate      String?
+  coating        String?
+  unit           MisItemUnit      @default(KG)
+  pricePerUnit   Decimal?         @map("price_per_unit") @db.Decimal(12, 2)
+  isDemo         Boolean          @default(true) @map("is_demo")
+  reorderLevel   Decimal?         @map("reorder_level") @db.Decimal(12, 2)
+  isActive       Boolean          @default(true) @map("is_active")
+  deletedAt      DateTime?        @map("deleted_at")
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
+  poItems        MisPoItem[]
+  inventory      MisInventoryLedger[]
+  storeTxns      MisStoreTransaction[]
+  physicalCounts MisPhysicalCount[]
+  bomMaterials   MisBomMaterial[]
+  @@map("mis_items")
+}
+
+model MisProcess {
+  id                  String         @id @default(uuid()) @db.Uuid
+  code                String         @unique
+  name                String
+  nameHi              String?        @map("name_hi")
+  departmentId        String?        @map("department_id") @db.Uuid
+  standardTimeMinutes Int?           @map("standard_time_minutes")
+  isActive            Boolean        @default(true) @map("is_active")
+  sortOrder           Int            @default(0) @map("sort_order")
+  deletedAt           DateTime?      @map("deleted_at")
+  createdAt           DateTime       @default(now()) @map("created_at")
+  updatedAt           DateTime       @updatedAt @map("updated_at")
+  department          MisDepartment? @relation(fields: [departmentId], references: [id])
+  bomStages           MisBomStage[]
+  jobPhases           MisJobPhase[]
+  @@map("mis_processes")
+}
+
+model MisPurchaseOrder {
+  id           String       @id @default(uuid()) @db.Uuid
+  poNumber     String       @unique @map("po_number")
+  supplierId   String?      @map("supplier_id") @db.Uuid
+  status       MisPoStatus  @default(DRAFT)
+  bomRef       String?      @map("bom_ref")
+  notes        String?
+  createdById  String?      @map("created_by_id") @db.Uuid
+  approvedById String?      @map("approved_by_id") @db.Uuid
+  approvedAt   DateTime?    @map("approved_at")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+  supplier     MisSupplier? @relation(fields: [supplierId], references: [id])
+  items        MisPoItem[]
+  grns         MisGrn[]
+  @@map("mis_purchase_orders")
+}
+
+model MisPoItem {
+  id               String           @id @default(uuid()) @db.Uuid
+  poId             String           @map("po_id") @db.Uuid
+  itemId           String?          @map("item_id") @db.Uuid
+  description      String
+  quantity         Decimal          @db.Decimal(12,2)
+  unitId           String?          @map("unit_id")
+  ratePerUnit      Decimal          @map("rate_per_unit") @db.Decimal(12,2)
+  receivedQuantity Decimal          @default(0) @map("received_quantity") @db.Decimal(12,2)
+  sortOrder        Int              @default(0) @map("sort_order")
+  po               MisPurchaseOrder @relation(fields: [poId], references: [id])
+  item             MisItem?         @relation(fields: [itemId], references: [id])
+  grnItems         MisGrnItem[]
+  @@map("mis_po_items")
+}
+
+model MisGrn {
+  id           String           @id @default(uuid()) @db.Uuid
+  grnNumber    String           @unique @map("grn_number")
+  poId         String           @map("po_id") @db.Uuid
+  status       MisGrnStatus     @default(DRAFT)
+  receivedAt   DateTime?        @map("received_at")
+  receivedById String?          @map("received_by_id") @db.Uuid
+  notes        String?
+  createdAt    DateTime         @default(now()) @map("created_at")
+  updatedAt    DateTime         @updatedAt @map("updated_at")
+  po           MisPurchaseOrder @relation(fields: [poId], references: [id])
+  items        MisGrnItem[]
+  @@map("mis_grns")
+}
+
+model MisGrnItem {
+  id          String         @id @default(uuid()) @db.Uuid
+  grnId       String         @map("grn_id") @db.Uuid
+  poItemId    String         @map("po_item_id") @db.Uuid
+  receivedQty Decimal        @map("received_qty") @db.Decimal(12,2)
+  type        MisGrnItemType @default(GENERAL)
+  forOrderRef String?        @map("for_order_ref")
+  batchNo     String?        @map("batch_no")
+  notes       String?
+  grn         MisGrn         @relation(fields: [grnId], references: [id])
+  poItem      MisPoItem      @relation(fields: [poItemId], references: [id])
+  @@map("mis_grn_items")
+}
+
+model MisInventoryLedger {
+  id         String    @id @default(uuid()) @db.Uuid
+  itemId     String    @map("item_id") @db.Uuid
+  changeQty  Decimal   @map("change_qty") @db.Decimal(12,2)
+  balanceQty Decimal   @map("balance_qty") @db.Decimal(12,2)
+  source     String
+  sourceId   String?   @map("source_id")
+  notes      String?
+  createdAt  DateTime  @default(now()) @map("created_at")
+  item       MisItem   @relation(fields: [itemId], references: [id])
+  @@map("mis_inventory_ledger")
+}
+
+model MisStoreTransaction {
+  id          String          @id @default(uuid()) @db.Uuid
+  txnNumber   String          @unique @map("txn_number")
+  itemId      String          @map("item_id") @db.Uuid
+  type        MisStoreTxnType
+  quantity    Decimal         @db.Decimal(12, 2)
+  balanceQty  Decimal         @map("balance_qty") @db.Decimal(12, 2)
+  referenceNo String?         @map("reference_no")
+  reason      String?
+  isOverIssue Boolean         @default(false) @map("is_over_issue")
+  createdById String?         @map("created_by_id") @db.Uuid
+  createdAt   DateTime        @default(now()) @map("created_at")
+  item        MisItem         @relation(fields: [itemId], references: [id])
+  @@map("mis_store_transactions")
+}
+
+model MisPhysicalCount {
+  id          String    @id @default(uuid()) @db.Uuid
+  itemId      String    @map("item_id") @db.Uuid
+  countDate   DateTime  @map("count_date") @db.Date
+  physicalQty Decimal   @map("physical_qty") @db.Decimal(12, 2)
+  systemQty   Decimal   @map("system_qty") @db.Decimal(12, 2)
+  discrepancy Decimal   @db.Decimal(12, 2)
+  notes       String?
+  countedById String?   @map("counted_by_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at")
+  item        MisItem   @relation(fields: [itemId], references: [id])
+  @@map("mis_physical_counts")
+}
+
+model MisOrder {
+  id           String       @id @default(uuid()) @db.Uuid
+  orderNumber  String       @unique @map("order_number")
+  customerId   String?      @map("customer_id") @db.Uuid
+  status       String       @default("DRAFT")
+  description  String?
+  deliveryDate DateTime?    @map("delivery_date")
+  notes        String?
+  createdById  String?      @map("created_by_id") @db.Uuid
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+  customer     MisCustomer? @relation(fields: [customerId], references: [id])
+  bom          MisBom?
+  documents    MisDocument[]
+  productionLogs MisProductionLog[]
+  qcChecks     MisQcCheck[]
+  machineAllocations MisMachineAllocation[]
+  lineClearances MisLineClearance[]
+  jobPhases    MisJobPhase[]
+  @@map("mis_orders")
+}
+
+model MisShift {
+  id             String             @id @default(uuid()) @db.Uuid
+  name           String
+  startTime      String             @map("start_time")
+  endTime        String             @map("end_time")
+  isDefault      Boolean            @default(false) @map("is_default")
+  isActive       Boolean            @default(true) @map("is_active")
+  createdAt      DateTime           @default(now()) @map("created_at")
+  updatedAt      DateTime           @updatedAt @map("updated_at")
+  attendance     MisAttendance[]
+  productionLogs MisProductionLog[]
+  lineClearances MisLineClearance[]
+  workerAllocations MisWorkerAllocation[]
+  @@map("mis_shifts")
+}
+
+model MisAttendance {
+  id           String      @id @default(uuid()) @db.Uuid
+  employeeId   String      @map("employee_id") @db.Uuid
+  date         DateTime    @db.Date
+  shiftId      String?     @map("shift_id") @db.Uuid
+  status       String      @default("PRESENT")
+  clockIn      DateTime?   @map("clock_in")
+  clockOut     DateTime?   @map("clock_out")
+  approvedOut  Boolean     @default(false) @map("approved_out")
+  approvedById String?     @map("approved_by_id") @db.Uuid
+  otMinutes    Int         @default(0) @map("ot_minutes")
+  lateMinutes  Int         @default(0) @map("late_minutes")
+  notes        String?
+  editedAt     DateTime?   @map("edited_at")
+  editedById   String?     @map("edited_by_id") @db.Uuid
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+  employee     MisEmployee @relation(fields: [employeeId], references: [id])
+  shift        MisShift?   @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+  @@unique([employeeId, date])
+  @@index([date])
+  @@map("mis_attendance")
+}
+
+model MisLeaveRequest {
+  id           String      @id @default(uuid()) @db.Uuid
+  employeeId   String      @map("employee_id") @db.Uuid
+  date         DateTime    @db.Date
+  reason       String?
+  status       String      @default("PENDING")
+  approvedById String?     @map("approved_by_id") @db.Uuid
+  approvedAt   DateTime?   @map("approved_at")
+  createdAt    DateTime    @default(now()) @map("created_at")
+  employee     MisEmployee @relation(fields: [employeeId], references: [id])
+  @@index([status])
+  @@map("mis_leave_requests")
+}
+
+model MisBom {
+  id            String           @id @default(uuid()) @db.Uuid
+  orderId       String           @unique @map("order_id") @db.Uuid
+  status        String           @default("DRAFT")
+  notes         String?
+  createdById   String?          @map("created_by_id") @db.Uuid
+  approvedById  String?          @map("approved_by_id") @db.Uuid
+  approvedAt    DateTime?        @map("approved_at")
+  createdAt     DateTime         @default(now()) @map("created_at")
+  updatedAt     DateTime         @updatedAt @map("updated_at")
+  order         MisOrder         @relation(fields: [orderId], references: [id])
+  stages        MisBomStage[]
+  @@map("mis_bom")
+}
+
+model MisBomStage {
+  id             String             @id @default(uuid()) @db.Uuid
+  bomId          String             @map("bom_id") @db.Uuid
+  stageName      String             @map("stage_name")
+  processId      String?            @map("process_id") @db.Uuid
+  seq            Int                @default(0)
+  notes          String?
+  bom            MisBom             @relation(fields: [bomId], references: [id], onDelete: Cascade)
+  process        MisProcess?        @relation(fields: [processId], references: [id])
+  materials      MisBomMaterial[]
+  productionLogs MisProductionLog[]
+  qcChecks       MisQcCheck[]
+  jobPhases      MisJobPhase[]
+  @@map("mis_bom_stages")
+}
+
+model MisBomMaterial {
+  id          String      @id @default(uuid()) @db.Uuid
+  stageId     String      @map("stage_id") @db.Uuid
+  description String
+  itemId      String?     @map("item_id") @db.Uuid
+  quantity    Decimal     @db.Decimal(12, 2)
+  unit        String
+  ratePerUnit Decimal?    @map("rate_per_unit") @db.Decimal(12, 2)
+  seq         Int         @default(0)
+  stage       MisBomStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  item        MisItem?    @relation(fields: [itemId], references: [id])
+  @@map("mis_bom_materials")
+}
+
+/// A file attached to an order (spec sheet, COA, artwork). uploadedBy is a
+/// plain scalar, not a Prisma relation — it references auth.users directly
+/// (Supabase-managed), same "who did this" convention as createdById elsewhere.
+model MisDocument {
+  id          String    @id @default(uuid()) @db.Uuid
+  orderId     String    @map("order_id") @db.Uuid
+  name        String
+  description String?
+  filePath    String    @map("file_path")
+  fileSize    Int?      @map("file_size")
+  mimeType    String?   @map("mime_type")
+  uploadedBy  String?   @map("uploaded_by") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at")
+  order       MisOrder  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  @@index([orderId])
+  @@map("mis_documents")
+}
+
+/// One production run entry — qty produced/wasted on an order, optionally
+/// tied to a BOM stage, machine, employee and shift.
+model MisProductionLog {
+  id          String       @id @default(uuid()) @db.Uuid
+  orderId     String       @map("order_id") @db.Uuid
+  bomStageId  String?      @map("bom_stage_id") @db.Uuid
+  machineId   String?      @map("machine_id") @db.Uuid
+  employeeId  String?      @map("employee_id") @db.Uuid
+  shiftId     String?      @map("shift_id") @db.Uuid
+  jobPhaseId  String?      @map("job_phase_id") @db.Uuid
+  qtyProduced Decimal      @map("qty_produced") @db.Decimal
+  qtyWaste    Decimal      @default(0) @map("qty_waste") @db.Decimal
+  /// D11 — required for sign-off on any entry with qtyWaste > 0, never at
+  /// entry time. Not `notes`: overloading that field makes "did anyone give a
+  /// reason" unanswerable by query.
+  wasteReason String?      @map("waste_reason")
+  unit        String       @default("KG")
+  loggedById  String?      @map("logged_by_id") @db.Uuid
+  loggedAt    DateTime     @default(now()) @map("logged_at")
+  notes       String?
+  order       MisOrder     @relation(fields: [orderId], references: [id])
+  bomStage    MisBomStage? @relation(fields: [bomStageId], references: [id], onDelete: SetNull)
+  machine     MisMachine?  @relation(fields: [machineId], references: [id], onDelete: SetNull)
+  employee    MisEmployee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  shift       MisShift?    @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+  jobPhase    MisJobPhase? @relation(fields: [jobPhaseId], references: [id], onDelete: SetNull)
+  @@index([jobPhaseId])
+  @@map("mis_production_log")
+}
+
+/// A QC pass/fail check against an order, optionally scoped to a BOM stage.
+model MisQcCheck {
+  id            String       @id @default(uuid()) @db.Uuid
+  orderId       String       @map("order_id") @db.Uuid
+  bomStageId    String?      @map("bom_stage_id") @db.Uuid
+  checkTime     DateTime     @default(now()) @map("check_time")
+  checkById     String?      @map("check_by_id") @db.Uuid
+  result        String       @default("PASS")
+  defectType    String?      @map("defect_type")
+  defectQty     Decimal?     @map("defect_qty") @db.Decimal
+  notes         String?
+  createdAt     DateTime     @default(now()) @map("created_at")
+  parameterName String?      @default("General") @map("parameter_name")
+  /// Acknowledged is NOT resolved (MIS-163). These record that the phase's
+  /// in-charge knew about a failed check and passed the job on anyway — the
+  /// accountability the paper form loses. A check is "resolved" only by a
+  /// later PASS on the same order/stage/parameter, which is derived, not
+  /// stored. acknowledgedById is a plain scalar auth user id.
+  acknowledgedAt      DateTime? @map("acknowledged_at")
+  acknowledgedById    String?   @map("acknowledged_by_id") @db.Uuid
+  acknowledgementNote String?   @map("acknowledgement_note")
+  order         MisOrder     @relation(fields: [orderId], references: [id])
+  bomStage      MisBomStage? @relation(fields: [bomStageId], references: [id], onDelete: SetNull)
+  @@map("mis_qc_checks")
+}
+
+/// A machine booked to an order/job for a time window.
+/// jobPhaseId (Phase 9, MIS-261/265) — the real link this row was missing.
+/// "jobCardId" per the ticket is orderId (D9: there is no separate job-card
+/// model; the order IS the job card). jobRef is kept as read-only history —
+/// the free-text reference recorded before phases existed — and is never
+/// read by new code. It is still WRITABLE from allocateMachine(), because
+/// the only existing screen (machine-board-screen.tsx) has no order/phase
+/// picker yet; see the Phase 9 report for the scheduling gap this leaves.
+model MisMachineAllocation {
+  id             String      @id @default(uuid()) @db.Uuid
+  machineId      String      @map("machine_id") @db.Uuid
+  orderId        String?     @map("order_id") @db.Uuid
+  jobPhaseId     String?     @map("job_phase_id") @db.Uuid
+  /// Read-only history — the free-text reference recorded before MisJobPhase
+  /// existed. Retained so an unmatched historic row keeps its only clue
+  /// (MIS-265); never written to by allocateMachine() going forward.
+  jobRef         String?     @map("job_ref")
+  allocatedById  String?     @map("allocated_by_id") @db.Uuid
+  startsAt       DateTime    @map("starts_at")
+  endsAt         DateTime    @map("ends_at")
+  releasedAt     DateTime?   @map("released_at")
+  notes          String?
+  createdAt      DateTime    @default(now()) @map("created_at")
+  machine        MisMachine  @relation(fields: [machineId], references: [id])
+  order          MisOrder?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  jobPhase       MisJobPhase? @relation(fields: [jobPhaseId], references: [id], onDelete: SetNull)
+  workerAllocations MisWorkerAllocation[]
+  @@index([jobPhaseId])
+  @@map("mis_machine_allocations")
+}
+
+/// A worker assigned to a machine allocation for a shift — MIS-260/262. Hangs
+/// off MisMachineAllocation rather than duplicating job, process and time; the
+/// worker row just points at the window that already exists.
+///
+/// Availability is DERIVED from these rows (D4) — there is no isAvailable
+/// column on MisEmployee, the same discipline MisMachineAllocation already
+/// uses for machines.
+///
+/// Overlap is asymmetric with machines ON PURPOSE (MIS-262): a machine cannot
+/// physically run two jobs at once, so allocateMachine() refuses an overlap.
+/// A person genuinely can be pulled between jobs mid-shift, so
+/// assignWorkers() only WARNS on an overlap and requires a deliberate
+/// confirmation to proceed — never a hard refusal. Do not "fix" this into a
+/// constraint; it is the ticket's own explicit instruction, not an oversight.
+///
+/// assignedById is a plain scalar auth user id (matches loggedById,
+/// clearedById, startedById elsewhere) — not an FK to MisEmployee, because
+/// nothing needs to identity-match against it. jobPhaseId is independent of
+/// MisMachineAllocation's own (future, Phase 9) job-card wiring: this ticket
+/// asked for the phase link directly on the worker row.
+model MisWorkerAllocation {
+  id                  String               @id @default(uuid()) @db.Uuid
+  machineAllocationId String               @map("machine_allocation_id") @db.Uuid
+  employeeId          String               @map("employee_id") @db.Uuid
+  jobPhaseId          String?              @map("job_phase_id") @db.Uuid
+  shiftId             String?              @map("shift_id") @db.Uuid
+  allocationDate       DateTime            @map("allocation_date") @db.Date
+  assignedById        String?              @map("assigned_by_id") @db.Uuid
+  releasedAt          DateTime?            @map("released_at")
+  notes               String?
+  deletedAt           DateTime?            @map("deleted_at")
+  createdAt           DateTime             @default(now()) @map("created_at")
+  machineAllocation   MisMachineAllocation @relation(fields: [machineAllocationId], references: [id])
+  employee            MisEmployee          @relation(fields: [employeeId], references: [id])
+  jobPhase            MisJobPhase?         @relation(fields: [jobPhaseId], references: [id], onDelete: SetNull)
+  shift               MisShift?            @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+  @@index([employeeId, allocationDate, shiftId])
+  @@index([machineAllocationId])
+  @@map("mis_worker_allocations")
+}
+
+/// One "clear the line" action by a supervisor or above, valid until
+/// expiresAt. A new clearance is a new row — append-only, like
+/// MisMachineAllocation above — so this table doubles as the clearance
+/// history MIS-149 asks for. validityMinutes snapshots the business rule
+/// (D6) used at the moment of clearing, so a later change to that rule never
+/// extends or shortens a clearance already granted.
+enum MisLineClearanceMode {
+  JOB
+  SHIFT
+  MINUTES
+  @@map("mis_line_clearance_mode")
+}
+
+/// mode/orderId/shiftId (D7, CHANGED): a clearance's primary expiry is an
+/// event, not a clock — JOB invalidates when the machine's current order
+/// changes, SHIFT when the granting shift ends. validityMinutes/expiresAt
+/// remain as an optional cap on top of either mode (or the sole expiry for
+/// MINUTES). Snapshotted per row, same as before, so a later rule change
+/// never reaches back into a clearance already granted.
+model MisLineClearance {
+  id              String                @id @default(uuid()) @db.Uuid
+  machineId       String                @map("machine_id") @db.Uuid
+  clearedById     String?               @map("cleared_by_id") @db.Uuid
+  clearedAt       DateTime              @default(now()) @map("cleared_at")
+  mode            MisLineClearanceMode  @map("mode")
+  orderId         String?               @map("order_id") @db.Uuid
+  shiftId         String?               @map("shift_id") @db.Uuid
+  validityMinutes Int?                  @map("validity_minutes")
+  expiresAt       DateTime?             @map("expires_at")
+  notes           String?
+  createdAt       DateTime              @default(now()) @map("created_at")
+  machine         MisMachine            @relation(fields: [machineId], references: [id])
+  order           MisOrder?             @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  shift           MisShift?             @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+  @@index([machineId, expiresAt])
+  @@index([machineId, clearedAt])
+  @@map("mis_line_clearances")
+}
+
+enum MisJobPhaseStatus {
+  PENDING
+  IN_PROGRESS
+  SIGNED_OFF
+  NOT_APPLICABLE
+  REOPENED
+  @@map("mis_job_phase_status")
+}
+
+/// One process, once, on one order — the execution record the BPR's signature
+/// boxes stand for. Deliberately NOT a status column on MisBomStage: that row
+/// is the *plan* (which materials, in what order) and BOM editing rewrites it,
+/// which would take signatures with it. bomStageId is a back-pointer to the
+/// plan row this phase came from; nothing gates on it.
+///
+/// orderId, not jobCardId (D9): there is no MisJobCard model — the job card
+/// print route takes an order. If one order can ever run two job cards at
+/// once, D9 says exactly which column and which index change.
+///
+/// startedById / signedOffById / reopenedById are plain scalars holding the
+/// auth user id, the same convention as MisLineClearance.clearedById and
+/// MisProductionLog.loggedById. inChargeEmployeeId is a real FK to the
+/// employee, so "is the caller the in-charge" compares actor.userId against
+/// that employee's userProfileId.
+///
+/// The legal transitions, who may perform each, and the database constraints
+/// that back them up are DEVELOPMENT_GUIDE.md Appendix A. There is one
+/// transition table and it lives in src/server/mis/job-phases.ts.
+model MisJobPhase {
+  id                  String             @id @default(uuid()) @db.Uuid
+  orderId             String             @map("order_id") @db.Uuid
+  processId           String             @map("process_id") @db.Uuid
+  bomStageId          String?            @map("bom_stage_id") @db.Uuid
+  sequence            Int
+  status              MisJobPhaseStatus  @default(PENDING)
+  inChargeEmployeeId  String?            @map("in_charge_employee_id") @db.Uuid
+  startedAt           DateTime?          @map("started_at")
+  startedById         String?            @map("started_by_id") @db.Uuid
+  signedOffAt         DateTime?          @map("signed_off_at")
+  signedOffById       String?            @map("signed_off_by_id") @db.Uuid
+  notApplicableReason String?            @map("not_applicable_reason")
+  reopenReason        String?            @map("reopen_reason")
+  reopenedAt          DateTime?          @map("reopened_at")
+  reopenedById        String?            @map("reopened_by_id") @db.Uuid
+  downstreamFlagged   Boolean            @default(false) @map("downstream_flagged")
+  notes               String?
+  deletedAt           DateTime?          @map("deleted_at")
+  createdAt           DateTime           @default(now()) @map("created_at")
+  updatedAt           DateTime           @updatedAt @map("updated_at")
+  order               MisOrder           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  process             MisProcess         @relation(fields: [processId], references: [id])
+  bomStage            MisBomStage?       @relation(fields: [bomStageId], references: [id], onDelete: SetNull)
+  inCharge            MisEmployee?       @relation("MisJobPhaseInCharge", fields: [inChargeEmployeeId], references: [id], onDelete: SetNull)
+  productionLogs      MisProductionLog[]
+  workerAllocations   MisWorkerAllocation[]
+  machineAllocations  MisMachineAllocation[]
+  @@index([orderId, sequence])
+  @@index([status])
+  @@index([inChargeEmployeeId, status])
+  @@map("mis_job_phases")
+}
+
+/// A versioned business rule (wage, OT multiplier, etc). Multiple rows can
+/// share a ruleKey with different effectiveFrom dates — callers take the
+/// latest row whose effectiveFrom has passed. updatedById is a plain scalar.
+model MisBusinessRule {
+  id            String   @id @default(uuid()) @db.Uuid
+  ruleKey       String   @map("rule_key")
+  ruleValue     String   @map("rule_value")
+  valueType     String   @default("string") @map("value_type")
+  label         String
+  description   String?
+  effectiveFrom DateTime @default(now()) @map("effective_from") @db.Date
+  updatedById   String?  @map("updated_by_id") @db.Uuid
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  @@unique([ruleKey, effectiveFrom])
+  @@map("mis_business_rules")
+}
+
+enum MisQueuedWriteStatus {
+  IN_FLIGHT
+  APPLIED
+  PARKED
+  REJECTED
+  @@map("mis_queued_write_status")
+}
+
+/// One offline write, keyed by the idempotency key the client generated at the
+/// moment of the tap. The full contract is DEVELOPMENT_GUIDE.md Appendix B.
+///
+/// `key` is the primary key on purpose: two racing replays are settled by the
+/// database, one insert winning and the other taking a unique violation,
+/// re-reading and returning the winner's result (§B.2). It is client-supplied,
+/// so the server validates it is a UUID before trusting it.
+///
+/// `payload` is kept for PARKED and REJECTED rows so a park can be resolved
+/// from the portal even if the device that made it is lost, wiped or in a
+/// drawer — the whole reason parking is durable server-side and not just on
+/// the tablet (§B.7). Phase 22 is the screen that reads these.
+///
+/// `clientRecordedAt` is what the device claimed, stored raw and never
+/// rounded, clamped or corrected — for client-recorded kinds it is the
+/// business time, and for server-stamped kinds it is evidence (D15). It is
+/// also the replay ordering key (§B.6).
+///
+/// `result` snapshots what the original call returned, so the nine replays
+/// after the one that applied return that answer instead of an error (§B.3).
+model MisQueuedWrite {
+  key              String               @id
+  kind             String
+  status           MisQueuedWriteStatus @default(IN_FLIGHT)
+  payload          Json                 @db.JsonB
+  result           Json?                @db.JsonB
+  entityType       String?              @map("entity_type")
+  entityId         String?              @map("entity_id") @db.Uuid
+  parkReason       String?              @map("park_reason")
+  parkDetail       String?              @map("park_detail")
+  clientRecordedAt DateTime?            @map("client_recorded_at")
+  deviceId         String?              @map("device_id")
+  actorId          String?              @map("actor_id") @db.Uuid
+  attempts         Int                  @default(0)
+  firstSeenAt      DateTime             @default(now()) @map("first_seen_at")
+  lastAttemptAt    DateTime?            @map("last_attempt_at")
+  appliedAt        DateTime?            @map("applied_at")
+  resolvedById     String?              @map("resolved_by_id") @db.Uuid
+  resolvedAt       DateTime?            @map("resolved_at")
+  resolutionNote   String?              @map("resolution_note")
+  @@index([status])
+  @@index([kind, status])
+  @@index([status, clientRecordedAt])
+  @@map("mis_queued_writes")
+}
+
+enum MisKioskDeviceStatus {
+  PENDING
+  ACTIVE
+  REVOKED
+  @@map("mis_kiosk_device_status")
+}
+
+/// A gate tablet, from the moment it asks to be paired until it is retired
+/// (Phase 12, MIS-243; D18, D19).
+///
+/// The tablet ASKS and an Admin GRANTS (K10): the device creates a PENDING row and
+/// shows `pairingCode`; an Owner or Admin types that code into the portal, which
+/// names the device and flips it to ACTIVE; the device then collects its bearer
+/// token exactly once with its `pollSecret`. The tablet never holds a user's
+/// credentials, and a tablet that could enrol itself would be a tablet anyone can
+/// add to the factory.
+///
+/// Neither secret is stored: `pollSecretHash` and `tokenHash` are SHA-256 of
+/// high-entropy random values (not passwords — no slow hash needed), so a database
+/// read cannot be replayed as a device login. `tokenHash` is unique, which is also
+/// the lookup key for every authenticated call. `pairingCode` is unique while
+/// PENDING and cleared on approval, so a spent code is never a live one.
+///
+/// People are plain uuid scalars with no foreign key, like Phases 7-10: an audited
+/// approval must survive the removal of the person who did it.
+///
+/// REVOKED keeps the row (history, and its punches stay attributable) and the
+/// token stops working at once. Phase 13 still ACCEPTS punches from a revoked
+/// device: they are real events that happened, and dropping them because the
+/// tablet was retired would lose attendance.
+///
+/// The health columns are the device's own last report (K12) — a snapshot, not a
+/// history. `lastSyncAt` is the last SUCCESSFUL sync and is what the staleness
+/// card reads; `lastPullAt` is how old its employee list is.
+///
+/// Two rules Prisma cannot express live in the migration: at most one non-revoked
+/// device may hold a given name, and CHECK constraints tie each status to the
+/// columns it needs.
+model MisKioskDevice {
+  id               String               @id @default(uuid()) @db.Uuid
+  status           MisKioskDeviceStatus @default(PENDING)
+  name             String?
+  hardwareLabel    String?              @map("hardware_label")
+  pairingCode      String?              @unique @map("pairing_code")
+  pairingExpiresAt DateTime?            @map("pairing_expires_at")
+  pollSecretHash   String               @map("poll_secret_hash")
+  tokenHash        String?              @unique @map("token_hash")
+  tokenIssuedAt    DateTime?            @map("token_issued_at")
+  approvedById     String?              @map("approved_by_id") @db.Uuid
+  approvedAt       DateTime?            @map("approved_at")
+  revokedById      String?              @map("revoked_by_id") @db.Uuid
+  revokedAt        DateTime?            @map("revoked_at")
+  revokedReason    String?              @map("revoked_reason")
+  lastSyncAt       DateTime?            @map("last_sync_at")
+  lastPullAt       DateTime?            @map("last_pull_at")
+  appVersion       String?              @map("app_version")
+  batteryPercent   Int?                 @map("battery_percent")
+  isCharging       Boolean?             @map("is_charging")
+  queuedPunches    Int?                 @map("queued_punches")
+  healthReportedAt DateTime?            @map("health_reported_at")
+  createdAt        DateTime             @default(now()) @map("created_at")
+  updatedAt        DateTime             @updatedAt @map("updated_at")
+  punches          MisAttendancePunch[]
+  @@index([status])
+  @@index([status, pairingExpiresAt])
+  @@map("mis_kiosk_devices")
+}
+
+enum MisPunchDirection {
+  IN
+  OUT
+  @@map("mis_punch_direction")
+}
+
+/// One badge scan at the gate — an immutable fact (Phase 13, MIS-240; D20, D21).
+///
+/// The attendance DAY is derived from these rows, never the other way round: out
+/// of order, twice, or hours late, the same punches always rebuild the same day
+/// (`src/lib/mis/attendance-day.ts`). That is only possible if the punches
+/// themselves are kept, which `MisAttendance`'s single clock-in/clock-out pair
+/// cannot do.
+///
+/// IMMUTABLE. K2: "Fix does not edit the punch. It records a correction that
+/// supersedes it, and both rows are kept. Attendance decides pay, so nothing here
+/// is ever overwritten in place." A database trigger refuses UPDATE and DELETE.
+/// A correction is a NEW row whose `supersedesId` points at the row it replaces;
+/// `supersedesId` is unique, so a punch is superseded at most once, and the
+/// "active" punches are exactly those no other row supersedes.
+///
+/// `punchedAt` is what the DEVICE said (D15) — raw, never clamped to now(). A
+/// punch outside tolerance never reaches this table at all: it is PARKED in
+/// `MisQueuedWrite` for a person. `receivedAt` is the server's clock and is
+/// evidence only; it never feeds a business figure.
+///
+/// `idempotencyKey` is the client's key and equals the `MisQueuedWrite` key, so
+/// the dedupe row and this row can be joined; unique as a second net under the
+/// transactional claim (Appendix B §B.7).
+///
+/// People and the device: `operatorId` is the gate operator who confirmed the face
+/// (K1/K9 — "the operator's name rides every punch"), a claim recorded as
+/// evidence, plain uuid, no foreign key. `recordedById` is the signed-in user when
+/// the punch came through the portal instead of a device. `deviceId` is the
+/// enrolled tablet (Phase 12); `fromRevokedDevice` flags punches accepted from a
+/// tablet retired before they synced (D18).
+model MisAttendancePunch {
+  id                String             @id @default(uuid()) @db.Uuid
+  idempotencyKey    String             @unique @map("idempotency_key") @db.Uuid
+  employeeId        String             @map("employee_id") @db.Uuid
+  direction         MisPunchDirection
+  punchedAt         DateTime           @map("punched_at")
+  receivedAt        DateTime           @default(now()) @map("received_at")
+  deviceId          String?            @map("device_id") @db.Uuid
+  fromRevokedDevice Boolean            @default(false) @map("from_revoked_device")
+  operatorId        String?            @map("operator_id") @db.Uuid
+  recordedById      String?            @map("recorded_by_id") @db.Uuid
+  shiftId           String?            @map("shift_id") @db.Uuid
+  supersedesId      String?            @unique @map("supersedes_id") @db.Uuid
+  correctionReason  String?            @map("correction_reason")
+  correctedById     String?            @map("corrected_by_id") @db.Uuid
+  employee          MisEmployee        @relation(fields: [employeeId], references: [id])
+  device            MisKioskDevice?    @relation(fields: [deviceId], references: [id])
+  supersedes        MisAttendancePunch? @relation("MisPunchCorrection", fields: [supersedesId], references: [id])
+  supersededBy      MisAttendancePunch? @relation("MisPunchCorrection")
+  @@index([employeeId, punchedAt])
+  @@index([deviceId, receivedAt])
+  @@map("mis_attendance_punches")
+}
+
+// ---------------------------------------------------------------------------
+// MIS Wage Types — Phase 1 (E1-06, MIS-9/44/45, Owner-only finance)
+// ---------------------------------------------------------------------------
+
+enum MisWageUnit {
+  DAILY
+  MONTHLY
+  HOURLY
+  PIECE_RATE
+  @@map("mis_wage_unit")
+}
+
+enum MisDefectSeverity {
+  CRITICAL
+  MAJOR
+  MINOR
+  @@map("mis_defect_severity")
+}
+
+/// A named, coded wage rate — the Owner-only replacement for the single flat
+/// DAILY_WAGE_DEFAULT business rule. Versioned exactly like MisBusinessRule:
+/// multiple rows can share a code with different effectiveFrom dates, and a
+/// caller takes the latest row whose effectiveFrom has passed. Every other
+/// screen references `code` (e.g. "WG-DAILY-01"), never `amount` — the amount
+/// column is read only from src/server/mis/wage-type.ts, which is OWNER-gated.
+model MisWageType {
+  id            String      @id @default(uuid()) @db.Uuid
+  code          String      @map("code")
+  name          String
+  nameHi        String?     @map("name_hi")
+  amount        Decimal     @db.Decimal(12, 2)
+  unit          MisWageUnit @default(DAILY)
+  effectiveFrom DateTime    @default(now()) @map("effective_from") @db.Date
+  isActive      Boolean     @default(true) @map("is_active")
+  deletedAt     DateTime?   @map("deleted_at")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+
+  @@unique([code, effectiveFrom])
+  @@index([code])
+  @@index([deletedAt])
+  @@map("mis_wage_types")
 }

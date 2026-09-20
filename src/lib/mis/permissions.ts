@@ -26,6 +26,40 @@ export const MIS_ACTIONS = [
   'settings.write',
   // Money. Owner only, everywhere, always (S9).
   'wages.read',
+  // AQL accept/reject thresholds. Owner only, same shape as wages.read: a
+  // change here silently re-scores every QC sample going forward, so it is
+  // not something Admin's general settings.write should reach.
+  'aql.read',
+  // MIS user management. Owner only — ADMIN may view via employees.read but
+  // never invite or grant a role (MIS-11/E1-08). Viewing an existing
+  // employee's role change still goes through employees.write, unchanged.
+  'users.invite',
+  // Inventory, PO, GRN
+  'inventory.read',
+  'inventory.write',
+  'po.read',
+  'po.write',
+  'grn.read',
+  'grn.write',
+  // Store module (MIS-280+)
+  'store.read',
+  'store.write',
+  'store.count',   // physical count — owner/admin only
+  // Line clearance (D7, DECISIONS.md). Read is the history view; write is the
+  // clear-line action itself — SUPERVISOR and above only.
+  'clearance.read',
+  'clearance.write',
+  // Job phases and the handover gate (DEVELOPMENT_GUIDE.md Appendix A).
+  // phase.reopen is its own action, Owner-only, because withdrawing a
+  // signature is a different kind of act from moving a phase along.
+  // Note: holding phase.write does NOT let you sign off someone else's phase —
+  // the in-charge identity check in job-phases.ts sits on top of it (D12).
+  'phase.read',
+  'phase.write',
+  'phase.reopen',
+  // Gate tablets (D18): pair, rename and retire a device. Owner and Admin only.
+  // Seeing kiosk health on the attendance home needs only attendance.read.
+  'kiosk.manage',
 ] as const;
 
 export type MisAction = (typeof MIS_ACTIONS)[number];
@@ -56,6 +90,20 @@ const MATRIX: Record<MisRoleName, readonly MisAction[]> = {
     'reports.read',
     'settings.read',
     'settings.write',
+    'inventory.read',
+    'inventory.write',
+    'po.read',
+    'po.write',
+    'grn.read',
+    'grn.write',
+    'store.read',
+    'store.write',
+    'store.count',
+    'clearance.read',
+    'clearance.write',
+    'phase.read',
+    'phase.write',
+    'kiosk.manage',
   ],
 
   SUPERVISOR: [
@@ -67,9 +115,16 @@ const MATRIX: Record<MisRoleName, readonly MisAction[]> = {
     'qc.read',
     'attendance.read',
     'reports.read',
+    'inventory.read',
+    'grn.read',
+    'store.read',
+    'clearance.read',
+    'clearance.write',
+    'phase.read',
+    'phase.write',
   ],
 
-  QC: ['masters.read', 'orders.read', 'production.read', 'qc.read', 'qc.write', 'reports.read'],
+  QC: ['masters.read', 'orders.read', 'production.read', 'qc.read', 'qc.write', 'reports.read', 'phase.read'],
 
   SUPER_ATTENDANCE_OPERATOR: [
     'employees.read',
@@ -79,6 +134,16 @@ const MATRIX: Record<MisRoleName, readonly MisAction[]> = {
   ],
 
   ATTENDANCE_OPERATOR: ['employees.read', 'attendance.read', 'attendance.write'],
+
+  STORE_GUY: [
+    'inventory.read',
+    'grn.read',
+    'grn.write',
+    'po.read',
+    'store.read',
+    'store.write',
+    'store.count',
+  ],
 
   // A worker has no login at all. The row exists so the matrix is total.
   WORKER: [],

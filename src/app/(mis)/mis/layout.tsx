@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 
 import { MisShell } from '@/components/mis/shell/mis-shell';
-import { getNavigationFor, splitNavigation } from '@/server/mis/navigation';
+import { getNavBadges, getNavigationFor } from '@/server/mis/navigation';
 import { getLocale } from '@/server/mis/preferences';
 import { getMisRole } from '@/server/mis/roles';
 import { requireMisAccess } from '@/server/mis/guard';
@@ -27,16 +27,18 @@ export default async function MisLayout({ children }: { children: ReactNode }) {
     getNavigationFor(user.id),
   ]);
 
-  const { primary } = splitNavigation(nav);
+  // Computed once, here, so no individual screen has to remember to do it.
+  const navBadges = await getNavBadges(user.id, role);
 
   return (
     <MisShell
       factoryName="Bhaskar Paper Products"
+      userId={user.id}
       userName={user.name ?? user.email}
       role={role}
       locale={locale}
-      navPrimary={primary}
       navAll={nav}
+      navBadges={navBadges}
       onLocaleChange={setLocaleAction}
     >
       {children}
