@@ -277,12 +277,12 @@ export function StoreTransactionsScreen({ txns, items, canWrite }: Props) {
           placeholder="Search by txn no., item, ref…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="w-full max-w-xs rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+          className="w-full max-w-xs min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500"
         />
         <select
           value={typeFilter}
           onChange={(e) => setTypeFilter(e.target.value)}
-          className="rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+          className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400"
         >
           <option value="">All Types</option>
           <option value="IN">IN only</option>
@@ -291,7 +291,7 @@ export function StoreTransactionsScreen({ txns, items, canWrite }: Props) {
         <select
           value={itemFilter}
           onChange={(e) => setItemFilter(e.target.value)}
-          className="rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400 max-w-[200px]"
+          className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400 max-w-[200px]"
         >
           <option value="">All Items</option>
           {items.map((item) => (
@@ -300,20 +300,20 @@ export function StoreTransactionsScreen({ txns, items, canWrite }: Props) {
             </option>
           ))}
         </select>
-        <div className="flex items-center gap-2 text-sm text-slate-500">
+        <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500">
           <span>From</span>
           <input
             type="date"
             value={fromDate}
             onChange={(e) => setFromDate(e.target.value)}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+            className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400"
           />
           <span>To</span>
           <input
             type="date"
             value={toDate}
             onChange={(e) => setToDate(e.target.value)}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+            className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400"
           />
         </div>
         {(search || typeFilter || itemFilter || fromDate || toDate) && (

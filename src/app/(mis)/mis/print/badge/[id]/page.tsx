@@ -1,3 +1,4 @@
+import { isUuid } from '@/lib/mis/ids';
 import { requireMisAccess } from '@/server/mis/guard';
 import { PrintButton } from '@/components/mis/print/print-button';
 import { getEmployee } from '@/server/mis/employee';
@@ -5,6 +6,7 @@ import { notFound } from 'next/navigation';
 
 export default async function WorkerBadgePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (!isUuid(id)) notFound();
   await requireMisAccess();
   const employee = await getEmployee(id);
   if (!employee) notFound();

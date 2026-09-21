@@ -103,7 +103,7 @@ export function MasterDataDesktop({ directory, list, denied = false }: { directo
                 <form method="get" action={spec.href} className="flex items-center gap-2">
                   {list.showDeactivated ? <input type="hidden" name="deactivated" value="1" /> : null}
                   <label className="sr-only" htmlFor="d10-search">{t('d10.search')}</label>
-                  <input id="d10-search" type="search" name="q" defaultValue={list.query} placeholder={t('d10.searchPlaceholder')} className="min-h-11 w-56 rounded-lg border border-slate-300 bg-white px-3 text-sm" />
+                  <input id="d10-search" type="search" name="q" defaultValue={list.query} placeholder={t('d10.searchPlaceholder')} className="min-h-12 w-56 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500" />
                   <button type="submit" className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">{t('d10.search')}</button>
                 </form>
                 <Link

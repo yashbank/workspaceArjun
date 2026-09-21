@@ -8,6 +8,7 @@ import { Input, NumberInput, DateInput } from '@/components/mis/kit/input';
 import { Select } from '@/components/mis/kit/select';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
+import { DEFAULT_FACTORY_TIMEZONE, formatFactoryDate } from '@/lib/mis/factory-time';
 import type { WageTypeCode, WageTypeRow } from '@/server/mis/wage-type';
 
 import {
@@ -109,7 +110,7 @@ export function WageTypeScreen({
     {
       key: 'effectiveFrom',
       header: 'Effective from',
-      render: (r) => new Date(r.effectiveFrom).toLocaleDateString(),
+      render: (r) => formatFactoryDate(new Date(r.effectiveFrom), DEFAULT_FACTORY_TIMEZONE),
     },
     {
       key: 'isActive',

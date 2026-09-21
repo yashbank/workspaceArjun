@@ -155,7 +155,7 @@ export function StoreCountScreen({ items, counts, canCount }: Props) {
         placeholder="Search by item name…"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        className="w-full max-w-sm rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+        className="w-full max-w-sm min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500"
       />
 
       <DataTable
@@ -176,7 +176,7 @@ export function StoreCountScreen({ items, counts, canCount }: Props) {
                 setSelectedItemId(e.target.value);
                 setPhysQty('');
               }}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+              className="w-full min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400"
             >
               <option value="">Select item…</option>
               {items.map((i) => (
@@ -202,7 +202,7 @@ export function StoreCountScreen({ items, counts, canCount }: Props) {
               type="date"
               value={countDate}
               onChange={(e) => setCountDate(e.target.value)}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+              className="w-full min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400"
             />
           </div>
 

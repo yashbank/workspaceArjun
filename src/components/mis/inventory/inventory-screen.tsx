@@ -146,7 +146,7 @@ export function InventoryScreen({ summary, canWrite = false }: Props) {
           placeholder="Search items..."
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="flex-1 min-w-[180px] max-w-sm rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+          className="flex-1 min-w-[180px] max-w-sm min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500"
         />
         <button onClick={() => downloadInventoryCsv(filtered)} className="px-3 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-700 whitespace-nowrap">
           ↓ CSV

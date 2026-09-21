@@ -1,3 +1,5 @@
+import { isUuid } from '@/lib/mis/ids';
+import { toPlain } from '@/lib/mis/plain';
 import { notFound } from 'next/navigation';
 import { requireMisAccess } from '@/server/mis/guard';
 import { checkPermission } from '@/server/mis/auth';
@@ -7,6 +9,7 @@ import { PoDetailScreen } from '@/components/mis/po/po-detail-screen';
 
 export default async function PoDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (!isUuid(id)) notFound();
   await requireMisAccess();
   const po = await getPO(id);
   if (!po) notFound();
@@ -34,5 +37,5 @@ export default async function PoDetailPage({ params }: { params: Promise<{ id: s
         }
       : {}),
   }));
-  return <PoDetailScreen po={po} formattedItems={formattedItems} total={total} catalogItems={items} canWrite={canWrite} canApprove={canApprove} />;
+  return <PoDetailScreen po={toPlain(po)} formattedItems={formattedItems} total={total} catalogItems={toPlain(items)} canWrite={canWrite} canApprove={canApprove} />;
 }

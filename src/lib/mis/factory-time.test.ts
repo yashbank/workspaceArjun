@@ -6,6 +6,8 @@ import {
   DEFAULT_FACTORY_TIMEZONE,
   factoryDateKey,
   factoryMinuteOfDay,
+  formatFactoryDate,
+  formatFactoryDateTime,
   formatFactoryTime,
   isValidTimeZone,
   previousDateKey,
@@ -76,3 +78,28 @@ describe('date keys are pure calendar arithmetic', () => {
     expect(dateKeyToDbDate('2026-09-20').getTime()).toBe(new Date('2026-09-20').getTime());
   });
 });
+
+describe('formatFactoryDate / formatFactoryDateTime — one string on the server and in the browser (F-26)', () => {
+  // 20 Sep 2026 22:00 UTC is already 21 Sep 03:30 in Kolkata — the day is the FACTORY's, whatever the machine's zone.
+  const at = new Date('2026-09-20T22:00:00Z');
+
+  it('writes dd/mm/yyyy in the factory zone', () => {
+    expect(formatFactoryDate(at, 'Asia/Kolkata')).toBe('21/09/2026');
+    expect(formatFactoryDate(at, 'UTC')).toBe('20/09/2026');
+  });
+
+  it('adds the factory time, 24-hour and zero-padded', () => {
+    expect(formatFactoryDateTime(at, 'Asia/Kolkata')).toBe('21/09/2026 03:30');
+    expect(formatFactoryDateTime(new Date('2026-01-05T00:04:00Z'), 'UTC')).toBe('05/01/2026 00:04');
+  });
+
+  it('does not depend on the process zone or locale', () => {
+    const original = process.env.TZ;
+    for (const tz of ['America/Los_Angeles', 'Asia/Singapore']) {
+      process.env.TZ = tz;
+      expect(formatFactoryDateTime(at, 'Asia/Kolkata')).toBe('21/09/2026 03:30');
+    }
+    process.env.TZ = original;
+  });
+});
+

@@ -67,6 +67,22 @@ async function getStockBalance(itemId: string): Promise<number> {
   return last ? Number(last.balanceQty) : 0;
 }
 
+/**
+ * The running balance of EVERY item, in one query (latest transaction per item).
+ *
+ * A page that shows the whole store used to call `getStockBalance` once per item — 176 queries — and the runtime
+ * connection pool is deliberately one connection wide (`createPoolConfig`, `max: 1`), so the queries queued behind
+ * each other for over ten seconds and the page died with "timeout exceeded when trying to connect" (F-24).
+ * Items with no transaction are simply absent from the map: their balance is 0.
+ */
+async function getStockBalances(): Promise<Map<string, number>> {
+  const rows = await db.$queryRaw<{ item_id: string; balance_qty: unknown }[]>`
+    SELECT DISTINCT ON (item_id) item_id, balance_qty
+    FROM mis_store_transactions
+    ORDER BY item_id, created_at DESC`;
+  return new Map(rows.map((r) => [r.item_id, Number(r.balance_qty)]));
+}
+
 /** Next txn number: STXN-YYYYMMDD-NNNN (daily sequence). */
 async function nextTxnNumber(): Promise<string> {
   const today = new Date();
@@ -109,9 +125,10 @@ export async function listStoreItems(): Promise<StoreItemRow[]> {
     },
   });
 
+  const balances = await getStockBalances();
   const rows: StoreItemRow[] = await Promise.all(
     items.map(async (item) => {
-      const balance = await getStockBalance(item.id);
+      const balance = balances.get(item.id) ?? 0;
       const row: StoreItemRow = {
         id: item.id,
         code: item.code,
@@ -346,9 +363,10 @@ export async function listStockSummary(): Promise<StockSummaryRow[]> {
     },
   });
 
+  const balances = await getStockBalances();
   return Promise.all(
     items.map(async (item) => {
-      const balance = await getStockBalance(item.id);
+      const balance = balances.get(item.id) ?? 0;
       const reorderLevel = item.reorderLevel ? Number(item.reorderLevel) : null;
       const row: StockSummaryRow = {
         id: item.id,
@@ -543,9 +561,10 @@ export async function getStoreDashboard(): Promise<StoreDashboardStats> {
     db.misItem.count({ where: { isActive: true, deletedAt: null, isDemo: true } }),
   ]);
 
+  const latest = await getStockBalances();
   const balances = await Promise.all(
     items.map(async (item) => {
-      const balance = await getStockBalance(item.id);
+      const balance = latest.get(item.id) ?? 0;
       return {
         id: item.id,
         balance,
