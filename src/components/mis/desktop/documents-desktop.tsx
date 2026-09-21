@@ -77,7 +77,7 @@ export function DocumentsDesktop({ view, denied = false }: { view: DocLibraryVie
           <form method="get" action={base} role="search" className="flex items-center gap-2">
             {view.group !== 'all' ? <input type="hidden" name="group" value={view.group} /> : null}
             <label className="sr-only" htmlFor="d13-q">{t('d13.searchLabel')}</label>
-            <input id="d13-q" type="search" name="q" defaultValue={view.query} placeholder={t('d13.search')} maxLength={60} className="min-h-12 w-72 rounded-lg border border-slate-300 bg-white px-3 text-base" />
+            <input id="d13-q" type="search" name="q" defaultValue={view.query} placeholder={t('d13.search')} maxLength={60} className="min-h-12 w-72 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500" />
             <button type="submit" className="min-h-11 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-800 hover:bg-slate-100">{t('d13.searchButton')}</button>
           </form>
         }
@@ -172,7 +172,7 @@ function Detail({ doc }: { doc: DocDetailView }) {
 
       <dl className="grid grid-cols-[8.5rem_minmax(0,1fr)] gap-x-4 gap-y-2 px-5 py-4 text-sm">
         <dt className="text-slate-500">{t('d13.attachedTo')}</dt>
-        <dd className="font-mono font-semibold text-slate-900"><Link href={`/mis/orders/${doc.orderId}`} className="inline-flex min-h-11 items-center underline">{doc.orderNumber}</Link>{doc.orderDescription ? ` · ${doc.orderDescription}` : ''}</dd>
+        <dd className="text-slate-900"><Link href={`/mis/orders/${doc.orderId}`} className="inline-flex min-h-11 items-center font-mono font-semibold underline">{doc.orderNumber}</Link>{doc.orderDescription ? ` · ${doc.orderDescription}` : ''}</dd>
         <dt className="text-slate-500">{t('d13.addedLabel')}</dt>
         <dd className="text-slate-900">{doc.addedFull} · {doc.addedBy ?? <span className="text-slate-500">{t('d13.personNotRecorded')}</span>}</dd>
         <dt className="text-slate-500">{t('d13.type')}</dt>
@@ -184,7 +184,7 @@ function Detail({ doc }: { doc: DocDetailView }) {
         <dt className="text-slate-500">{t('d13.superseded')}</dt>
         <dd>{notRecorded}</dd>
         <dt className="text-slate-500">{t('d13.linkLabel')}</dt>
-        <dd className="break-all font-mono text-xs text-slate-700">{doc.link}{doc.href ? null : <span className="mt-1 block font-sans text-sm text-red-800">{t('d13.unsafeLink')}</span>}</dd>
+        <dd className="text-slate-700"><span className="break-all font-mono text-xs">{doc.link}</span>{doc.href ? null : <span className="mt-1 block text-sm text-red-800">{t('d13.unsafeLink')}</span>}</dd>
         {doc.description ? (<><dt className="text-slate-500">{t('d13.description')}</dt><dd className="text-slate-900">{doc.description}</dd></>) : null}
       </dl>
 

@@ -441,6 +441,17 @@ ERR_PNPM_NO_OFFLINE_META  /  npm ERR! network request to https://registry.npmjs.
 **Fix.** **No new dependencies, ever** (§2). Build with what is in `package.json`. If a
 phase seems to need a library, it does not — say so and escalate rather than adding one.
 
+### 2A.13 `timeout exceeded when trying to connect`
+
+```
+Error: timeout exceeded when trying to connect
+    at getStockBalance …
+```
+
+**Cause.** The runtime pool is deliberately ONE connection (`createPoolConfig`, `max: 1`, `connectionTimeoutMillis: 10000`). A page that runs one query per row (`items.map(async (i) => db…findFirst(i))` over 176 items) puts them all in one queue, and the last one waits longer than the connect timeout. It is not a connection problem and raising `max` is not the fix.
+
+**Fix.** One query for the whole set — `SELECT DISTINCT ON (item_id) …` (see `getStockBalances` in `server/mis/store.ts`), a `findMany` with `in`, or a `groupBy` — then look each row up in a `Map`. `store-pool.test.ts` shows how to test it: count the queries against a fake database. Found by opening `/mis/store` in a browser (F-24); no unit test had caught it because the tests' fake database has no pool.
+
 ---
 
 ### P3006 / P3018 — `schema "auth" does not exist` when applying a migration
@@ -3770,6 +3781,8 @@ Report in 150 words or fewer.
 ---
 
 ### Phase 24F · Browser walkthrough & fix — **RUN BEFORE PHASE 25**
+
+> ✔ DONE (2026-09-22) — see `phase-reports/phase-24F.md` and `qa/WALKTHROUGH-24F.md`. F-24 – F-28 filed. Every route opens for every role at 390 and 1440 px.
 Nothing in 24A–E was seen in a browser. Store, Inventory and GRN screens do not open for the user.
 1. Run `pnpm dev`, then sign in as each role (Owner, Admin, Supervisor, QC, Attendance, Store Manager, …) at phone width (390px) and desktop width (1440px).
 2. Open every nav item and every route under `/mis`. For each one, record the result (opens / blank / error / wrong layout / wrong role) in `docs/qa/WALKTHROUGH-24F.md`, with the console and server errors.
@@ -3777,6 +3790,15 @@ Nothing in 24A–E was seen in a browser. Store, Inventory and GRN screens do no
 4. Every fix gets a test that fails without it. Use the standard verify commands. File findings from F-24.
 
 ### Phase 25 · Payroll rules from Arjun's review — **SCHEMA GATE**
+
+> ⚠ UPDATED BY PHASE 24F — (1) **The runtime database pool is ONE connection wide** (`server/db/connection.ts`, `max: 1`) — on purpose. A whole-list
+> page that runs a query per row (payroll for 60 people, a per-employee wage lookup) queues on it and dies with `timeout exceeded when
+> trying to connect`: fetch once for the whole set (`getStockBalances` in `server/mis/store.ts` is the pattern; §2A.13). (2) A Prisma `Decimal` must
+> not reach a client component (§2A.5): wrap a row in `toPlain` (`lib/mis/plain.ts`) on the page, AFTER `withoutMoneyFields` / `forRole`.
+> (3) A new `[id]` page guards its id with `isUuid` (`lib/mis/ids.ts`) before any query — `dynamic-route-guards.test.ts` fails otherwise. The payslip
+> page is the one exception until `wage-screens.test.tsx` gets a UUID fixture (F-25). (4) Format a date in a client component with
+> `formatFactoryDate` / `formatFactoryDateTime`, never `toLocaleDateString()` (F-26). (5) A search or filter box is `min-h-12 text-base text-slate-900 bg-white`;
+> `search-inputs.test.ts` reads every screen.
 
 > ⚠ UPDATED BY PHASE 24E — (1) **Rule changes now have a write path with a start day and a reason:** `scheduleBusinessRule`
 > (Owner, `wages.read`) and `createRuleRevision(..., { effectiveFrom, reason, action })` write a NEW row and a `SCHEDULE_RULE`

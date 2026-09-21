@@ -26,6 +26,8 @@ vi.mock('@/server/db', () => ({
       findFirst: async () => { queries.push('balance'); return { balanceQty: 50 }; },
       findMany: async () => [],
     },
+    // The whole-store readers ask for every item's balance in ONE query (F-24).
+    $queryRaw: async () => { queries.push('balance'); return [{ item_id: 'i1', balance_qty: 50 }]; },
   },
 }));
 const getCurrentUser = vi.fn();

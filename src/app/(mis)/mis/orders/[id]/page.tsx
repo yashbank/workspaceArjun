@@ -1,3 +1,4 @@
+import { isUuid } from '@/lib/mis/ids';
 import { requireMisAccess } from '@/server/mis/guard';
 import { getOrder } from '@/server/mis/orders';
 import { getBom } from '@/server/mis/bom';
@@ -19,6 +20,7 @@ export default async function OrderDetailPage({
   searchParams: Promise<{ view?: string }>;
 }) {
   const { id } = await params;
+  if (!isUuid(id)) notFound();
   const { view } = await searchParams;
   const user = await requireMisAccess();
   const role = await getMisRole(user.id);

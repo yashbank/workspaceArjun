@@ -50,7 +50,7 @@ export function TraceabilityDesktop({ view, denied = false }: { view: TraceView 
           // A plain GET form: a search is the only thing this screen submits.
           <form method="get" action="/mis/traceability" role="search" className="flex items-center gap-2">
             <label className="sr-only" htmlFor="d11-q">{t('d11.searchLabel')}</label>
-            <input id="d11-q" type="search" name="q" defaultValue={view.query} placeholder={t('d11.search')} maxLength={60} className="min-h-12 w-80 rounded-lg border border-slate-300 bg-white px-3 font-mono text-base" />
+            <input id="d11-q" type="search" name="q" defaultValue={view.query} placeholder={t('d11.search')} maxLength={60} className="min-h-12 w-80 rounded-lg border border-slate-300 bg-white px-3 font-mono text-base text-slate-900 placeholder:text-slate-500" />
             <button type="submit" className="min-h-11 rounded-lg bg-indigo-600 px-5 text-sm font-semibold text-white hover:bg-indigo-700">{t('d11.trace')}</button>
           </form>
         }

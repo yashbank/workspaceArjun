@@ -1,3 +1,4 @@
+import { isUuid } from '@/lib/mis/ids';
 import { requireMisAccess } from '@/server/mis/guard';
 import { db } from '@/server/db';
 import { notFound } from 'next/navigation';
@@ -5,6 +6,7 @@ import Link from 'next/link';
 
 export default async function MachineHistoryPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (!isUuid(id)) notFound();
   await requireMisAccess();
 
   const machine = await db.misMachine.findUnique({

@@ -1,3 +1,4 @@
+import { isUuid } from '@/lib/mis/ids';
 import { requireMisAccess } from '@/server/mis/guard';
 import { getMisRole } from '@/server/mis/roles';
 import { can } from '@/lib/mis/permissions';
@@ -9,6 +10,7 @@ import { AdjustDialog } from '@/components/mis/inventory/adjust-dialog';
 
 export default async function InventoryItemPage({ params }: { params: Promise<{ itemId: string }> }) {
   const { itemId } = await params;
+  if (!isUuid(itemId)) notFound();
   const user = await requireMisAccess();
   const role = await getMisRole(user.id);
   const canWrite = can(role, 'inventory.write');

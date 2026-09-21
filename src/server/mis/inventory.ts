@@ -23,24 +23,24 @@ export async function listInventoryLedger(itemId: string) {
 export async function getInventorySummary() {
   await requirePermission('inventory.read');
   const items = await db.misItem.findMany({ where: { deletedAt: null }, orderBy: { name: 'asc' } });
-  const result = await Promise.all(
-    items.map(async (item) => {
-      const last = await db.misInventoryLedger.findFirst({
-        where: { itemId: item.id },
-        orderBy: { createdAt: 'desc' },
-        select: { balanceQty: true, createdAt: true },
-      });
-      return {
-        itemId: item.id,
-        code: item.code,
-        name: item.name,
-        unit: item.unit,
-        balance: last?.balanceQty.toNumber() ?? 0,
-        lastUpdated: last?.createdAt ?? null,
-      };
-    })
-  );
-  return result;
+  // The latest ledger row of every item in ONE query. One query per item (176 of them) queued on the single-connection
+  // runtime pool and the page died with "timeout exceeded when trying to connect" (F-24).
+  const latest = await db.$queryRaw<{ item_id: string; balance_qty: unknown; created_at: Date }[]>`
+    SELECT DISTINCT ON (item_id) item_id, balance_qty, created_at
+    FROM mis_inventory_ledger
+    ORDER BY item_id, created_at DESC`;
+  const byItem = new Map(latest.map((r) => [r.item_id, r]));
+  return items.map((item) => {
+    const last = byItem.get(item.id);
+    return {
+      itemId: item.id,
+      code: item.code,
+      name: item.name,
+      unit: item.unit,
+      balance: last ? Number(last.balance_qty) : 0,
+      lastUpdated: last?.created_at ?? null,
+    };
+  });
 }
 
 export async function adjustInventory(itemId: string, changeQty: number, notes?: string) {

@@ -1,3 +1,6 @@
+import { notFound } from 'next/navigation';
+import { isUuid } from '@/lib/mis/ids';
+import { toPlain } from '@/lib/mis/plain';
 import { requireMisAccess } from '@/server/mis/guard';
 import { getBom } from '@/server/mis/bom';
 import { getBomDesktopView } from '@/server/mis/bom-desktop';
@@ -6,7 +9,7 @@ import { can } from '@/lib/mis/permissions';
 import { BomScreen } from '@/components/mis/bom/bom-screen';
 import { BomDesktop } from '@/components/mis/desktop/bom-desktop';
 
-// Prisma's Decimal is handed to the phone screen as before; the screen types it as a number.
+// A Prisma Decimal cannot cross to a Client Component (F-24): `toPlain` makes every one a number first.
 type BomProp = React.ComponentProps<typeof BomScreen>['bom'];
 
 export default async function BomDetailPage({
@@ -17,13 +20,14 @@ export default async function BomDetailPage({
   searchParams: Promise<{ view?: string; costing?: string }>;
 }) {
   const { orderId } = await params;
+  if (!isUuid(orderId)) notFound();
   const { view, costing } = await searchParams;
   const user = await requireMisAccess();
   const role = await getMisRole(user.id);
   const canWrite = can(role, 'orders.write');
   const isOwner = can(role, 'wages.read');
   const bom = await getBom(orderId);
-  const phone = <BomScreen bom={bom as unknown as BomProp} orderId={orderId} canWrite={canWrite} isOwner={isOwner} />;
+  const phone = <BomScreen bom={toPlain(bom) as unknown as BomProp} orderId={orderId} canWrite={canWrite} isOwner={isOwner} />;
 
   // D6 from 1024px up. `?view=edit` keeps the editable structure (add stage / add material, approve)
   // one link away on a desktop, because D6 is the reading view. `?costing=off` drops the cost

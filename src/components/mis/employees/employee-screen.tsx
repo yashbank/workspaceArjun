@@ -114,7 +114,7 @@ export function EmployeeScreen({ employees, canWrite, scoped }: Props) {
         return manager ? manager.name : <span className="text-slate-400 text-xs">Assigned (outside your view)</span>;
       },
     },
-    { key: 'email', header: 'Login', render: (r) => r.userProfile?.email ?? <span className="text-slate-400 text-xs">No login</span> },
+    { key: 'email', header: 'Login', render: (r) => r.userProfile?.email ? <span className="break-all">{r.userProfile.email}</span> : <span className="text-slate-400 text-xs">No login</span> },
     { key: 'isActive', header: 'Status', render: (r) => <StatusBadge tone={r.isActive ? 'good' : 'neutral'}>{r.isActive ? 'Active' : 'Inactive'}</StatusBadge> },
     { key: 'actions', header: '', render: (r) => (
       <div className="flex gap-2 justify-end">
@@ -128,7 +128,7 @@ export function EmployeeScreen({ employees, canWrite, scoped }: Props) {
   ];
 
   return (
-    <div className="mx-auto max-w-5xl flex flex-col gap-4">
+    <div className="mx-auto max-w-6xl flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-slate-900">Employees</h1>
         <div className="flex gap-2">
@@ -142,7 +142,7 @@ export function EmployeeScreen({ employees, canWrite, scoped }: Props) {
           placeholder="Search employees…"
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="w-full max-w-sm rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+          className="w-full max-w-sm min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500"
         />
       </div>
       {/*

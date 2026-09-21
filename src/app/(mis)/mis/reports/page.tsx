@@ -1,3 +1,4 @@
+import { toPlain } from '@/lib/mis/plain';
 import { requireMisAccess } from '@/server/mis/guard';
 import { getMisRole } from '@/server/mis/roles';
 import { can } from '@/lib/mis/permissions';
@@ -45,11 +46,11 @@ export default async function ReportsPage({
 
   const phone = (
     <ReportsScreen
-      production={production}
-      attendance={attendance}
-      qc={qc}
-      orders={orders as any[]}
-      store={store}
+      production={toPlain(production)}
+      attendance={toPlain(attendance)}
+      qc={toPlain(qc)}
+      orders={toPlain(orders) as any[]}
+      store={toPlain(store)}
       canSeeWages={canSeeWages}
       isOwner={isOwner}
       rangeLabel={`${MONTHS[month - 1]} ${year}`}

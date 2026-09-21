@@ -67,7 +67,7 @@ export function RulesDesktop({ view, denied = false, scheduled = false }: { view
             <form method="get" action={base} className="flex items-center gap-2">
               {selected ? <input type="hidden" name="rule" value={selected.ruleKey} /> : null}
               <label htmlFor="d12-asof" className="text-sm font-semibold text-slate-700">{t('d12.asOf')}</label>
-              <input id="d12-asof" type="date" name="asOf" defaultValue={view.asOf} className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 font-mono text-base" />
+              <input id="d12-asof" type="date" name="asOf" defaultValue={view.asOf} className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 font-mono text-base text-slate-900" />
               <button type="submit" className="min-h-11 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-800 hover:bg-slate-100">{t('d12.show')}</button>
             </form>
             <Link href="/mis/audit" className="inline-flex min-h-11 items-center rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-800 hover:bg-slate-100">{t('d12.changeLog')}</Link>

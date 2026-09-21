@@ -391,12 +391,12 @@ export function StoreItemScreen({ items, canWrite, isOwner }: Props) {
           placeholder="Search by name, code or SKU..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="w-full max-w-sm rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+          className="w-full max-w-sm min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500"
         />
         <select
           value={categoryFilter}
           onChange={(e) => setCategoryFilter(e.target.value)}
-          className="rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+          className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400"
         >
           <option value="">All Categories</option>
           {CATEGORIES.map(([val, label]) => (
@@ -508,7 +508,7 @@ export function StoreItemScreen({ items, canWrite, isOwner }: Props) {
             <select
               value={editCategory}
               onChange={(e) => setEditCategory(e.target.value)}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+              className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400"
             >
               {CATEGORIES.map(([val, label]) => (
                 <option key={val} value={val}>{label}</option>

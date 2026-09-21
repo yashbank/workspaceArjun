@@ -125,7 +125,7 @@ export function LeaveScreen({ leaves, employees, canApprove, initialEmployeeId }
       </div>
 
       <div>
-        <input type="search" placeholder="Search by employee…" value={empSearch} onChange={e => setEmpSearch(e.target.value)} className="w-full max-w-sm rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400" />
+        <input type="search" placeholder="Search by employee…" value={empSearch} onChange={e => setEmpSearch(e.target.value)} className="w-full max-w-sm min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500" />
       </div>
 
       <DataTable

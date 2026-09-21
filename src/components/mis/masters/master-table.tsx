@@ -192,7 +192,7 @@ export function MasterTable<Row extends MasterRow>({
           onChange={(e) => setQuery(e.target.value)}
           placeholder={t('action.search')}
           aria-label={title + ': ' + t('action.search')}
-          className="min-h-12 min-w-0 flex-1 rounded-lg border border-slate-300 px-3 text-base"
+          className="min-h-12 min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 text-base"
         />
         {onShowDeletedChange && (
           <label className="flex min-h-11 items-center gap-2 text-base text-slate-700">

@@ -1,3 +1,4 @@
+import { isUuid } from '@/lib/mis/ids';
 import { PrintButton } from '@/components/mis/print/print-button';
 import { requireMisAccess } from '@/server/mis/guard';
 import { getGRN } from '@/server/mis/grn';
@@ -5,6 +6,7 @@ import { notFound } from 'next/navigation';
 
 export default async function GrnPrintPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (!isUuid(id)) notFound();
   await requireMisAccess();
 
   const grn = await getGRN(id);
