@@ -1,5 +1,10 @@
+import { addDaysToDateKey, dateKeyToDbDate, factoryDateKey } from '@/lib/mis/factory-time';
+import { withoutMoneyFields } from '@/lib/mis/money-fields';
+import { can } from '@/lib/mis/permissions';
 import { db } from '@/server/db';
+import { buildWastage, clampWeeks, windowKeys, type WastageReport } from '@/lib/mis/wastage';
 import { requirePermission } from '@/server/mis/auth';
+import { getFactoryTimezone } from '@/server/mis/business-rules';
 
 export type ReportRange = { from: Date; to: Date };
 
@@ -95,20 +100,26 @@ export async function getOrdersReport(range: ReportRange) {
   });
 }
 
+/**
+ * Stock movement by item. `pricePerUnit` is money (D24, F-06): for a role without `wages.read` it is
+ * not selected from the database at all, so it is in neither `rows` nor the raw transactions.
+ */
 export async function getStoreReport(range: ReportRange) {
-  await requirePermission('reports.read');
+  const actor = await requirePermission('reports.read');
+  const seesPrice = can(actor.role, 'wages.read');
 
   const txns = await db.misStoreTransaction.findMany({
     where: { createdAt: { gte: range.from, lte: range.to } },
     include: {
-      item: { select: { id: true, name: true, code: true, unit: true, pricePerUnit: true } },
+      item: { select: { id: true, name: true, code: true, unit: true, ...(seesPrice ? { pricePerUnit: true } : {}) } },
     },
     orderBy: { createdAt: 'desc' },
   });
 
   type ItemRow = {
     id: string; name: string; code: string; unit: string;
-    pricePerUnit: number | null; totalIn: number; totalOut: number; txnCount: number;
+    /** Present only for a role holding wages.read. */
+    pricePerUnit?: number | null; totalIn: number; totalOut: number; txnCount: number;
   };
   const byItem: Record<string, ItemRow> = {};
 
@@ -120,7 +131,7 @@ export async function getStoreReport(range: ReportRange) {
         name: t.item?.name ?? '—',
         code: t.item?.code ?? '—',
         unit: t.item?.unit ?? '',
-        pricePerUnit: t.item?.pricePerUnit != null ? Number(t.item.pricePerUnit) : null,
+        ...(seesPrice ? { pricePerUnit: t.item && 'pricePerUnit' in t.item && t.item.pricePerUnit != null ? Number(t.item.pricePerUnit) : null } : {}),
         totalIn: 0,
         totalOut: 0,
         txnCount: 0,
@@ -131,6 +142,67 @@ export async function getStoreReport(range: ReportRange) {
     byItem[key].txnCount++;
   }
 
-  return { rows: Object.values(byItem), raw: txns };
+  // The select above already leaves the price out; the raw rows are stripped as well so the guarantee
+  // does not rest on the query alone.
+  return { rows: Object.values(byItem), raw: seesPrice ? txns : withoutMoneyFields(txns) };
 }
 
+
+/**
+ * D7's wastage report: waste by phase by week, by machine, and by order — ONE query, and the
+ * on-screen numbers and the CSV export both come from it ("the CSV is generated from the query that
+ * drew the chart, not a second one").
+ *
+ * Read from the same production log the phone reports use (`getProductionReport`). Weeks are the
+ * factory's (D22). The query is widened by a day either side and the pure builder does the exact
+ * factory-date cut, so a log made just after factory midnight is not lost to a UTC boundary.
+ * No money: quantities only.
+ */
+export async function getWastageReport(
+  input: { weeks?: unknown; machineId?: unknown; unit?: unknown } = {},
+  now: Date = new Date(),
+): Promise<WastageReport> {
+  await requirePermission('reports.read');
+
+  const weeks = clampWeeks(input.weeks);
+  const timeZone = await getFactoryTimezone();
+  const lastKey = factoryDateKey(now, timeZone);
+  const { fromKey } = windowKeys(lastKey, weeks);
+
+  const logs = await db.misProductionLog.findMany({
+    where: {
+      loggedAt: {
+        gte: dateKeyToDbDate(addDaysToDateKey(fromKey, -1)),
+        lt: dateKeyToDbDate(addDaysToDateKey(lastKey, 2)),
+      },
+    },
+    select: {
+      loggedAt: true,
+      qtyProduced: true,
+      qtyWaste: true,
+      unit: true,
+      machineId: true,
+      machine: { select: { name: true } },
+      orderId: true,
+      order: { select: { orderNumber: true, description: true } },
+      jobPhase: { select: { process: { select: { name: true } } } },
+    },
+  });
+
+  return buildWastage(
+    logs.map((l) => ({
+      loggedAt: l.loggedAt,
+      qtyProduced: Number(l.qtyProduced ?? 0),
+      qtyWaste: Number(l.qtyWaste ?? 0),
+      unit: l.unit,
+      machineId: l.machineId,
+      machineName: l.machine?.name ?? null,
+      orderId: l.orderId,
+      orderNumber: l.order?.orderNumber ?? '?',
+      description: l.order?.description ?? null,
+      phaseName: l.jobPhase?.process?.name ?? null,
+    })),
+    // A query string can carry a repeated parameter (an array); only a plain string is a filter.
+    { timeZone, lastKey, weeks, unit: typeof input.unit === 'string' ? input.unit : null, machineId: typeof input.machineId === 'string' ? input.machineId : null },
+  );
+}

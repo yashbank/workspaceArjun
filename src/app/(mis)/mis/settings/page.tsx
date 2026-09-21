@@ -25,6 +25,7 @@ export default async function SettingsPage() {
       canSeeWages={canSeeWages}
       canSeeAql={canSeeAql}
       canManageKiosk={canManageKiosk}
+      canSeeRules={can(role, 'wages.read')}
     />
   );
 }

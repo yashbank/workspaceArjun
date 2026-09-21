@@ -2,7 +2,7 @@
 import Link from 'next/link';
 import { Button } from '@/components/mis/kit/button';
 
-type PO = { id: string; poNumber: string; status: string; createdAt: Date | string; totalFormatted: string };
+type PO = { id: string; poNumber: string; status: string; createdAt: Date | string; totalFormatted?: string };
 type Supplier = {
   id: string; code: string; name: string; phone: string | null; city: string | null;
   gstNo: string | null; paymentTermsDays: number | null; isActive: boolean; createdAt: Date | string;
@@ -90,7 +90,7 @@ export function SupplierDetailScreen({ supplier, pos, canWrite }: Props) {
                   </span>
                 </div>
                 <div className="flex items-center gap-4">
-                  <span className="text-sm text-gray-500">{po.totalFormatted}</span>
+                  {po.totalFormatted !== undefined && <span className="text-sm text-gray-500">{po.totalFormatted}</span>}
                   <span className="text-xs text-gray-400">
                     {new Date(po.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
                   </span>

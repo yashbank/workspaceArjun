@@ -1,3 +1,5 @@
+import { can } from '@/lib/mis/permissions';
+import { withoutMoneyFields } from '@/lib/mis/money-fields';
 import { db } from '@/server/db';
 import { requirePermission } from './auth';
 import { logAuditEvent } from './audit';
@@ -30,9 +32,10 @@ export async function listGRNs() {
   });
 }
 
+/** A GRN with its PO. The PO's line rates are money (D24, F-06): absent unless the caller holds `wages.read`. */
 export async function getGRN(id: string) {
-  await requirePermission('grn.read');
-  return db.misGrn.findUnique({
+  const actor = await requirePermission('grn.read');
+  const grn = await db.misGrn.findUnique({
     where: { id },
     include: {
       po: {
@@ -46,6 +49,7 @@ export async function getGRN(id: string) {
       },
     },
   });
+  return grn && !can(actor.role, 'wages.read') ? withoutMoneyFields(grn) : grn;
 }
 
 export async function createGRN(input: GrnInput) {

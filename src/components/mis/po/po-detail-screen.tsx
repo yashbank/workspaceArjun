@@ -13,15 +13,16 @@ import { poPurpose, poPurposeLabel } from '@/lib/mis/po-purpose';
 
 type CatalogItem = { id: string; name: string; unit: string };
 type FormattedPoItem = {
-  id: string; description: string; quantity: number; ratePerUnit: number; receivedQuantity: number;
-  rateFormatted: string; totalFormatted: string; item: { id: string; name: string; unit: string } | null;
+  id: string; description: string; quantity: number; receivedQuantity: number; item: { id: string; name: string; unit: string } | null;
+  // Money (D24): present only when the server sent it, i.e. for the Owner.
+  ratePerUnit?: number; rateFormatted?: string; totalFormatted?: string;
 };
 type Po = {
   id: string; poNumber: string; status: string; bomRef: string | null; notes: string | null;
   supplier: { id: string; name: string; phone: string | null } | null;
   grns: { id: string; grnNumber: string; status: string; createdAt: Date }[];
 };
-type Props = { po: Po; formattedItems: FormattedPoItem[]; total: string; catalogItems: CatalogItem[]; canWrite: boolean; canApprove: boolean };
+type Props = { po: Po; formattedItems: FormattedPoItem[]; total: string | null; catalogItems: CatalogItem[]; canWrite: boolean; canApprove: boolean };
 
 function statusTone(status: string): BadgeTone {
   switch (status) {
@@ -52,11 +53,15 @@ export function PoDetailScreen({ po, formattedItems, total, catalogItems, canWri
     });
   };
 
+  // The Rate and Total columns exist only when the money does — the Owner's view, not a hidden one.
+  const seesMoney = total !== null;
   const columns: Column<FormattedPoItem>[] = [
     { key: 'description', header: 'Description', render: (r) => <div><div>{r.description}</div>{r.item && <div className="text-xs text-slate-500">{r.item.name}</div>}</div> },
     { key: 'quantity', header: 'Qty', render: (r) => r.quantity },
-    { key: 'rate', header: 'Rate', render: (r) => r.rateFormatted },
-    { key: 'total', header: 'Total', render: (r) => r.totalFormatted },
+    ...(seesMoney ? [
+      { key: 'rate', header: 'Rate', render: (r: FormattedPoItem) => r.rateFormatted ?? '' },
+      { key: 'total', header: 'Total', render: (r: FormattedPoItem) => r.totalFormatted ?? '' },
+    ] : []),
     { key: 'received', header: 'Received', render: (r) => r.receivedQuantity },
     { key: 'remaining', header: 'Remaining', render: (r) => (
       <span className={r.quantity - r.receivedQuantity > 0 ? 'text-amber-600' : 'text-slate-500'}>{r.quantity - r.receivedQuantity}</span>
@@ -107,7 +112,7 @@ export function PoDetailScreen({ po, formattedItems, total, catalogItems, canWri
         ) : (
           <>
             <DataTable columns={columns} rows={formattedItems} rowKey={(r) => r.id} emptyTitle="No items" />
-            <div className="flex justify-end text-sm font-semibold text-slate-800 pr-4">Total: {total}</div>
+            {seesMoney && <div className="flex justify-end text-sm font-semibold text-slate-800 pr-4">Total: {total}</div>}
           </>
         )}
       </div>

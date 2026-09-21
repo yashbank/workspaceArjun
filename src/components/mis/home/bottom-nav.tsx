@@ -243,7 +243,7 @@ export function BottomNav({
   return (
     <nav
       aria-label="Sections"
-      className="fixed inset-x-0 bottom-0 z-40 mx-auto grid max-w-[420px] grid-cols-5 border-t border-slate-200 bg-white md:hidden"
+      className="fixed inset-x-0 bottom-0 z-40 mx-auto grid max-w-[420px] grid-cols-5 border-t border-slate-200 bg-white lg:hidden"
     >
       {tabs.map((tab) => {
         const active =

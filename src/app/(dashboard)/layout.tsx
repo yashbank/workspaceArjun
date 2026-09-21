@@ -15,6 +15,7 @@ import { userHasDuplicateDisplayName } from '@/server/profile';
 import { resolveAccessDecision, logAccessDenial } from '@/server/access/decision';
 import { isAccessDetectionEnabled } from '@/server/access';
 import { getAccessEnforced } from '@/server/settings';
+import { isMisEnabled } from '@/server/mis/flags';
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createSupabaseServerClient();
@@ -103,6 +104,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           userEmail={profile.email}
           userName={profile.name ?? undefined}
           userRole={profile.role}
+          showMisNav={isMisEnabled(profile.id)}
         >
           {children}
         </DashboardShell>

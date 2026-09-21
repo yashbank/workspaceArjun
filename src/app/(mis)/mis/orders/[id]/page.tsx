@@ -6,11 +6,20 @@ import { getPhasesForOrder } from '@/server/mis/job-phases';
 import { getQcForOrder, getQcSummary } from '@/server/mis/qc';
 import { getMisRole } from '@/server/mis/roles';
 import { can } from '@/lib/mis/permissions';
+import { OrderDetailDesktop } from '@/components/mis/desktop/order-detail-desktop';
 import { OrderDetailScreen } from '@/components/mis/orders/order-detail-screen';
+import { getOrderDesktopView } from '@/server/mis/order-desktop';
 import { notFound } from 'next/navigation';
 
-export default async function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function OrderDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ view?: string }>;
+}) {
   const { id } = await params;
+  const { view } = await searchParams;
   const user = await requireMisAccess();
   const role = await getMisRole(user.id);
 
@@ -36,7 +45,11 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
   const canProduction = can(role, 'production.read');
   const canQc = can(role, 'qc.read');
 
-  return (
+  // D4 from 1024px up; the existing screen below it. `?view=classic` keeps the full screen (production
+  // and QC logs, reopen) reachable on a desktop, because D4 deliberately carries neither.
+  const desktop = view === 'classic' ? null : await getOrderDesktopView(id);
+
+  const phone = (
     <OrderDetailScreen
       order={order as any}
       phases={phases.map((p) => ({
@@ -57,5 +70,16 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
       canProduction={canProduction}
       canQc={canQc}
     />
+  );
+
+  if (!desktop) return phone;
+
+  return (
+    <>
+      <div className="lg:hidden">{phone}</div>
+      <div className="hidden lg:block">
+        <OrderDetailDesktop data={desktop} />
+      </div>
+    </>
   );
 }

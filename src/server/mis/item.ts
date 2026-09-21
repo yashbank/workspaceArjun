@@ -1,3 +1,5 @@
+import { can } from '@/lib/mis/permissions';
+import { forRole, withoutMoneyFields } from '@/lib/mis/money-fields';
 import { db } from '@/server/db';
 import { requirePermission } from './auth';
 import { logAuditEvent } from './audit';
@@ -21,25 +23,30 @@ function toItemUnit(unit: string | undefined, fallback: MisItemUnit): MisItemUni
   return unit as MisItemUnit;
 }
 
+// `pricePerUnit` is money (D24, F-06). The three readers below serve every masters.read role (Admin,
+// Supervisor, QC); the price is REMOVED from what a role without `wages.read` receives.
 export async function listItems(includeDeleted = false) {
-  await requirePermission('masters.read');
-  return db.misItem.findMany({
+  const actor = await requirePermission('masters.read');
+  const items = await db.misItem.findMany({
     where: includeDeleted ? {} : { deletedAt: null },
     orderBy: { name: 'asc' },
   });
+  return can(actor.role, 'wages.read') ? items : withoutMoneyFields(items);
 }
 
 export async function getItem(id: string) {
-  await requirePermission('masters.read');
-  return db.misItem.findUnique({ where: { id } });
+  const actor = await requirePermission('masters.read');
+  const item = await db.misItem.findUnique({ where: { id } });
+  return item && !can(actor.role, 'wages.read') ? withoutMoneyFields(item) : item;
 }
 
 export async function searchItems(query: string) {
-  await requirePermission('masters.read');
-  return db.misItem.findMany({
+  const actor = await requirePermission('masters.read');
+  const items = await db.misItem.findMany({
     where: { deletedAt: null, OR: [{ name: { contains: query, mode: 'insensitive' } }, { code: { contains: query, mode: 'insensitive' } }] },
     take: 20, orderBy: { name: 'asc' },
   });
+  return can(actor.role, 'wages.read') ? items : withoutMoneyFields(items);
 }
 
 export async function createItem(input: ItemInput) {
@@ -56,7 +63,7 @@ export async function createItem(input: ItemInput) {
     },
   });
   await logAuditEvent({ actorId: actor.userId, action: 'item.create', entity: 'MisItem', entityId: created.id, after: created });
-  return created;
+  return forRole(actor.role, created);
 }
 
 export async function updateItem(id: string, patch: Partial<ItemInput>) {
@@ -73,7 +80,7 @@ export async function updateItem(id: string, patch: Partial<ItemInput>) {
     ...(patch.unit !== undefined ? { unit: toItemUnit(patch.unit, MisItemUnit.KG) } : {}),
   }});
   await logAuditEvent({ actorId: actor.userId, action: 'item.update', entity: 'MisItem', entityId: id, before, after });
-  return after;
+  return forRole(actor.role, after);
 }
 
 export async function deleteItem(id: string) {
@@ -82,12 +89,12 @@ export async function deleteItem(id: string) {
   if (!before) throw new Error(`Item ${id} not found`);
   const after = await db.misItem.update({ where: { id }, data: { deletedAt: new Date(), isActive: false } });
   await logAuditEvent({ actorId: actor.userId, action: 'item.delete', entity: 'MisItem', entityId: id, before, after });
-  return after;
+  return forRole(actor.role, after);
 }
 
 export async function restoreItem(id: string) {
   const actor = await requirePermission('masters.write');
   const after = await db.misItem.update({ where: { id }, data: { deletedAt: null, isActive: true } });
   await logAuditEvent({ actorId: actor.userId, action: 'item.restore', entity: 'MisItem', entityId: id, after });
-  return after;
+  return forRole(actor.role, after);
 }

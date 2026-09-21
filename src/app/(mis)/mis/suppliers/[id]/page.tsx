@@ -26,13 +26,15 @@ export default async function SupplierDetailPage({ params }: { params: Promise<{
   });
   if (!supplier) notFound();
 
+  const canSeeMoney = can(role, 'wages.read');
   const pos = await Promise.all(
     supplier.purchaseOrders.map(async (p) => ({
       id: p.id,
       poNumber: p.poNumber,
       status: p.status,
       createdAt: p.createdAt,
-      totalFormatted: await computePoTotal(p.id),
+      // A PO total is money (D24, F-06): computed only for the Owner, absent for everyone else.
+      ...(canSeeMoney ? { totalFormatted: await computePoTotal(p.id) } : {}),
     })),
   );
 

@@ -1,9 +1,11 @@
+import { addDaysToDateKey, dateKeyToDbDate, factoryDateKey } from '@/lib/mis/factory-time';
 import { isUuid, parkable, rejectable, type QueuedWriteEnvelope } from '@/lib/mis/offline/idempotency';
 import { isOrderClosed } from '@/lib/mis/order-status';
 import { db } from '@/server/db';
 import { getCurrentUser } from '@/server/auth';
 import { requirePermission } from '@/server/mis/auth';
 import { logAuditEvent } from '@/server/mis/audit';
+import { getFactoryTimezone } from '@/server/mis/business-rules';
 import { runIdempotent, type IdempotentResult, type MisTx, type RunOptions } from '@/server/mis/idempotency';
 import { resolveJobPhaseForProduction } from '@/server/mis/job-phases';
 import { assertLineCleared } from '@/server/mis/line-clearance';
@@ -290,6 +292,49 @@ export async function getProductionSummary(orderId: string) {
   const totalProduced = logs.reduce((s, l) => s + Number(l.qtyProduced), 0);
   const totalWaste = logs.reduce((s, l) => s + Number(l.qtyWaste), 0);
   return { totalProduced, totalWaste, entries: logs.length };
+}
+
+export type ProductionDay = { date: Date; produced: number; waste: number };
+
+/**
+ * Produced and wasted per day over a window, oldest first — the series behind D1's "Output
+ * against plan" chart and the sparklines beside it.
+ *
+ * One query for the whole window, bucketed here: fourteen days must not be fourteen round
+ * trips (S8's rule — "seventy employees is seventy queries if done naively").
+ *
+ * Days with nothing logged come back as zeroes rather than gaps, so the chart's x-axis is a
+ * real calendar and a quiet Sunday is visibly quiet instead of silently missing.
+ *
+ * Bucketing uses the factory's own day (D22), never the server's.
+ */
+export async function getProductionSeries(days: number, endingOn: Date = new Date()): Promise<ProductionDay[]> {
+  await requirePermission('production.read');
+
+  const span = Math.max(1, Math.min(90, Math.trunc(days)));
+  const timeZone = await getFactoryTimezone();
+  const lastKey = factoryDateKey(endingOn, timeZone);
+
+  const keys: string[] = [];
+  for (let back = span - 1; back >= 0; back -= 1) keys.push(addDaysToDateKey(lastKey, -back));
+
+  const start = dateKeyToDbDate(keys[0]);
+  const end = new Date(dateKeyToDbDate(addDaysToDateKey(lastKey, 1)).getTime());
+
+  const logs = await db.misProductionLog.findMany({
+    where: { loggedAt: { gte: start, lt: end } },
+    select: { loggedAt: true, qtyProduced: true, qtyWaste: true },
+  });
+
+  const buckets = new Map(keys.map((key) => [key, { produced: 0, waste: 0 }]));
+  for (const log of logs) {
+    const bucket = buckets.get(factoryDateKey(log.loggedAt, timeZone));
+    if (!bucket) continue;
+    bucket.produced += Number(log.qtyProduced ?? 0);
+    bucket.waste += Number(log.qtyWaste ?? 0);
+  }
+
+  return keys.map((key) => ({ date: dateKeyToDbDate(key), ...buckets.get(key)! }));
 }
 
 export type DayProductionSummary = {

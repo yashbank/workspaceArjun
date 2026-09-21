@@ -1,3 +1,5 @@
+import { withoutRates } from '@/lib/mis/bom-costing';
+import { can } from '@/lib/mis/permissions';
 import { db } from '@/server/db';
 import { requirePermission } from '@/server/mis/auth';
 import { withCheckerNames } from '@/server/mis/qc';
@@ -5,7 +7,7 @@ import { withUploaderNames } from '@/server/mis/documents';
 
 /** Full traceability for one order: BOM → production → QC → documents */
 export async function getOrderTrace(orderId: string) {
-  await requirePermission('orders.read');
+  const actor = await requirePermission('orders.read');
 
   const [order, bom, productionLogs, qcChecks, documents] = await Promise.all([
     db.misOrder.findUnique({
@@ -48,5 +50,8 @@ export async function getOrderTrace(orderId: string) {
   const passChecks = qcChecks.filter((q) => q.result === 'PASS').length;
   const failChecks = qcChecks.filter((q) => q.result === 'FAIL').length;
 
-  return { order, bom, productionLogs, qcChecks, documents, totalProduced, totalWaste, passChecks, failChecks };
+  // Material rates are money (D24, F-06): the trace carries the BOM structure, not what it cost.
+  const visibleBom = bom && !can(actor.role, 'wages.read') ? withoutRates(bom) : bom;
+
+  return { order, bom: visibleBom, productionLogs, qcChecks, documents, totalProduced, totalWaste, passChecks, failChecks };
 }

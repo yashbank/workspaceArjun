@@ -144,6 +144,39 @@ async function loadPhase(phaseId: string) {
   return phase;
 }
 
+/**
+ * Phases signed off, against phases that apply, for several orders at once.
+ *
+ * D1's "Orders in flight" shows "2 of 7" and says why: "Phases complete, not a guessed
+ * percentage." A percentage derived from dates or from status would be a guess; this is the
+ * count the sign-off gate itself works from.
+ *
+ * ONE query for every order asked about — a list of twenty orders must not be twenty round
+ * trips (S8). `NOT_APPLICABLE` phases are excluded from the denominator, the same rule the
+ * gate in Appendix A applies when it looks for the previous phase.
+ */
+export async function countPhasesForOrders(
+  orderIds: readonly string[],
+): Promise<Map<string, { done: number; total: number }>> {
+  await requirePermission('phase.read');
+  const counts = new Map<string, { done: number; total: number }>();
+  if (orderIds.length === 0) return counts;
+
+  const rows = await db.misJobPhase.findMany({
+    where: { orderId: { in: [...orderIds] }, deletedAt: null, status: { not: 'NOT_APPLICABLE' } },
+    select: { orderId: true, status: true },
+  });
+
+  for (const row of rows) {
+    const entry = counts.get(row.orderId) ?? { done: 0, total: 0 };
+    entry.total += 1;
+    if (row.status === 'SIGNED_OFF') entry.done += 1;
+    counts.set(row.orderId, entry);
+  }
+
+  return counts;
+}
+
 /** Every phase on an order, in running order. An empty list is a real answer (D10). */
 export async function getPhasesForOrder(orderId: string) {
   await requirePermission('phase.read');

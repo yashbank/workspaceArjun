@@ -41,7 +41,10 @@ describe('audit call sites', () => {
         // Ordinary rules audit old and new value. The three wage rules audit the KEY only (F-04, closed in
         // 14F) — the conditional in createRuleRevision is why this entry still appears; wage-leak.test.ts
         // proves at runtime that a wage rule's value never reaches the row.
-        'server/mis/business-rules.ts · UPDATE_RULE · ruleValue',
+        // D12 (24E): the action is `opts.action ?? 'UPDATE_RULE'` — SCHEDULE_RULE for a scheduled change — so the
+        // same call site is listed under that text. Same conditional, same guarantee: wage-leak.test.ts and
+        // business-rules-schedule.test.ts prove at runtime that a wage rule's figure never reaches the row.
+        "server/mis/business-rules.ts · opts.action ?? 'UPDATE_RULE' · ruleValue",
         // A stock price is not a wage; the store-item edit records the price change on purpose.
         'server/mis/store.ts · store.item.update · pricePerUnit',
       ].sort(),

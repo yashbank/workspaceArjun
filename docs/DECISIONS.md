@@ -58,6 +58,10 @@ else in the guide needs touching.
 | D25 | Who may grant the Owner role, and may an Admin touch the Owner's record? | **ASSUMED — awaiting Arjun** | Medium | Phases 14, 14F |
 | D26 | How is overtime paid? | **DECIDED by Yash (2026-09-20)** | — | Phase 25 |
 | D27 | Which rate pays an attendance day, and when is a month final? | **ASSUMED — awaiting Arjun** | Medium | Phases 14F, 19, 25 |
+| D28 | Extra-pay days and the multiplier basis | **DECIDED by Yash (2026-09-20)** | — | Phase 25 |
+| D29 | What does a role with no dashboard widgets see? | **ASSUMED — awaiting Arjun** | Medium | Phase 24 |
+| D30 | Who schedules a business-rule change, and is a reason required? | **ASSUMED — awaiting Arjun** | Medium | Phases 24, 25 |
+| D31 | What is a document's link allowed to be, and what does the library group by? | **ASSUMED — awaiting Arjun** | Medium | Phases 24, 25 |
 
 No phase is blocked by an unanswered question any more. Every phase builds on the assumed
 value and cites its D-number, so a later answer costs a re-run of named phases rather than
@@ -523,6 +527,7 @@ entire reason Phase 2 exists.
 | **Assumed value** | **Money is Owner-only, and "Owner-only" means the server does not send it to anyone else.** `wages.read` is the one permission that carries it (there is no separate "costs" permission), which is how the BOM, approvals, reports and order screens already read it (`isOwner = can(role, 'wages.read')`). A column hidden by the screen but present in the page payload is a leak, not a rule. **Wages** additionally never appear in an audit `before`/`after` payload, including as a generic `ruleValue` for a wage rule. **AQL thresholds** are governed separately by **D6**. |
 | **Rationale** | The screens already draw the line — the BOM rate, the store-value column and the approve buttons all sit behind `isOwner` — so the intent exists; only the server side of it was never written. Hiding a value in a component protects nothing: the browser has already downloaded it. The alternative (material rates visible to Supervisor, QC and Admin) would need its own permission and a reason; nobody has asked for either. The wage rule is recorded here only because it had no D-number: D19's rationale and the Phase 14 prompt both cited D6 for it, and D6 is the AQL rule. |
 | **Depends on it** | `src/server/mis/{bom,reports,payroll,business-rules,audit}.ts`, `src/lib/mis/permissions.ts` (`wages.read`), the payroll, payslip, BOM, approvals, reports and settings screens, `docs/qa/FINDINGS.md` F-01…F-06, Phases 16, 19, 20, 21 |
+| **Applied** | **Phase 24C/24D** implemented it as "the server omits the price": `getBom`, `getOrderTrace`, `getStoreReport`, `getPO`, `getGRN`, `listItems`/`getItem`/`searchItems` and every write function's return value drop `ratePerUnit`/`pricePerUnit` unless the caller holds `wages.read` (`lib/mis/money-fields.ts`); `computePoTotal` and `getBomCosting` are `wages.read`; the audit writer redacts both keys. **Not decided, so not enforced:** WRITING a price (F-15). |
 | **To change** | To widen material rates to another role, add a `costs.read` action to `permissions.ts` and gate `getBom`, `getStoreReport` and the PO reads on it; the F-06 tests then flip to the new action. Wages never widen. |
 | **Ask Arjun** | "Wages are visible to you alone. Should the price of materials — the rate on a bill of materials, the price of a stock item — also be yours alone, or may your Admin see them?" |
 
@@ -577,3 +582,41 @@ entire reason Phase 2 exists.
 | **Depends on it** | `MisWageType` (basis + OT rate/hour), employee (pay type, monthly multiplier), new extra-pay-day model, payroll calculation, approval queue, payslip |
 | **Interacts with** | D26 (OT is a per-hour rate on the wage code). An extra-pay day and OT can both apply to one day — test that combination explicitly; it is where the money goes wrong. |
 | **Open** | Does a daily hire working a Sunday earn a premium, or the ordinary rate? ASSUMED ordinary — confirm with Arjun. |
+
+---
+
+## D29 · What does a role with no dashboard widgets see?
+
+| | |
+|---|---|
+| **Question** | The desktop dashboard is a widget canvas, and every widget names the permission it needs (D2). A **STORE_GUY** holds `inventory/grn/po/store` and none of `production.read`, `orders.read`, `qc.read` or `attendance.read` — so the catalogue computes to nothing and their dashboard is empty. Is that right, and what should they see? |
+| **Status** | **ASSUMED by Phase 24 (2026-09-21)** — the artboards do not draw a Store dashboard |
+| **Assumed value** | **The catalogue stays honest and the dashboard shows the empty state** ("no widgets are available for your role yet"), rather than inventing a Store widget group. The four groups are the ones D2 draws — Production · Quality · People · Money — and a fifth would be new design, not a build decision. A Store Manager reaches their work through the sidebar (Stock, Receive, Issue), which is unchanged. |
+| **Rationale** | Two worse options were available and both were refused: widening the store role's permissions so existing widgets light up would undo the principle Phase 14F spent a whole phase restoring, and inventing a Store group would put design in a code review. An empty state is the honest report of a real gap, and `08-Empty-error-offline.png` already has the pattern for it. |
+| **Depends on it** | `src/lib/mis/widgets.ts` (the registry and its `requires`), `src/server/mis/dashboard.ts`, the dashboard route, `widgets.test.ts` |
+| **To change** | Add the widgets to `WIDGETS` with `requires: 'store.read'` and a `STORE` group to `WIDGET_GROUPS`; `widgets.test.ts` pins the count and the group list, so both fail until updated deliberately. No data migration, no schema change. |
+| **Ask Arjun** | "Your store manager has a desktop too. Should they get a dashboard of their own — stock low, goods in today, issues out — or is the stock screen enough?" |
+
+## D30 · Who schedules a business-rule change, and is a reason required?
+
+| | |
+|---|---|
+| **Question** | D12 draws an Owner-only "Business rules" screen where a change is a NEW row with a start day. But an Admin already holds `settings.write` and edits the general rules on the older `/mis/settings` list (`updateBusinessRule`, effective from now, no reason). Which of the two is the rule, who may use the new one, and must a change carry a reason? |
+| **Status** | **ASSUMED by Phase 24E (2026-09-22)** — the artboard says "Owner only" and "a reason is required", and D4/D25 give the Owner what payroll pays and QC accepts |
+| **Assumed value** | **Scheduling a change to ANY rule is the Owner's** (`wages.read` is the Owner marker, D24/D25): `scheduleBusinessRule` refuses the other seven roles and the page is absent (404) for them. **A reason of at least three characters is required**, the start day is the **factory's** (D22), it may not be in the past, and a second row on the same day is refused. **Every change writes a `SCHEDULE_RULE` audit row** carrying the day and the reason; a wage rule's audit row names the rule and never the figure (D24, F-04). **The older list stays as it was:** Admin keeps editing the general (non-wage, non-AQL) rules there — effective now, no reason — because removing it would change the phone screen. |
+| **Rationale** | A rule change moves what payroll pays and what QC accepts; the reason is the first thing an auditor asks for. Giving the Admin the new screen would let a scheduled change bypass the Owner-only wage and AQL screens that D6 and D24 exist to protect (F-03). Leaving the old list alone is the smallest change that keeps every phone screen working. |
+| **Depends on it** | `server/mis/business-rules.ts` (`scheduleBusinessRule`, `createRuleRevision`), `server/mis/rules-ledger.ts`, `lib/mis/rules-ledger.ts`, `/mis/settings/rules`, `business-rules-schedule.test.ts` |
+| **To change** | Give another role the screen by changing the gate in `scheduleBusinessRule` and `getRulesLedger` (and the matrix rows). To require a reason on the older list too, pass one through `updateBusinessRule` → `createRuleRevision` — no schema change, the reason lives in the audit row's `after`. A reason COLUMN would be a schema change (SCHEMA GATE, Half A). |
+| **Ask Arjun** | "When the Admin edits a general rule on the old settings list, should that also need a start day and a reason, or is that list only for things nobody would audit?" |
+
+## D31 · What is a document's link allowed to be, and what does the library group by?
+
+| | |
+|---|---|
+| **Question** | A `MisDocument` is a name plus a pasted link (`filePath`) to a file the MIS does not hold, attached to one order. The phone screen turns that string straight into an `href`, and D13's artboard groups documents as GENERATED (job cards, COAs…) and UPLOADED (POs, samples…) with versions, retention and a preview. What may a link be, and what can the library honestly group by? |
+| **Status** | **ASSUMED by Phase 24E (2026-09-22)** — nothing in the artboard or the BRD says what a link may be |
+| **Assumed value** | **A link is followed only if it is an absolute `http:`/`https:` URL or a path on this site** (`/…`, not `//…`). `javascript:`, `data:`, `file:` and everything else is stored as text and never becomes an `href` (a pasted `javascript:` link is a stored XSS on the next person to click Open). The desktop **add** refuses such a link on the server (`saveDocumentLink`), and the desktop list/detail never links one; **the phone screen and `addDocument` are unchanged**, so an old row with a bad link still reads as text on the desktop and as a link on the phone (F-23). **The library groups by recorded file type** (PDF · Images · Other · Type not recorded) and a factory-month filter — the only groupings the data supports. **D5 holds:** documents are tied to an order, not to a person, so they narrow only through `resolveVisibleOrderWhere` (today `{}`); the uploader's display name is shown as the phone list shows it. |
+| **Rationale** | Two worse options were refused: inventing a Generated/Uploaded category and per-version rows the schema cannot store would put design in a code review, and a desktop screen that followed any pasted string would copy the phone's hole into a second screen. |
+| **Depends on it** | `lib/mis/document-library.ts` (`safeHref`, `validateDocumentInput`, `mimeFamily`), `server/mis/document-library.ts`, `/mis/documents`, `document-library.test.ts`, `documents-desktop.test.tsx` |
+| **To change** | To add categories, versions or retention, add columns to `MisDocument` (SCHEMA GATE, Half A — nothing here does). To allow another scheme (say `s3:`), extend `safeHref` and its test in one place. To harden the phone screen too, route its `href` and `addDocument` through the same helper — a change to a phone screen, so a PR line. |
+| **Ask Arjun** | "Documents today are links to files kept elsewhere. Should the MIS store the files itself — and do you want job cards and COAs kept as versioned records, or is the print page enough?" |
