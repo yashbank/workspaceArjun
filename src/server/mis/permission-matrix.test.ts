@@ -78,6 +78,8 @@ const TABLE: Entry[] = [
   { module: 'business-rules.ts', name: 'getWageRuleHistory', requires: 'wages.read', call: () => rules.getWageRuleHistory('DAILY_WAGE_DEFAULT') },
   { module: 'business-rules.ts', name: 'getAqlThresholdRules', requires: 'aql.read', call: () => rules.getAqlThresholdRules() },
   { module: 'business-rules.ts', name: 'updateAqlThreshold', requires: 'aql.read', call: () => rules.updateAqlThreshold('AQL_MAJOR_MAX', '1') },
+  // D12: scheduling a change to ANY rule is the Owner's (wages.read is the Owner marker, D24/D25).
+  { module: 'business-rules.ts', name: 'scheduleBusinessRule', requires: 'wages.read', call: () => rules.scheduleBusinessRule({ ruleKey: 'k', ruleValue: '1', effectiveFrom: '2099-01-01', reason: 'For the test' }) },
 
   // The payroll figures ARE wages (F-01, fixed in 14F: this used to be gated on attendance.read).
   { module: 'payroll.ts', name: 'calculateMonthlyPayroll', requires: 'wages.read', call: () => payroll.calculateMonthlyPayroll(2026, 1) },
@@ -88,6 +90,7 @@ const TABLE: Entry[] = [
   { module: 'reports.ts', name: 'getQcReport', requires: 'reports.read', call: () => reports.getQcReport(RANGE) },
   { module: 'reports.ts', name: 'getOrdersReport', requires: 'reports.read', call: () => reports.getOrdersReport(RANGE) },
   { module: 'reports.ts', name: 'getStoreReport', requires: 'reports.read', call: () => reports.getStoreReport(RANGE) },
+  { module: 'reports.ts', name: 'getWastageReport', requires: 'reports.read', call: () => reports.getWastageReport({ weeks: 4 }) },
 ];
 
 /** Functions in these modules deliberately not in TABLE: ungated internals (see server-gates.test.ts). */

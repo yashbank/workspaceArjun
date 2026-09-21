@@ -206,10 +206,16 @@ you regenerate it on your Mac.
 - **Half B (agent, new session):** now write the server module and the screen against
   the regenerated client.
 
-Phases that need this say **SCHEMA GATE** in their header: **1, 4, 6, 7, 8, 9, 10, 12, 13**.
+Phases that need this say **SCHEMA GATE** in their header: **1, 4, 6, 7, 8, 9, 10, 12, 13, 24, 25**.
+
+> ⚠ UPDATED BY PHASE 24 — **24 and 25 were missing from this list.** Phase 24 adds
+> `MisDashboardWidget` (D2 stores a layout as rows, not a JSON blob) and Phase 25 needs a
+> payroll-period snapshot (D27). Neither header said SCHEMA GATE, so both would have been
+> started as one session and stalled on a client that cannot compile. If a phase's design
+> implies a table, it is a schema gate whatever its header says.
 Treat Half A and Half B as two sessions. It is cheaper than one session that fails to
 compile for an hour. The full procedure is the `mis-schema-gate` skill in
-`Arjun/.claude/skills/` — VS Code Claude Code loads it on its own; you do not paste it. The
+`app/.claude/skills/` — VS Code Claude Code loads it on its own; you do not paste it. The
 403 you get if you try to run `prisma generate` here is §2A.2.
 
 ### 2.4 Rules no phase may break
@@ -2931,7 +2937,7 @@ and every agent definition in `.claude/agents/` repeats them.
 
 ## 8. The build/check pair
 
-Four agents live in `Arjun/.claude/agents/`. Every build phase runs them as a pair, one
+Four agents live in `app/.claude/agents/`. Every build phase runs them as a pair, one
 ticket at a time:
 
 | Agent | Model | Role |
@@ -2977,7 +2983,7 @@ re-inventoried rather than assumed.
 ## 10. The two project skills
 
 Both were proposals in an earlier draft. **Both now exist**, in
-`Arjun/.claude/skills/`, and VS Code Claude Code loads them automatically from there — you
+`app/.claude/skills/`, and VS Code Claude Code loads them automatically from there — you
 do not invoke them, you do not paste them, and you do not repeat their contents in a prompt.
 
 | Skill | File | When it fires |
@@ -3612,6 +3618,35 @@ Report in 150 words or fewer.
 
 ### Phase 24 · Desktop layer (D1–D14) — the half of the design that was never built
 
+> ⚠ UPDATED BY PHASE 24 — **24.1, 24.2 and 24.3 are BUILT (2026-09-21/22); the schema gate has been run.**
+> The desktop shell (D3), the widget library and role-gated catalogue (D2), per-user layout
+> persistence on `mis_dashboard_widgets`, the Customise flow, and the Owner dashboard at
+> `/mis/dashboard` (D1). A flag-gated "Factory MIS" entry now sits in the workspace sidebar.
+> **24.4: D4–D9 and D14 are BUILT (Parts C and D, 2026-09-22).** D4 order detail, D5 machine
+> timeline, D6 BOM costing, D7 reports (wastage), D8 attendance month, D9 QC hourly grid, D14
+> defects & rework. **Four remain:** D10 master data, D11 traceability, D12 business rules, D13
+> documents. The three dashboard widgets that waited on D9/D14 (`wastage.byPhase`,
+> `qc.aqlThisMonth`, `qc.defectsOpen`) can now be wired to `getWastageReport`,
+> `getQcHourlyGrid` and `getDefectReport`. **Two conventions the checkers enforced:** (1) any
+> explicit `?view` on a page returns the phone screen at every width, so a phone screen's own
+> tab links never bounce a desktop user back to the desktop view; (2) a desktop screen's
+> second query is wrapped in try/catch — a refusal is "no access", any other failure is
+> logged and the desktop half says so, so the phone half still renders. Pattern to follow: a `lib/mis/*` pure module, a `server/mis/*-desktop.ts` view composed
+> from the phone layer's functions, a `components/mis/desktop/*` tree, and the page wrapping
+> the phone screen in `lg:hidden` and the desktop in `hidden lg:block`; `?view=classic|edit`
+> keeps the full phone screen reachable on a desktop. Anything carrying a rupee is a
+> separate `wages.read` function that is never called for other roles (D6 shows how). Build each on `DesktopShell` + `DesktopPageHeader` (one filled button per page) and the
+> chart primitives in `lib/mis/chart.ts`; D9 and D14 also owe three dashboard widgets the
+> queries they are currently showing empty states for.
+> **Read before continuing:** D3's own breakpoint line says **three widths, two layouts**. The
+> 1280px sidebar collapse is a chrome state, NOT a third layout; 1024px is the only layout
+> boundary, and below it the phone layout takes over (it used to hand over at 768px, which
+> showed a rail belonging to neither layout). **Do not add a JS media query** — CSS alone
+> decides, or the two chromes can disagree about which is showing.
+> **The dashboard is a second VIEW, never a second data path:** every widget figure comes from
+> a server function the phone layer already uses, and the browser sends an ORDER of widget
+> keys, never geometry.
+
 > ⚠ UPDATED BY PHASE 14 — the phone tab set is pinned to MIS_UI_SPEC §4.5 (`components/mis/home/bottom-nav.test.tsx`)
 > and the permission-derived menu per role (`server/mis/navigation.test.ts`); desktop must not widen either. Any
 > role-assignment screen must enforce **D25** on the SERVER — the picker's `assignableRoles` is not a control (F-10).
@@ -3622,7 +3657,7 @@ folder did not contain. Everything built so far (Phases 1–11) is the **phone**
 The desktop layer is designed, approved and unbuilt. This is not new scope invented late — it
 is approved design that was invisible because the reference folder was incomplete.
 
-**Read `Arjun/design/screens/D1-Owner-dashboard.png` and `D2-Widget-library.png` before
+**Read `app/design/screens/D1-Owner-dashboard.png` and `D2-Widget-library.png` before
 planning.** Model: opus for 24.1–24.2 (architecture), sonnet after. Checkers: haiku.
 
 **What D1 establishes, in its own words:**
@@ -3734,7 +3769,38 @@ Report in 150 words or fewer.
 
 ---
 
+### Phase 24F · Browser walkthrough & fix — **RUN BEFORE PHASE 25**
+Nothing in 24A–E was seen in a browser. Store, Inventory and GRN screens do not open for the user.
+1. Run `pnpm dev`, then sign in as each role (Owner, Admin, Supervisor, QC, Attendance, Store Manager, …) at phone width (390px) and desktop width (1440px).
+2. Open every nav item and every route under `/mis`. For each one, record the result (opens / blank / error / wrong layout / wrong role) in `docs/qa/WALKTHROUGH-24F.md`, with the console and server errors.
+3. Fix in this order: pages that do not open (store, inventory, GRN first), then crashes, then layout mismatches against `design/screens/`.
+4. Every fix gets a test that fails without it. Use the standard verify commands. File findings from F-24.
+
 ### Phase 25 · Payroll rules from Arjun's review — **SCHEMA GATE**
+
+> ⚠ UPDATED BY PHASE 24E — (1) **Rule changes now have a write path with a start day and a reason:** `scheduleBusinessRule`
+> (Owner, `wages.read`) and `createRuleRevision(..., { effectiveFrom, reason, action })` write a NEW row and a `SCHEDULE_RULE`
+> audit row; the audit "before" is the row the new one replaces. If D26/D28 add a wage rule, a schedule for it audits the KEY
+> only (F-04). `lib/mis/rules-ledger.ts` `validateRuleValue` holds per-key formats — add any new rule key that has a special
+> format there, or a bad value will be shown as "in force" and ignored by its reader. (2) **F-22:** most rule readers still use
+> the value in force NOW (`getRuleValue` takes no date). Payroll already prices per day (F-08, D27); the AQL, line-clearance,
+> offline, timezone and correction-window readers do not — give any reader that judges PAST records a date argument before
+> relying on D12's history. `getRuleValue` also compares in UTC while D12 says "from the factory's midnight" (5½ h lag).
+> (3) `/mis/settings/rules` is Owner-only and absent for other roles; a new Owner-only screen follows the same page test
+> (404 for seven roles). (4) **F-23/D31:** documents are a name + link; the phone screen and `addDocument` still accept any
+> pasted string as an `href` — route them through `lib/mis/document-library.ts` `safeHref` if you touch either. (5) A `<select>`
+> handed a `defaultValue` after a failed server action reverts on the form reset: key it on the value (D10 and D13 do).
+> (6) `audit-payloads.test.ts`'s registry lists `createRuleRevision` as `opts.action ?? 'UPDATE_RULE'`.
+
+> ⚠ UPDATED BY PHASE 24D — **F-06 is CLOSED** (24C: BOM; 24D: `getStoreReport`, PO reads, GRN reads, item reads, every
+> write function's return value, and the audit payload — one helper, `lib/mis/money-fields.ts`). Any NEW server function
+> that returns a BOM, PO, GRN or item row must pass it through `withoutMoneyFields` / `forRole` unless the caller holds
+> `wages.read`. **Still open, and a policy question:** F-15 — writing a price is not gated (D24 governs what is SENT).
+> `computePoTotal` is now `wages.read`; a PO screen for any other role must not ask for it.
+
+> ⚠ UPDATED BY PHASE 24 — this phase is now in §2.3's schema-gate list too. Its Half A is the
+> payroll-period snapshot D27 leaves undone, plus D28's extra-pay-day model; write the SQL into
+> `prisma/migrations-pending/` and stop, exactly as Phase 24 did for the dashboard layout.
 
 > ⚠ UPDATED BY PHASE 14F — **build on these, do not rebuild them.** (1) Every payroll function is `wages.read`
 > (Owner only); a component/breakdown function gated on anything weaker reopens F-01. (2) Rates are priced per

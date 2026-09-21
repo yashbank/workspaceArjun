@@ -31,6 +31,28 @@ WORKER is intentionally permission-less (Android kiosk is a separate app).
 - Verify with: `node_modules/.bin/tsc --noEmit --skipLibCheck 2>&1 | grep -v seed-demo`
   (`prisma/seed-demo.ts` has pre-existing errors — ignore those, never "fix" them.)
 
+- **Two layouts, three widths, one component tree (D1/D3, Phase 24).** `MisShell` renders the
+  desktop frame (`components/mis/desktop/desktop-shell.tsx`) and the phone frame together and
+  lets CSS choose: `hidden lg:flex` on one, `lg:hidden` on the other. **1024px is the only
+  layout boundary.** The 1280px (`xl:`) step widens the sidebar from a 68px rail to 240px —
+  that is a chrome state of the SAME layout, which is why D3 says "three widths, two layouts".
+  Never add a JS media query here: two sources of truth for which layout is showing can
+  disagree, and the phone and desktop chromes would both render or both vanish.
+- **The dashboard layout is an ORDER, and the server derives the grid (D2, Phase 24).** The
+  browser posts widget keys; `flowLayout` computes x/y/w/h on the server, so geometry cannot
+  be spoofed and reordering needs no collision code. A stored layout is re-checked against the
+  role on READ as well as on write, so a demotion cannot leave a wage on a saved dashboard.
+  Clearing every widget is the same act as Reset — no row means "never customised".
+- **A widget is a row, not a card someone hardcoded (D2).** `lib/mis/widgets.ts` is the one
+  table: size in grid units on a four-column grid, and the permission the widget needs. Role
+  filtering happens on the SERVER — a non-owner's catalogue has no MONEY group at all, and a
+  stored layout is re-checked against the role on READ as well as on write, so a layout saved
+  before a demotion cannot still show a wage (D24). Adding a widget means adding a row there
+  plus both i18n strings; `widgets.test.ts` fails until you do.
+- **Charts: one scale, one axis, never two (D1).** `lib/mis/chart.ts` has the maths and the
+  five computed series hues. Green, amber and red are reserved for STATE — never colour a
+  series green, or "good" stops meaning anything. Below 1024px a chart degrades to a sparkline
+  over the same numbers, never to a different series.
 - **Rates are read as of the day being priced, never as of now (D27).** Wage type, OT multiplier and late
   penalty are effective-dated rows that are never edited in place; payroll asks `resolveAsOf(history, day)`
   (`src/lib/mis/effective-dated.ts`) for each attendance day. Reading "the latest row" for a past period moves
@@ -240,7 +262,7 @@ phase prompt said `db:deploy`, and hit the shadow-database failure every time. B
 now safe. `db:migrate:dev` exists only to refuse with an explanation — this project hand-writes
 migration SQL into `prisma/migrations-pending/`, so `migrate dev` has no role here.
 
-## 9. THE design reference — `Arjun/design/screens/` (deduped, Phase 11)
+## 9. THE design reference — `app/design/screens/` (deduped, Phase 11)
 
 One clean folder, 64 uniquely-named artboards. **Use only this path.** The old
 `MIS-ArjunBhaskar/BPP-MIS-UI-Screenshots/` tree is superseded: it held the same images

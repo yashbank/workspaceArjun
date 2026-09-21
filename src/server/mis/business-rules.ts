@@ -1,7 +1,9 @@
 import type { AqlThresholds } from '@/lib/mis/aql';
 import { can } from '@/lib/mis/permissions';
 import { isWageRuleKey, type WageRuleKey } from '@/lib/mis/rule-keys';
-import { DEFAULT_FACTORY_TIMEZONE, isValidTimeZone, resolveFactoryTimezone } from '@/lib/mis/factory-time';
+import { dbDateKey } from '@/lib/mis/attendance-month';
+import { DEFAULT_FACTORY_TIMEZONE, dateKeyToDbDate, factoryDateKey, isValidTimeZone, resolveFactoryTimezone } from '@/lib/mis/factory-time';
+import { validateSchedule } from '@/lib/mis/rules-ledger';
 import { db } from '@/server/db';
 import { requirePermission } from '@/server/mis/auth';
 import { logAuditEvent } from '@/server/mis/audit';
@@ -178,9 +180,26 @@ export async function getCorrectionWindowDays(): Promise<number> {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 3;
 }
 
-async function createRuleRevision(ruleKey: string, ruleValue: string, actorId: string) {
+async function createRuleRevision(
+  ruleKey: string,
+  ruleValue: string,
+  actorId: string,
+  /** D12: a change that starts on a chosen day, with the reason it was made. Omitted = starts today, as before. */
+  opts: { effectiveFrom?: Date; reason?: string; action?: string } = {},
+) {
   const existing = await db.misBusinessRule.findFirst({ where: { ruleKey }, orderBy: { effectiveFrom: 'desc' } });
   if (!existing) throw new Error(`Rule ${ruleKey} not found`);
+  // The audit "before" is the value this row REPLACES: the row in force on the day the new one starts. With an
+  // upcoming row already on file the newest row is not it (2.0 in force, 1.5 due in October; a change starting in
+  // September replaces 2.0, not 1.5).
+  const replaced = opts.effectiveFrom
+    ? (await db.misBusinessRule.findFirst({ where: { ruleKey, effectiveFrom: { lte: opts.effectiveFrom } }, orderBy: { effectiveFrom: 'desc' } })) ?? existing
+    : existing;
+  // D12: the start day and the reason travel with the row's audit entry — never a figure (see `after` below).
+  const scheduled = {
+    ...(opts.effectiveFrom ? { effectiveFrom: opts.effectiveFrom.toISOString().slice(0, 10) } : {}),
+    ...(opts.reason ? { reason: opts.reason } : {}),
+  };
   const rec = await db.misBusinessRule.create({
     data: {
       ruleKey,
@@ -188,20 +207,20 @@ async function createRuleRevision(ruleKey: string, ruleValue: string, actorId: s
       valueType: existing.valueType,
       label: existing.label,
       description: existing.description,
-      effectiveFrom: new Date(),
+      effectiveFrom: opts.effectiveFrom ?? new Date(),
       updatedById: actorId,
     },
   });
   await logAuditEvent({
     actorId,
-    action: 'UPDATE_RULE',
+    action: opts.action ?? 'UPDATE_RULE',
     entity: 'MisBusinessRule',
     entityId: rec.id,
     // A wage rule's value is a wage: the audit row names WHICH rule changed and who changed it,
     // never the figure (D24, MIS_UI_SPEC §3). redact() matches property names and `ruleValue` is
     // not one, so the omission has to happen here (F-04).
-    before: isWageRuleKey(ruleKey) ? { ruleKey } : { ruleKey, ruleValue: existing.ruleValue },
-    after: isWageRuleKey(ruleKey) ? { ruleKey } : { ruleKey, ruleValue },
+    before: isWageRuleKey(ruleKey) ? { ruleKey } : { ruleKey, ruleValue: replaced.ruleValue },
+    after: isWageRuleKey(ruleKey) ? { ruleKey, ...scheduled } : { ruleKey, ruleValue, ...scheduled },
   });
   return rec;
 }
@@ -314,4 +333,50 @@ export async function getAqlThresholds(): Promise<AqlThresholds> {
     majorMax: Number(majorMax ?? AQL_DEFAULTS.AQL_MAJOR_MAX.value),
     minorMax: Number(minorMax ?? AQL_DEFAULTS.AQL_MINOR_MAX.value),
   };
+}
+
+
+/**
+ * D12: schedule a change to ANY business rule — a new row with a start date and a REASON. Nothing is edited or
+ * deleted: the old row keeps its range, a wrong value is corrected by adding another row, and both stay on the
+ * record. Owner only (`wages.read` is the Owner's marker, D24/D25): this screen reaches wage rates and AQL
+ * limits, which is what payroll pays and what QC accepts.
+ *
+ * The day is the FACTORY's (D22) and may not be in the past. A second row on the same day is refused — the
+ * `(key, effectiveFrom)` constraint says so anyway, this says it in words. Every change writes an audit row
+ * (`SCHEDULE_RULE`) carrying the reason; a wage rule's audit still names the key, never the figure (F-04).
+ */
+export async function scheduleBusinessRule(input: { ruleKey: string; ruleValue: string; effectiveFrom: string; reason: string }) {
+  const actor = await requirePermission('wages.read', input.ruleKey);
+  const timeZone = await getFactoryTimezone();
+  const todayKey = factoryDateKey(new Date(), timeZone);
+
+  const rows = await db.misBusinessRule.findMany({ where: { ruleKey: input.ruleKey }, select: { effectiveFrom: true, valueType: true } });
+  if (rows.length === 0) throw new Error(`Rule ${input.ruleKey} not found`);
+  const error = validateSchedule({
+    ruleKey: input.ruleKey,
+    value: input.ruleValue,
+    valueType: rows[0].valueType,
+    effectiveFrom: input.effectiveFrom,
+    reason: input.reason,
+    todayKey,
+    existingDays: rows.map((r) => dbDateKey(r.effectiveFrom)),
+  });
+  if (error) throw new Error(error);
+  // A timezone that is not a real IANA name would silently mis-file every punch from then on (D22).
+  if (input.ruleKey === FACTORY_TIMEZONE_KEY && !isValidTimeZone(input.ruleValue)) {
+    throw new Error('The factory timezone must be a full IANA name such as Asia/Kolkata — not an abbreviation like IST.');
+  }
+  try {
+    return await createRuleRevision(input.ruleKey, input.ruleValue.trim(), actor.userId, {
+      effectiveFrom: dateKeyToDbDate(input.effectiveFrom),
+      reason: input.reason.trim(),
+      action: 'SCHEDULE_RULE',
+    });
+  } catch (error) {
+    // Two people scheduling the same day at once: the (ruleKey, effectiveFrom) constraint wins. Say what happened
+    // in words — never the table and constraint names a raw database error carries.
+    if ((error as { code?: unknown } | null)?.code === 'P2002') throw new Error('A row for this rule already starts on that day. Nothing is edited — pick another day.');
+    throw error;
+  }
 }

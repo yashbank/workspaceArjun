@@ -48,12 +48,15 @@ export function SettingsScreen({
   canSeeWages,
   canSeeAql,
   canManageKiosk,
+  canSeeRules = false,
 }: {
   rules: Rule[];
   canWrite: boolean;
   canSeeWages: boolean;
   canSeeAql: boolean;
   canManageKiosk: boolean;
+  /** D12: the Owner's change-history screen. Absent for everyone else, never greyed. */
+  canSeeRules?: boolean;
 }) {
   return (
     <div className="mx-auto max-w-3xl flex flex-col gap-4">
@@ -71,6 +74,22 @@ export function SettingsScreen({
             </div>
             <div className="mt-1 font-semibold text-slate-900">Wage types</div>
             <div className="text-sm text-slate-600">The code system that replaces the flat default rate.</div>
+          </div>
+          <span aria-hidden="true" className="text-indigo-600">→</span>
+        </Link>
+      )}
+
+      {canSeeRules && (
+        <Link
+          href="/mis/settings/rules"
+          className="hidden items-center justify-between lg:flex rounded-2xl border border-indigo-200 bg-indigo-50 p-4 hover:bg-indigo-100"
+        >
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-indigo-700">
+              🔒 Visible to you only
+            </div>
+            <div className="mt-1 font-semibold text-slate-900">Business rules — change history</div>
+            <div className="text-sm text-slate-600">Schedule a change from a start day, with a reason, and read any rule as of a date.</div>
           </div>
           <span aria-hidden="true" className="text-indigo-600">→</span>
         </Link>

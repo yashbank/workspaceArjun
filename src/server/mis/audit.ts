@@ -1,4 +1,5 @@
 import type { Prisma } from '@/generated/prisma/client';
+import { MONEY_FIELDS } from '@/lib/mis/money-fields';
 import { db } from '@/server/db';
 
 /**
@@ -6,7 +7,10 @@ import { db } from '@/server/db';
  * read back (S9). Wages are the factory's most sensitive number; an audit diff
  * is the easiest place to leak one by accident.
  */
-const REDACTED_KEYS = new Set([
+const REDACTED_KEYS = new Set<string>([
+  // Material prices (D24, F-06): a BOM/PO line's rate and a stock item's price. The audit page is
+  // readable by Admin (`settings.read`), so a price written here is a price sent to them.
+  ...MONEY_FIELDS,
   'wage',
   'wageAmount',
   'dailyWage',

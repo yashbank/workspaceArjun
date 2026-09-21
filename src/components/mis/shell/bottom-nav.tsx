@@ -50,7 +50,7 @@ export function BottomNav({ entries }: { entries: NavEntry[] }) {
   return (
     <nav
       aria-label={t('app.title')}
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white md:hidden"
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white lg:hidden"
     >
       <ul className="flex">
         {entries.map((entry) => {
@@ -68,41 +68,6 @@ export function BottomNav({ entries }: { entries: NavEntry[] }) {
               >
                 <Icon className="size-5" aria-hidden="true" />
                 <span className="max-w-full truncate">{t(entry.labelKey)}</span>
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
-    </nav>
-  );
-}
-
-/** The same entries as a left rail from `md` up. */
-export function SideNav({ entries }: { entries: NavEntry[] }) {
-  const pathname = usePathname();
-  const t = useT();
-
-  return (
-    <nav
-      aria-label={t('app.title')}
-      className="hidden w-56 shrink-0 border-r border-slate-200 p-3 md:block"
-    >
-      <ul className="flex flex-col gap-1">
-        {entries.map((entry) => {
-          const Icon = ICONS[entry.icon];
-          const active = pathname === entry.href || pathname.startsWith(`${entry.href}/`);
-          return (
-            <li key={entry.id}>
-              <Link
-                href={entry.href}
-                aria-current={active ? 'page' : undefined}
-                className={cn(
-                  'flex min-h-11 items-center gap-2 rounded-lg px-3 text-base',
-                  active ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100',
-                )}
-              >
-                <Icon className="size-4" aria-hidden="true" />
-                {t(entry.labelKey)}
               </Link>
             </li>
           );

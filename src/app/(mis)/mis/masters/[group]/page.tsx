@@ -1,5 +1,7 @@
 import { notFound } from 'next/navigation';
 
+import { MasterDataDesktopServer } from '@/components/mis/desktop/master-data-desktop-server';
+import { optionMasterKey } from '@/lib/mis/master-directory';
 import { OptionMasterScreen } from '@/components/mis/masters/option-master-screen';
 import { MASTER_GROUPS, type MasterGroup } from '@/lib/mis/master-groups';
 import { createTranslator, type TranslationKey } from '@/lib/mis/i18n';
@@ -18,10 +20,13 @@ import { deleteOptionAction, restoreOptionAction, saveOptionAction } from '../ac
  */
 export default async function OptionMasterPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ group: string }>;
+  searchParams: Promise<{ view?: string; q?: string; deactivated?: string; edit?: string; create?: string; error?: string }>;
 }) {
   const { group } = await params;
+  const sp = await searchParams;
   if (!(MASTER_GROUPS as readonly string[]).includes(group)) notFound();
 
   const user = await requireMisAccess();
@@ -32,7 +37,7 @@ export default async function OptionMasterPage({
   ]);
   const t = createTranslator(locale);
 
-  return (
+  const phone = (
     <OptionMasterScreen
       group={group}
       title={t(`masters.${group as MasterGroup}` as TranslationKey)}
@@ -42,5 +47,16 @@ export default async function OptionMasterPage({
       onDelete={deleteOptionAction}
       onRestore={restoreOptionAction}
     />
+  );
+
+  // D10 from 1024px up; the existing screen below it. ANY explicit `?view` is the existing screen at every width.
+  if (sp.view) return phone;
+  return (
+    <>
+      <div className="lg:hidden">{phone}</div>
+      <div className="hidden lg:block">
+        <MasterDataDesktopServer master={optionMasterKey(group)!} searchParams={sp} />
+      </div>
+    </>
   );
 }

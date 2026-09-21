@@ -7,7 +7,7 @@ import { StatusBadge, type BadgeTone } from '@/components/mis/kit/status-badge';
 type ProductionData = { rows: { orderNumber: string; description: string | null; produced: number; waste: number; entries: number }[]; raw: any[] };
 type AttendanceData = { rows: { name: string; code: string; dept: string; present: number; absent: number; late: number; ot: number }[]; raw: any[] };
 type QcData = { rows: { orderNumber: string; pass: number; fail: number; na: number }[]; raw: any[] };
-type StoreItemRow = { id: string; name: string; code: string; unit: string; pricePerUnit: number | null; totalIn: number; totalOut: number; txnCount: number };
+type StoreItemRow = { id: string; name: string; code: string; unit: string; pricePerUnit?: number | null; totalIn: number; totalOut: number; txnCount: number };
 type StoreData = { rows: StoreItemRow[]; raw: any[] };
 
 type Tab = 'production' | 'attendance' | 'qc' | 'orders' | 'store';

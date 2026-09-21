@@ -1,4 +1,6 @@
 import { Prisma } from '@/generated/prisma/client';
+import { can } from '@/lib/mis/permissions';
+import { forRole, withoutMoneyFields } from '@/lib/mis/money-fields';
 import { db } from '@/server/db';
 import { requirePermission } from './auth';
 import { logAuditEvent } from './audit';
@@ -39,8 +41,12 @@ export function formatMoney(value: Prisma.Decimal | number): string {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2 }).format(num);
 }
 
+/**
+ * A PO's total. It IS money (D24, F-06), so it is `wages.read` — the Owner's — and a caller without
+ * it is refused, exactly like `getBomCosting`. A page that shows POs to other roles must not call it.
+ */
 export async function computePoTotal(poId: string): Promise<string> {
-  await requirePermission('po.read');
+  await requirePermission('wages.read');
   const items = await db.misPoItem.findMany({ where: { poId } });
   const total = items.reduce((sum, item) => {
     return sum + item.quantity.toNumber() * item.ratePerUnit.toNumber();
@@ -59,9 +65,13 @@ export async function listPOs() {
   });
 }
 
+/**
+ * A PO with its lines. `ratePerUnit` is money (D24, F-06): for a role without `wages.read` the key is
+ * REMOVED from every line, so the quantities and receipts still show and the price does not.
+ */
 export async function getPO(id: string) {
-  await requirePermission('po.read');
-  return db.misPurchaseOrder.findUnique({
+  const actor = await requirePermission('po.read');
+  const po = await db.misPurchaseOrder.findUnique({
     where: { id },
     include: {
       supplier: true,
@@ -69,6 +79,7 @@ export async function getPO(id: string) {
       grns: { orderBy: { createdAt: 'desc' } },
     },
   });
+  return po && !can(actor.role, 'wages.read') ? withoutMoneyFields(po) : po;
 }
 
 export async function createPO(input: PoInput) {
@@ -109,7 +120,7 @@ export async function addPOItem(poId: string, input: PoItemInput) {
     },
   });
   await logAuditEvent({ actorId: actor.userId, action: 'po_item.create', entity: 'MisPoItem', entityId: created.id, after: created });
-  return created;
+  return forRole(actor.role, created);
 }
 
 export async function updatePOItem(id: string, patch: Partial<PoItemInput>) {
@@ -124,14 +135,14 @@ export async function updatePOItem(id: string, patch: Partial<PoItemInput>) {
     ...(patch.unitId !== undefined ? { unitId: patch.unitId || null } : {}),
   }});
   await logAuditEvent({ actorId: actor.userId, action: 'po_item.update', entity: 'MisPoItem', entityId: id, before, after });
-  return after;
+  return forRole(actor.role, after);
 }
 
 export async function removePOItem(id: string) {
   const actor = await requirePermission('po.write');
   const deleted = await db.misPoItem.delete({ where: { id } });
   await logAuditEvent({ actorId: actor.userId, action: 'po_item.delete', entity: 'MisPoItem', entityId: id, before: deleted });
-  return deleted;
+  return forRole(actor.role, deleted);
 }
 
 export async function submitForApproval(poId: string) {

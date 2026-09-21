@@ -1,7 +1,10 @@
+import { addDaysToDateKey, dateKeyToDbDate } from '@/lib/mis/factory-time';
+import { buildMachineTimeline, weekStartKey, type MachineTimeline } from '@/lib/mis/machine-timeline';
 import { db } from '@/server/db';
 import { requirePermission } from '@/server/mis/auth';
 import { logAuditEvent } from '@/server/mis/audit';
 import { isActiveStatus } from '@/server/mis/job-phases';
+import { getFactoryShiftWindow } from '@/server/mis/shift-view';
 
 export async function getMachineBoard() {
   await requirePermission('production.read');
@@ -42,6 +45,123 @@ export async function getMachineAllocations(machineId: string) {
     orderBy: { startsAt: 'desc' },
     take: 20,
   });
+}
+
+export type MachineDayTimeline = {
+  shift: { name: string; dateKey: string; startMinute: number; endMinute: number };
+  timeline: MachineTimeline;
+};
+
+/**
+ * D5's day timeline: every machine, this shift's bookings, and the week's utilisation.
+ *
+ * Unlike `getMachineBoard` this INCLUDES machines that are switched off — D5 draws downtime as
+ * a hatched bar, and a board that filters `isActive: true` could never show one. Deleted
+ * machines are still gone, not down.
+ *
+ * Two board queries whatever the machine count (S8): one for the machines and one for the week's
+ * live bookings — plus the shift lookup (`getFactoryShiftWindow`) and the factory-timezone rule it
+ * reads. None of them scales with the number of machines. The window is over-fetched by a day either side and the pure
+ * `buildMachineTimeline` does the exact clipping in the factory's zone (D22), so a booking near
+ * midnight is never lost to a server-timezone boundary here.
+ *
+ * Returns null when no shift is configured: the screen shows its empty state rather than
+ * inventing nine hours (D5: "one shift definition, read from settings, never hardcoded").
+ */
+export async function getMachineDayTimeline(now: Date = new Date()): Promise<MachineDayTimeline | null> {
+  await requirePermission('production.read');
+
+  const shift = await getFactoryShiftWindow(now);
+  if (!shift) return null;
+
+  const weekStart = weekStartKey(shift.dateKey);
+  const [machines, allocations] = await Promise.all([
+    db.misMachine.findMany({
+      where: { deletedAt: null },
+      select: { id: true, name: true, code: true, machineType: true, isActive: true, department: { select: { name: true } } },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    }),
+    db.misMachineAllocation.findMany({
+      where: {
+        releasedAt: null,
+        endsAt: { gt: dateKeyToDbDate(addDaysToDateKey(weekStart, -1)) },
+        startsAt: { lt: dateKeyToDbDate(addDaysToDateKey(shift.dateKey, 3)) },
+      },
+      select: {
+        machineId: true,
+        startsAt: true,
+        endsAt: true,
+        order: { select: { orderNumber: true } },
+        jobPhase: { select: { process: { select: { name: true } } } },
+      },
+      orderBy: { startsAt: 'asc' },
+    }),
+  ]);
+
+  const timeline = buildMachineTimeline(
+    machines.map((m) => ({
+      id: m.id,
+      name: m.name,
+      code: m.code,
+      machineType: m.machineType,
+      department: m.department?.name ?? null,
+      isActive: m.isActive,
+    })),
+    allocations.map((a) => ({
+      machineId: a.machineId,
+      startsAt: a.startsAt,
+      endsAt: a.endsAt,
+      orderNumber: a.order?.orderNumber ?? null,
+      processName: a.jobPhase?.process.name ?? null,
+    })),
+    { startMinute: shift.startMinute, endMinute: shift.endMinute, dateKey: shift.dateKey, timeZone: shift.timeZone },
+    now,
+  );
+
+  return { shift: { name: shift.name, dateKey: shift.dateKey, startMinute: shift.startMinute, endMinute: shift.endMinute }, timeline };
+}
+
+/**
+ * Where each phase of one order is, or will be, running — machine and time window — for D4's
+ * process sequence ("Heidelberg SM 74 · Ramesh Kumar · 4 operators").
+ *
+ * One query for the whole order, with the operator head-count taken in the same query rather
+ * than one count per phase (S8). Released allocations are excluded: a released booking is not a
+ * plan any more. When a phase has more than one live allocation the latest-starting one wins,
+ * because that is the booking the person will actually be looking for.
+ *
+ * The operator NAME is not here — D4 shows the phase's in-charge (from `getPhasesForOrder`),
+ * which is a different fact from who is on the machine.
+ */
+export async function getOrderSchedule(orderId: string): Promise<
+  Map<string, { machineName: string; startsAt: Date; endsAt: Date; operators: number }>
+> {
+  await requirePermission('production.read');
+
+  const rows = await db.misMachineAllocation.findMany({
+    where: { orderId, releasedAt: null, jobPhaseId: { not: null } },
+    select: {
+      jobPhaseId: true,
+      startsAt: true,
+      endsAt: true,
+      machine: { select: { name: true } },
+      _count: { select: { workerAllocations: { where: { releasedAt: null, deletedAt: null } } } },
+    },
+    orderBy: { startsAt: 'asc' },
+  });
+
+  const byPhase = new Map<string, { machineName: string; startsAt: Date; endsAt: Date; operators: number }>();
+  for (const row of rows) {
+    if (!row.jobPhaseId) continue;
+    // ascending order, so a later row overwrites an earlier one: the latest-starting booking wins.
+    byPhase.set(row.jobPhaseId, {
+      machineName: row.machine.name,
+      startsAt: row.startsAt,
+      endsAt: row.endsAt,
+      operators: row._count.workerAllocations,
+    });
+  }
+  return byPhase;
 }
 
 /**

@@ -1,4 +1,5 @@
 'use client';
+import Link from 'next/link';
 import { useState, useTransition } from 'react';
 import { Button } from '@/components/mis/kit/button';
 import { Select, type SelectOption } from '@/components/mis/kit/select';
@@ -53,6 +54,8 @@ export function QcGridScreen({ orders, todayChecks, canWrite }: { orders: Order[
     <div className="p-6 max-w-5xl mx-auto">
       <div className="flex items-baseline gap-3 mb-6 flex-wrap">
         <h1 className="text-2xl font-semibold">QC Hourly Grid</h1>
+        {/* From 1024px up the whole-floor grid (D9) is the reading view of the shift; this screen is where a check is recorded. */}
+        <Link href="/mis/qc/grid" className="hidden lg:inline-flex min-h-11 items-center text-sm font-medium text-indigo-700 hover:underline">Whole-floor grid</Link>
         <span className="text-slate-500 text-sm">{new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}</span>
       </div>
 

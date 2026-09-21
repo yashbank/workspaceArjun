@@ -7,6 +7,7 @@ export function DashboardShell({
   showAdminNav,
   showSettingsNav,
   showActivityNav = false,
+  showMisNav = false,
   userEmail,
   userName,
   userRole,
@@ -15,6 +16,7 @@ export function DashboardShell({
   showAdminNav: boolean;
   showSettingsNav: boolean;
   showActivityNav?: boolean;
+  showMisNav?: boolean;
   userEmail: string;
   userName?: string;
   userRole: string;
@@ -42,6 +44,7 @@ export function DashboardShell({
           showAdminNav={showAdminNav}
           showSettingsNav={showSettingsNav}
           showActivityNav={showActivityNav}
+          showMisNav={showMisNav}
           onNavigate={() => setMobileNavOpen(false)}
         />
       </div>

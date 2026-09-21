@@ -6,9 +6,9 @@ import type { Locale } from '@/lib/mis/i18n';
 import type { MisRoleName } from '@/lib/mis/roles';
 import type { NavEntry } from '@/server/mis/navigation';
 
+import { DesktopShell } from '../desktop/desktop-shell';
 import { RoleBadge } from '../roles/role-badge';
 import { BottomNav as RoleBottomNav } from '../home/bottom-nav';
-import { SideNav } from './bottom-nav';
 import { LangToggle } from './lang-toggle';
 import { ServiceWorkerRegistration } from './service-worker-registration';
 import { SyncIndicator } from './sync-indicator';
@@ -50,15 +50,33 @@ export function MisShell({
   return (
     <MisLocaleProvider initialLocale={locale}>
       <ServiceWorkerRegistration userId={userId} />
-      <div className="flex min-h-dvh flex-col bg-slate-50">
+
+      {/* TWO LAYOUTS, ONE COMPONENT TREE (D1/D3). Both chromes are rendered and CSS alone
+          decides which is on screen: the desktop frame from 1024px up, the phone frame
+          below it. `children` is the same element in both — a screen is written once, and
+          there is no third layout and no JS breakpoint able to disagree with the CSS. */}
+      <DesktopShell
+        factoryName={factoryName}
+        userName={userName}
+        role={role}
+        nav={navAll}
+        navBadges={navBadges}
+        topBarRight={
+          <>
+            <SyncIndicator />
+            <LangToggle onPersist={onLocaleChange} />
+          </>
+        }
+      >
+        {children}
+      </DesktopShell>
+
+      <div className="flex min-h-dvh flex-col bg-slate-50 lg:hidden">
         <Header factoryName={factoryName} userName={userName} role={role} onLocaleChange={onLocaleChange} />
 
-        <div className="flex flex-1">
-          <SideNav entries={navAll} />
-          {/* pb-20 clears the fixed bottom bar; without it the last row of any
-              list sits underneath it and cannot be tapped. */}
-          <main className="min-w-0 flex-1 px-4 py-4 pb-20 md:pb-4">{children}</main>
-        </div>
+        {/* pb-20 clears the fixed bottom bar; without it the last row of any
+            list sits underneath it and cannot be tapped. */}
+        <main className="min-w-0 flex-1 px-4 py-4 pb-20">{children}</main>
 
         <RoleBottomNav role={role} badges={navBadges} />
       </div>

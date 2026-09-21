@@ -1,5 +1,6 @@
 import { PrintButton } from '@/components/mis/print/print-button';
 import { requireMisAccess } from '@/server/mis/guard';
+import { checkPermission } from '@/server/mis/auth';
 import { getPO, computePoTotal } from '@/server/mis/po';
 import { notFound } from 'next/navigation';
 import { poPurpose, poPurposeLabel } from '@/lib/mis/po-purpose';
@@ -7,6 +8,17 @@ import { poPurpose, poPurposeLabel } from '@/lib/mis/po-purpose';
 export default async function PoPrintPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   await requireMisAccess();
+
+  // A printed purchase order is a PRICED document — rate and amount on every line. Prices are the
+  // Owner's (D24, F-06), so anyone else is told so rather than handed a sheet with blank money.
+  if (!(await checkPermission('wages.read'))) {
+    return (
+      <div className="max-w-3xl mx-auto py-8 px-6 text-sm text-gray-700">
+        <p className="font-medium">A printed purchase order shows prices, and prices are visible to the Owner only.</p>
+        <a href={`/mis/po/${id}`} className="mt-4 inline-block px-4 py-2 border border-gray-200 rounded text-sm hover:bg-gray-50">Back to the PO</a>
+      </div>
+    );
+  }
 
   const po = await getPO(id);
   if (!po) notFound();

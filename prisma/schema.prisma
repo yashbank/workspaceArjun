@@ -77,6 +77,7 @@ model UserProfile {
   // --- MIS (additive; no column is added to user_profiles by these) ---
   misEmployee    MisEmployee?
   misPreference  MisUserPreference?
+  misDashboard   MisDashboardWidget[]
   misAuditEvents MisAuditLog[]     @relation("MisAuditActor")
 
   @@map("user_profiles")
@@ -383,6 +384,37 @@ model MisUserPreference {
   userProfile UserProfile @relation(fields: [userProfileId], references: [id], onDelete: Cascade)
 
   @@map("mis_user_preferences")
+}
+
+/// One placed widget on one person's desktop dashboard (D2, Phase 24).
+///
+/// ROWS, NOT A JSON BLOB — this is the artboard's own instruction. Two things follow
+/// from it and neither survives a blob: a widget retired in a later release is dropped
+/// by key on read, so an old layout never breaks a dashboard; and moving one widget
+/// rewrites one row rather than the whole layout.
+///
+/// The grid is four columns wide (D2: "4-COLUMN GRID · 12 SLOTS"), so the CHECK
+/// constraints below are the real boundary — a widget that would hang off the right
+/// edge is refused by the database, not merely by the screen that drew it.
+///
+/// Role gating is NOT expressed here. A row is only ever written through
+/// `src/server/mis/dashboard.ts`, which refuses a widget the caller's role may not
+/// hold (the money widget, D24), and the read drops any row whose widget the role
+/// cannot see — so a layout saved before a demotion cannot leak one either.
+model MisDashboardWidget {
+  userProfileId String   @map("user_profile_id") @db.Uuid
+  widgetKey     String   @map("widget_key")
+  x             Int
+  y             Int
+  w             Int
+  h             Int
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  userProfile UserProfile @relation(fields: [userProfileId], references: [id], onDelete: Cascade)
+
+  @@id([userProfileId, widgetKey])
+  @@index([userProfileId])
+  @@map("mis_dashboard_widgets")
 }
 
 /// Every write the MIS makes, with a before/after diff.

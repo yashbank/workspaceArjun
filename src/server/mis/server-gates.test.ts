@@ -74,6 +74,15 @@ const REVIEWED_UNGATED: Record<string, Reviewed> = {
   'roles.ts#hasMisRole': { reason: 'identity helper' },
   'roles.ts#getMisEmployee': { reason: 'identity helper: the caller\'s own employee row' },
   'navigation.ts#getNavigationFor': { reason: 'derives the menu from the role; returns labels only' },
+  // The dashboard catalogue is the navigation menu's shape, for widgets: it derives from the
+  // role and returns labels and grid sizes, never factory data. Omission IS the rule here
+  // (D2/D24) — the money group is absent for a non-owner rather than refused — and the
+  // per-role proof is dashboard.test.ts. The WRITE path throws; see assertMayPlaceWidgets.
+  'dashboard.ts#getDashboardCatalogue': { reason: 'derives the widget library from the role; labels and sizes only (D2)', alsoContains: 'catalogueFor' },
+  'dashboard.ts#getDashboardLayout': { reason: "the caller's own layout; every row re-checked against the role on read (D24)", alsoContains: 'sanitiseLayout' },
+  'dashboard.ts#prepareDashboardLayout': { reason: 'the save path\'s own gate', alsoContains: 'assertMayPlaceWidgets' , door: true },
+  'dashboard.ts#saveDashboardLayout': { reason: "the caller's own layout; refuses per role before writing", alsoContains: 'prepareDashboardLayout' , door: true },
+  'dashboard.ts#resetDashboardLayout': { reason: "deletes the caller's own layout rows only", alsoContains: 'session.userId' , door: true },
   'navigation.ts#getNavBadges': { reason: 'counts, gated per-badge by role inside', alsoContains: 'getMisRole' },
   'preferences.ts#getLocale': { reason: 'a user reading their own language' },
   'preferences.ts#setLocale': { reason: 'a user setting their own language; the action passes the session user' },
@@ -158,6 +167,12 @@ describe('money and access functions are gated on the RIGHT action, not merely o
     ['kiosk-device.ts#revokeDevice', 'kiosk.manage'],
     ['kiosk-device.ts#renameDevice', 'kiosk.manage'],
     ['business-rules.ts#updateBusinessRule', 'settings.write'],
+    // D12 — scheduling a change to any rule, and reading the ledger, are the Owner's.
+    ['business-rules.ts#scheduleBusinessRule', 'wages.read'],
+    ['rules-ledger.ts#getRulesLedger', 'wages.read'],
+    // D13 — the document library reads across orders (orders.read) and adds a file link (orders.write).
+    ['document-library.ts#getDocumentLibrary', 'orders.read'],
+    ['document-library.ts#saveDocumentLink', 'orders.write'],
   ])('%s is gated on %s', (key, action) => {
     expect(gateOf(key)).toBe(action);
   });

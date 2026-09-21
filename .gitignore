@@ -113,3 +113,5 @@ public/assets/bpp/references/bpp-ambient-motion-reference.gif
 .windsurf/
 .zcode/
 .zencoder/
+
+.claude/settings.local.json

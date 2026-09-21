@@ -130,7 +130,7 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes }
           <p className="text-sm text-gray-500 mt-1">{order.customer?.name ?? 'No customer'}</p>
         </div>
         <div className="flex gap-2">
-          <Link href={`/mis/qc/grid?orderId=${order.id}`}>
+          <Link href={`/mis/qc/grid?view=capture&orderId=${order.id}`}>
             <Button variant="ghost">Hourly Grid</Button>
           </Link>
           <Link href={`/mis/print/coa/${order.id}`} target="_blank">

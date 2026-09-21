@@ -10,20 +10,29 @@ export default async function PoDetailPage({ params }: { params: Promise<{ id: s
   await requireMisAccess();
   const po = await getPO(id);
   if (!po) notFound();
-  const [total, items, canWrite, canApprove] = await Promise.all([
-    computePoTotal(id),
+  // Rates and totals are money (D24, F-06): only `wages.read` receives them. For anyone else `getPO`
+  // has already removed the rate, and the total is neither computed nor sent.
+  const [canSeeMoney, items, canWrite, canApprove] = await Promise.all([
+    checkPermission('wages.read'),
     listItems(),
     checkPermission('po.write'),
     checkPermission('po.write'),
   ]);
+  const total = canSeeMoney ? await computePoTotal(id) : null;
   type PoItem = (typeof po.items)[number];
   const formattedItems = po.items.map((item: PoItem) => ({
-    ...item,
-    rateFormatted: formatMoney(item.ratePerUnit),
-    totalFormatted: formatMoney(item.quantity.toNumber() * item.ratePerUnit.toNumber()),
+    id: item.id,
+    description: item.description,
+    item: item.item,
     quantity: item.quantity.toNumber(),
-    ratePerUnit: item.ratePerUnit.toNumber(),
     receivedQuantity: item.receivedQuantity.toNumber(),
+    ...(canSeeMoney && item.ratePerUnit
+      ? {
+          ratePerUnit: item.ratePerUnit.toNumber(),
+          rateFormatted: formatMoney(item.ratePerUnit),
+          totalFormatted: formatMoney(item.quantity.toNumber() * item.ratePerUnit.toNumber()),
+        }
+      : {}),
   }));
   return <PoDetailScreen po={po} formattedItems={formattedItems} total={total} catalogItems={items} canWrite={canWrite} canApprove={canApprove} />;
 }

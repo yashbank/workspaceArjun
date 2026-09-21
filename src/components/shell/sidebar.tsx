@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, FolderOpen, Trash2, Shield, Settings, Activity, Lock } from 'lucide-react';
+import { LayoutDashboard, FolderOpen, Trash2, Shield, Settings, Activity, Lock, Factory } from 'lucide-react';
 import { BppMonogram } from './bpp-monogram';
 
 type DockNav = {
@@ -42,6 +42,20 @@ const SECURITY_NAV: DockNav = {
   color: 'from-amber-500 to-orange-500',
   match: (p) => p.startsWith('/admin/security'),
 };
+/**
+ * The way into the MIS (Phase 24).
+ *
+ * Rendered only when the server says this account is flagged for it — the module ships dark
+ * (`server/mis/flags.ts`), so an unflagged browser must receive no hint it exists. That is
+ * why `showMisNav` is a prop decided on the server and not a check made here.
+ */
+const MIS_NAV: DockNav = {
+  label: 'Factory MIS',
+  href: '/mis',
+  icon: Factory,
+  color: 'from-teal-500 to-cyan-500',
+  match: (p) => p === '/mis' || p.startsWith('/mis/'),
+};
 const SETTINGS_NAV: DockNav = {
   label: 'Settings',
   href: '/admin/settings',
@@ -54,11 +68,13 @@ export function Sidebar({
   showAdminNav = false,
   showSettingsNav = false,
   showActivityNav = false,
+  showMisNav = false,
   onNavigate,
 }: {
   showAdminNav?: boolean;
   showSettingsNav?: boolean;
   showActivityNav?: boolean;
+  showMisNav?: boolean;
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
@@ -87,6 +103,13 @@ export function Sidebar({
 
         {showActivityNav && (
           <DockItem {...ACTIVITY_NAV} active={ACTIVITY_NAV.match(pathname)} onNavigate={onNavigate} />
+        )}
+
+        {showMisNav && (
+          <>
+            <div className="my-1.5 h-px w-full bg-border/40 md:w-8" />
+            <DockItem {...MIS_NAV} active={MIS_NAV.match(pathname)} onNavigate={onNavigate} />
+          </>
         )}
 
         {showAdminNav && (

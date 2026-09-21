@@ -25,6 +25,8 @@ import { MIS_ROLES, type MisRoleName } from '@/lib/mis/roles';
 
 import {
   BASE_SENTINELS,
+  BOM_RATE,
+  ITEM_PRICE,
   LONG_AGO as YESTERDAY,
   WAGE_DETECTOR,
   fakeDb,
@@ -407,29 +409,101 @@ describe('redact() — the last line of defence', () => {
 //    them — but the screens hide them behind `isOwner` (= wages.read), so the intent is
 //    plain, and a hidden column is not a withheld value: it is in the page payload.
 // ===========================================================================
-describe('F-06 · material rates and stock prices reach the browser of roles whose screen hides them', () => {
+describe('F-06 · material rates and stock prices — Owner-only (D24)', () => {
   it('OWNER receives both (fixture is live)', async () => {
     as('OWNER');
     expect(JSON.stringify((await getStoreReport({ from: YESTERDAY, to: YESTERDAY })).rows)).toContain('pricePerUnit');
     expect(JSON.stringify(await getBom('o1'))).toContain('ratePerUnit');
   });
 
-  // reports.read: ADMIN, SUPERVISOR, QC, SUPER_ATTENDANCE_OPERATOR — orders.read: ADMIN, SUPERVISOR, QC.
-  for (const role of ['ADMIN', 'SUPERVISOR', 'QC', 'SUPER_ATTENDANCE_OPERATOR'] as const) {
-    it.fails(`${role}: getStoreReport withholds pricePerUnit`, async () => {
+  // F-06, store half — FIXED in Phase 24D (D7 Reports builds on it): getStoreReport does not select the
+  // price for a role without wages.read, and strips the raw transactions too, so `pricePerUnit` is in
+  // neither `rows` nor `raw`. Asserted for ALL seven non-Owner roles at the server function:
+  // reports.read is held by ADMIN, SUPERVISOR, QC and SUPER_ATTENDANCE_OPERATOR (served, no price);
+  // the other three are refused outright.
+  describe('F-06 (store half, fixed) · getStoreReport for every non-Owner role', () => {
+    const READERS = ['ADMIN', 'SUPERVISOR', 'QC', 'SUPER_ATTENDANCE_OPERATOR'] as const;
+
+    it.each(READERS)('%s receives the movement report and NO pricePerUnit anywhere in it', async (role) => {
       as(role);
       const res = await outcome(() => getStoreReport({ from: YESTERDAY, to: YESTERDAY }));
-      if (res === 'denied') return; // refusing the role would also be correct — a fix turns this red
-      expect(JSON.stringify(res.value)).not.toMatch(/pricePerUnit/);
+      expect(res).not.toBe('denied');
+      if (res === 'denied') return;
+      const text = JSON.stringify(res.value);
+      expect(text).not.toMatch(/pricePerUnit/);
+      expect(text).not.toContain(String(ITEM_PRICE));
+      // ...and it is still a real report: the item, its totals and its raw movement are all there.
+      expect(res.value.rows[0]).toMatchObject({ code: 'BPP-RM-1', totalIn: 5, txnCount: 1 });
+      expect(res.value.raw).toHaveLength(1);
     });
-  }
 
-  for (const role of ['ADMIN', 'SUPERVISOR', 'QC'] as const) {
-    it.fails(`${role}: getBom withholds ratePerUnit`, async () => {
+    it.each(NON_OWNER.filter((r) => !(READERS as readonly string[]).includes(r)))(
+      '%s (no reports.read) is refused outright',
+      async (role) => {
+        as(role);
+        expect(await outcome(() => getStoreReport({ from: YESTERDAY, to: YESTERDAY }))).toBe('denied');
+      },
+    );
+
+    it('the OWNER still receives the price on both the rows and the raw movement', async () => {
+      as('OWNER');
+      const res = await outcome(() => getStoreReport({ from: YESTERDAY, to: YESTERDAY }));
+      expect(res).not.toBe('denied');
+      if (res === 'denied') return;
+      expect(res.value.rows[0].pricePerUnit).toBeGreaterThan(0);
+      expect(JSON.stringify(res.value.raw)).toContain('pricePerUnit');
+    });
+
+    it('withholding does not mutate the rows the database returned', async () => {
+      as('ADMIN');
+      await getStoreReport({ from: YESTERDAY, to: YESTERDAY });
+      as('OWNER');
+      const res = await outcome(() => getStoreReport({ from: YESTERDAY, to: YESTERDAY }));
+      if (res !== 'denied') expect(JSON.stringify(res.value.raw)).toContain('pricePerUnit');
+    });
+  });
+
+  // F-06, BOM half — FIXED in Phase 24C (D6 costing needed it): getBom removes `ratePerUnit` from
+  // every material for a role without wages.read, so the field is not in the response at all.
+  // Asserted for ALL seven non-Owner roles at the server function: the three who may read a BOM
+  // get the structure with no rate; the other four are refused outright.
+  describe('F-06 (BOM half, fixed) · getBom for every non-Owner role', () => {
+    const READERS = ['ADMIN', 'SUPERVISOR', 'QC'] as const;
+
+    it.each(READERS)('%s receives the BOM structure and NO ratePerUnit anywhere in it', async (role) => {
       as(role);
       const res = await outcome(() => getBom('o1'));
+      expect(res).not.toBe('denied');
       if (res === 'denied') return;
-      expect(JSON.stringify(res.value)).not.toMatch(/ratePerUnit/);
+      const text = JSON.stringify(res.value);
+      expect(text).not.toContain('ratePerUnit');
+      expect(text).not.toContain(String(BOM_RATE));
+      // ...and it is still a real BOM, not an empty answer that passes by having nothing in it.
+      expect(text).toContain('Ink');
+      expect(text).toContain('Print');
     });
-  }
+
+    it.each(NON_OWNER.filter((r) => !(READERS as readonly string[]).includes(r)))(
+      '%s (no orders.read) is refused outright',
+      async (role) => {
+        as(role);
+        expect(await outcome(() => getBom('o1'))).toBe('denied');
+      },
+    );
+
+    it('the OWNER still receives every rate (so the absence above is the role, not a broken fixture)', async () => {
+      as('OWNER');
+      const res = await outcome(() => getBom('o1'));
+      expect(res).not.toBe('denied');
+      if (res !== 'denied') expect(JSON.stringify(res.value)).toContain(String(BOM_RATE));
+    });
+
+    it('withholding does not mutate the stored row — the Owner reading afterwards still sees the rate', async () => {
+      as('ADMIN');
+      await getBom('o1');
+      as('OWNER');
+      const res = await outcome(() => getBom('o1'));
+      if (res !== 'denied') expect(JSON.stringify(res.value)).toContain('ratePerUnit');
+    });
+  });
 });

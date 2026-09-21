@@ -196,6 +196,7 @@ describe('MIS-46 · only registered files import a wage-bearing server module', 
 
   it('a new page or action that imports payroll or wage-type must be added here — and gated', () => {
     expect(importers(PAGES)).toEqual([
+      'app/(mis)/mis/dashboard/page.tsx',
       'app/(mis)/mis/page.tsx',
       'app/(mis)/mis/payroll/page.tsx',
       'app/(mis)/mis/print/payslip/[employeeId]/page.tsx',
