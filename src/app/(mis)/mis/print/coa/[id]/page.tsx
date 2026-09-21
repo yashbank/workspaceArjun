@@ -1,3 +1,4 @@
+import { isUuid } from '@/lib/mis/ids';
 import { requireMisAccess } from '@/server/mis/guard';
 import { PrintButton } from '@/components/mis/print/print-button';
 import { getOrder } from '@/server/mis/orders';
@@ -6,6 +7,7 @@ import { notFound } from 'next/navigation';
 
 export default async function CoaPrintPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (!isUuid(id)) notFound();
   await requireMisAccess();
   const order = await getOrder(id);
   if (!order) notFound();

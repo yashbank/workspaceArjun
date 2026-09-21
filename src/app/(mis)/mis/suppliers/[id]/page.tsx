@@ -1,3 +1,4 @@
+import { isUuid } from '@/lib/mis/ids';
 import { requireMisAccess } from '@/server/mis/guard';
 import { getMisRole } from '@/server/mis/roles';
 import { can } from '@/lib/mis/permissions';
@@ -9,6 +10,7 @@ import { computePoTotal } from '@/server/mis/po';
 
 export default async function SupplierDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (!isUuid(id)) notFound();
   const user = await requireMisAccess();
   const role = await getMisRole(user.id);
   const canWrite = can(role, 'masters.write');

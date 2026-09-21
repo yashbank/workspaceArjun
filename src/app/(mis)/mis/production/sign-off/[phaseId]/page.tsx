@@ -1,3 +1,4 @@
+import { isUuid } from '@/lib/mis/ids';
 import { notFound } from 'next/navigation';
 
 import { SignOffScreen } from '@/components/mis/production/sign-off-screen';
@@ -7,6 +8,7 @@ import { db } from '@/server/db';
 
 export default async function SignOffPage({ params }: { params: Promise<{ phaseId: string }> }) {
   const { phaseId } = await params;
+  if (!isUuid(phaseId)) notFound();
   await requireMisAccess();
 
   const summary = await getSignOffSummary(phaseId).catch((error) => {

@@ -84,7 +84,7 @@ export function Select({
           // present several identical "Search" boxes with nothing to tell them
           // apart, by voice or by screen reader.
           aria-label={label + ': ' + t('action.search')}
-          className="min-h-12 w-full rounded-lg border border-slate-300 px-3 text-base"
+          className="min-h-12 w-full rounded-lg border border-slate-300 bg-white px-3 text-base"
         />
       )}
 

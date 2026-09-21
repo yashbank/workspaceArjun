@@ -74,7 +74,9 @@ export function DataTable<Row>({
       </div>
 
       {/* Desktop: table */}
-      <div className="hidden md:block">
+      {/* `overflow-x-auto`: a table wider than its column (a long e-mail address, many columns) scrolls INSIDE this box.
+          Without it the table pushed the whole page sideways — /mis/employees overflowed a 1440px window by 275px (F-26). */}
+      <div className="hidden overflow-x-auto md:block">
         <table className="w-full border-collapse text-left">
           <thead>
             <tr className="border-b border-slate-200">

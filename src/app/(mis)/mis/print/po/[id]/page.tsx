@@ -1,3 +1,4 @@
+import { isUuid } from '@/lib/mis/ids';
 import { PrintButton } from '@/components/mis/print/print-button';
 import { requireMisAccess } from '@/server/mis/guard';
 import { checkPermission } from '@/server/mis/auth';
@@ -7,6 +8,7 @@ import { poPurpose, poPurposeLabel } from '@/lib/mis/po-purpose';
 
 export default async function PoPrintPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (!isUuid(id)) notFound();
   await requireMisAccess();
 
   // A printed purchase order is a PRICED document — rate and amount on every line. Prices are the

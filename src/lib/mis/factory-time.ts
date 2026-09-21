@@ -90,6 +90,21 @@ export function formatFactoryTime(at: Date, timeZone: string): string {
 }
 
 /**
+ * `20/09/2026` — a day as the plant writes it, in the FACTORY's zone. Fixed format and zone on purpose: a client
+ * component that formats with the browser's locale and zone (`toLocaleDateString()`) renders one string on the server and
+ * another in the browser, and React throws a hydration error (F-26, /mis/settings/wages).
+ */
+export function formatFactoryDate(at: Date, timeZone: string): string {
+  const key = factoryDateKey(at, timeZone);
+  return `${key.slice(8, 10)}/${key.slice(5, 7)}/${key.slice(0, 4)}`;
+}
+
+/** `20/09/2026 06:04` — the day and the time, both the factory's. */
+export function formatFactoryDateTime(at: Date, timeZone: string): string {
+  return `${formatFactoryDate(at, timeZone)} ${formatFactoryTime(at, timeZone)}`;
+}
+
+/**
  * The date key `days` away from `key`. Pure calendar arithmetic on the date itself —
  * no zone is involved, so a daylight-saving edge can never skip or repeat a day.
  */

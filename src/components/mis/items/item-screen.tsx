@@ -56,7 +56,7 @@ export function ItemScreen({ items, canWrite }: Props) {
         {canWrite && <Button onClick={openAdd}>+ Add Item</Button>}
       </div>
       <div>
-        <input type="search" placeholder="Search items…" value={search} onChange={e => setSearch(e.target.value)} className="w-full max-w-sm rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400" />
+        <input type="search" placeholder="Search items…" value={search} onChange={e => setSearch(e.target.value)} className="w-full max-w-sm min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500" />
       </div>
       <DataTable columns={columns} rows={filtered} rowKey={(r) => r.id} emptyTitle="No items yet" emptyBody="Add stock items to manage inventory." />
       <SlideOver open={open} onClose={() => setOpen(false)} title={editing ? 'Edit Item' : 'Add Item'}>

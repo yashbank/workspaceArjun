@@ -11,6 +11,7 @@ import { useT } from '@/components/mis/shell/locale-provider';
 import { PendingSyncNote } from '@/components/mis/shell/pending-sync-note';
 import { useOnline } from '@/components/mis/shell/use-online';
 import { useToast } from '@/components/ui/toast';
+import { DEFAULT_FACTORY_TIMEZONE, formatFactoryDateTime } from '@/lib/mis/factory-time';
 import { newIdempotencyKey, type ParkReason } from '@/lib/mis/offline/idempotency';
 import { isClearanceBlock, submitProduction } from './submit-production';
 
@@ -195,7 +196,7 @@ export function ProductionScreen({
           placeholder="Search orders…"
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="w-full max-w-sm rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+          className="w-full max-w-sm min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500"
         />
       </div>
 
@@ -253,8 +254,8 @@ export function ProductionScreen({
                 <ul className="flex flex-col gap-1">
                   {history.map((h) => (
                     <li key={h.id}>
-                      {h.mode} · cleared {new Date(h.clearedAt).toLocaleString()}
-                      {h.expiresAt ? ` · expires ${new Date(h.expiresAt).toLocaleString()}` : ''}
+                      {h.mode} · cleared {formatFactoryDateTime(new Date(h.clearedAt), DEFAULT_FACTORY_TIMEZONE)}
+                      {h.expiresAt ? ` · expires ${formatFactoryDateTime(new Date(h.expiresAt), DEFAULT_FACTORY_TIMEZONE)}` : ''}
                       {h.orderNumber ? ` · ${h.orderNumber}` : ''}
                     </li>
                   ))}

@@ -1,3 +1,4 @@
+import { isUuid } from '@/lib/mis/ids';
 import { notFound } from 'next/navigation';
 import { requireMisAccess } from '@/server/mis/guard';
 import { listStoreTxns, listStockSummary } from '@/server/mis/store';
@@ -8,6 +9,7 @@ type Props = { params: Promise<{ itemId: string }> };
 export default async function StoreLedgerPage({ params }: Props) {
   await requireMisAccess();
   const { itemId } = await params;
+  if (!isUuid(itemId)) notFound();
 
   const [txns, summary] = await Promise.all([
     listStoreTxns(itemId),
