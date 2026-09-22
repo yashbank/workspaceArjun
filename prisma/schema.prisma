@@ -354,6 +354,17 @@ model MisEmployee {
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
+  /// Phase 25 (25.2/25.3/25.5, D26/D28). A CODE, not a foreign key — matches how
+  /// `getWageRateHistory(code)` already reads `MisWageType` (many effective-dated
+  /// rows share one code; there is no single row to point a relation at). NULL is
+  /// a normal, expected state ("no wage code set") surfaced as a data-health
+  /// finding (25.1's brief), never silently defaulted to DEFAULT_DAILY_WAGE_CODE.
+  wageTypeCode  String?  @map("wage_type_code")
+  /// D28. MONTHLY employees are paid every Sunday; DAILY employees only when
+  /// `sundayPaid` and actually present (25.3).
+  payType       MisPayType @default(DAILY) @map("pay_type")
+  sundayPaid    Boolean  @default(false) @map("sunday_paid")
+
   userProfile   UserProfile?      @relation(fields: [userProfileId], references: [id], onDelete: SetNull)
   manager       MisEmployee?      @relation("MisReports", fields: [managerId], references: [id], onDelete: SetNull)
   reports       MisEmployee[]     @relation("MisReports")
@@ -364,11 +375,13 @@ model MisEmployee {
   jobPhasesInCharge MisJobPhase[] @relation("MisJobPhaseInCharge")
   workerAllocations MisWorkerAllocation[]
   punches       MisAttendancePunch[]
+  payComponents MisEmployeePayComponent[]
 
   @@index([role])
   @@index([managerId])
   @@index([departmentId])
   @@index([deletedAt])
+  @@index([wageTypeCode])
   @@map("mis_employees")
 }
 
@@ -1341,6 +1354,21 @@ model MisWageType {
   nameHi        String?     @map("name_hi")
   amount        Decimal     @db.Decimal(12, 2)
   unit          MisWageUnit @default(DAILY)
+  /// D26. OT pay = OT hours clocked × this rate — replaces the OT_MULTIPLIER
+  /// business rule for any employee on a code that sets it. NULL means this
+  /// code has no OT rate yet (25.1's data-health finding), never a silent 0.
+  otRatePerHour Decimal?    @db.Decimal(12, 2) @map("ot_rate_per_hour")
+  /// D28. Read only for a DAILY employee's extra-pay multiplier: does the
+  /// day's multiplier apply to this code's month-equivalent figure or its
+  /// per-hour figure? A MONTHLY employee has only one figure, so this is
+  /// never consulted for them (25.5).
+  multiplierBasis MisPayBasis @default(PER_MONTH) @map("multiplier_basis")
+  /// 25.1 payslip component base amounts. NULL = the component has nothing to
+  /// pay from this code; whether it PRINTS is the per-employee toggle
+  /// (MisEmployeePayComponent), not this. Effective-dated like `amount`.
+  hraAmount       Decimal?  @db.Decimal(12, 2) @map("hra_amount")
+  allowanceAmount Decimal?  @db.Decimal(12, 2) @map("allowance_amount")
+  bonusAmount     Decimal?  @db.Decimal(12, 2) @map("bonus_amount")
   effectiveFrom DateTime    @default(now()) @map("effective_from") @db.Date
   isActive      Boolean     @default(true) @map("is_active")
   deletedAt     DateTime?   @map("deleted_at")
@@ -1351,4 +1379,203 @@ model MisWageType {
   @@index([code])
   @@index([deletedAt])
   @@map("mis_wage_types")
+}
+
+enum MisPayType {
+  MONTHLY
+  DAILY
+  @@map("mis_pay_type")
+}
+
+/// D28 — which figure a wage code's multiplier-kind extra-pay day multiplies.
+enum MisPayBasis {
+  PER_MONTH
+  PER_HOUR
+  @@map("mis_pay_basis")
+}
+
+/// 25.1 — the payslip rows a wage code can carry. SALARY is not its own value:
+/// the BASIC row prints as "Salary" for a MONTHLY employee and "Basic Wage"
+/// for a DAILY one (display only, driven by MisEmployee.payType — D33).
+enum MisPayComponent {
+  BASIC
+  HRA
+  ALLOWANCE
+  OT
+  BONUS
+  @@map("mis_pay_component")
+}
+
+/// Per-employee, per-component on/off switch for the payslip (25.1). Not
+/// effective-dated on purpose — a closed month's own figures are protected by
+/// `MisPayrollPeriod`/`MisPayrollSnapshotLine`, not by this row's history, so
+/// flipping a toggle today never has to prove what it was last month (D33).
+/// A toggled-off component contributes nothing and is not sent to print.
+model MisEmployeePayComponent {
+  id          String          @id @default(uuid()) @db.Uuid
+  employeeId  String          @map("employee_id") @db.Uuid
+  component   MisPayComponent
+  enabled     Boolean         @default(true)
+  updatedById String?         @map("updated_by_id") @db.Uuid
+  updatedAt   DateTime        @updatedAt @map("updated_at")
+
+  employee    MisEmployee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, component])
+  @@map("mis_employee_pay_components")
+}
+
+enum MisExtraPayKind {
+  MULTIPLIER
+  FLAT_AMOUNT
+  @@map("mis_extra_pay_kind")
+}
+
+enum MisExtraPayScope {
+  ALL_PRESENT
+  EMPLOYEES
+  DEPARTMENTS
+  @@map("mis_extra_pay_scope")
+}
+
+enum MisExtraPayStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  @@map("mis_extra_pay_status")
+}
+
+/// D28 (25.4). One calendar date with an extra pay treatment. `scope` decides
+/// who: ALL_PRESENT needs no rows in the two join tables below; EMPLOYEES /
+/// DEPARTMENTS narrow it. Admin and Super Attendance Operator PROPOSE
+/// (status PENDING); only an Owner APPROVED row counts in payroll — reuses the
+/// existing approval-queue PATTERN (a status field on the row, exactly like
+/// MisBom/MisPurchaseOrder/MisLeaveRequest), not a second mechanism, so
+/// `getPendingApprovals` (Half B) adds a fourth `.findMany({ where: { status:
+/// 'PENDING' } })` alongside the three it already runs.
+model MisExtraPayDay {
+  id           String             @id @default(uuid()) @db.Uuid
+  date         DateTime           @db.Date
+  kind         MisExtraPayKind
+  /// The multiplier (e.g. 2.0) or the flat amount in rupees, per `kind`.
+  value        Decimal            @db.Decimal(12, 2)
+  scope        MisExtraPayScope
+  reason       String
+  status       MisExtraPayStatus  @default(PENDING)
+  proposedById String             @map("proposed_by_id") @db.Uuid
+  approvedById String?            @map("approved_by_id") @db.Uuid
+  approvedAt   DateTime?          @map("approved_at")
+  createdAt    DateTime           @default(now()) @map("created_at")
+  updatedAt    DateTime           @updatedAt @map("updated_at")
+
+  employees    MisExtraPayDayEmployee[]
+  departments  MisExtraPayDayDepartment[]
+
+  @@index([date])
+  @@index([status])
+  @@map("mis_extra_pay_days")
+}
+
+model MisExtraPayDayEmployee {
+  id              String         @id @default(uuid()) @db.Uuid
+  extraPayDayId   String         @map("extra_pay_day_id") @db.Uuid
+  employeeId      String         @map("employee_id") @db.Uuid
+
+  extraPayDay     MisExtraPayDay @relation(fields: [extraPayDayId], references: [id], onDelete: Cascade)
+
+  @@unique([extraPayDayId, employeeId])
+  @@map("mis_extra_pay_day_employees")
+}
+
+model MisExtraPayDayDepartment {
+  id              String         @id @default(uuid()) @db.Uuid
+  extraPayDayId   String         @map("extra_pay_day_id") @db.Uuid
+  departmentId    String         @map("department_id") @db.Uuid
+
+  extraPayDay     MisExtraPayDay @relation(fields: [extraPayDayId], references: [id], onDelete: Cascade)
+
+  @@unique([extraPayDayId, departmentId])
+  @@map("mis_extra_pay_day_departments")
+}
+
+enum MisPayrollPeriodStatus {
+  OPEN
+  CLOSED
+  @@map("mis_payroll_period_status")
+}
+
+/// D27's missing half, built here (Phase 25): "a computed month is NOT final".
+/// One row per (year, month). OPEN periods are computed live by
+/// `calculateMonthlyPayroll`, as today. Closing writes one `MisPayrollSnapshotLine`
+/// per employee and flips the period CLOSED — from then on every reader (payslip,
+/// payroll screen, export) must read the snapshot, never recompute, so a later
+/// back-dated rate change cannot move a closed month. `correctionsAfterClose`
+/// is W9's own "Corrections after close: 0" counter — incremented, never
+/// decremented, by whatever Half B decides a "correction" is (out of scope
+/// for the schema). `lastExportedById`/`lastExportedAt` back W9's "Export
+/// August" button and its "every export is logged with who and when" line —
+/// Half B ALSO writes a MisAuditLog row for the export (D24: EXPORT_PAYROLL,
+/// counts only, no amounts in the payload — see D24 and the note below).
+model MisPayrollPeriod {
+  id                    String                  @id @default(uuid()) @db.Uuid
+  year                  Int
+  month                 Int
+  status                MisPayrollPeriodStatus  @default(OPEN)
+  closedById            String?                 @map("closed_by_id") @db.Uuid
+  closedAt              DateTime?               @map("closed_at")
+  correctionsAfterClose Int                     @default(0) @map("corrections_after_close")
+  lastExportedById      String?                 @map("last_exported_by_id") @db.Uuid
+  lastExportedAt        DateTime?               @map("last_exported_at")
+  createdAt             DateTime                @default(now()) @map("created_at")
+  updatedAt             DateTime                @updatedAt @map("updated_at")
+
+  lines                 MisPayrollSnapshotLine[]
+
+  @@unique([year, month])
+  @@map("mis_payroll_periods")
+}
+
+/// One employee's frozen payslip for one closed period — the numbers a
+/// payslip print and the export read once `MisPayrollPeriod.status` is
+/// CLOSED, instead of recomputing from live attendance and rate history.
+/// `employeeCode`/`employeeName`/`payType` are DENORMALISED on purpose: a
+/// later employee edit, rename or role change must not alter a closed
+/// month's own record of what it paid. **This row carries money (D24) — it
+/// must be read only behind `wages.read`, and NEVER written into a
+/// MisAuditLog before/after payload; the export event logs the period and
+/// the counts (D24, see MisPayrollPeriod), not this row.**
+model MisPayrollSnapshotLine {
+  id            String           @id @default(uuid()) @db.Uuid
+  periodId      String           @map("period_id") @db.Uuid
+  employeeId    String           @map("employee_id") @db.Uuid
+  employeeCode  String           @map("employee_code")
+  employeeName  String           @map("employee_name")
+  payType       MisPayType       @map("pay_type")
+
+  workingDays   Int              @map("working_days")
+  present       Int
+  halfDay       Int              @map("half_day")
+  absent        Int
+  leave         Int
+  otMinutes     Int              @map("ot_minutes")
+  lateMinutes   Int              @map("late_minutes")
+  allowanceDays Int              @default(0) @map("allowance_days")
+
+  basicWage     Decimal          @db.Decimal(12, 2) @map("basic_wage")
+  hra           Decimal          @default(0) @db.Decimal(12, 2)
+  allowance     Decimal          @default(0) @db.Decimal(12, 2)
+  otPay         Decimal          @db.Decimal(12, 2) @map("ot_pay")
+  bonus         Decimal          @default(0) @db.Decimal(12, 2)
+  extraPay      Decimal          @default(0) @db.Decimal(12, 2) @map("extra_pay")
+  latePenalty   Decimal          @db.Decimal(12, 2) @map("late_penalty")
+  grossPay      Decimal          @db.Decimal(12, 2) @map("gross_pay")
+
+  wageTypeCode  String?          @map("wage_type_code")
+  createdAt     DateTime         @default(now()) @map("created_at")
+
+  period        MisPayrollPeriod @relation(fields: [periodId], references: [id], onDelete: Cascade)
+
+  @@unique([periodId, employeeId])
+  @@index([employeeId])
+  @@map("mis_payroll_snapshot_lines")
 }
