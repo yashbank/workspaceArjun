@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react';
 import { Button } from '@/components/mis/kit/button';
 import { Select, type SelectOption } from '@/components/mis/kit/select';
-import { Input } from '@/components/mis/kit/input';
+import { Input, DateInput } from '@/components/mis/kit/input';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
@@ -105,12 +105,12 @@ export function LeaveScreen({ leaves, employees, canApprove, initialEmployeeId }
       </div>
 
       {/* Filter tabs */}
-      <div className="flex gap-1 bg-gray-100 p-1 rounded-lg w-fit">
+      <div className="flex flex-wrap gap-1 bg-gray-100 p-1 rounded-lg w-fit">
         {(['ALL', 'PENDING', 'APPROVED', 'REJECTED'] as const).map((f) => (
           <button
             key={f}
             onClick={() => setFilter(f)}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+            className={`inline-flex min-h-11 items-center rounded-md px-3 text-base font-medium transition-colors ${
               filter === f ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
             }`}
           >
@@ -139,7 +139,7 @@ export function LeaveScreen({ leaves, employees, canApprove, initialEmployeeId }
       <SlideOver open={open} onClose={() => setOpen(false)} title="Request Leave">
         <div className="flex flex-col gap-4 p-4">
           <Select label="Employee" value={empId} options={empOptions} onChange={setEmpId} />
-          <Input label="Date" value={date} onChange={(e) => setDate(e.target.value)} />
+          <DateInput label="Date" value={date} onChange={(e) => setDate(e.target.value)} />
           <Input label="Reason (optional)" value={reason} onChange={(e) => setReason(e.target.value)} />
           <div className="flex gap-2 pt-2">
             <Button onClick={handleRequest} disabled={isPending || !empId || !date}>Submit</Button>

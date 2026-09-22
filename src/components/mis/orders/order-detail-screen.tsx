@@ -117,8 +117,8 @@ export function OrderDetailScreen({
   return (
     <div className="p-6 max-w-5xl mx-auto">
       {/* Breadcrumb */}
-      <nav className="text-sm text-slate-500 mb-4">
-        <Link href="/mis/orders" className="hover:underline">Orders</Link>
+      <nav className="mb-4 flex items-center text-sm text-slate-500">
+        <Link href="/mis/orders" className="inline-flex min-h-11 items-center hover:underline">Orders</Link>
         <span className="mx-2">/</span>
         <span className="text-slate-800">{order.orderNumber}</span>
       </nav>
@@ -127,7 +127,7 @@ export function OrderDetailScreen({
       <div className="flex items-start justify-between mb-6 gap-4 flex-wrap">
         <div>
           <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-2xl font-semibold font-mono">{order.orderNumber}</h1>
+            <h1 className="text-2xl font-semibold font-mono text-slate-900">{order.orderNumber}</h1>
             <StatusBadge tone={statusTone(order.status)}>{order.status.replace(/_/g, ' ')}</StatusBadge>
           </div>
           {order.description && <p className="text-slate-600 mt-1">{order.description}</p>}
@@ -141,16 +141,16 @@ export function OrderDetailScreen({
             <button
               type="button"
               onClick={() => setReopenOpen(true)}
-              className="px-3 py-1.5 text-sm font-semibold bg-white border border-amber-300 text-amber-900 rounded hover:bg-amber-50"
+              className="inline-flex min-h-11 items-center rounded-lg border border-amber-300 bg-white px-3 text-sm font-semibold text-amber-900 hover:bg-amber-50"
             >
               {t('order.reopen')}
             </button>
           )}
-          <Link href={`/mis/print/job-card/${order.id}`} target="_blank" className="px-3 py-1.5 text-sm bg-white border border-slate-200 rounded hover:bg-slate-50">
+          <Link href={`/mis/print/job-card/${order.id}`} target="_blank" className="inline-flex min-h-11 items-center rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
             Print Job Card
           </Link>
           {qcSummary.pass > 0 && (
-            <Link href={`/mis/print/coa/${order.id}`} target="_blank" className="px-3 py-1.5 text-sm bg-white border border-slate-200 rounded hover:bg-slate-50">
+            <Link href={`/mis/print/coa/${order.id}`} target="_blank" className="inline-flex min-h-11 items-center rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
               Print COA
             </Link>
           )}
@@ -228,8 +228,8 @@ export function OrderDetailScreen({
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-              tab === t.key ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'
+            className={`inline-flex min-h-11 items-center px-4 text-sm font-medium border-b-2 transition-colors ${
+              tab === t.key ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700'
             }`}
           >
             {t.label}
@@ -260,7 +260,7 @@ export function OrderDetailScreen({
                 <StatusBadge tone={bom.status === 'APPROVED' ? 'good' : bom.status === 'PENDING_APPROVAL' ? 'warning' : 'neutral'}>
                   {bom.status}
                 </StatusBadge>
-                <Link href={`/mis/bom/${order.id}`} className="text-sm text-blue-600 hover:underline">
+                <Link href={`/mis/bom/${order.id}`} className="inline-flex min-h-11 items-center text-sm font-medium text-indigo-700 hover:underline">
                   Open full BOM →
                 </Link>
               </div>
@@ -269,7 +269,7 @@ export function OrderDetailScreen({
           ) : (
             <div className="text-center py-12">
               <p className="text-slate-500 mb-3">No BOM yet for this order.</p>
-              <Link href={`/mis/bom/${order.id}`} className="text-blue-600 hover:underline text-sm">
+              <Link href={`/mis/bom/${order.id}`} className="inline-flex min-h-11 items-center text-sm font-medium text-indigo-700 hover:underline">
                 Create BOM →
               </Link>
             </div>

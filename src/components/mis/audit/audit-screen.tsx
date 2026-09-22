@@ -72,15 +72,16 @@ export function AuditScreen({ logs, initialFrom, initialTo }: Props) {
         <span className="text-sm text-gray-400">{filtered.length} of {logs.length} events</span>
       </div>
 
-      <div className="flex gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <input
-          className="flex-1 max-w-sm rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          type="search"
+          className="min-h-12 w-full max-w-sm rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
           placeholder="Search actions, actors…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
         <select
-          className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
           value={entityFilter}
           onChange={(e) => setEntityFilter(e.target.value)}
         >
@@ -89,25 +90,25 @@ export function AuditScreen({ logs, initialFrom, initialTo }: Props) {
             <option key={e} value={e}>{e.charAt(0).toUpperCase() + e.slice(1)}</option>
           ))}
         </select>
-        <div className="flex items-center gap-2 text-sm text-gray-500">
+        <div className="flex flex-wrap items-center gap-2 text-base text-gray-500">
           <span>From</span>
           <input
             type="date"
             value={fromDate}
             onChange={(e) => { setFromDate(e.target.value); applyDateRange(e.target.value, toDate); }}
-            className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           <span>To</span>
           <input
             type="date"
             value={toDate}
             onChange={(e) => { setToDate(e.target.value); applyDateRange(fromDate, e.target.value); }}
-            className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           {(fromDate || toDate) && (
             <button
               onClick={() => { setFromDate(''); setToDate(''); applyDateRange('', ''); }}
-              className="text-sm text-gray-400 hover:text-gray-600 underline"
+              className="inline-flex min-h-11 items-center text-base text-gray-500 hover:text-gray-700 underline"
             >
               Clear
             </button>

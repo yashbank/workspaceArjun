@@ -7,8 +7,13 @@ import { cn } from '@/lib/utils';
 type Variant = 'primary' | 'secondary' | 'danger' | 'ghost';
 
 const VARIANTS: Record<Variant, string> = {
+  // MIS_UI_SPEC §4.3: "Primary button: ... bg-indigo-600 ... hover:bg-indigo-700" — this was
+  // `bg-slate-900` (near-black), the one primary action in the MIS that did not read as
+  // indigo (flagged cross-part, 24G-part2 G2-11 → Part 1). Every other primary surface in the
+  // app (home cards' PrimaryButton, the desktop shell's active nav item, D1/D2's Customise
+  // bar) already uses indigo-600; this brings the shared kit Button in line with them.
   primary:
-    'bg-slate-900 text-white hover:bg-slate-800 focus-visible:outline-slate-900 disabled:bg-slate-400',
+    'bg-indigo-600 text-white hover:bg-indigo-700 focus-visible:outline-indigo-600 disabled:bg-indigo-300',
   secondary:
     'border border-slate-300 bg-white text-slate-900 hover:bg-slate-50 focus-visible:outline-slate-900 disabled:text-slate-400',
   danger:

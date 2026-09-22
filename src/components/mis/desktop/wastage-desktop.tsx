@@ -97,7 +97,7 @@ export function WastageDesktop({ report }: { report: WastageReport | null }) {
                 id="d7-machine"
                 name="machine"
                 defaultValue={report.machineId ?? ''}
-                className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-800"
+                className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-800"
               >
                 <option value="">{t('d7.allMachines')}</option>
                 {report.machines.map((m) => (

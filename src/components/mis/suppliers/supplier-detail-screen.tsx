@@ -25,8 +25,10 @@ export function SupplierDetailScreen({ supplier, pos, canWrite }: Props) {
   return (
     <div className="max-w-4xl mx-auto space-y-6 py-6">
       <nav className="flex items-center gap-2 text-sm text-gray-500">
-        <Link href="/mis/suppliers" className="hover:text-gray-700">Suppliers</Link>
-        <span>/</span>
+        <Link href="/mis/suppliers" className="inline-flex min-h-11 items-center hover:text-gray-700">
+          Suppliers
+        </Link>
+        <span aria-hidden="true">/</span>
         <span className="text-gray-900 font-medium">{supplier.name}</span>
       </nav>
 

@@ -137,21 +137,21 @@ export function ProductionDetailScreen({ order, logs, summary, employees, machin
     <div className="max-w-4xl mx-auto space-y-6 py-6">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-2 text-sm text-gray-500">
-        <Link href="/mis/production" className="hover:text-gray-700">Production</Link>
+        <Link href="/mis/production" className="inline-flex min-h-11 items-center hover:text-gray-700">Production</Link>
         <span>/</span>
         <span className="text-gray-900 font-medium">{order.orderNumber}</span>
       </nav>
 
       {/* Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold text-gray-900">{order.orderNumber}</h1>
+      <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="break-words text-2xl font-bold text-gray-900">{order.orderNumber}</h1>
             <StatusBadge>{order.status}</StatusBadge>
           </div>
           <p className="text-sm text-gray-500 mt-1">{order.customer?.name ?? 'No customer'}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Link href={`/mis/orders/${order.id}`}>
             <Button variant="ghost">Order Details</Button>
           </Link>

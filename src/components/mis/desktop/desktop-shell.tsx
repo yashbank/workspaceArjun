@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useEffect, useRef } from 'react';
 import {
   BarChart3,
   CheckCircle2,
@@ -75,6 +76,19 @@ export function DesktopShell({
 }: DesktopShellProps) {
   const t = useT();
   const sections = groupDesktopNav(nav);
+  const pathname = usePathname();
+  const navRef = useRef<HTMLElement>(null);
+
+  // 24G-part1 gap 4 — at 1440x900 a long role's nav (e.g. Owner's) overflowed the rail and the
+  // active item (Masters) sat half-hidden behind the user footer with no way to tell there was
+  // more to scroll to. `min-h-0` is the fix: without it a flex child never shrinks below its
+  // own content height, so `overflow-y-auto` below had nothing to scroll — the whole `<aside>`
+  // overflowed the viewport instead of just this list, and the footer never got pinned.
+  useEffect(() => {
+    // Optional-chained on the call, not just the lookup: jsdom (this file's own tests) has no
+    // `scrollIntoView` at all, and a real but older webview may not either.
+    navRef.current?.querySelector<HTMLElement>('[aria-current="page"]')?.scrollIntoView?.({ block: 'nearest' });
+  }, [pathname]);
 
   return (
     // `hidden lg:flex` is the whole breakpoint story: below 1024px this frame does not
@@ -95,7 +109,7 @@ export function DesktopShell({
           </span>
         </div>
 
-        <nav className="flex-1 overflow-y-auto px-2 pb-4 xl:px-3">
+        <nav ref={navRef} className="min-h-0 flex-1 overflow-y-auto px-2 pb-4 xl:px-3">
           <NavItem
             href="/mis/dashboard"
             icon={LayoutGrid}
@@ -130,7 +144,7 @@ export function DesktopShell({
           })}
         </nav>
 
-        <div className="mt-auto flex items-center gap-3 border-t border-white/10 px-3 py-3 xl:px-4">
+        <div className="mt-auto shrink-0 flex items-center gap-3 border-t border-white/10 px-3 py-3 xl:px-4">
           <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-xs font-semibold text-white">
             {initials(userName)}
           </span>

@@ -35,9 +35,9 @@ export function EmployeeProfileScreen({ employee, monthStats, canWrite }: Props)
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 py-6">
-      {/* Breadcrumb */}
-      <nav className="flex items-center gap-2 text-sm text-gray-500">
-        <Link href="/mis/employees" className="hover:text-gray-700">Employees</Link>
+      {/* Breadcrumb — the link is a real tap target (24G-02), not a 20px sliver of text. */}
+      <nav className="flex items-center gap-2 text-base text-gray-500">
+        <Link href="/mis/employees" className="inline-flex min-h-11 items-center hover:text-gray-700">Employees</Link>
         <span>/</span>
         <span className="text-gray-900 font-medium">{employee.name}</span>
       </nav>

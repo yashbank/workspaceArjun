@@ -1,5 +1,7 @@
 'use client';
 
+import Link from 'next/link';
+
 import {
   SERIES_HUES,
   STATE_HUES,
@@ -35,7 +37,7 @@ export type DashboardData = {
   machines: { free: number; running: number; down: number; total: number } | null;
   attendance: { headcount: number; present: number; late: number; onLeave: number; absent: number } | null;
   crew: { present: number; headcount: number; absent: number; onLeave: number; recorded: boolean } | null;
-  approvals: { total: number; rows: { id: string; title: string; detail: string }[] } | null;
+  approvals: { total: number; rows: { id: string; title: string; detail: string; age?: string }[] } | null;
   orders: { id: string; orderNumber: string; done: number; total: number; late: boolean; despatched: boolean }[];
   onTime: { pct: number; target: number; despatched: number; total: number } | null;
   wastageByPhase: { phase: string; kg: number }[];
@@ -229,14 +231,36 @@ export function WidgetBody({ widgetKey, data }: { widgetKey: string; data: Dashb
             <span className="flex size-7 items-center justify-center rounded-lg bg-indigo-600 font-mono text-sm font-bold text-white">
               {data.approvals.total}
             </span>
-            <span className="text-sm font-semibold text-indigo-900">{t('widget.orders.waitingOnYou')}</span>
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold text-indigo-900">{t('widget.orders.waitingOnYou')}</span>
+              {/* R1 / D1: the subtitle is what makes the count matter — "2" alone is a badge, this is a stake. */}
+              <span className="block text-xs text-indigo-700">{t('widget.orders.waitingOnYou.nothingMoves')}</span>
+            </span>
           </p>
-          {data.approvals.rows.slice(0, 3).map((row) => (
-            <div key={row.id} className="min-w-0">
-              <p className="truncate text-sm font-medium text-slate-900">{row.title}</p>
-              <p className="truncate text-xs text-slate-500">{row.detail}</p>
-            </div>
-          ))}
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {data.approvals.rows.slice(0, 3).map((row) => (
+              <div key={row.id} className="flex items-center justify-between gap-2 py-1">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-slate-900">{row.title}</p>
+                  <p className="truncate text-xs text-slate-500">{row.detail}</p>
+                </div>
+                {row.age && (
+                  <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-indigo-700">
+                    {row.age}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+          <Link
+            href="/mis/approvals"
+            className="mt-auto flex min-h-11 items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-3 text-sm font-semibold text-white hover:bg-indigo-700"
+          >
+            <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="m5 13 4 4L19 7" />
+            </svg>
+            {t('widget.orders.reviewApprovals')}
+          </Link>
         </div>
       );
     }

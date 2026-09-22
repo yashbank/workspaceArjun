@@ -7,6 +7,7 @@ import { QcHome, type QcSlotView } from '@/components/mis/home/qc-home';
 import { StoreHome } from '@/components/mis/home/store-home';
 import { SupervisorHome } from '@/components/mis/home/supervisor-home';
 import type { MisRoleName } from '@/lib/mis/roles';
+import { shortAge } from '@/lib/mis/relative-age';
 import { getPendingApprovals } from '@/server/mis/approvals';
 import {
   getAttendanceCorrectionWindow,
@@ -98,20 +99,25 @@ async function OwnerScreen({
   ]);
 
   const approvalRows = [
+    // R1's row reads "ORD-118  Duplex carton" — the order and what it is, in one line, with
+    // how long it has waited as the pill beside it (age, not buried in a sentence).
     ...approvals.boms.map((b) => ({
       id: `bom-${b.id}`,
-      title: `BOM for ${b.order?.orderNumber ?? 'an order'}`,
+      title: `${b.order?.orderNumber ?? 'Order'} · ${b.order?.description ?? 'BOM approval'}`,
       detail: `${b.order?.description ?? 'No description'} · waiting since ${ago(b.updatedAt)}`,
+      age: shortAge(b.updatedAt, now),
     })),
     ...approvals.pos.map((p) => ({
       id: `po-${p.id}`,
       title: `${p.poNumber} · ${p.supplier?.name ?? 'No supplier'}`,
       detail: `Purchase order raised ${ago(p.createdAt)}`,
+      age: shortAge(p.createdAt, now),
     })),
     ...approvals.leaves.map((l) => ({
       id: `leave-${l.id}`,
       title: `Leave for ${l.employee?.name ?? 'an employee'}`,
       detail: `${format(l.date, 'd MMM')} · ${l.reason ?? 'No reason given'}`,
+      age: shortAge(l.createdAt, now),
     })),
   ].slice(0, 2);
 

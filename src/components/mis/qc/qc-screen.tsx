@@ -9,10 +9,10 @@ import { addQcCheckAction } from '@/app/(mis)/mis/qc/actions';
 
 type Order = { id: string; orderNumber: string; status: string; customer: { name: string } | null };
 
+// Orders reaching QC are always CONFIRMED or IN_PRODUCTION — QC_PENDING is not a status this schema has.
 const statusColors: Record<string, string> = {
-  IN_PRODUCTION: 'bg-yellow-100 text-yellow-700',
-  QC_PENDING: 'bg-purple-100 text-purple-700',
-  CONFIRMED: 'bg-blue-100 text-blue-700',
+  CONFIRMED: 'bg-sky-50 text-sky-800',
+  IN_PRODUCTION: 'bg-amber-50 text-amber-900',
 };
 
 export function QcScreen({ orders, canWrite }: { orders: Order[]; canWrite: boolean }) {
