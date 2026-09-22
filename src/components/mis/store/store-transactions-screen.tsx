@@ -167,9 +167,13 @@ export function StoreTransactionsScreen({ txns, items, canWrite }: Props) {
       key: 'item',
       header: 'Item',
       render: (r) => (
-        <div>
-          <div className="text-sm font-medium text-slate-800">{r.itemName}</div>
-          <div className="text-xs text-slate-400">
+        // Capped and truncated like the Reference column below it — as a secondary
+        // column this sits inside the mobile card's justify-between row, and an
+        // unconstrained two-line block there pushed 31 elements past the 390px
+        // edge (every card, since CardRow gives it no width of its own).
+        <div className="max-w-[160px]">
+          <div className="truncate text-sm font-medium text-slate-800">{r.itemName}</div>
+          <div className="truncate text-xs text-slate-400">
             {r.itemCode}{r.sku ? ` · ${r.sku}` : ''}
           </div>
         </div>
@@ -249,7 +253,7 @@ export function StoreTransactionsScreen({ txns, items, canWrite }: Props) {
           )}
           <button
             onClick={() => downloadCsv(filtered)}
-            className="px-3 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-700"
+            className="inline-flex min-h-11 items-center justify-center px-3 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-700"
           >
             ↓ CSV
           </button>

@@ -75,12 +75,12 @@ export function WorkerBoardScreen({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold text-gray-900">{t('crew.title')}</h1>
         {shifts.length > 1 && (
-          <div className="flex gap-1 rounded-full border border-slate-200 bg-white p-1">
+          <div className="flex flex-wrap gap-1 rounded-full border border-slate-200 bg-white p-1">
             {shifts.map((s) => (
               <Link
                 key={s.id}
                 href={`/mis/crew?shift=${s.id}`}
-                className={`rounded-full px-3 py-1 text-sm font-medium ${
+                className={`inline-flex min-h-11 items-center rounded-full px-3 text-base font-medium ${
                   s.id === currentShiftId ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-50'
                 }`}
               >

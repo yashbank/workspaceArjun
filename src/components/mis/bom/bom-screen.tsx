@@ -95,9 +95,12 @@ export function BomScreen({ bom, orderId, canWrite, isOwner }: { bom: Bom; order
             </div>
             <div className="divide-y divide-slate-100">
               {stage.materials.map(m => (
-                <div key={m.id} className="flex items-center px-4 py-2 gap-4">
-                  <span className="flex-1 text-sm text-slate-700">{m.description}{m.item ? ` (${m.item.name})` : ''}</span>
-                  <span className="font-mono text-sm">{Number(m.quantity).toFixed(3)} {m.unit}</span>
+                <div key={m.id} className="flex items-center gap-4 px-4 py-3">
+                  <span className="flex-1 text-sm text-slate-700">
+                    {m.description}
+                    {m.item && !m.description.includes(m.item.name) ? ` (${m.item.name})` : ''}
+                  </span>
+                  <span className="font-mono text-sm font-semibold text-slate-900">{Number(m.quantity).toFixed(3)} {m.unit}</span>
                   {isOwner && m.ratePerUnit && <span className="font-mono text-sm text-slate-500">₹{Number(m.ratePerUnit).toFixed(2)}/unit</span>}
                   {canWrite && bom.status === 'DRAFT' && (
                     <Button

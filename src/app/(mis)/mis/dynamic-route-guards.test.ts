@@ -10,14 +10,11 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { listFiles } from '@/server/mis/testing/ast';
 
-// The payslip page is the one exception: its existing test (wage-screens.test.tsx) renders it with the id 'e1', which
-// the guard would turn into a 404, and an existing test is not edited to suit a change (F-25 lists it as still open).
-const NOT_YET_GUARDED = ['print/payslip/[employeeId]'];
-const PAGES = listFiles('src/app/(mis)', /^page\.tsx$/).filter((f) => /\/\[[^\]]+\]\//.test(f) && !/\[group\]/.test(f) && !NOT_YET_GUARDED.some((n) => f.includes(n)));
+const PAGES = listFiles('src/app/(mis)', /^page\.tsx$/).filter((f) => /\/\[[^\]]+\]\//.test(f) && !/\[group\]/.test(f));
 
 describe('every dynamic MIS page guards its id', () => {
   it('found the pages (a broken glob would pass vacuously)', () => {
-    expect(PAGES.length).toBeGreaterThanOrEqual(18);
+    expect(PAGES.length).toBeGreaterThanOrEqual(19);
   });
 
   it.each(PAGES)('%s answers 404 to an id that is not a UUID, before any query', (file) => {

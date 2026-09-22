@@ -62,6 +62,7 @@ else in the guide needs touching.
 | D29 | What does a role with no dashboard widgets see? | **ASSUMED — awaiting Arjun** | Medium | Phase 24 |
 | D30 | Who schedules a business-rule change, and is a reason required? | **ASSUMED — awaiting Arjun** | Medium | Phases 24, 25 |
 | D31 | What is a document's link allowed to be, and what does the library group by? | **ASSUMED — awaiting Arjun** | Medium | Phases 24, 25 |
+| D32 | How does a phone reach a screen that is not one of its five tabs? | **ASSUMED — awaiting Arjun** | Medium | Phase 24G |
 
 No phase is blocked by an unanswered question any more. Every phase builds on the assumed
 value and cites its D-number, so a later answer costs a re-run of named phases rather than
@@ -620,3 +621,15 @@ entire reason Phase 2 exists.
 | **Depends on it** | `lib/mis/document-library.ts` (`safeHref`, `validateDocumentInput`, `mimeFamily`), `server/mis/document-library.ts`, `/mis/documents`, `document-library.test.ts`, `documents-desktop.test.tsx` |
 | **To change** | To add categories, versions or retention, add columns to `MisDocument` (SCHEMA GATE, Half A — nothing here does). To allow another scheme (say `s3:`), extend `safeHref` and its test in one place. To harden the phone screen too, route its `href` and `addDocument` through the same helper — a change to a phone screen, so a PR line. |
 | **Ask Arjun** | "Documents today are links to files kept elsewhere. Should the MIS store the files itself — and do you want job cards and COAs kept as versioned records, or is the print page enough?" |
+
+## D32 · How does a phone reach a screen that is not one of its five tabs?
+
+| | |
+|---|---|
+| **Question** | The phone bottom bar is five tabs, never six (a sixth does not fit a 360px thumb), and the R1, R2 and R4 artboards draw the same five for Owner, Supervisor and Admin. Store, GRN, PO, Inventory, Suppliers, Customers, BOM, Documents, Traceability, Audit and Payroll are on the desktop sidebar but under no phone tab for those three roles (F-27). What is the way to them on a phone? |
+| **Status** | **ASSUMED by Phase 24G (2026-09-22)** — the artboards draw only the five tabs and say nothing about the rest |
+| **Assumed value** | **Owner, Admin and Supervisor phones show "More" as the fifth tab, listing every screen the role may open; the tab it replaces (Owner: Settings, Admin: Reports, Supervisor: Me) moves into More.** Still five tabs, never six. More opens a bottom sheet of links (each row 44px), grouped Store & purchasing · People & attendance · Production & quality · Records · Admin. **The list is the desktop sidebar's permission table** (`navigationForRole` in `server/mis/navigation.ts`): a screen is listed if and only if the role holds the permission its page needs, so the phone cannot offer what the desktop would not (D3, D24 — Payroll and the business-rules screen are Owner-only). Five phone-only rows (Crew, Leave, Settings → Users, Settings → Business rules, Me) are in that table but not in the sidebar, each with the permission of the page it opens. **QC, both attendance operators, Store Manager and Worker keep their fixed tabs and get no More.** |
+| **Rationale** | A Store card on each home would need a design for three roles and would still leave GRN, PO, Suppliers and the records screens unreachable. One list, derived from the table that already governs the sidebar, closes the gap for every screen at once and cannot drift. Keeping the other roles' bars unchanged leaves the screens the artboards do draw exactly as drawn. |
+| **Depends on it** | `components/mis/home/bottom-nav.tsx` (`barForRole`), `components/mis/home/more-sheet.tsx`, `lib/mis/phone-more.ts` (which roles, and the grouping), `server/mis/navigation.ts` (`navigationForRole`, the `phoneOnly` rows), `(mis)/mis/layout.tsx`, `kit/slide-over.tsx` (`placement="bottom"`), `more-tab.test.tsx`, `navigation-more.test.ts` |
+| **To change** | Give another role a More tab by adding it to `MORE_TAB_ROLES` in `lib/mis/phone-more.ts` (its fixed fifth tab then moves into the list). Move a screen between sections in `GROUP_OF` there. Offer a screen on the phone by adding a row to `NAV` (with the `requires` its page enforces; `phoneOnly: true` keeps it off the sidebar) and a `REQUIRES` row in `navigation-more.test.ts`. To use a Store card or a full "More" page instead, replace the sheet in `bottom-nav.tsx`; the list and its tests stay. No schema change. |
+| **Ask Arjun** | "On the phone, Owner, Admin and Supervisor now get a fifth 'More' button that lists every screen they are allowed to open, and Settings, Reports or Me moves inside it. Is that how you want it, or would you rather have a Store shortcut on their home screen?" |

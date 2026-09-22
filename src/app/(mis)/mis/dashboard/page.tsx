@@ -13,6 +13,7 @@ import { countPhasesForOrders } from '@/server/mis/job-phases';
 import { getDayProductionSummary, getProductionSeries } from '@/server/mis/production';
 import { getMisRole } from '@/server/mis/roles';
 import { getCrewSummary } from '@/server/mis/worker-allocation';
+import { shortAge } from '@/lib/mis/relative-age';
 
 import { resetDashboardLayoutAction, saveDashboardLayoutAction } from './actions';
 
@@ -27,6 +28,13 @@ import { resetDashboardLayoutAction, saveDashboardLayoutAction } from './actions
  * would throw for anyone else, so it is called only when the money widget survived the
  * role-filtered layout. A non-owner's page never asks for a wage at all.
  */
+function greeting(now: Date): string {
+  const h = now.getHours();
+  if (h < 12) return 'Good morning';
+  if (h < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+
 export default async function MisDashboardPage() {
   const user = await requireMisAccess();
   const role = await getMisRole(user.id);
@@ -82,11 +90,13 @@ export default async function MisDashboardPage() {
               id: `bom-${b.id}`,
               title: `BOM for ${b.order?.orderNumber ?? 'an order'}`,
               detail: b.order?.description ?? 'No description',
+              age: shortAge(b.updatedAt, now),
             })),
             ...approvals.pos.map((p) => ({
               id: `po-${p.id}`,
               title: p.poNumber,
               detail: p.supplier?.name ?? 'No supplier',
+              age: shortAge(p.createdAt, now),
             })),
           ],
         }
@@ -129,6 +139,7 @@ export default async function MisDashboardPage() {
       data={data}
       onSave={saveDashboardLayoutAction}
       onReset={resetDashboardLayoutAction}
+      header={{ title: greeting(now), meta: format(now, 'EEEE, d MMMM · HH:mm') }}
     />
   );
 }

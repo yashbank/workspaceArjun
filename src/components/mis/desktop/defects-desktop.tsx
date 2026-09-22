@@ -91,14 +91,14 @@ export function DefectsDesktop({ view, denied = false }: { view: DefectReportVie
             <form method="get" action="/mis/qc/defects" className="flex items-center gap-2">
               <input type="hidden" name="month" value={view.monthKey} />
               <label className="sr-only" htmlFor="d14-machine">{t('d14.machine')}</label>
-              <select id="d14-machine" name="machine" defaultValue={filters.machine ?? ''} className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-800">
+              <select id="d14-machine" name="machine" defaultValue={filters.machine ?? ''} className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-800">
                 <option value="">{t('d14.machine')}: {t('d14.allMachines')}</option>
                 {[...view.available.machines, ...(filters.machine && filters.machine !== MULTI_MACHINE && filters.machine !== NO_MACHINE && !view.available.machines.includes(filters.machine) ? [filters.machine] : [])].map((m) => <option key={m} value={m}>{m}</option>)}
                 {view.available.hasMulti || filters.machine === MULTI_MACHINE ? <option value={MULTI_MACHINE}>{t('d14.several')}</option> : null}
                 {view.available.hasNoMachine || filters.machine === NO_MACHINE ? <option value={NO_MACHINE}>{t('d14.noBooking')}</option> : null}
               </select>
               <label className="sr-only" htmlFor="d14-severity">{t('d14.severity')}</label>
-              <select id="d14-severity" name="severity" defaultValue={filters.severity ?? ''} className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-800">
+              <select id="d14-severity" name="severity" defaultValue={filters.severity ?? ''} className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-800">
                 <option value="">{t('d14.severity')}: {t('d14.allSeverities')}</option>
                 {([...view.available.severities, ...(filters.severity && !(view.available.severities as string[]).includes(filters.severity) ? [filters.severity as Severity] : [])] as (Severity | typeof UNCLASSIFIED)[]).map((s) => <option key={s} value={s}>{sevLabel(s)}</option>)}
               </select>

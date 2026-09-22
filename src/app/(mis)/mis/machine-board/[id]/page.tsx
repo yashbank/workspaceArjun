@@ -39,12 +39,13 @@ export default async function MachineHistoryPage({ params }: { params: Promise<{
   const now = new Date();
   const currentAlloc = allocations.find(a => a.startsAt <= now && a.endsAt >= now && !a.releasedAt);
   const status = currentAlloc ? 'BUSY' : machine.isActive ? 'FREE' : 'OFFLINE';
-  const dotColor = status === 'FREE' ? 'bg-green-500' : status === 'BUSY' ? 'bg-red-500' : 'bg-slate-300';
+  // FREE = green, BUSY = amber (P1); red is reserved for a genuine breakdown, which this schema does not track separately.
+  const dotColor = status === 'FREE' ? 'bg-green-500' : status === 'BUSY' ? 'bg-amber-500' : 'bg-slate-300';
 
   return (
     <div className="max-w-3xl mx-auto py-6 space-y-6">
       <nav className="text-sm text-slate-500">
-        <Link href="/mis/machine-board" className="hover:underline">Machine Board</Link>
+        <Link href="/mis/machine-board" className="inline-flex min-h-11 items-center hover:underline">Machine Board</Link>
         <span className="mx-2">&#x203A;</span>
         <span className="text-slate-800 font-medium">{machine.name}</span>
       </nav>
@@ -61,9 +62,9 @@ export default async function MachineHistoryPage({ params }: { params: Promise<{
           <div><span className="text-slate-500">Type</span><p className="font-medium text-slate-800 mt-0.5">{machine.machineType ?? '—'}</p></div>
         </div>
         {currentAlloc && (
-          <div className="mt-4 bg-red-50 border border-red-100 rounded-lg p-3 text-sm">
-            <span className="font-medium text-red-700">Currently allocated: </span>
-            <span className="text-red-600">
+          <div className="mt-4 bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm">
+            <span className="font-medium text-amber-900">Currently allocated: </span>
+            <span className="text-amber-800">
               {currentAlloc.order?.orderNumber ?? currentAlloc.jobRef ?? 'Unknown job'}
               {' - until '}{new Date(currentAlloc.endsAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
             </span>
@@ -101,7 +102,7 @@ export default async function MachineHistoryPage({ params }: { params: Promise<{
                   </div>
                   <div className="flex-shrink-0">
                     {isActive ? (
-                      <span className="text-xs bg-red-100 text-red-700 font-medium rounded-full px-2.5 py-0.5">Active</span>
+                      <span className="text-xs bg-amber-100 text-amber-900 font-medium rounded-full px-2.5 py-0.5">Active</span>
                     ) : wasReleased ? (
                       <span className="text-xs bg-green-100 text-green-700 rounded-full px-2.5 py-0.5">Released</span>
                     ) : (

@@ -127,13 +127,13 @@ export function StoreLedgerScreen({ item, txns }: Props) {
   return (
     <div className="mx-auto max-w-4xl flex flex-col gap-4">
       {/* Breadcrumb */}
-      <div className="text-sm text-slate-500">
-        <Link href="/mis/store" className="hover:underline">Store</Link>
-        {' / '}
-        <Link href="/mis/store/stock" className="hover:underline">Stock</Link>
-        {' / '}
+      <nav className="flex items-center gap-1 text-sm text-slate-500">
+        <Link href="/mis/store" className="inline-flex min-h-11 items-center hover:underline">Store</Link>
+        <span aria-hidden="true">/</span>
+        <Link href="/mis/store/stock" className="inline-flex min-h-11 items-center hover:underline">Stock</Link>
+        <span aria-hidden="true">/</span>
         <span className="text-slate-700 font-medium">{item.name}</span>
-      </div>
+      </nav>
 
       {/* Item header */}
       <div className="flex items-start justify-between flex-wrap gap-4">
@@ -145,7 +145,7 @@ export function StoreLedgerScreen({ item, txns }: Props) {
         </div>
         <button
           onClick={() => downloadCsv(item, filtered)}
-          className="px-3 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-700"
+          className="inline-flex min-h-11 items-center justify-center px-3 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-700"
         >
           ↓ CSV
         </button>

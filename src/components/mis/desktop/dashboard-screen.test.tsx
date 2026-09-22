@@ -200,6 +200,62 @@ describe('add, remove and reorder', () => {
   });
 });
 
+describe('24G-part1 gap 5 — the "Waiting on you" widget carries the stake, the age, and a way to act', () => {
+  it('shows the subtitle, an age pill per row, and a 44px Review approvals link', () => {
+    setup('OWNER', {
+      approvals: {
+        total: 2,
+        rows: [
+          { id: 'a', title: 'ORD-118 · Duplex carton', detail: 'BOM approval', age: '2 days' },
+          { id: 'b', title: 'ORD-121 · Notebook 200pg', detail: 'BOM approval', age: '4 hrs' },
+        ],
+      },
+    });
+    const region = screen.getByRole('region', { name: 'Waiting on you' });
+    expect(within(region).getByText('Nothing moves until you approve')).toBeTruthy();
+    expect(within(region).getByText('2 days')).toBeTruthy();
+    expect(within(region).getByText('4 hrs')).toBeTruthy();
+    const link = within(region).getByRole('link', { name: /Review approvals/ });
+    expect(link.getAttribute('href')).toBe('/mis/approvals');
+    expect(link.className).toContain('min-h-11');
+  });
+
+  it('a row with no dated origin simply has no pill, rather than a fabricated age', () => {
+    setup('OWNER', {
+      approvals: { total: 1, rows: [{ id: 'a', title: 'Leave for Ramesh', detail: '11-12 Sep' }] },
+    });
+    const region = screen.getByRole('region', { name: 'Waiting on you' });
+    expect(within(region).getByText('Leave for Ramesh')).toBeTruthy();
+    expect(within(region).queryByText(/\d+ (hrs|min|days?)$/)).toBeNull();
+  });
+});
+
+describe('24G-part1 gap 6 — customise-mode controls meet the 44px tap-target rule on phone widths', () => {
+  // This whole grid also renders on the phone frame (D1: below 1024px the two-layout-one-tree
+  // shell drops the SAME dashboard into the mobile column), so its buttons cannot be sized as
+  // if they were desktop-only just because they live in a file named "desktop".
+  it('the widget-card move/remove controls are 44px by default and compact only from `lg`', () => {
+    setup('OWNER');
+    customise();
+    for (const name of [/^Move earlier:/, /^Move later:/, /^Remove widget:/]) {
+      for (const button of screen.getAllByRole('button', { name })) {
+        expect(button.className).toMatch(/\bsize-11\b/);
+        expect(button.className).toMatch(/\blg:size-7\b/);
+      }
+    }
+  });
+
+  it('the library "add" control is 44px by default and compact only from `lg`', () => {
+    setup('OWNER');
+    customise();
+    const library = screen.getByRole('complementary', { name: 'Widget library' });
+    for (const button of within(library).getAllByRole('button', { name: /^Add widget:|^Already on your dashboard:/ })) {
+      expect(button.className).toMatch(/\bsize-11\b/);
+      expect(button.className).toMatch(/\blg:size-8\b/);
+    }
+  });
+});
+
 describe('D24 — the money widget in the panel', () => {
   it('the OWNER sees the money group and the wage figure', () => {
     setup('OWNER');

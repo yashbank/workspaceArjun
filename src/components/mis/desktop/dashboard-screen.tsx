@@ -30,9 +30,12 @@ export type DashboardScreenProps = {
   data: DashboardData;
   onSave: (widgetKeys: string[]) => Promise<{ ok: boolean; detail?: string }>;
   onReset: () => Promise<{ ok: boolean; detail?: string }>;
+  /** "Good morning / Monday, 7 September · 07:12" (D1) — optional so a test can render the
+   *  screen without it and every OTHER desktop page (which has no greeting) is unaffected. */
+  header?: { title: string; meta: string };
 };
 
-export function DashboardScreen({ role, initialLayout, catalogue, data, onSave, onReset }: DashboardScreenProps) {
+export function DashboardScreen({ role, initialLayout, catalogue, data, onSave, onReset, header }: DashboardScreenProps) {
   const t = useT();
   const [customising, setCustomising] = useState(false);
   const [order, setOrder] = useState<string[]>(() => initialLayout.map((p) => p.widgetKey));
@@ -77,6 +80,17 @@ export function DashboardScreen({ role, initialLayout, catalogue, data, onSave, 
 
   return (
     <div>
+      {/* 24G-part1 gap 5 — D1's own top bar carries this greeting; the shared DesktopShell
+          chrome (every OTHER desktop screen) only has the search box, so this lives in the
+          dashboard's own content rather than being forced onto screens that never asked for
+          it. */}
+      {header && (
+        <div className="mb-4">
+          <h1 className="text-2xl font-bold text-slate-900">{header.title}</h1>
+          <p className="mt-0.5 text-sm text-slate-500">{header.meta}</p>
+        </div>
+      )}
+
       {/* D2: "Customising is a mode, and it looks like one." The whole bar turns indigo and
           says what is happening, so nobody rearranges their dashboard by accident. */}
       {customising ? (
@@ -241,7 +255,13 @@ function IconButton({
       title={label}
       onClick={onClick}
       disabled={disabled}
-      className="flex size-7 items-center justify-center rounded-md border border-slate-300 bg-white text-sm text-slate-700 hover:bg-slate-100 disabled:opacity-40"
+      // 24G-part1 gap 6 — 28px (size-7) on every width failed the 44px tap-target rule. This
+      // widget grid also renders on the phone frame (below 1024px the two-layout-one-tree
+      // shell puts the SAME dashboard content into the mobile column, D1's own note), so the
+      // rule does not get to relax just because the control looks "desktop". `lg:` keeps the
+      // laptop rail at its original density — D3: "the floor density rule does not relax on a
+      // laptop" is about the OTHER direction, never shrinking a phone target to match a laptop.
+      className="flex size-11 items-center justify-center rounded-md border border-slate-300 bg-white text-sm text-slate-700 hover:bg-slate-100 disabled:opacity-40 lg:size-7"
     >
       {children}
     </button>
@@ -307,7 +327,9 @@ function WidgetLibrary({
                     aria-label={already ? `${t('desk.placed')}: ${t(widget.titleKey)}` : `${t('desk.add')}: ${t(widget.titleKey)}`}
                     title={already ? t('desk.placed') : t('desk.add')}
                     className={cn(
-                      'flex size-8 shrink-0 items-center justify-center rounded-lg text-sm font-bold',
+                      // 24G-part1 gap 6 — same reasoning as IconButton above: 32px (size-8)
+                      // everywhere failed 44px on the phone width this panel also renders at.
+                      'flex size-11 shrink-0 items-center justify-center rounded-lg text-sm font-bold lg:size-8',
                       already ? 'bg-green-100 text-green-700' : 'bg-indigo-600 text-white hover:bg-indigo-700',
                     )}
                   >

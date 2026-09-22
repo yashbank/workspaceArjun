@@ -16,6 +16,12 @@ export type SlideOverProps = {
   dirty?: boolean;
   children: ReactNode;
   footer?: ReactNode;
+  /**
+   * `side` (default) is the right-hand panel. `bottom` is a phone sheet rising from the foot of the
+   * screen, for a short list a thumb picks from (the "More" tab, D32) — same dialog, same focus
+   * trap, same Escape / backdrop close; only the placement differs.
+   */
+  placement?: 'side' | 'bottom';
 };
 
 /**
@@ -24,7 +30,15 @@ export type SlideOverProps = {
  * Slides from the right on desktop and up from the bottom on a phone, so the
  * form lands under the thumb rather than under the notch.
  */
-export function SlideOver({ open, title, onClose, dirty = false, children, footer }: SlideOverProps) {
+export function SlideOver({
+  open,
+  title,
+  onClose,
+  dirty = false,
+  children,
+  footer,
+  placement = 'side',
+}: SlideOverProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const t = useT();
 
@@ -78,8 +92,10 @@ export function SlideOver({ open, title, onClose, dirty = false, children, foote
 
   if (!open) return null;
 
+  const sheet = placement === 'bottom';
+
   return (
-    <div className="fixed inset-0 z-50 flex">
+    <div className={sheet ? 'fixed inset-0 z-50 flex items-end' : 'fixed inset-0 z-50 flex'}>
       <div
         className="absolute inset-0 bg-slate-900/40"
         onClick={requestClose}
@@ -90,7 +106,11 @@ export function SlideOver({ open, title, onClose, dirty = false, children, foote
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="relative ml-auto flex h-full w-full max-w-md flex-col bg-white shadow-xl"
+        className={
+          sheet
+            ? 'relative mx-auto flex max-h-[85dvh] w-full max-w-[420px] flex-col rounded-t-2xl bg-white shadow-xl'
+            : 'relative ml-auto flex h-full w-full max-w-md flex-col bg-white shadow-xl'
+        }
       >
         <header className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
           <h2 className="text-lg font-semibold text-slate-900">{title}</h2>

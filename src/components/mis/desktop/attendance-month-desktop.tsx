@@ -122,7 +122,7 @@ export function AttendanceMonthDesktop({ view }: { view: AttendanceMonthView | n
                 id="d8-dept"
                 name="dept"
                 defaultValue={view.departmentId ?? ''}
-                className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-800"
+                className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-800"
               >
                 <option value="">{t('d8.allDepartments')}</option>
                 {view.departments.map((d) => (
@@ -181,7 +181,7 @@ export function AttendanceMonthDesktop({ view }: { view: AttendanceMonthView | n
                         <Link
                           href={href({ month: view.monthKey, dept: view.departmentId, emp: row.id })}
                           aria-current={row.id === view.selected?.id ? 'true' : undefined}
-                          className="inline-flex min-h-11 flex-col justify-center"
+                          className="inline-flex min-h-11 min-w-11 flex-col justify-center"
                         >
                           <span className={cn('text-sm font-semibold text-slate-900', row.id === view.selected?.id && 'underline decoration-indigo-600 decoration-2 underline-offset-4')}>{row.name}</span>
                           <span className="font-mono text-[10px] text-slate-500">{row.code}{row.department ? ` · ${row.department}` : ''}</span>

@@ -96,7 +96,7 @@ export function DeviceListScreen({ devices, asOf }: { devices: KioskDeviceRow[];
           collects its own access. It never holds anyone’s login, and it never receives wages,
           orders or customers.
         </p>
-        <Link href="/mis/settings" className="mt-2 inline-block text-sm text-slate-500 underline">
+        <Link href="/mis/settings" className="mt-2 inline-flex min-h-11 w-fit items-center text-base text-slate-500 underline">
           Back to settings
         </Link>
       </div>

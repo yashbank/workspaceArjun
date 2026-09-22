@@ -115,7 +115,7 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes }
     <div className="max-w-4xl mx-auto space-y-6 py-6">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-2 text-sm text-gray-500">
-        <Link href="/mis/qc" className="hover:text-gray-700">QC</Link>
+        <Link href="/mis/qc" className="inline-flex min-h-11 items-center hover:text-gray-700">QC</Link>
         <span>/</span>
         <span className="text-gray-900 font-medium">{order.orderNumber}</span>
       </nav>

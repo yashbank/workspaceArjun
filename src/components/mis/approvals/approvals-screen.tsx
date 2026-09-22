@@ -25,7 +25,7 @@ export function ApprovalsScreen({ pending, isOwner, canWrite }: Props) {
   if (pending.total === 0) {
     return (
       <div className="p-6 max-w-3xl mx-auto">
-        <h1 className="text-2xl font-semibold mb-6">Approval Queue</h1>
+        <h1 className="text-2xl font-semibold text-slate-900 mb-6">Approval Queue</h1>
         <div className="text-center py-16">
           <p className="text-4xl mb-3">✅</p>
           <p className="text-lg font-medium text-slate-700">All caught up!</p>
@@ -38,7 +38,7 @@ export function ApprovalsScreen({ pending, isOwner, canWrite }: Props) {
   return (
     <div className="p-6 max-w-3xl mx-auto">
       <div className="flex items-center gap-3 mb-6">
-        <h1 className="text-2xl font-semibold">Approval Queue</h1>
+        <h1 className="text-2xl font-semibold text-slate-900">Approval Queue</h1>
         <span className="bg-red-100 text-red-700 text-sm font-bold rounded-full px-2.5 py-0.5">{pending.total}</span>
       </div>
 
@@ -54,7 +54,7 @@ export function ApprovalsScreen({ pending, isOwner, canWrite }: Props) {
               actions={
                 <>
                   <Button onClick={() => approveBom(bom.id)} disabled={isPending}>Approve</Button>
-                  <Link href={`/mis/bom/${bom.order?.id ?? ''}`} className="text-sm text-blue-600 hover:underline">View BOM</Link>
+                  <Link href={`/mis/bom/${bom.order?.id ?? ''}`} className="inline-flex min-h-11 items-center text-sm font-medium text-indigo-700 hover:underline">View BOM</Link>
                 </>
               }
             />
@@ -94,7 +94,7 @@ export function ApprovalsScreen({ pending, isOwner, canWrite }: Props) {
               actions={
                 <>
                   <Button onClick={() => approvePO(po.id)} disabled={isPending}>Approve</Button>
-                  <Link href="/mis/po" className="text-sm text-blue-600 hover:underline">View PO</Link>
+                  <Link href="/mis/po" className="inline-flex min-h-11 items-center text-sm font-medium text-indigo-700 hover:underline">View PO</Link>
                 </>
               }
             />

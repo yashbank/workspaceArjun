@@ -20,26 +20,31 @@ function MachineCard({ machine, canWrite }: { machine: Machine; canWrite: boolea
   const [hours, setHours] = useState('8');
   const [isPending, startTransition] = useTransition();
 
-  const dotColor = machine.status === 'FREE' ? 'bg-green-500' : machine.status === 'BUSY' ? 'bg-red-500' : 'bg-slate-300';
+  // P1: free = green, running = amber, offline = grey. Red is reserved for a breakdown, which this board has no data for.
+  const dotColor = machine.status === 'FREE' ? 'bg-green-500' : machine.status === 'BUSY' ? 'bg-amber-500' : 'bg-slate-300';
+  const stateLabel = machine.status === 'FREE' ? 'Free' : machine.status === 'BUSY' ? 'Running' : 'Offline';
+  const stateText = machine.status === 'FREE' ? 'text-green-700' : machine.status === 'BUSY' ? 'text-amber-800' : 'text-slate-500';
 
   return (
-    <div className="rounded-xl border border-slate-200 p-4 flex flex-col gap-2 bg-white">
+    <div className="rounded-2xl border border-slate-200 p-4 flex flex-col gap-1.5 bg-white">
       <div className="flex items-center gap-2">
-        <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${dotColor}`} />
-        <span className="font-medium text-slate-900 truncate">{machine.name}</span>
-        <span className="ml-auto text-xs text-slate-400 font-mono">{machine.code}</span>
+        <span aria-hidden="true" className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${dotColor}`} />
+        <span className={`text-sm font-medium ${stateText}`}>{stateLabel}</span>
+        <span className="ml-auto whitespace-nowrap font-mono text-xs text-slate-500">{machine.code}</span>
       </div>
-      {machine.department && <span className="text-xs text-slate-500">{machine.department.name}</span>}
-      {machine.machineType && <span className="text-xs text-slate-400">{machine.machineType}</span>}
-      <Link href={`/mis/machine-board/${machine.id}`} className="text-xs text-slate-400 hover:text-blue-600 hover:underline">History →</Link>
+      <p className="text-base font-semibold text-slate-900 break-words">{machine.name}</p>
+      {(machine.department || machine.machineType) && (
+        <p className="text-sm text-slate-600">{[machine.department?.name, machine.machineType].filter(Boolean).join(' · ')}</p>
+      )}
       {machine.status === 'BUSY' && machine.currentAllocation && (
-        <div className="text-xs text-slate-600 bg-red-50 rounded px-2 py-1">
+        <div className="rounded-lg bg-amber-50 px-2 py-1 font-mono text-xs text-amber-900">
           {machine.currentAllocation.order?.orderNumber ?? machine.currentAllocation.jobRef ?? 'Unknown job'}
           {' · '}until {new Date(machine.currentAllocation.endsAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
         </div>
       )}
+      <Link href={`/mis/machine-board/${machine.id}`} className="inline-flex min-h-11 items-center self-start text-sm font-medium text-indigo-700 hover:underline">History →</Link>
       {canWrite && (
-        <div className="flex gap-2 mt-1">
+        <div className="flex gap-2">
           {machine.status === 'FREE' && <Button variant="ghost" onClick={() => setAllocOpen(true)}>Allocate</Button>}
           {machine.status === 'BUSY' && machine.currentAllocation && (
             <Button variant="ghost" onClick={() => startTransition(async () => { await releaseMachineAction(machine.currentAllocation!.id); })}>Release</Button>
@@ -77,17 +82,17 @@ export function MachineBoardScreen({ machines, canWrite }: { machines: Machine[]
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-slate-900">Machine Board</h1>
         <div className="flex gap-4 text-sm">
-          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-green-500" />{free} Free</span>
-          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-500" />{busy} Busy</span>
+          <span className="flex items-center gap-1.5 font-mono text-slate-700"><span aria-hidden="true" className="w-2 h-2 rounded-full bg-green-500" />{free} free</span>
+          <span className="flex items-center gap-1.5 font-mono text-slate-700"><span aria-hidden="true" className="w-2 h-2 rounded-full bg-amber-500" />{busy} running</span>
         </div>
       </div>
       <div>
         <input type="search" placeholder="Search machines…" value={search} onChange={e => setSearch(e.target.value)} className="w-full max-w-sm min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500" />
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 min-[560px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
         {filtered.map(m => <MachineCard key={m.id} machine={m} canWrite={canWrite} />)}
       </div>
-      {filtered.length === 0 && <div className="text-center text-slate-400 py-12">{search ? 'No machines match your search.' : 'No machines configured yet.'}</div>}
+      {filtered.length === 0 && <div className="rounded-xl border border-dashed border-slate-300 py-12 text-center text-sm text-slate-500">{search ? 'No machines match your search.' : 'No machines configured yet.'}</div>}
     </div>
   );
 }

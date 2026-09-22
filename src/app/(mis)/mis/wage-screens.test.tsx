@@ -18,6 +18,7 @@ import { MIS_ROLES, type MisRoleName } from '@/lib/mis/roles';
 import { importsOf, listFiles, parse } from '@/server/mis/testing/ast';
 import ts from 'typescript';
 import {
+  EMP,
   WAGE_DETECTOR,
   fakeDb,
   findLeaks,
@@ -89,7 +90,7 @@ const SCREENS: Screen[] = [
   },
   {
     name: 'payslip print page',
-    render: () => PayslipPage({ params: Promise.resolve({ employeeId: 'e1' }), searchParams: { year: '2026', month: '1' } }),
+    render: () => PayslipPage({ params: Promise.resolve({ employeeId: EMP.id }), searchParams: { year: '2026', month: '1' } }),
   },
   { name: 'wage types page (/mis/settings/wages)', render: () => WageTypesPage() },
   { name: 'AQL settings page (/mis/settings/aql)', render: () => AqlSettingsPage() },
@@ -151,7 +152,7 @@ describe('F-02 (fixed in 14F) · the settings page hands an Admin no wage rule',
 describe('F-01 (fixed in 14F) · the payroll and payslip pages REFUSE all seven non-Owner roles', () => {
   const PAGES: [string, () => Promise<unknown>][] = [
     ['payroll page', () => PayrollPage({ searchParams: Promise.resolve({ year: '2026', month: '1' }) })],
-    ['payslip print page', () => PayslipPage({ params: Promise.resolve({ employeeId: 'e1' }), searchParams: { year: '2026', month: '1' } })],
+    ['payslip print page', () => PayslipPage({ params: Promise.resolve({ employeeId: EMP.id }), searchParams: { year: '2026', month: '1' } })],
   ];
   describe.each(PAGES)('%s', (_n, render) => {
     it.each(NON_OWNER)('%s is refused (a MisForbiddenError, not a page)', async (role) => {

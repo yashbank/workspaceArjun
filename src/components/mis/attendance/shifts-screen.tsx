@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { Button } from '@/components/mis/kit/button';
-import { Input } from '@/components/mis/kit/input';
+import { Input, TimeInput } from '@/components/mis/kit/input';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import { saveShiftAction } from '@/app/(mis)/mis/attendance/actions';
 
@@ -79,8 +79,8 @@ export function ShiftsScreen({ shifts, canWrite }: Props) {
       <SlideOver open={open} onClose={() => setOpen(false)} title={editing ? 'Edit Shift' : 'Add Shift'}>
         <div className="flex flex-col gap-4 p-4">
           <Input label="Shift Name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Morning Shift" />
-          <Input label="Start Time (HH:MM)" value={startTime} onChange={(e) => setStartTime(e.target.value)} placeholder="09:00" />
-          <Input label="End Time (HH:MM)" value={endTime} onChange={(e) => setEndTime(e.target.value)} placeholder="18:00" />
+          <TimeInput label="Start Time" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
+          <TimeInput label="End Time" value={endTime} onChange={(e) => setEndTime(e.target.value)} />
           <div className="flex gap-2 pt-2">
             <Button onClick={handleSave} disabled={isPending || !name}>{isPending ? 'Saving…' : 'Save'}</Button>
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>

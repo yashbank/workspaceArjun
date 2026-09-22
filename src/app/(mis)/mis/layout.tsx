@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 
 import { MisShell } from '@/components/mis/shell/mis-shell';
-import { getNavBadges, getNavigationFor } from '@/server/mis/navigation';
+import { getNavBadges, getNavigationFor, navigationForRole } from '@/server/mis/navigation';
 import { getLocale } from '@/server/mis/preferences';
 import { getMisRole } from '@/server/mis/roles';
 import { requireMisAccess } from '@/server/mis/guard';
@@ -38,6 +38,7 @@ export default async function MisLayout({ children }: { children: ReactNode }) {
       role={role}
       locale={locale}
       navAll={nav}
+      navMore={navigationForRole(role, 'phone')}
       navBadges={navBadges}
       onLocaleChange={setLocaleAction}
     >

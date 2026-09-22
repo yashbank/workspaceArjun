@@ -2,10 +2,15 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 
+import { hasMoreTab } from '@/lib/mis/phone-more';
 import type { MisRoleName } from '@/lib/mis/roles';
 import { cn } from '@/lib/utils';
+import type { NavEntry } from '@/server/mis/navigation';
+
+import { useT } from '../shell/locale-provider';
+import { MoreSheet } from './more-sheet';
 
 /**
  * The fixed five-tab bar at the foot of every role home.
@@ -13,6 +18,10 @@ import { cn } from '@/lib/utils';
  * Five tabs, never six: a sixth thumb target does not fit at 360px. The set is
  * chosen per role rather than filtered from one master list, because what a QC
  * operator reaches for all day is not a subset of what an owner reaches for.
+ *
+ * For Owner, Admin and Supervisor the FIFTH tab is "More" (D32, F-27): it opens a sheet listing
+ * every screen the role may open, so a phone reaches Store, GRN, PO, Inventory and the rest. The
+ * tab it displaces (Settings / Reports / Me) is in that list. Still five tabs, never six.
  *
  * Icons are inline SVG on purpose — this app ships no icon dependency for the
  * MIS home, and a 22px stroke path costs less than a package.
@@ -159,6 +168,14 @@ const Icons = {
       <path d="M4 17.5V20h16v-2.5" />
     </svg>
   ),
+  more: (
+    <svg {...ICON_PROPS}>
+      <rect x="4" y="4" width="6.5" height="6.5" rx="1.5" />
+      <rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5" />
+      <rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5" />
+      <rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5" />
+    </svg>
+  ),
   issue: (
     <svg {...ICON_PROPS}>
       <path d="M12 14V3" />
@@ -225,54 +242,122 @@ const TABS: Record<MisRoleName, NavTab[]> = {
   WORKER: [HOME],
 };
 
-/** Tabs for a role, exported so a page can reason about them without rendering. */
+/**
+ * Tabs for a role, exported so a page can reason about them without rendering.
+ *
+ * This is the role's fixed set from MIS_UI_SPEC §4.5 — including the fifth tab that Owner, Admin and
+ * Supervisor lose to "More" on a phone. `barForRole` below is what the bar actually draws.
+ */
 export function tabsForRole(role: MisRoleName | null): NavTab[] {
   return role ? TABS[role] : [HOME];
+}
+
+/**
+ * What the bar draws: the role's tabs, except that for Owner / Admin / Supervisor the fifth is
+ * replaced by More when there is a list to show. With no list (a page that did not pass one) the
+ * spec's fixed five stay, so a bar is never left without its fifth destination.
+ */
+export function barForRole(
+  role: MisRoleName | null,
+  more?: readonly NavEntry[],
+): { tabs: NavTab[]; more: boolean } {
+  const tabs = tabsForRole(role);
+  if (hasMoreTab(role) && more && more.length > 0) return { tabs: tabs.slice(0, 4), more: true };
+  return { tabs, more: false };
+}
+
+function isCurrent(pathname: string, href: string): boolean {
+  return pathname === href || pathname.startsWith(`${href}/`);
 }
 
 export function BottomNav({
   role,
   badges,
+  more,
 }: {
   role: MisRoleName | null;
   badges?: Record<string, number>;
+  /** The permission-derived list for the More sheet, from the server layout (D32). */
+  more?: readonly NavEntry[];
 }) {
   const pathname = usePathname();
-  const tabs = tabsForRole(role);
+  const t = useT();
+  // The sheet remembers the page it was opened on, so it is open only while that is still the page:
+  // following a link (a route change) closes it with no effect and no stale open state.
+  const [openedOn, setOpenedOn] = useState<string | null>(null);
+  const sheetOpen = openedOn === pathname;
+  // Forget a stale page, so leaving and coming back to it does not resurrect the sheet.
+  if (openedOn !== null && openedOn !== pathname) setOpenedOn(null);
+  const setSheetOpen = (next: boolean) => setOpenedOn(next ? pathname : null);
+  const bar = barForRole(role, more);
+
+  const tabActive = (tab: NavTab) =>
+    tab.href === '/mis' ? pathname === '/mis' : pathname.startsWith(tab.href);
+  // More is lit when the page is one of its entries and NOT one of the visible tabs.
+  const moreActive =
+    bar.more && !bar.tabs.some(tabActive) && (more ?? []).some((e) => isCurrent(pathname, e.href));
 
   return (
-    <nav
-      aria-label="Sections"
-      className="fixed inset-x-0 bottom-0 z-40 mx-auto grid max-w-[420px] grid-cols-5 border-t border-slate-200 bg-white lg:hidden"
-    >
-      {tabs.map((tab) => {
-        const active =
-          tab.href === '/mis' ? pathname === '/mis' : pathname.startsWith(tab.href);
-        const badge = badges?.[tab.id] ?? 0;
-        return (
-          <Link
-            key={tab.id}
-            href={tab.href}
-            aria-current={active ? 'page' : undefined}
+    <>
+      <nav
+        aria-label="Sections"
+        className="fixed inset-x-0 bottom-0 z-40 mx-auto grid max-w-[420px] grid-cols-5 border-t border-slate-200 bg-white lg:hidden"
+      >
+        {bar.tabs.map((tab) => {
+          const active = tabActive(tab);
+          const badge = badges?.[tab.id] ?? 0;
+          return (
+            <Link
+              key={tab.id}
+              href={tab.href}
+              aria-current={active ? 'page' : undefined}
+              className={cn(
+                'flex min-h-14 flex-col items-center justify-center gap-1 px-1 py-2',
+                active ? 'text-indigo-600' : 'text-slate-500',
+              )}
+            >
+              <span className="relative">
+                {tab.icon}
+                {badge > 0 && (
+                  <span className="absolute -right-2 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-indigo-600 px-1 text-[10px] font-semibold text-white">
+                    {badge > 99 ? '99+' : badge}
+                  </span>
+                )}
+              </span>
+              <span className={cn('text-[11px] leading-none', active && 'font-semibold')}>
+                {tab.label}
+              </span>
+            </Link>
+          );
+        })}
+        {bar.more && (
+          <button
+            type="button"
+            onClick={() => setSheetOpen(true)}
+            aria-label={t('more.open')}
+            aria-haspopup="dialog"
+            aria-expanded={sheetOpen}
+            data-active={moreActive ? 'true' : undefined}
             className={cn(
               'flex min-h-14 flex-col items-center justify-center gap-1 px-1 py-2',
-              active ? 'text-indigo-600' : 'text-slate-500',
+              moreActive ? 'text-indigo-600' : 'text-slate-500',
             )}
           >
-            <span className="relative">
-              {tab.icon}
-              {badge > 0 && (
-                <span className="absolute -right-2 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-indigo-600 px-1 text-[10px] font-semibold text-white">
-                  {badge > 99 ? '99+' : badge}
-                </span>
-              )}
+            <span>{Icons.more}</span>
+            <span className={cn('text-[11px] leading-none', moreActive && 'font-semibold')}>
+              {t('nav.more')}
             </span>
-            <span className={cn('text-[11px] leading-none', active && 'font-semibold')}>
-              {tab.label}
-            </span>
-          </Link>
-        );
-      })}
-    </nav>
+          </button>
+        )}
+      </nav>
+      {bar.more && (
+        <MoreSheet
+          open={sheetOpen}
+          entries={more ?? []}
+          pathname={pathname}
+          onClose={() => setSheetOpen(false)}
+        />
+      )}
+    </>
   );
 }

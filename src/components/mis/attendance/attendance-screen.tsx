@@ -107,8 +107,8 @@ export function AttendanceScreen({ records, summary, shifts, canWrite, view, yea
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h1 className="text-xl font-semibold text-slate-900">Attendance</h1>
         <div className="flex gap-2">
-          <Link href="/mis/attendance?view=daily" className={`px-3 py-1 rounded text-sm font-medium ${view === 'daily' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Daily</Link>
-          <Link href="/mis/attendance?view=monthly" className={`px-3 py-1 rounded text-sm font-medium ${view === 'monthly' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Monthly ({month}/{year})</Link>
+          <Link href="/mis/attendance?view=daily" className={`inline-flex min-h-11 items-center rounded-lg px-3 text-base font-medium ${view === 'daily' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Daily</Link>
+          <Link href="/mis/attendance?view=monthly" className={`inline-flex min-h-11 items-center rounded-lg px-3 text-base font-medium ${view === 'monthly' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Monthly ({month}/{year})</Link>
         </div>
       </div>
 

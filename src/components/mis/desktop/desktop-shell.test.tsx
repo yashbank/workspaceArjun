@@ -101,6 +101,35 @@ describe('the rail — absent, never disabled', () => {
   });
 });
 
+describe('24G-part1 gap 4 — a long rail scrolls above a pinned footer', () => {
+  it('the list can shrink below its content height, so it — and not the whole rail — is what scrolls', () => {
+    renderShell();
+    const nav = screen.getByRole('navigation');
+    // `min-h-0` is the whole fix: a flex child defaults to a min-height of its own content,
+    // so without it `overflow-y-auto` never gets a chance to engage and the rail's own footer
+    // (the signed-in user) gets pushed off screen instead of the list scrolling under it.
+    expect(nav.className).toContain('min-h-0');
+    expect(nav.className).toContain('flex-1');
+    expect(nav.className).toContain('overflow-y-auto');
+  });
+
+  it('the footer never shrinks or scrolls away — it is pinned below the scrolling list', () => {
+    renderShell();
+    const footer = screen.getByText('A. Bhaskar').closest('div.mt-auto');
+    expect(footer).toBeTruthy();
+    expect(footer!.className).toContain('shrink-0');
+  });
+
+  it('scrolls the active item into view whenever the route changes', () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    pathname = '/mis/attendance';
+    renderShell();
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' });
+    pathname = '/mis/dashboard';
+  });
+});
+
 describe('counts', () => {
   it('a badge names the item AND its count on hover, in the same word the expanded rail uses', () => {
     renderShell(NAV, { quality: 4 });

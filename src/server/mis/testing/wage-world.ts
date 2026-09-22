@@ -144,7 +144,8 @@ export const fakeDb = {
 // Fixture
 // ---------------------------------------------------------------------------
 export const LONG_AGO = new Date('2026-01-01T00:00:00Z');
-export const EMP = { id: 'e1', name: 'Asha', employeeCode: 'E-001' };
+// A real UUID: the payslip page 404s any other id shape before it queries (F-25).
+export const EMP = { id: '3f2b8c1e-9a4d-4e6b-8c7a-1d5e0f9a2b34', name: 'Asha', employeeCode: 'E-001' };
 
 /** Reset the world to its starting state. Call from beforeEach. */
 export function seedWorld() {
