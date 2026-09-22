@@ -1,4 +1,5 @@
 import { allowedActions, type MisAction } from '@/lib/mis/permissions';
+import { hasMoreTab } from '@/lib/mis/phone-more';
 import type { TranslationKey } from '@/lib/mis/i18n';
 
 import type { MisRoleName } from '@/lib/mis/roles';
@@ -24,7 +25,15 @@ export type NavEntry = {
   primary: boolean;
 };
 
-type NavDefinition = NavEntry & { requires: MisAction };
+/**
+ * One row of the table both the desktop sidebar and the phone "More" sheet read (D32).
+ *
+ * `requires: null` means "any signed-in MIS role" (the Me screen has no permission of its own).
+ * `phoneOnly` rows are screens the desktop reaches another way (a Settings sub-page, the crew
+ * board, the account page); they are left out of the sidebar so it stays as D3 drew it, and
+ * included in the phone list so a phone can reach everything the role may open.
+ */
+type NavDefinition = NavEntry & { requires: MisAction | null; phoneOnly?: boolean };
 
 const NAV: NavDefinition[] = [
   { id: 'masters', labelKey: 'nav.masters', href: '/mis/masters', icon: 'database', primary: true, requires: 'masters.read' },
@@ -50,17 +59,41 @@ const NAV: NavDefinition[] = [
   { id: 'audit', labelKey: 'nav.audit', href: '/mis/audit', icon: 'clipboard', primary: false, requires: 'settings.read' },
   { id: 'payroll', labelKey: 'nav.payroll', href: '/mis/payroll', icon: 'chart', primary: false, requires: 'wages.read' },
   { id: 'store', labelKey: 'nav.store', href: '/mis/store', icon: 'database', primary: false, requires: 'store.read' },
+  // Phone "More" only (D32): each `requires` matches the gate on the page it opens; the two
+  // Settings sub-pages are gated as their parent is, so a phone never offers what Settings would not.
+  { id: 'crew', labelKey: 'nav.crew', href: '/mis/crew', icon: 'users', primary: false, requires: 'attendance.read', phoneOnly: true },
+  { id: 'leave', labelKey: 'nav.leave', href: '/mis/attendance/leave', icon: 'users', primary: false, requires: 'attendance.read', phoneOnly: true },
+  { id: 'settings-users', labelKey: 'nav.users', href: '/mis/settings/users', icon: 'users', primary: false, requires: 'settings.read', phoneOnly: true },
+  // The page 404s for anyone without wages.read (D30): Owner only.
+  { id: 'settings-rules', labelKey: 'nav.rules', href: '/mis/settings/rules', icon: 'settings', primary: false, requires: 'wages.read', phoneOnly: true },
+  { id: 'me', labelKey: 'nav.me', href: '/mis/me', icon: 'users', primary: false, requires: null, phoneOnly: true },
 ];
 
 /** The bottom bar holds five at most; a sixth thumb target does not fit at 360px. */
 export const MAX_PRIMARY_NAV = 5;
 
+/**
+ * The entries a role may open, from the one `NAV` table.
+ *
+ * `'desktop'` is the sidebar. `'phone'` is the "More" sheet (D32): every entry the role may open,
+ * including the phone-only ones, and only for the three roles whose fifth tab is More (any other
+ * role gets `[]`). The permission test is the same line for both, so they cannot disagree.
+ */
+export function navigationForRole(
+  role: MisRoleName | null,
+  surface: 'desktop' | 'phone' = 'desktop',
+): NavEntry[] {
+  if (surface === 'phone' && !hasMoreTab(role)) return [];
+  const permitted = new Set<MisAction>(allowedActions(role));
+  return NAV.filter((entry) => {
+    if (surface === 'desktop' && entry.phoneOnly) return false;
+    return entry.requires === null ? role !== null : permitted.has(entry.requires);
+  }).map(({ requires: _requires, phoneOnly: _phoneOnly, ...entry }) => entry);
+}
+
 export async function getNavigationFor(userId: string): Promise<NavEntry[]> {
   const role = await getMisRole(userId);
-  const permitted = new Set<MisAction>(allowedActions(role));
-  return NAV.filter((entry) => permitted.has(entry.requires)).map(
-    ({ requires: _requires, ...entry }) => entry,
-  );
+  return navigationForRole(role, 'desktop');
 }
 
 export function splitNavigation(entries: NavEntry[]): { primary: NavEntry[]; overflow: NavEntry[] } {

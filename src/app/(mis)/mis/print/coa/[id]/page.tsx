@@ -23,7 +23,7 @@ export default async function CoaPrintPage({ params }: { params: Promise<{ id: s
       {/* Print button */}
       <div className="no-print mb-6 flex gap-3">
         <PrintButton />
-        <a href={`/mis/orders/${id}`} className="px-4 py-2 border border-gray-300 rounded text-sm hover:bg-gray-50">
+        <a href={`/mis/orders/${id}`} className="inline-flex min-h-11 items-center rounded-lg border border-gray-300 px-4 text-sm hover:bg-gray-50">
           ← Back to Order
         </a>
       </div>

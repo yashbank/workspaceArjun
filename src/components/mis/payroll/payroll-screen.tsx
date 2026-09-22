@@ -99,14 +99,14 @@ export function PayrollScreen({ payroll, year, month }: Props) {
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-gray-900">Payroll</h1>
         <div className="flex items-center gap-3">
-          <button onClick={prevMonth} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500">←</button>
+          <button onClick={prevMonth} aria-label="Previous month" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg hover:bg-gray-100 text-gray-500">←</button>
           <span className="font-medium text-gray-800">{monthLabel}</span>
-          <button onClick={nextMonth} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500">→</button>
+          <button onClick={nextMonth} aria-label="Next month" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg hover:bg-gray-100 text-gray-500">→</button>
         </div>
       </div>
 
       {/* Summary tiles */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {[
           { label: 'Total Employees', value: String(filtered.length), color: 'text-gray-900' },
           { label: 'Basic Wages', value: fmtCurrency(totals.basic), color: 'text-gray-900' },
@@ -121,16 +121,17 @@ export function PayrollScreen({ payroll, year, month }: Props) {
       </div>
 
       {/* Search + export */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <input
-          className="w-full max-w-sm rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          type="search"
+          className="min-h-12 w-full max-w-sm rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
           placeholder="Search employees…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
         <button
           onClick={() => downloadPayrollCsv(filtered, year, month, monthLabel)}
-          className="px-3 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700 whitespace-nowrap"
+          className="inline-flex min-h-11 items-center rounded-lg border border-gray-200 px-3 text-base text-gray-700 hover:bg-gray-50 whitespace-nowrap"
         >
           ↓ CSV
         </button>

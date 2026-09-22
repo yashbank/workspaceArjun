@@ -302,7 +302,7 @@ export function StoreItemScreen({ items, canWrite, isOwner }: Props) {
                 </Button>
                 <button
                   onClick={() => setDeactivateItem(r)}
-                  className="text-xs text-red-400 hover:text-red-600 px-2 py-1 rounded hover:bg-red-50 transition-colors"
+                  className="inline-flex min-h-11 items-center rounded px-2 text-xs text-red-400 transition-colors hover:bg-red-50 hover:text-red-600"
                 >
                   Deactivate
                 </button>
@@ -331,13 +331,13 @@ export function StoreItemScreen({ items, canWrite, isOwner }: Props) {
         <div className="flex gap-2">
           <Link
             href="/mis/store/dashboard"
-            className="px-3 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-700"
+            className="inline-flex min-h-11 items-center justify-center px-3 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-700"
           >
             Dashboard
           </Link>
           <button
             onClick={() => downloadCsv(filtered, isOwner)}
-            className="px-3 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-700"
+            className="inline-flex min-h-11 items-center justify-center px-3 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-700"
           >
             ↓ CSV
           </button>

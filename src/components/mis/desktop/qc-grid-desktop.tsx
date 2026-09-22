@@ -85,13 +85,13 @@ export function QcGridDesktop({ view, denied = false }: { view: QcGridView | nul
             // A plain GET form: no script decides which shift or day is shown.
             <form method="get" action="/mis/qc/grid" className="flex items-center gap-2">
               <label className="sr-only" htmlFor="d9-shift">{t('d9.shift')}</label>
-              <select id="d9-shift" name="shift" defaultValue={shift?.id ?? ''} className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-800">
+              <select id="d9-shift" name="shift" defaultValue={shift?.id ?? ''} className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-800">
                 {view.shifts.map((s) => (
                   <option key={s.id} value={s.id}>{s.name} · {s.startTime}–{s.endTime}</option>
                 ))}
               </select>
               <label className="sr-only" htmlFor="d9-date">{t('d9.date')}</label>
-              <input id="d9-date" type="date" name="date" defaultValue={dateKey ?? undefined} max={view.todayKey} className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-800" />
+              <input id="d9-date" type="date" name="date" defaultValue={dateKey ?? undefined} max={view.todayKey} className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-800" />
               <button type="submit" className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
                 {t('d9.apply')}
               </button>

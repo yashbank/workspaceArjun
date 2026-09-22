@@ -66,19 +66,19 @@ export function StoreDashboardScreen({ stats, isOwner }: Props) {
         <div className="flex gap-2">
           <Link
             href="/mis/store"
-            className="px-3 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-700"
+            className="inline-flex min-h-11 items-center justify-center px-3 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-700"
           >
             All Items
           </Link>
           <Link
             href="/mis/store/transactions"
-            className="px-3 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-700"
+            className="inline-flex min-h-11 items-center justify-center px-3 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-700"
           >
             Full Log
           </Link>
           <Link
             href="/mis/store/stock"
-            className="px-3 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-700"
+            className="inline-flex min-h-11 items-center justify-center px-3 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-700"
           >
             Stock Report
           </Link>
@@ -182,7 +182,10 @@ export function StoreDashboardScreen({ stats, isOwner }: Props) {
       <div>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-base font-semibold text-slate-800">Recent Activity</h2>
-          <Link href="/mis/store/transactions" className="text-sm text-slate-400 hover:text-slate-600 underline">
+          <Link
+            href="/mis/store/transactions"
+            className="inline-flex min-h-11 items-center text-sm text-slate-400 underline hover:text-slate-600"
+          >
             View all
           </Link>
         </div>

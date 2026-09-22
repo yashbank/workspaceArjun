@@ -1,3 +1,4 @@
+import { isUuid } from '@/lib/mis/ids';
 import { PrintButton } from '@/components/mis/print/print-button';
 import { requireMisAccess } from '@/server/mis/guard';
 import { can } from '@/lib/mis/permissions';
@@ -21,6 +22,8 @@ export default async function PayslipPage({
   searchParams: { year?: string; month?: string };
 }) {
   const { employeeId } = await params;
+  // A malformed id is a 404 before anything is fetched (F-25), never a database error.
+  if (!isUuid(employeeId)) notFound();
   const sp = await searchParams;
   const user = await requireMisAccess();
   // A payslip is a wage: Owner only (S9 / D24). The server functions below refuse too — this is

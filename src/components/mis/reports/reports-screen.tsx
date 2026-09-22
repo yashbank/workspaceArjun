@@ -184,20 +184,20 @@ export function ReportsScreen({ production, attendance, qc, orders, store, canSe
     <div className="p-6">
       {/* Header with month nav */}
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-        <h1 className="text-2xl font-semibold">Reports</h1>
+        <h1 className="text-2xl font-semibold text-slate-900">Reports</h1>
         <div className="flex items-center gap-3">
-          <button onClick={prevMonth} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 text-lg">←</button>
+          <button onClick={prevMonth} aria-label="Previous month" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500 text-lg">←</button>
           <span className="font-medium text-slate-700 min-w-[120px] text-center">{rangeLabel}</span>
-          <button onClick={nextMonth} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 text-lg">→</button>
+          <button onClick={nextMonth} aria-label="Next month" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500 text-lg">→</button>
           <button
             onClick={handleExport}
-            className="ml-2 px-3 py-1.5 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-700"
+            className="ml-2 inline-flex min-h-11 items-center rounded-lg border border-slate-200 px-3 text-sm text-slate-700 hover:bg-slate-50"
           >
             ↓ CSV
           </button>
           <button
             onClick={() => window.print()}
-            className="px-3 py-1.5 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-700"
+            className="inline-flex min-h-11 items-center rounded-lg border border-slate-200 px-3 text-sm text-slate-700 hover:bg-slate-50"
           >
             ⎙ Print
           </button>
@@ -251,9 +251,9 @@ export function ReportsScreen({ production, attendance, qc, orders, store, canSe
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            className={`inline-flex min-h-11 items-center px-4 text-sm font-medium border-b-2 transition-colors ${
               tab === t.key
-                ? 'border-blue-600 text-blue-600'
+                ? 'border-indigo-600 text-indigo-700'
                 : 'border-transparent text-slate-500 hover:text-slate-700'
             }`}
           >

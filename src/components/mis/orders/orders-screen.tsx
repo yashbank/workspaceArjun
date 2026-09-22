@@ -81,8 +81,8 @@ export function OrdersScreen({ orders, customers, canWrite, initialCustomerId }:
     { key: 'deliveryDate', header: 'Delivery', render: (r) => r.deliveryDate ? new Date(r.deliveryDate).toLocaleDateString('en-IN') : '—' },
     { key: 'createdAt', header: 'Created', render: (r) => new Date(r.createdAt).toLocaleDateString('en-IN') },
     { key: 'actions', header: '', render: (r) => (
-      <div className="flex gap-2 justify-end">
-        <Link href={`/mis/orders/${r.id}`} className="px-3 py-1.5 text-sm text-blue-600 hover:underline">View</Link>
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <Link href={`/mis/orders/${r.id}`} className="inline-flex min-h-11 items-center px-3 text-sm font-medium text-indigo-700 hover:underline">View</Link>
         {canWrite && <Button variant="ghost" onClick={() => openEdit(r)}>Edit</Button>}
         {canWrite && r.status === 'DRAFT' && (
           <Button variant="ghost" onClick={() => startTransition(async () => { await updateOrderStatusAction(r.id, 'CONFIRMED'); })}>Confirm</Button>

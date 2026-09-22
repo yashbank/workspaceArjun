@@ -162,13 +162,15 @@ export function ProductionScreen({
     }
   };
 
+  // Same five statuses as the Orders screen (DRAFT/CONFIRMED/IN_PRODUCTION/COMPLETE/CANCELLED) —
+  // this list previously used PENDING/QC_PENDING/DELIVERED, which this schema does not have, so
+  // every order fell through to the default grey pill.
   const statusColors: Record<string, string> = {
-    PENDING: 'bg-gray-100 text-gray-600',
-    CONFIRMED: 'bg-blue-100 text-blue-700',
-    IN_PRODUCTION: 'bg-yellow-100 text-yellow-700',
-    QC_PENDING: 'bg-purple-100 text-purple-700',
-    DELIVERED: 'bg-green-100 text-green-700',
-    CANCELLED: 'bg-red-100 text-red-700',
+    DRAFT: 'bg-slate-100 text-slate-600',
+    CONFIRMED: 'bg-sky-50 text-sky-800',
+    IN_PRODUCTION: 'bg-amber-50 text-amber-900',
+    COMPLETE: 'bg-emerald-50 text-emerald-800',
+    CANCELLED: 'bg-red-50 text-red-800',
   };
 
   return (

@@ -9,6 +9,13 @@ import { Select, type SelectOption } from '@/components/mis/kit/select';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { saveEmployeeAction, deleteEmployeeAction, restoreEmployeeAction } from '@/app/(mis)/mis/employees/actions';
 
+// Same visual weight as the kit's `Button` ghost variant, so a navigation
+// link (View, Badge) sits in the same row as an action button (Edit,
+// Delete) without one looking like an afterthought — 24G-01: this row was
+// four different sizes, from 20px text links up to 44px buttons.
+const actionLinkClass =
+  'inline-flex min-h-11 flex-1 items-center justify-center rounded-lg px-3 text-base font-medium text-slate-700 transition-colors hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900';
+
 type Employee = { id: string; employeeCode: string; name: string; nameHi: string | null; role: string; isActive: boolean; deletedAt: Date | null; managerId: string | null; userProfile: { email: string } | null };
 type Props = {
   employees: Employee[];
@@ -117,9 +124,9 @@ export function EmployeeScreen({ employees, canWrite, scoped }: Props) {
     { key: 'email', header: 'Login', render: (r) => r.userProfile?.email ? <span className="break-all">{r.userProfile.email}</span> : <span className="text-slate-400 text-xs">No login</span> },
     { key: 'isActive', header: 'Status', render: (r) => <StatusBadge tone={r.isActive ? 'good' : 'neutral'}>{r.isActive ? 'Active' : 'Inactive'}</StatusBadge> },
     { key: 'actions', header: '', render: (r) => (
-      <div className="flex gap-2 justify-end">
-        <Link href={`/mis/employees/${r.id}`} className="text-sm text-blue-600 hover:underline px-1">View</Link>
-        <Link href={`/mis/print/badge/${r.id}`} target="_blank" className="text-sm text-blue-600 hover:underline px-1">Badge</Link>
+      <div className="flex flex-wrap justify-end gap-2">
+        <Link href={`/mis/employees/${r.id}`} className={actionLinkClass}>View</Link>
+        <Link href={`/mis/print/badge/${r.id}`} target="_blank" className={actionLinkClass}>Badge</Link>
         {!r.deletedAt && canWrite && <Button variant="ghost" onClick={() => openEdit(r)}>Edit</Button>}
         {!r.deletedAt && canWrite && <Button variant="ghost" onClick={() => startTransition(async () => { await deleteEmployeeAction(r.id); })}>Delete</Button>}
         {r.deletedAt && canWrite && <Button variant="ghost" onClick={() => startTransition(async () => { await restoreEmployeeAction(r.id); })}>Restore</Button>}

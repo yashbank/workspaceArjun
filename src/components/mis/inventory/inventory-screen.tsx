@@ -140,28 +140,43 @@ export function InventoryScreen({ summary, canWrite = false }: Props) {
         </div>
       )}
 
-      <div className="flex items-center gap-2 flex-wrap">
+      {/* Two rows on a phone — search on its own line, then the actions in a
+          row that wraps evenly instead of one lonely button next to the search
+          box and a stray full-width one below it. */}
+      <div className="flex flex-col gap-2">
         <input
           type="search"
           placeholder="Search items..."
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="flex-1 min-w-[180px] max-w-sm min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500"
+          className="w-full min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500 sm:max-w-sm"
         />
-        <button onClick={() => downloadInventoryCsv(filtered)} className="px-3 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-700 whitespace-nowrap">
-          ↓ CSV
-        </button>
-        {canWrite && (
-          <>
-            <a href="/api/mis/inventory/template" download className="px-3 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-700 whitespace-nowrap">
-              ↓ Excel Template
-            </a>
-            <button onClick={() => setShowImport(true)} className="px-3 py-2 text-sm border border-blue-200 rounded-lg hover:bg-blue-50 text-blue-700 whitespace-nowrap">
-              ↑ Import CSV
-            </button>
-            <Button onClick={() => setShowAddItem(true)}>+ Add Item</Button>
-          </>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => downloadInventoryCsv(filtered)}
+            className="inline-flex min-h-11 items-center justify-center rounded-lg border border-slate-200 px-3 text-sm text-slate-700 hover:bg-slate-50 whitespace-nowrap"
+          >
+            ↓ CSV
+          </button>
+          {canWrite && (
+            <>
+              <a
+                href="/api/mis/inventory/template"
+                download
+                className="inline-flex min-h-11 items-center justify-center rounded-lg border border-slate-200 px-3 text-sm text-slate-700 hover:bg-slate-50 whitespace-nowrap"
+              >
+                ↓ Excel Template
+              </a>
+              <button
+                onClick={() => setShowImport(true)}
+                className="inline-flex min-h-11 items-center justify-center rounded-lg border border-blue-200 px-3 text-sm text-blue-700 hover:bg-blue-50 whitespace-nowrap"
+              >
+                ↑ Import CSV
+              </button>
+              <Button onClick={() => setShowAddItem(true)}>+ Add Item</Button>
+            </>
+          )}
+        </div>
       </div>
 
       <DataTable columns={columns} rows={filtered} rowKey={(r) => r.itemId} emptyTitle="Inventory empty" emptyBody="Confirm GRNs to add items to inventory." />

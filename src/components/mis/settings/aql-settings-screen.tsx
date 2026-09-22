@@ -13,7 +13,7 @@ import { updateAqlThresholdAction } from '@/app/(mis)/mis/settings/aql/actions';
 export function AqlSettingsScreen({ rules }: { rules: Rule[] }) {
   return (
     <div className="mx-auto max-w-3xl flex flex-col gap-4">
-      <Link href="/mis/settings" className="text-sm text-slate-500 hover:text-slate-700">
+      <Link href="/mis/settings" className="inline-flex min-h-11 w-fit items-center text-base text-slate-500 hover:text-slate-700">
         ← Settings
       </Link>
       <div className="text-[11px] font-semibold uppercase tracking-wider text-indigo-700">

@@ -158,7 +158,8 @@ function LangPill() {
             aria-pressed={active}
             onClick={() => setLocale(option)}
             className={cn(
-              'h-10 w-10 rounded-full text-base font-semibold',
+              // 44px hit area (24G-part1 gap 2) — was 40x40, under the tap-target rule.
+              'h-11 w-11 rounded-full text-base font-semibold',
               active ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400',
             )}
           >
@@ -240,31 +241,73 @@ export function AlertRow({
   );
 }
 
+/**
+ * A square count badge beside a title (R1 "Waiting on you", D1's widget) — the number that
+ * is the whole reason the card exists, read before a single word.
+ */
+export function CountBadge({ value }: { value: number | string }) {
+  return (
+    <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-xl font-bold text-white">
+      {value}
+    </span>
+  );
+}
+
+/**
+ * One row inside the "Waiting on you" card: what it is, and — when it is known — how long it
+ * has been waiting, as a pill on the right (R1, D1). No dot: this list is not a mix of
+ * severities the way "Needs attention" is, it is one queue.
+ */
+export function ApprovalRow({ title, detail, age }: { title: string; detail?: string; age?: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3 py-1.5">
+      <div className="min-w-0">
+        <p className="truncate text-sm font-medium text-indigo-950">{title}</p>
+        {detail && <p className="truncate text-xs text-indigo-700/70">{detail}</p>}
+      </div>
+      {age && (
+        <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-indigo-700">
+          {age}
+        </span>
+      )}
+    </div>
+  );
+}
+
 export function PrimaryButton({
   href,
   onClick,
   className,
+  icon,
   children,
 }: {
   href?: string;
   onClick?: () => void;
   className?: string;
+  /** e.g. the check icon on "Review approvals" (R1). Optional — most callers have none. */
+  icon?: ReactNode;
   children: ReactNode;
 }) {
   const classes = cn(
-    'block w-full rounded-xl bg-indigo-600 py-3.5 text-center text-base font-semibold text-white hover:bg-indigo-700',
+    'flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 py-3.5 text-center text-base font-semibold text-white hover:bg-indigo-700',
     className,
+  );
+  const content = (
+    <>
+      {icon}
+      {children}
+    </>
   );
   if (href) {
     return (
       <Link href={href} className={classes}>
-        {children}
+        {content}
       </Link>
     );
   }
   return (
     <button type="button" onClick={onClick} className={classes}>
-      {children}
+      {content}
     </button>
   );
 }
@@ -431,6 +474,24 @@ export function RowLink({
 /** Hairline between rows inside one card. */
 export function Divider() {
   return <div className="my-1 h-px bg-slate-200/70" />;
+}
+
+/** The check on "Review approvals" (R1) — an icon repeated wherever a button confirms a review/approve action. */
+export function CheckIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className ?? 'h-4 w-4'}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="m5 13 4 4L19 7" />
+    </svg>
+  );
 }
 
 function LockIcon() {

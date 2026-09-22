@@ -3789,14 +3789,25 @@ Nothing in 24A–E was seen in a browser. Store, Inventory and GRN screens do no
 3. Fix in this order: pages that do not open (store, inventory, GRN first), then crashes, then layout mismatches against `design/screens/`.
 4. Every fix gets a test that fails without it. Use the standard verify commands. File findings from F-24.
 
+### Phase 24G · UI polish — **RUN BEFORE PHASE 25**
+
+> ✔ DONE (2026-09-22) — see `phase-reports/phase-24G.md` and `qa/UI-GAPS-24G.md`. F-25 and F-27 closed (D32); F-29–F-33 filed as structural design mismatches needing a product call. tsc silent; vitest 184 files / 3984 passed + 10 expected-fail; build passes.
+
+> 24F made every screen open. 24G makes every screen match `design/screens/` (map: `design/_MAPPING.md`). **Model: sonnet. No schema change.**
+1. Walk every `/mis` screen as every role at **390 and 768 px (phone layout) and 1024 and 1440 px (desktop layout)** — 1024 is the only layout boundary (D1/D3). Compare each with its PNG and log every gap in `docs/qa/UI-GAPS-24G.md` (screen · role · width · what differs · severity · fixed / left).
+2. Fix the gaps: layout, spacing, typography, colour (tokens only — no new hex), empty / loading / error states, tap targets of at least 44 px, no horizontal page scroll. A fix that can be tested gets a test that fails without it.
+3. **F-27 → D32:** a "More" tab on the phone bottom navigation for Owner, Admin and Supervisor that lists every screen their role may open (Store, GRN, PO, Inventory, Suppliers, ...). The list is derived from the same permission table as the desktop sidebar, so the two cannot disagree.
+4. **F-25:** guard `/mis/print/payslip/[employeeId]` with `isUuid` and give `wage-screens.test.tsx` a UUID fixture (`dynamic-route-guards.test.ts` then loses its exception).
+5. Use the build/check agents, the standard verify commands and the Phase Contract (§1A). New F-numbers continue from F-29, new D-numbers from D32. File anything you do not fix.
+
 ### Phase 25 · Payroll rules from Arjun's review — **SCHEMA GATE**
 
 > ⚠ UPDATED BY PHASE 24F — (1) **The runtime database pool is ONE connection wide** (`server/db/connection.ts`, `max: 1`) — on purpose. A whole-list
 > page that runs a query per row (payroll for 60 people, a per-employee wage lookup) queues on it and dies with `timeout exceeded when
 > trying to connect`: fetch once for the whole set (`getStockBalances` in `server/mis/store.ts` is the pattern; §2A.13). (2) A Prisma `Decimal` must
 > not reach a client component (§2A.5): wrap a row in `toPlain` (`lib/mis/plain.ts`) on the page, AFTER `withoutMoneyFields` / `forRole`.
-> (3) A new `[id]` page guards its id with `isUuid` (`lib/mis/ids.ts`) before any query — `dynamic-route-guards.test.ts` fails otherwise. The payslip
-> page is the one exception until `wage-screens.test.tsx` gets a UUID fixture (F-25). (4) Format a date in a client component with
+> (3) A new `[id]` page guards its id with `isUuid` (`lib/mis/ids.ts`) before any query — `dynamic-route-guards.test.ts` fails otherwise. **Phase 24G
+> closed the payslip exception** — every dynamic page including it is now guarded; `wage-screens.test.tsx`'s fixture id is a UUID (F-25). (4) Format a date in a client component with
 > `formatFactoryDate` / `formatFactoryDateTime`, never `toLocaleDateString()` (F-26). (5) A search or filter box is `min-h-12 text-base text-slate-900 bg-white`;
 > `search-inputs.test.ts` reads every screen.
 

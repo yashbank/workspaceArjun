@@ -3,7 +3,10 @@
 import {
   ActionCard,
   AlertRow,
+  ApprovalRow,
   BigStat,
+  CheckIcon,
+  CountBadge,
   Divider,
   EmptyNote,
   FailCard,
@@ -32,7 +35,8 @@ export type OwnerHomeProps = {
   header: { title: string; meta: string };
   approvals: {
     total: number;
-    rows: { id: string; title: string; detail: string }[];
+    /** `age` is omitted when a row has no dated origin to measure from. */
+    rows: { id: string; title: string; detail: string; age?: string }[];
   };
   alerts: OwnerAlert[];
   yesterday: {
@@ -69,17 +73,24 @@ export function OwnerHome({ header, approvals, alerts, yesterday, wages }: Owner
 
       {approvals.total > 0 ? (
         <ActionCard>
-          <SectionLabel>Waiting on you</SectionLabel>
-          <div className="mt-2">
-            <BigStat value={approvals.total} label={approvals.total === 1 ? 'approval' : 'approvals'} />
+          {/* R1: a square count badge beside the title, not a big number underneath it —
+              the badge and the two-line title read together as one fact. */}
+          <div className="flex items-start gap-3">
+            <CountBadge value={approvals.total} />
+            <div className="min-w-0 pt-0.5">
+              <p className="font-semibold text-indigo-950">Waiting on you</p>
+              <p className="text-sm text-indigo-700">Nothing moves until you approve</p>
+            </div>
           </div>
-          <div className="mt-2">
+          <div className="mt-3 border-t border-indigo-200/70">
             {approvals.rows.map((row) => (
-              <AlertRow key={row.id} tone="info" title={row.title} detail={row.detail} />
+              <ApprovalRow key={row.id} title={row.title} age={row.age} />
             ))}
           </div>
           <div className="mt-3">
-            <PrimaryButton href="/mis/approvals">Review approvals</PrimaryButton>
+            <PrimaryButton href="/mis/approvals" icon={<CheckIcon />}>
+              Review approvals
+            </PrimaryButton>
           </div>
         </ActionCard>
       ) : (

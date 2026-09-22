@@ -3,6 +3,7 @@
 import Link from 'next/link';
 
 import { LIST_PAGE_SIZE, NAV_GROUPS, masterSpec, type DirectoryEntry, type MasterKey, type MasterListView } from '@/lib/mis/master-directory';
+import type { TranslationKey } from '@/lib/mis/i18n';
 import { cn } from '@/lib/utils';
 
 import { useT } from '../shell/locale-provider';
@@ -33,6 +34,50 @@ const href = (master: MasterKey, q: { q?: string; deactivated?: boolean; edit?: 
   return s ? `${base}?${s}` : base;
 };
 
+/**
+ * The D10 sub-nav — every master, grouped, with its count.
+ *
+ * Pulled out so the masters INDEX page (no master picked yet) can show the
+ * same left rail as every master's own page, instead of a bare list with no
+ * chrome around it (24G).
+ */
+export function MasterNavSidebar({ directory, activeKey }: { directory: DirectoryEntry[]; activeKey?: MasterKey }) {
+  const t = useT();
+  return (
+    <nav aria-label={t('d10.crumb.masterData')} className="min-w-0">
+      {NAV_GROUPS.map((group) => {
+        const entries = directory.filter((d) => d.nav === group);
+        if (entries.length === 0 && group !== 'PEOPLE') return null;
+        return (
+          <div key={group} className="mb-4">
+            <p className="mb-1 px-3 font-mono text-[10px] uppercase tracking-wider text-slate-500">{t(`d10.nav.${group}` as never)}</p>
+            <ul className="flex flex-col gap-0.5">
+              {entries.map((d) => (
+                <li key={d.key}>
+                  <Link
+                    href={d.href}
+                    aria-current={d.key === activeKey ? 'page' : undefined}
+                    className={cn('flex min-h-11 items-center justify-between rounded-lg px-3 text-sm', d.key === activeKey ? 'bg-indigo-50 font-bold text-indigo-900' : 'text-slate-800 hover:bg-slate-100')}
+                  >
+                    <span>{t(`d10.master.${d.key}` as never)}</span>
+                    <span className="font-mono text-xs text-slate-500">{d.counts.total}</span>
+                  </Link>
+                </li>
+              ))}
+              {group === 'PEOPLE' ? (
+                <li>
+                  <Link href="/mis/attendance/shifts" className="flex min-h-11 items-center rounded-lg px-3 text-sm text-slate-800 hover:bg-slate-100">{t('d10.shifts')}</Link>
+                </li>
+              ) : null}
+            </ul>
+          </div>
+        );
+      })}
+      <p className="px-3 font-mono text-[11px] text-slate-500">{t('d10.notRecorded')}</p>
+    </nav>
+  );
+}
+
 export function MasterDataDesktop({ directory, list, denied = false }: { directory: DirectoryEntry[] | null; list: MasterListView | null; denied?: boolean }) {
   const t = useT();
   if (denied) return <p role="alert" className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700">{t('d10.noAccess')}</p>;
@@ -62,37 +107,7 @@ export function MasterDataDesktop({ directory, list, denied = false }: { directo
       </nav>
 
       <div className={cn('grid gap-5', list.editing ? 'lg:grid-cols-[220px_minmax(0,1fr)_380px]' : 'lg:grid-cols-[220px_minmax(0,1fr)]')}>
-        <nav aria-label={t('d10.crumb.masterData')} className="min-w-0">
-          {NAV_GROUPS.map((group) => {
-            const entries = directory.filter((d) => d.nav === group);
-            if (entries.length === 0 && group !== 'PEOPLE') return null;
-            return (
-              <div key={group} className="mb-4">
-                <p className="mb-1 px-3 font-mono text-[10px] uppercase tracking-wider text-slate-500">{t(`d10.nav.${group}` as never)}</p>
-                <ul className="flex flex-col gap-0.5">
-                  {entries.map((d) => (
-                    <li key={d.key}>
-                      <Link
-                        href={d.href}
-                        aria-current={d.key === list.master ? 'page' : undefined}
-                        className={cn('flex min-h-11 items-center justify-between rounded-lg px-3 text-sm', d.key === list.master ? 'bg-indigo-50 font-bold text-indigo-900' : 'text-slate-800 hover:bg-slate-100')}
-                      >
-                        <span>{t(`d10.master.${d.key}` as never)}</span>
-                        <span className="font-mono text-xs text-slate-500">{d.counts.total}</span>
-                      </Link>
-                    </li>
-                  ))}
-                  {group === 'PEOPLE' ? (
-                    <li>
-                      <Link href="/mis/attendance/shifts" className="flex min-h-11 items-center rounded-lg px-3 text-sm text-slate-800 hover:bg-slate-100">{t('d10.shifts')}</Link>
-                    </li>
-                  ) : null}
-                </ul>
-              </div>
-            );
-          })}
-          <p className="px-3 font-mono text-[11px] text-slate-500">{t('d10.notRecorded')}</p>
-        </nav>
+        <MasterNavSidebar directory={directory} activeKey={list.master} />
 
         <section className="min-w-0">
           <DesktopPageHeader
