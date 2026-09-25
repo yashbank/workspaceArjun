@@ -397,7 +397,11 @@ describe('redact() — the last line of defence', () => {
     expect(JSON.stringify(redact({ row: { amount: 731.19 } }))).not.toContain('731.19');
   });
 
-  it.fails('F-05: the payroll field names are redacted (basicWage, otPay, grossPay, latePenalty)', () => {
+  // Phase 25 added the payroll rework's own money field names (basicWage, otPay, grossPay,
+  // latePenalty, plus hra/allowance/bonus/extraPay/otRatePerHour/hraAmount/allowanceAmount/
+  // bonusAmount) to REDACTED_KEYS — this half of F-05 is closed; the nested-value case above is
+  // not (redact() still only looks at the top level).
+  it('F-05: the payroll field names are redacted (basicWage, otPay, grossPay, latePenalty)', () => {
     const out = redact({ basicWage: 1111, otPay: 2222, grossPay: 3333, latePenalty: 4444 });
     expect(JSON.stringify(out)).not.toMatch(/1111|2222|3333|4444/);
   });
