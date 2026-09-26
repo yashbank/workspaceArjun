@@ -18,8 +18,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Row = Record<string, any>;
 
-const state: { pos: Row[]; poItems: Row[]; grns: Row[]; grnItems: Row[]; ledger: Row[]; txns: Row[]; items: Row[] } = {
-  pos: [], poItems: [], grns: [], grnItems: [], ledger: [], txns: [], items: [],
+const state: { pos: Row[]; poItems: Row[]; grns: Row[]; grnItems: Row[]; ledger: Row[]; txns: Row[]; items: Row[]; businessRules: Row[] } = {
+  pos: [], poItems: [], grns: [], grnItems: [], ledger: [], txns: [], items: [], businessRules: [],
 };
 let seq = 0;
 const nextId = () => `id-${++seq}`;
@@ -46,13 +46,13 @@ function makeDb(): Row {
         else Object.assign(row, data);
         return row;
       },
-      // Prisma sends `quantity`/`receivedQuantity` as Decimal here — the state stays plain
-      // numbers (simpler for this file's own assertions), wrapped only at the boundary the real
-      // code reads through (`store.ts`'s `.toNumber()` calls).
+      // Prisma sends `quantity`/`receivedQuantity`/`ratePerUnit` as Decimal here — the state stays
+      // plain numbers (simpler for this file's own assertions), wrapped only at the boundary the
+      // real code reads through (`store.ts`'s and `po.ts`'s `.toNumber()` calls).
       findMany: async ({ where }: Row) =>
         state.poItems
           .filter((i) => (where?.poId ? i.poId === where.poId : true))
-          .map((i) => ({ ...i, quantity: D(i.quantity), receivedQuantity: D(i.receivedQuantity) })),
+          .map((i) => ({ ...i, quantity: D(i.quantity), receivedQuantity: D(i.receivedQuantity), ratePerUnit: D(i.ratePerUnit) })),
     },
     misGrn: {
       create: async ({ data }: Row) => { const row = { id: nextId(), ...data }; state.grns.push(row); return row; },
@@ -78,6 +78,15 @@ function makeDb(): Row {
       findMany: async ({ where }: Row) => state.items.filter((i) => where.id.in.includes(i.id)),
       update: async ({ where, data }: Row) => { const row = state.items.find((i) => i.id === where.id)!; Object.assign(row, data); return row; },
     },
+    misBusinessRule: {
+      findFirst: async ({ where, orderBy }: Row) => {
+        let rows = state.businessRules.filter((r) => r.ruleKey === where.ruleKey);
+        if (where.effectiveFrom?.lte) rows = rows.filter((r) => r.effectiveFrom <= where.effectiveFrom.lte);
+        rows = rows.sort((a, b) => (orderBy?.effectiveFrom === 'asc' ? a.effectiveFrom - b.effectiveFrom : b.effectiveFrom - a.effectiveFrom));
+        return rows[0] ?? null;
+      },
+      create: async ({ data }: Row) => { const row = { id: nextId(), ...data }; state.businessRules.push(row); return row; },
+    },
     $transaction: async (cb: (tx: Row) => Promise<unknown>) => cb(db),
   };
   return db;
@@ -92,12 +101,12 @@ const getMisRole = vi.fn();
 vi.mock('@/server/mis/roles', () => ({ getMisRole: (...a: unknown[]) => getMisRole(...a) }));
 vi.mock('@/server/mis/audit', () => ({ logAuditEvent: async () => undefined }));
 
-const { createPO } = await import('./po');
+const { createPO, submitForApproval, approvePO } = await import('./po');
 const { commitReceipt } = await import('./store');
 
 beforeEach(() => {
   seq = 0;
-  state.pos = []; state.poItems = []; state.grns = []; state.grnItems = []; state.ledger = []; state.txns = []; state.items = [];
+  state.pos = []; state.poItems = []; state.grns = []; state.grnItems = []; state.ledger = []; state.txns = []; state.items = []; state.businessRules = [];
   fakeDb = makeDb();
   vi.clearAllMocks();
   getCurrentUser.mockResolvedValue({ id: 'u1' });
@@ -177,6 +186,91 @@ describe('partial-receipt arithmetic, to the paisa (this phase\'s own acceptance
     await commitReceipt([{ itemId: 'i1', qty: 25, rate: 20 }], { poId: po.id });
     expect(state.poItems.find((i) => i.id === poItem.id)!.receivedQuantity).toBe(100);
     expect(state.pos.find((p) => p.id === po.id)!.status).toBe('COMPLETE');
+  });
+});
+
+describe('approval chain (Phase 21 · D1/D2/D34)', () => {
+  it('a buffer-stock PO and an order-linked PO of the SAME value take the identical approval path (D2\'s own acceptance check)', async () => {
+    const orderPo = await createPO({ bomRef: 'BOM-700' });
+    await fakeDb.misPoItem.create({ data: { poId: orderPo.id, itemId: 'i1', quantity: 10, ratePerUnit: 1000 } }); // 10,000
+    const bufferPo = await createPO({ purpose: 'BUFFER_STOCK' });
+    await fakeDb.misPoItem.create({ data: { poId: bufferPo.id, itemId: 'i1', quantity: 10, ratePerUnit: 1000 } }); // 10,000
+
+    const submittedOrder = await submitForApproval(orderPo.id);
+    const submittedBuffer = await submitForApproval(bufferPo.id);
+    expect(submittedOrder.approvalMode).toBe(submittedBuffer.approvalMode);
+    expect(submittedOrder.approvalMode).toBe('ADMIN_ONLY'); // 10,000 is below the 50,000 default threshold
+  });
+
+  it('below the threshold: ADMIN_ONLY, a single step an Admin can complete alone', async () => {
+    const po = await createPO({ bomRef: 'BOM-701' });
+    await fakeDb.misPoItem.create({ data: { poId: po.id, itemId: 'i1', quantity: 1, ratePerUnit: 100 } }); // 100
+    const submitted = await submitForApproval(po.id);
+    expect(submitted.approvalMode).toBe('ADMIN_ONLY');
+
+    getMisRole.mockResolvedValue('ADMIN');
+    const approved = await approvePO(po.id);
+    expect(approved.status).toBe('APPROVED');
+    expect(approved.approvedById).toBe('u1');
+    expect(approved.adminApprovedAt).toBeUndefined(); // ADMIN_ONLY never touches the two-step fields
+  });
+
+  it('at/above the threshold: BOTH — an Admin\'s first step does not itself approve, and only the Owner can give the second', async () => {
+    const po = await createPO({ bomRef: 'BOM-702' });
+    await fakeDb.misPoItem.create({ data: { poId: po.id, itemId: 'i1', quantity: 100, ratePerUnit: 1000 } }); // 100,000
+    const submitted = await submitForApproval(po.id);
+    expect(submitted.approvalMode).toBe('BOTH');
+
+    getMisRole.mockResolvedValue('ADMIN');
+    const afterAdminStep = await approvePO(po.id);
+    expect(afterAdminStep.status).toBe('PENDING_APPROVAL'); // one step down, one to go
+    expect(afterAdminStep.adminApprovedAt).toBeTruthy();
+    expect(afterAdminStep.adminApprovedById).toBe('u1');
+
+    // The same Admin cannot also give the final sign-off.
+    await expect(approvePO(po.id)).rejects.toThrow(/owner/i);
+
+    getMisRole.mockResolvedValue('OWNER');
+    const final = await approvePO(po.id);
+    expect(final.status).toBe('APPROVED');
+    expect(final.approvedById).toBe('u1');
+  });
+
+  it('OWNER_ONLY is a manual override only an Owner can invoke, and only an Owner can then approve it', async () => {
+    const po = await createPO({ bomRef: 'BOM-703' });
+    await fakeDb.misPoItem.create({ data: { poId: po.id, itemId: 'i1', quantity: 1, ratePerUnit: 100 } }); // 100 — would otherwise be ADMIN_ONLY
+
+    getMisRole.mockResolvedValue('ADMIN');
+    await expect(submitForApproval(po.id, { forceOwnerOnly: true })).rejects.toThrow(/owner/i);
+
+    getMisRole.mockResolvedValue('OWNER');
+    const submitted = await submitForApproval(po.id, { forceOwnerOnly: true });
+    expect(submitted.approvalMode).toBe('OWNER_ONLY');
+
+    getMisRole.mockResolvedValue('ADMIN');
+    await expect(approvePO(po.id)).rejects.toThrow(/owner/i);
+
+    getMisRole.mockResolvedValue('OWNER');
+    const approved = await approvePO(po.id);
+    expect(approved.status).toBe('APPROVED');
+  });
+
+  it('a threshold change after submission never reopens a PO already decided (frozen at submission, D34)', async () => {
+    const po = await createPO({ bomRef: 'BOM-704' });
+    await fakeDb.misPoItem.create({ data: { poId: po.id, itemId: 'i1', quantity: 100, ratePerUnit: 1000 } }); // 100,000 -> BOTH today
+    const submitted = await submitForApproval(po.id);
+    expect(submitted.approvalMode).toBe('BOTH');
+
+    // Raise the threshold well above this PO's value, as if an Owner changed policy afterwards
+    // (mutated in place here purely for test simplicity — real revisions add a new row).
+    state.businessRules.find((r) => r.ruleKey === 'po_approval_threshold')!.ruleValue = '999999';
+
+    getMisRole.mockResolvedValue('ADMIN');
+    const afterAdminStep = await approvePO(po.id);
+    expect(afterAdminStep.approvalMode).toBe('BOTH'); // unchanged — never re-derived
+    getMisRole.mockResolvedValue('OWNER');
+    const final = await approvePO(po.id);
+    expect(final.status).toBe('APPROVED');
   });
 });
 

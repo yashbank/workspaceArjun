@@ -206,3 +206,39 @@ export async function getWastageReport(
     { timeZone, lastKey, weeks, unit: typeof input.unit === 'string' ? input.unit : null, machineId: typeof input.machineId === 'string' ? input.machineId : null },
   );
 }
+
+export type BufferDriftBucket = { valueReceived: number; grnItemCount: number };
+
+/**
+ * D1's buffer-drift report: value received into the general pool (`BUFFER_STOCK` POs) against
+ * value received straight against an order (`FOR_ORDER` POs), for the same period — so a
+ * growing gap between the two ("drift") is visible. This does not invent a cost-allocation rule
+ * the rest of the system doesn't have yet: `commitReceipt` posts every delivery to the same
+ * ledger regardless of purpose (Phase 20's own finding) — this is a reporting VIEW over receipts,
+ * bucketed by each PO's own `purpose` column (D1's own prerequisite for this report), so every
+ * GRN line lands in exactly one bucket, never a third "unassigned" group. All money: wages.read.
+ */
+export async function getBufferDriftReport(range: ReportRange) {
+  await requirePermission('wages.read');
+  const grnItems = await db.misGrnItem.findMany({
+    where: { grn: { receivedAt: { gte: range.from, lte: range.to } } },
+    include: { poItem: { select: { ratePerUnit: true, po: { select: { purpose: true } } } } },
+  });
+
+  const buckets: { BUFFER_STOCK: BufferDriftBucket; FOR_ORDER: BufferDriftBucket } = {
+    BUFFER_STOCK: { valueReceived: 0, grnItemCount: 0 },
+    FOR_ORDER: { valueReceived: 0, grnItemCount: 0 },
+  };
+  for (const gi of grnItems) {
+    // A legacy PO with no `purpose` written yet reads as buffer stock, matching lib/mis/po-purpose.ts.
+    const purpose = gi.poItem?.po?.purpose ?? 'BUFFER_STOCK';
+    const value = gi.receivedQty.toNumber() * (gi.poItem?.ratePerUnit.toNumber() ?? 0);
+    buckets[purpose].valueReceived += value;
+    buckets[purpose].grnItemCount += 1;
+  }
+  return {
+    bufferStock: buckets.BUFFER_STOCK,
+    forOrder: buckets.FOR_ORDER,
+    drift: buckets.BUFFER_STOCK.valueReceived - buckets.FOR_ORDER.valueReceived,
+  };
+}
