@@ -1,7 +1,7 @@
 # Phase 25 · Payroll rules from Arjun's review
 
-**Date:** 2026-09-22   **Model:** sonnet   **Result:** Half A complete — awaiting migrate
-**Tickets:** MIS-216 family (no other ticket). Findings: F-33 (payroll screen vs W9) — not yet closed, waits for Half B.
+**Date:** 2026-09-22 (Half A) / 2026-09-26 (Half B)   **Model:** sonnet   **Result:** DONE
+**Tickets:** MIS-216 family (no other ticket). Findings: F-33 (payroll screen vs W9) — CLOSED in Half B.
 
 ## What was built (Half A — schema.prisma + migrations-pending only)
 
@@ -28,16 +28,53 @@ D24 (wages/money — every new money column and the whole snapshot table are Own
 
 None yet — Half B is the next session on Phase 25 itself, not a different phase.
 
-## Pending — the next agent must do this first
+## The gate (done)
 
-**The gate.** Human runs from `Arjun/app`:
+Human ran, from `Arjun/app`:
 ```bash
 mv prisma/migrations-pending/20260926000000_mis_payroll_rework prisma/migrations/20260926000000_mis_payroll_rework
 pnpm db:deploy && pnpm db:generate
 ```
-Then confirm: `grep -n "model MisPayrollSnapshotLine" prisma/schema.prisma` and a quick look at `src/generated/prisma/models.ts` for the new models, per the `mis-schema-gate` skill.
+Confirmed applied — the generated client carries all five new models.
 
-Then **Half B** (new session): build 25.1 (component toggle UI + payslip rows), 25.2 (OT-per-hour calc, replacing `OT_MULTIPLIER` for any employee on a code that sets `otRatePerHour`), 25.3 (pay-type/Sunday pay in `calculateMonthlyPayroll`), 25.4 (extra-pay-day CRUD + a fourth `getPendingApprovals` kind + Owner-approve wiring), 25.5 (multiplier-basis-aware extra-pay calc), the period-close flow (`closePayrollPeriod`, snapshot-writing, every reader switching to the snapshot once CLOSED), and the payroll screen rebuilt to `W9-Payroll-export.png` (closes F-33 — counts only in the export, no rates/amounts, the pre-flight checklist including "N employees have no wage type set" as a data-health finding per the existing pattern). Every new/changed server function needs `wages.read` and an 8-role refusal test (D24; Phase 14F closed exactly this leak once already — do not reopen it). Test the extra-pay-day + OT overlap on one day, and a month containing five Sundays for both pay types (25.3's own instruction).
+## What was built (Half B — server + screens, phase complete)
+
+**Server (`src/server/mis/`):**
+- `pay-basis.ts` (new, `src/lib/mis/`) — pure arithmetic: `perDayRate` (a MONTHLY code's `amount` divided by that month's own day count, so it pays the same total whatever the month length), `otPayForDay` (D26: a code's `otRatePerHour` if set, else the pre-D26 multiplier shape — unchanged behaviour for anyone not yet assigned a code), `extraPayMultiplierUnit` (D28/25.5: which figure a MULTIPLIER extra-pay day multiplies).
+- `wage-type.ts` — extended with `otRatePerHour`, `multiplierBasis`, `hraAmount`/`allowanceAmount`/`bonusAmount`. **`getWageRateHistory` was left at its exact original shape** (`{effectiveFrom, amount}`) because `payroll-figures.test.ts` pins it with `toEqual` — a new `getWageTypeRowsForCodes(codes[])` batches the FULL rows payroll needs, one query for every distinct code a run uses (§2A.13 — never one query per employee).
+- `employee.ts` — `wageTypeCode`/`payType`/`sundayPaid` on create/update. **Found while wiring:** the whole row already goes into the audit payload here; `wageTypeCode`'s literal key name contains "wage" and `audit-payloads.test.ts` refuses that substring anywhere, no exceptions — added `auditSafeEmployee()` that strips just that one key before every `logAuditEvent` call in this file (disclosed below).
+- `pay-components.ts` (new) — `getPayComponents`/`getPayComponentsForEmployees` (batched)/`setPayComponent`, `wages.read`. Un-set = enabled (a template starts full-on; a toggle is an explicit opt-out).
+- `extra-pay-days.ts` (new) — `proposeExtraPayDay` (`attendance.write` — D28 names Admin/Super Attendance Operator explicitly, and writing isn't gated the same as reading, the F-15 precedent), `approveExtraPayDay`/`rejectExtraPayDay`/`listExtraPayDays`/`listApprovedExtraPayDaysForMonth`/`countPendingExtraPayDays` (`wages.read`). The value/multiplier is never in an audit payload for any action here (matches how `business-rules.ts` already omits a wage rule's value, F-04).
+- `payroll-period.ts` (new) — `getPayrollPeriod`, `getPayrollPreflight` (W9's checklist from real data: `misAttendance.count` for unapproved clock-outs, `misLeaveRequest.count` for open leave, `misEmployee.count` for missing pay codes), `closePayrollPeriod` (snapshots `calculateMonthlyPayroll`'s live figures into `MisPayrollSnapshotLine`, flips the period CLOSED, audits the period + a line COUNT, never a figure), `recordPayrollCorrection` (explicit, Owner-typed — automatic back-dated-write detection across every wage-adjacent writer was out of scope for this phase, noted honestly rather than half-built), `recordPayrollExport`.
+- `payroll.ts` — rewritten. `calculateMonthlyPayroll` now: checks the period first and reads the FROZEN snapshot if CLOSED (D27's missing half, finally built); otherwise computes live, per employee, at THEIR OWN wage code (falling back to the historic global default for anyone with none — unchanged numbers for every employee this phase didn't touch, confirmed against `payroll-figures.test.ts`'s exact pinned figures, which still pass byte-for-byte); folds in HRA/Allowance/Bonus (component-toggle-gated, resolved as of the period's last day), OT via the new D26 path, a MONTHLY employee's Sunday pay (every Sunday in the month is a paid day even with no attendance row — the common case, since nobody clocks in on a day off), and approved extra-pay days (additive with OT, never absorbing it).
+- `approvals.ts` — `getPendingApprovals` folds in `extraPayDays`, but ONLY when the caller already holds `wages.read` — every other role sharing the endpoint (Admin, Supervisor, QC all hold `orders.read`) gets an empty array, never a redacted one (D24).
+- `audit.ts` — `REDACTED_KEYS` extended with the rework's own money field names, as defence in depth (every writer already keeps them out of its own payload on purpose).
+
+**Screens:**
+- `/mis/payroll` rebuilt to W9 (closes F-33): month card (Open/Closed, counts only), "Before export" checklist, "Export contains… no rates and no amounts" card, Export button (CSV of counts, `recordPayrollExport`), Close-this-month (confirmed, `closePayrollPeriod`). **Found while rebuilding — a real leak:** the old page passed the FULL `calculateMonthlyPayroll` rows (including every money field) to the client screen even though the screen only rendered some of them — a value the screen doesn't draw is still sent, the same F-06 lesson `withoutMoneyFields` exists for. The page now strips every money field server-side before the props are built; `payroll-screen-no-money.test.ts` (new, source-scan) and `wage-screens.test.tsx` (`moneyFreeForAll: true`, edited — disclosed) pin it.
+- `/mis/print/payslip/[employeeId]` — six named rows (BASIC prints "Salary" for MONTHLY, "Basic Wage" for DAILY — a label switch on `payType`, D33; HRA/Allowance/OT/Bonus/Extra pay each only when > 0; Late Penalty; NET SALARY).
+- `/mis/settings/wages` (`wage-type-screen.tsx`) — OT rate/hour, multiplier basis (DAILY codes only), HRA/Allowance/Bonus amounts on both the create and add-rate forms; new columns on the list.
+- `/mis/employees` — wage-code picker (`WagePicker`, reused), Pay type, Sunday-paid checkbox, all inside an Owner-only "Pay setup" block (`isOwner` from the page; `wageTypeCode` is not money itself, but the picker's OPTIONS come from `listWageCodes`, `wages.read`, so an Admin sees no options and the block is gated the same way). A missing wage-code note surfaces inline (25.1's data-health rule).
+- `/mis/employees/[id]` — an Owner-only "Payslip rows" card, five checkboxes wired to `getPayComponents`/`setPayComponent`.
+- `/mis/attendance/extra-pay` (new route) — the propose form (date, kind + value, scope, reason). **Scope note:** DEPARTMENTS is not offered — Super Attendance Operator (one of D28's two named proposers) holds `attendance.write` but not `masters.read`, so a department picker would fail to load for them; ALL_PRESENT and EMPLOYEES both resolve through `employees.read`, which every proposer holds. The BE fully supports DEPARTMENTS already (tested); only the picker is deferred.
+- `/mis/approvals` — a fourth section, Owner-only, Approve/Reject on each pending extra-pay day.
+
+## Disclosed test edits (existing tests, not new ones)
+- `wage-screens.test.tsx`: the "payroll page" entry gained `moneyFreeForAll: true` (W9's own design removes money from this screen for every role, Owner included) and the wage-module importer registry gained `employees/page.tsx` (its new, reviewed, gated `listWageCodes` call).
+- `employee-slice.test.ts`: both money-name-scanning tests gained narrow, commented allow-lists for `wageTypeCode`/`payType`/`payComponents` (not money — D33) and the new genuinely-money `MisWageType`/`MisPayrollSnapshotLine` columns.
+- `audit-payloads.test.ts`: the `auditSafe()` key list gained `multiplierBasis` (a basis flag, not money).
+- `wage-leak.test.ts`: one of F-05's two `it.fails` markers (the payroll-field-name case) now passes for real — flipped to an ordinary test, per this codebase's own "a flip is the fix landing" convention. The other (`redact()` doesn't recurse into nested objects) is still open, unchanged.
+- `approvals-access.test.ts`: seeded a `misExtraPayDay` row so the new gate is actually exercised rather than accidentally satisfied by a missing-mock exception; the blanket `total: 3` assertion is now `4` for a `wages.read` holder.
+
+## Verification, honestly
+`tsc --noEmit --skipLibCheck`: **silent**. `pnpm vitest run`: **187 files, 4149 passed + 9 expected-fail** (Half A / pre-Half-B baseline: 172 files, 3868 passed + 10 — the F-05 flip explains the expected-fail count dropping by one). `pnpm build`: **passes**, every route including the new `/mis/attendance/extra-pay`. Ran once, at the end, after the whole batch was internally consistent — not after each file (see the new `mis-fast-phase` skill this session added).
+**Not built / left honest:** automatic detection of a back-dated write into a CLOSED period (`recordPayrollCorrection` is manual/explicit, noted in its own comment); DEPARTMENTS scope's picker; the payroll screen's own attendance-only table still degrades to a plain `<table>` below `lg` rather than the kit `DataTable`'s card layout (money-free, so lower stakes than the F-26 cases that prompted the rule).
+
+## What changed for later phases
+None — Phase 25 is complete; nothing here changes a later phase's own section.
+
+## Pending
+None for Phase 25 itself. Standing, unrelated to this phase: F-15, D29–D32 questions for Arjun; Session B's own track (15–18, 22).
 
 ## Files to attach to the next phase
 - Arjun/app/docs/DEVELOPMENT_GUIDE.md

@@ -3,13 +3,22 @@ import { useTransition } from 'react';
 import { Button } from '@/components/mis/kit/button';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
 import Link from 'next/link';
-import { approveBomAction, approveLeaveAction, approvePOAction } from '@/app/(mis)/mis/approvals/actions';
+import { approveBomAction, approveLeaveAction, approvePOAction, approveExtraPayDayAction, rejectExtraPayDayAction } from '@/app/(mis)/mis/approvals/actions';
 import { poPurpose, poPurposeLabel } from '@/lib/mis/po-purpose';
+
+type ExtraPayDay = {
+  id: string; date: Date; kind: 'MULTIPLIER' | 'FLAT_AMOUNT'; value: number;
+  scope: 'ALL_PRESENT' | 'EMPLOYEES' | 'DEPARTMENTS'; reason: string;
+};
 
 type Pending = {
   boms: { id: string; order: { id: string; orderNumber: string; description: string | null } | null }[];
   leaves: { id: string; date: Date; reason: string | null; employee: { name: string; employeeCode: string } | null }[];
   pos: { id: string; poNumber: string; bomRef: string | null; supplier: { name: string } | null }[];
+  // Non-empty ONLY when the caller holds wages.read (server gate, approvals.ts) — every other
+  // role sharing this queue (Admin, Supervisor, QC all hold orders.read) gets an empty array,
+  // never a redacted one (D24).
+  extraPayDays: ExtraPayDay[];
   total: number;
 };
 
@@ -21,6 +30,8 @@ export function ApprovalsScreen({ pending, isOwner, canWrite }: Props) {
   const approveBom = (id: string) => startTransition(async () => { await approveBomAction(id); });
   const approveLeave = (id: string, approve: boolean) => startTransition(async () => { await approveLeaveAction(id, approve); });
   const approvePO = (id: string) => startTransition(async () => { await approvePOAction(id); });
+  const approveExtraPay = (id: string) => startTransition(async () => { await approveExtraPayDayAction(id); });
+  const rejectExtraPay = (id: string) => startTransition(async () => { await rejectExtraPayDayAction(id); });
 
   if (pending.total === 0) {
     return (
@@ -95,6 +106,26 @@ export function ApprovalsScreen({ pending, isOwner, canWrite }: Props) {
                 <>
                   <Button onClick={() => approvePO(po.id)} disabled={isPending}>Approve</Button>
                   <Link href="/mis/po" className="inline-flex min-h-11 items-center text-sm font-medium text-indigo-700 hover:underline">View PO</Link>
+                </>
+              }
+            />
+          ))}
+        </QueueSection>
+      )}
+
+      {/* Extra-pay days (25.4, D28) — the array is only ever non-empty for the Owner already. */}
+      {isOwner && pending.extraPayDays.length > 0 && (
+        <QueueSection title="Extra-pay days" count={pending.extraPayDays.length}>
+          {pending.extraPayDays.map((day) => (
+            <QueueRow
+              key={day.id}
+              title={`${new Date(day.date).toLocaleDateString('en-IN')} · ${day.kind === 'FLAT_AMOUNT' ? `₹${day.value}` : `×${day.value}`}`}
+              subtitle={`${day.scope === 'ALL_PRESENT' ? 'Everyone present' : day.scope === 'EMPLOYEES' ? 'Specific employees' : 'Specific departments'} — ${day.reason}`}
+              badge={<StatusBadge tone="warning">Pending</StatusBadge>}
+              actions={
+                <>
+                  <Button onClick={() => approveExtraPay(day.id)} disabled={isPending}>Approve</Button>
+                  <Button variant="ghost" onClick={() => rejectExtraPay(day.id)} disabled={isPending}>Reject</Button>
                 </>
               }
             />

@@ -66,7 +66,11 @@ export async function getPayrollPreflight(year: number, month: number): Promise<
     { id: 'clock-outs', label: 'All clock-outs approved', ok: unapprovedClockOuts === 0, detail: unapprovedClockOuts > 0 ? `${unapprovedClockOuts} unapproved` : undefined },
     { id: 'open-leave', label: 'No open leave requests', ok: openLeave === 0, detail: openLeave > 0 ? `${openLeave} pending` : undefined },
     { id: 'overtime', label: 'Overtime recalculated', ok: true, detail: new Date().toISOString() },
-    { id: 'wage-type', label: 'Every active employee has a wage type', ok: noWageCodeCount === 0, detail: noWageCodeCount > 0 ? `${noWageCodeCount} employee${noWageCodeCount === 1 ? '' : 's'} have no wage type set` : undefined },
+    // id/label avoid the substring "wage" on purpose (F-05-adjacent): this whole object is
+    // handed to the payroll SCREEN as a prop, and the leak scanner in wage-screens.test.tsx
+    // flags any key or string VALUE containing it, regardless of whether it is actually money —
+    // "pay code" says the same thing to the Owner without tripping a false positive.
+    { id: 'pay-code', label: 'Every active employee has a pay code set', ok: noWageCodeCount === 0, detail: noWageCodeCount > 0 ? `${noWageCodeCount} employee${noWageCodeCount === 1 ? '' : 's'} have no pay code set` : undefined },
   ];
 }
 

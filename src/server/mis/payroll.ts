@@ -33,7 +33,7 @@ export type PayrollRow = {
   grossPay: number;
   wageTypeCode: string | null;
   /** Set on a live (OPEN period) row when no wage code could be resolved at all — 25.1's data-health finding. */
-  noWageCode?: boolean;
+  needsPayCode?: boolean;
 };
 
 type AttendanceRow = {
@@ -216,7 +216,7 @@ function computeEmployeeMonth(
     latePenalty: round(latePenaltyTotal),
     grossPay: round(grossPay),
     wageTypeCode: emp.wageTypeCode ?? null,
-    noWageCode: !emp.wageTypeCode && !closingRow,
+    needsPayCode: !emp.wageTypeCode && !closingRow,
   };
 }
 

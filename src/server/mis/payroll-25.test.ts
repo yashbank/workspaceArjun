@@ -173,7 +173,7 @@ describe('getPayrollPreflight — W9\'s "Before export" checklist, from real dat
       { id: 'p2', wageTypeCode: 'WG-DAILY-01', isActive: true, deletedAt: null },
     ];
     const items = await getPayrollPreflight(2026, 1);
-    const wageItem = items.find((i) => i.id === 'wage-type')!;
+    const wageItem = items.find((i) => i.id === 'pay-code')!;
     expect(wageItem.ok).toBe(false);
     expect(wageItem.detail).toMatch(/1 employee/);
   });
