@@ -16,6 +16,16 @@ export type EmployeeInput = {
    * `null` explicitly clears a manager; `undefined` leaves it unchanged.
    */
   managerId?: string | null;
+  /**
+   * Phase 25 (25.2, D28). A CODE (matches `MisWageType.code`), never an amount — this field
+   * carries no money itself, so it needs no stronger gate than `employees.write`, the same door
+   * that already assigns a role or a department. `null` explicitly clears it (a data-health
+   * finding, 25.1's brief); `undefined` leaves it unchanged.
+   */
+  wageTypeCode?: string | null;
+  /** 25.3, D28. MONTHLY employees are paid every Sunday; DAILY only when `sundayPaid`. */
+  payType?: 'MONTHLY' | 'DAILY';
+  sundayPaid?: boolean;
 };
 
 /**
@@ -74,6 +84,19 @@ function assertMayAssignRole(actor: MisActor, role: string | null | undefined) {
   }
 }
 
+/**
+ * The employee row as it goes into an audit payload — every field EXCEPT `wageTypeCode`.
+ *
+ * Not because it is money (it is a code, not an amount — D33), but because the literal key name
+ * contains "wage" and `audit-payloads.test.ts` refuses that substring anywhere in any payload, no
+ * exceptions, on the theory that a human scanning audit rows for "wage" should never have to
+ * wonder whether a hit is real. The field itself is unaffected — only what reaches the audit row.
+ */
+function auditSafeEmployee<T extends { wageTypeCode?: string | null }>(row: T): Omit<T, 'wageTypeCode'> {
+  const { wageTypeCode: _wageTypeCode, ...rest } = row;
+  return rest;
+}
+
 export async function createEmployee(input: EmployeeInput) {
   const actor = await requirePermission('employees.write');
   assertMayAssignRole(actor, input.role);
@@ -83,9 +106,12 @@ export async function createEmployee(input: EmployeeInput) {
       name: input.name.trim(),
       nameHi: input.nameHi?.trim() || null,
       role: input.role || 'WORKER',
+      wageTypeCode: input.wageTypeCode ?? null,
+      ...(input.payType ? { payType: input.payType } : {}),
+      ...(input.sundayPaid !== undefined ? { sundayPaid: input.sundayPaid } : {}),
     },
   });
-  await logAuditEvent({ actorId: actor.userId, action: 'employee.create', entity: 'MisEmployee', entityId: created.id, after: created });
+  await logAuditEvent({ actorId: actor.userId, action: 'employee.create', entity: 'MisEmployee', entityId: created.id, after: auditSafeEmployee(created) });
   return created;
 }
 
@@ -111,8 +137,11 @@ export async function updateEmployee(id: string, patch: Partial<EmployeeInput>) 
     ...(patch.nameHi !== undefined ? { nameHi: patch.nameHi?.trim() || null } : {}),
     ...(patch.role ? { role: patch.role } : {}),
     ...(patch.managerId !== undefined ? { managerId: patch.managerId } : {}),
+    ...(patch.wageTypeCode !== undefined ? { wageTypeCode: patch.wageTypeCode } : {}),
+    ...(patch.payType ? { payType: patch.payType } : {}),
+    ...(patch.sundayPaid !== undefined ? { sundayPaid: patch.sundayPaid } : {}),
   }});
-  await logAuditEvent({ actorId: actor.userId, action: 'employee.update', entity: 'MisEmployee', entityId: id, before, after });
+  await logAuditEvent({ actorId: actor.userId, action: 'employee.update', entity: 'MisEmployee', entityId: id, before: auditSafeEmployee(before), after: auditSafeEmployee(after) });
   return after;
 }
 
@@ -121,13 +150,13 @@ export async function deleteEmployee(id: string) {
   const before = await db.misEmployee.findUnique({ where: { id } });
   if (!before) throw new Error(`Employee ${id} not found`);
   const after = await db.misEmployee.update({ where: { id }, data: { deletedAt: new Date(), isActive: false } });
-  await logAuditEvent({ actorId: actor.userId, action: 'employee.delete', entity: 'MisEmployee', entityId: id, before, after });
+  await logAuditEvent({ actorId: actor.userId, action: 'employee.delete', entity: 'MisEmployee', entityId: id, before: auditSafeEmployee(before), after: auditSafeEmployee(after) });
   return after;
 }
 
 export async function restoreEmployee(id: string) {
   const actor = await requirePermission('employees.write');
   const after = await db.misEmployee.update({ where: { id }, data: { deletedAt: null, isActive: true } });
-  await logAuditEvent({ actorId: actor.userId, action: 'employee.restore', entity: 'MisEmployee', entityId: id, after });
+  await logAuditEvent({ actorId: actor.userId, action: 'employee.restore', entity: 'MisEmployee', entityId: id, after: auditSafeEmployee(after) });
   return after;
 }

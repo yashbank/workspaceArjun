@@ -80,7 +80,9 @@ describe('the wage modules audit through auditSafe() only', () => {
       }
     });
     keys = keys.sort();
-    expect(keys).toEqual(['code', 'effectiveFrom', 'id', 'isActive', 'name', 'nameHi', 'unit']);
+    // Phase 25 added `multiplierBasis` — a basis FLAG (PER_MONTH/PER_HOUR), not money, same
+    // reasoning as `unit` already being on this list.
+    expect(keys).toEqual(['code', 'effectiveFrom', 'id', 'isActive', 'multiplierBasis', 'name', 'nameHi', 'unit']);
   });
 
   it('payroll.ts writes no audit row at all — computing a payslip records nothing about its figures', () => {

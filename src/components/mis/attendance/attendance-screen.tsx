@@ -109,6 +109,12 @@ export function AttendanceScreen({ records, summary, shifts, canWrite, view, yea
         <div className="flex gap-2">
           <Link href="/mis/attendance?view=daily" className={`inline-flex min-h-11 items-center rounded-lg px-3 text-base font-medium ${view === 'daily' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Daily</Link>
           <Link href="/mis/attendance?view=monthly" className={`inline-flex min-h-11 items-center rounded-lg px-3 text-base font-medium ${view === 'monthly' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Monthly ({month}/{year})</Link>
+          {/* D28 — the same door (attendance.write) that already gates clock-in/out edits on this screen. */}
+          {canWrite && (
+            <Link href="/mis/attendance/extra-pay" className="inline-flex min-h-11 items-center rounded-lg bg-indigo-50 px-3 text-base font-medium text-indigo-700 hover:bg-indigo-100">
+              + Extra pay day
+            </Link>
+          )}
         </div>
       </div>
 

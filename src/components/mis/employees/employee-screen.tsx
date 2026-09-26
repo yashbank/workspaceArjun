@@ -7,6 +7,8 @@ import { SlideOver } from '@/components/mis/kit/slide-over';
 import { Input } from '@/components/mis/kit/input';
 import { Select, type SelectOption } from '@/components/mis/kit/select';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
+import { WagePicker } from '@/components/mis/payroll/wage-picker';
+import type { WageTypeCode } from '@/server/mis/wage-type';
 import { saveEmployeeAction, deleteEmployeeAction, restoreEmployeeAction } from '@/app/(mis)/mis/employees/actions';
 
 // Same visual weight as the kit's `Button` ghost variant, so a navigation
@@ -16,7 +18,12 @@ import { saveEmployeeAction, deleteEmployeeAction, restoreEmployeeAction } from 
 const actionLinkClass =
   'inline-flex min-h-11 flex-1 items-center justify-center rounded-lg px-3 text-base font-medium text-slate-700 transition-colors hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900';
 
-type Employee = { id: string; employeeCode: string; name: string; nameHi: string | null; role: string; isActive: boolean; deletedAt: Date | null; managerId: string | null; userProfile: { email: string } | null };
+type Employee = {
+  id: string; employeeCode: string; name: string; nameHi: string | null; role: string; isActive: boolean;
+  deletedAt: Date | null; managerId: string | null; userProfile: { email: string } | null;
+  // Phase 25 (25.2/25.3, D28) — none of the three is money; wageTypeCode is a CODE, never an amount (D33).
+  wageTypeCode: string | null; payType: 'MONTHLY' | 'DAILY'; sundayPaid: boolean;
+};
 type Props = {
   employees: Employee[];
   canWrite: boolean;
@@ -26,6 +33,9 @@ type Props = {
    * and it never sees a row it is not allowed to see in order to count one.
    */
   scoped: boolean;
+  /** Gates the wage-code picker (wages.read) — Admin can edit everything else here, not this. */
+  isOwner: boolean;
+  wageCodes: WageTypeCode[];
 };
 
 const ROLE_OPTIONS: SelectOption[] = [
@@ -49,7 +59,7 @@ const roleTone = (role: string) => {
 
 const roleLabel = (role: string) => ROLE_OPTIONS.find(o => o.value === role)?.label ?? role;
 
-export function EmployeeScreen({ employees, canWrite, scoped }: Props) {
+export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes }: Props) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Employee | null>(null);
   const [code, setCode] = useState('');
@@ -57,11 +67,14 @@ export function EmployeeScreen({ employees, canWrite, scoped }: Props) {
   const [nameHi, setNameHi] = useState('');
   const [role, setRole] = useState('WORKER');
   const [managerId, setManagerId] = useState<string | null>(null);
+  const [wageTypeCode, setWageTypeCode] = useState<string | null>(null);
+  const [payType, setPayType] = useState<'MONTHLY' | 'DAILY'>('DAILY');
+  const [sundayPaid, setSundayPaid] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  const openAdd = () => { setEditing(null); setCode(''); setName(''); setNameHi(''); setRole('WORKER'); setManagerId(null); setSaveError(null); setOpen(true); };
-  const openEdit = (emp: Employee) => { setEditing(emp); setCode(emp.employeeCode); setName(emp.name); setNameHi(emp.nameHi ?? ''); setRole(emp.role); setManagerId(emp.managerId); setSaveError(null); setOpen(true); };
+  const openAdd = () => { setEditing(null); setCode(''); setName(''); setNameHi(''); setRole('WORKER'); setManagerId(null); setWageTypeCode(null); setPayType('DAILY'); setSundayPaid(false); setSaveError(null); setOpen(true); };
+  const openEdit = (emp: Employee) => { setEditing(emp); setCode(emp.employeeCode); setName(emp.name); setNameHi(emp.nameHi ?? ''); setRole(emp.role); setManagerId(emp.managerId); setWageTypeCode(emp.wageTypeCode); setPayType(emp.payType); setSundayPaid(emp.sundayPaid); setSaveError(null); setOpen(true); };
 
   // Picked from the same, already-D4-scoped list this screen received — a
   // manager can only be someone the caller can already see (visibility.ts).
@@ -79,6 +92,9 @@ export function EmployeeScreen({ employees, canWrite, scoped }: Props) {
           nameHi: nameHi || undefined,
           role,
           managerId,
+          // Only an Owner's form ever holds these — an Admin's form never renders the section
+          // that sets them, so they stay `undefined` (unchanged) on an Admin's save.
+          ...(isOwner ? { wageTypeCode, payType, sundayPaid } : {}),
         });
         setOpen(false);
       } catch (error) {
@@ -191,6 +207,25 @@ export function EmployeeScreen({ employees, canWrite, scoped }: Props) {
           <p className="text-sm text-slate-500">
             Sets who can see this person&apos;s records — their manager, and everyone above.
           </p>
+          {isOwner && (
+            <div className="flex flex-col gap-4 rounded-xl border border-indigo-100 bg-indigo-50/50 p-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-indigo-700">Pay setup · visible to you only</p>
+              <WagePicker value={wageTypeCode} options={wageCodes} onChange={setWageTypeCode} />
+              <Select
+                label="Pay type"
+                value={payType}
+                options={[{ value: 'DAILY', label: 'Daily' }, { value: 'MONTHLY', label: 'Monthly' }]}
+                onChange={(v) => setPayType(v as 'MONTHLY' | 'DAILY')}
+              />
+              <label className="flex min-h-11 items-center gap-2 text-sm text-slate-800">
+                <input type="checkbox" checked={sundayPaid} onChange={(e) => setSundayPaid(e.target.checked)} className="h-5 w-5 rounded border-slate-300" />
+                Paid on Sundays (only affects a Daily employee — Monthly staff are always paid Sundays)
+              </label>
+              {!wageTypeCode && (
+                <p className="rounded-lg bg-amber-50 px-2 py-1.5 text-xs text-amber-800">No wage type set — payroll will fall back to the factory default until one is picked.</p>
+              )}
+            </div>
+          )}
           {saveError && (
             <p role="alert" className="text-sm text-red-600">{saveError}</p>
           )}

@@ -1,7 +1,10 @@
 'use client';
 
 import Link from 'next/link';
+import { useTransition } from 'react';
 import { Button } from '@/components/mis/kit/button';
+import type { MisPayComponent } from '@/generated/prisma/enums';
+import { setPayComponentAction } from '@/app/(mis)/mis/employees/[id]/actions';
 
 interface Employee {
   id: string;
@@ -20,18 +23,34 @@ interface MonthStats {
   totalOT: number;
 }
 
+type PayComponentMap = Record<MisPayComponent, boolean>;
+
 interface Props {
   employee: Employee;
   monthStats: MonthStats;
   canWrite: boolean;
+  /** null for anyone but the Owner (wages.read) — the whole card is absent then, never disabled (25.1). */
+  payComponents: PayComponentMap | null;
 }
+
+const COMPONENT_LABELS: Record<MisPayComponent, string> = {
+  BASIC: 'Basic Wage / Salary',
+  HRA: 'HRA',
+  ALLOWANCE: 'Allowance',
+  OT: 'Overtime',
+  BONUS: 'Bonus',
+};
 
 function fmtRole(r: string) { return r.replace(/_/g, ' '); }
 function fmtDate(d: Date | string) { return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' }); }
 function fmtOT(m: number) { const h = Math.floor(m / 60); const min = m % 60; return h > 0 ? `${h}h ${min}m` : `${min}m`; }
 
-export function EmployeeProfileScreen({ employee, monthStats, canWrite }: Props) {
+export function EmployeeProfileScreen({ employee, monthStats, canWrite, payComponents }: Props) {
   const initials = employee.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+  const [isPending, startTransition] = useTransition();
+  const toggle = (component: MisPayComponent, enabled: boolean) => {
+    startTransition(async () => { await setPayComponentAction(employee.id, component, enabled); });
+  };
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 py-6">
@@ -105,6 +124,29 @@ export function EmployeeProfileScreen({ employee, monthStats, canWrite }: Props)
           ))}
         </div>
       </div>
+
+      {/* Payslip components (25.1) — ABSENT for anyone but the Owner, never disabled. */}
+      {payComponents && (
+        <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-indigo-700">Payslip rows · visible to you only</p>
+          <h2 className="mt-1 text-sm font-medium text-gray-700">Which rows print on this person&apos;s payslip</h2>
+          <div className="mt-3 flex flex-col gap-1">
+            {(Object.keys(COMPONENT_LABELS) as MisPayComponent[]).map((component) => (
+              <label key={component} className="flex min-h-11 items-center gap-2 text-sm text-gray-800">
+                <input
+                  type="checkbox"
+                  checked={payComponents[component]}
+                  disabled={isPending}
+                  onChange={(e) => toggle(component, e.target.checked)}
+                  className="h-5 w-5 rounded border-slate-300"
+                />
+                {COMPONENT_LABELS[component]}
+              </label>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-gray-500">A row that is off contributes nothing and does not print.</p>
+        </div>
+      )}
 
       {/* Quick links */}
       <div className="bg-white rounded-xl border border-gray-200 p-4">
