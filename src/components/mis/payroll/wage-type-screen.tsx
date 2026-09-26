@@ -46,17 +46,39 @@ export function WageTypeScreen({
   const [nameHi, setNameHi] = useState('');
   const [unit, setUnit] = useState<string>('DAILY');
   const [amount, setAmount] = useState('');
+  const [otRate, setOtRate] = useState('');
+  const [multiplierBasis, setMultiplierBasis] = useState<string>('PER_MONTH');
+  const [hra, setHra] = useState('');
+  const [allowance, setAllowance] = useState('');
+  const [bonus, setBonus] = useState('');
 
   // Add-rate form — the code-only picker in use.
   const [rateCode, setRateCode] = useState<string | null>(null);
   const [rateAmount, setRateAmount] = useState('');
   const [rateEffectiveFrom, setRateEffectiveFrom] = useState(todayIso());
+  const [rateOtRate, setRateOtRate] = useState('');
+  const [rateBasis, setRateBasis] = useState<string>('PER_MONTH');
+  const [rateHra, setRateHra] = useState('');
+  const [rateAllowance, setRateAllowance] = useState('');
+  const [rateBonus, setRateBonus] = useState('');
+
+  // "Add wage type": a blank field means this brand-new code sets nothing for it — null.
+  const numOrNull = (s: string) => (s.trim() === '' ? null : Number.parseFloat(s));
+  // "Update a rate": a blank field means carry over the code's current value — undefined, so
+  // `addWageRate`'s own `extra.x !== undefined ? extra.x : existing.x` falls through to it,
+  // matching this form's own "left blank here carries over" copy.
+  const numOrUndefined = (s: string) => (s.trim() === '' ? undefined : Number.parseFloat(s));
 
   const openAdd = () => {
     setName('');
     setNameHi('');
     setUnit('DAILY');
     setAmount('');
+    setOtRate('');
+    setMultiplierBasis('PER_MONTH');
+    setHra('');
+    setAllowance('');
+    setBonus('');
     setAddOpen(true);
   };
 
@@ -64,6 +86,11 @@ export function WageTypeScreen({
     setRateCode(null);
     setRateAmount('');
     setRateEffectiveFrom(todayIso());
+    setRateOtRate('');
+    setRateBasis('PER_MONTH');
+    setRateHra('');
+    setRateAllowance('');
+    setRateBonus('');
     setRateOpen(true);
   };
 
@@ -74,6 +101,11 @@ export function WageTypeScreen({
         nameHi: nameHi || undefined,
         unit: unit as WageTypeRow['unit'],
         amount: Number.parseFloat(amount) || 0,
+        otRatePerHour: numOrNull(otRate),
+        multiplierBasis: multiplierBasis as WageTypeRow['multiplierBasis'],
+        hraAmount: numOrNull(hra),
+        allowanceAmount: numOrNull(allowance),
+        bonusAmount: numOrNull(bonus),
       });
       setAddOpen(false);
     });
@@ -82,7 +114,13 @@ export function WageTypeScreen({
   const handleAddRate = () => {
     if (!rateCode) return;
     startTransition(async () => {
-      await addWageRateAction(rateCode, Number.parseFloat(rateAmount) || 0, rateEffectiveFrom);
+      await addWageRateAction(rateCode, Number.parseFloat(rateAmount) || 0, rateEffectiveFrom, {
+        otRatePerHour: numOrUndefined(rateOtRate),
+        multiplierBasis: rateBasis as WageTypeRow['multiplierBasis'],
+        hraAmount: numOrUndefined(rateHra),
+        allowanceAmount: numOrUndefined(rateAllowance),
+        bonusAmount: numOrUndefined(rateBonus),
+      });
       setRateOpen(false);
     });
   };
@@ -107,6 +145,23 @@ export function WageTypeScreen({
     },
     { key: 'unit', header: 'Unit', render: (r) => r.unit },
     { key: 'amount', header: 'Amount', render: (r) => `₹${r.amount.toFixed(2)}` },
+    {
+      key: 'ot',
+      header: 'OT rate',
+      render: (r) => (r.otRatePerHour != null ? `₹${r.otRatePerHour.toFixed(2)}/hr` : <span className="text-slate-400">not set</span>),
+    },
+    {
+      key: 'components',
+      header: 'Components',
+      render: (r) => {
+        const parts = [
+          r.hraAmount != null && `HRA ₹${r.hraAmount.toFixed(0)}`,
+          r.allowanceAmount != null && `Allowance ₹${r.allowanceAmount.toFixed(0)}`,
+          r.bonusAmount != null && `Bonus ₹${r.bonusAmount.toFixed(0)}`,
+        ].filter(Boolean);
+        return parts.length > 0 ? <span className="text-xs text-slate-600">{parts.join(' · ')}</span> : <span className="text-slate-400">—</span>;
+      },
+    },
     {
       key: 'effectiveFrom',
       header: 'Effective from',
@@ -168,6 +223,21 @@ export function WageTypeScreen({
             onChange={setUnit}
           />
           <NumberInput label="Amount (₹)" value={amount} onChange={(e) => setAmount(e.target.value)} required />
+          <NumberInput label="OT rate per hour (₹, optional)" value={otRate} onChange={(e) => setOtRate(e.target.value)} />
+          {unit === 'DAILY' && (
+            <div>
+              <Select
+                label="Extra-pay multiplier basis"
+                value={multiplierBasis}
+                options={[{ value: 'PER_MONTH', label: 'Per day (month-equivalent)' }, { value: 'PER_HOUR', label: 'Per hour' }]}
+                onChange={setMultiplierBasis}
+              />
+              <p className="mt-1 text-xs text-slate-500">D28 — which figure a multiplier extra-pay day multiplies for someone on this code.</p>
+            </div>
+          )}
+          <NumberInput label="HRA (₹, optional)" value={hra} onChange={(e) => setHra(e.target.value)} />
+          <NumberInput label="Allowance (₹, optional)" value={allowance} onChange={(e) => setAllowance(e.target.value)} />
+          <NumberInput label="Bonus (₹, optional)" value={bonus} onChange={(e) => setBonus(e.target.value)} />
           <div className="flex gap-2 pt-2">
             <Button onClick={handleCreate} disabled={isPending || !name || !amount}>
               {isPending ? 'Saving…' : 'Save'}
@@ -186,8 +256,20 @@ export function WageTypeScreen({
             value={rateEffectiveFrom}
             onChange={(e) => setRateEffectiveFrom(e.target.value)}
           />
+          <NumberInput label="OT rate per hour (₹, optional)" value={rateOtRate} onChange={(e) => setRateOtRate(e.target.value)} />
+          {codes.find((c) => c.code === rateCode)?.unit === 'DAILY' && (
+            <Select
+              label="Extra-pay multiplier basis"
+              value={rateBasis}
+              options={[{ value: 'PER_MONTH', label: 'Per day (month-equivalent)' }, { value: 'PER_HOUR', label: 'Per hour' }]}
+              onChange={setRateBasis}
+            />
+          )}
+          <NumberInput label="HRA (₹, optional)" value={rateHra} onChange={(e) => setRateHra(e.target.value)} />
+          <NumberInput label="Allowance (₹, optional)" value={rateAllowance} onChange={(e) => setRateAllowance(e.target.value)} />
+          <NumberInput label="Bonus (₹, optional)" value={rateBonus} onChange={(e) => setRateBonus(e.target.value)} />
           <p className="text-sm text-slate-500">
-            The old rate stays on record for pay periods already decided — this adds a new one, it never overwrites history.
+            The old rate stays on record for pay periods already decided — this adds a new one, it never overwrites history. Any field left blank here carries over from the code's current row.
           </p>
           <div className="flex gap-2 pt-2">
             <Button onClick={handleAddRate} disabled={isPending || !rateCode || !rateAmount}>

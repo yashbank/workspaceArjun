@@ -85,8 +85,14 @@ type Screen = {
 
 const SCREENS: Screen[] = [
   {
+    // Phase 25 (W9): the payroll SCREEN was redesigned to carry counts, not money, for every
+    // role including the Owner — "a leaked file reveals attendance, not salaries." Money now
+    // lives on the payslip page instead (still asserted below, unchanged). Server-side, the page
+    // strips every money field before building props for exactly this reason (D24: a value the
+    // screen doesn't render is still a leak if it reaches the browser at all).
     name: 'payroll page',
     render: () => PayrollPage({ searchParams: Promise.resolve({ year: '2026', month: '1' }) }),
+    moneyFreeForAll: true,
   },
   {
     name: 'payslip print page',
@@ -198,6 +204,10 @@ describe('MIS-46 · only registered files import a wage-bearing server module', 
   it('a new page or action that imports payroll or wage-type must be added here — and gated', () => {
     expect(importers(PAGES)).toEqual([
       'app/(mis)/mis/dashboard/page.tsx',
+      // Phase 25 (25.2): the wage-code PICKER's options (`listWageCodes`, itself `wages.read`).
+      // Gated at the call site too — `isOwner ? listWageCodes() : Promise.resolve([])` — so an
+      // Admin editing an employee never triggers the wages.read door at all, and gets no options.
+      'app/(mis)/mis/employees/page.tsx',
       'app/(mis)/mis/page.tsx',
       'app/(mis)/mis/payroll/page.tsx',
       'app/(mis)/mis/print/payslip/[employeeId]/page.tsx',

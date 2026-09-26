@@ -44,6 +44,9 @@ const wageType = await import('./wage-type');
 const rules = await import('./business-rules');
 const payroll = await import('./payroll');
 const reports = await import('./reports');
+const payComponents = await import('./pay-components');
+const extraPayDays = await import('./extra-pay-days');
+const payrollPeriod = await import('./payroll-period');
 
 type Entry = { module: string; name: string; requires: MisAction; call: () => Promise<unknown> };
 
@@ -72,6 +75,7 @@ const TABLE: Entry[] = [
   { module: 'wage-type.ts', name: 'getWageRateHistory', requires: 'wages.read', call: () => wageType.getWageRateHistory('WG-DAILY-01') },
   { module: 'wage-type.ts', name: 'getWageAmount', requires: 'wages.read', call: () => wageType.getWageAmount('WG-DAILY-01') },
   { module: 'wage-type.ts', name: 'setWageTypeActive', requires: 'wages.read', call: () => wageType.setWageTypeActive('WG-DAILY-01', false) },
+  { module: 'wage-type.ts', name: 'getWageTypeRowsForCodes', requires: 'wages.read', call: () => wageType.getWageTypeRowsForCodes(['WG-DAILY-01']) },
 
   { module: 'business-rules.ts', name: 'getBusinessRules', requires: 'settings.read', call: () => rules.getBusinessRules() },
   { module: 'business-rules.ts', name: 'updateBusinessRule', requires: 'settings.write', call: () => rules.updateBusinessRule('k', 'v') },
@@ -84,6 +88,28 @@ const TABLE: Entry[] = [
   // The payroll figures ARE wages (F-01, fixed in 14F: this used to be gated on attendance.read).
   { module: 'payroll.ts', name: 'calculateMonthlyPayroll', requires: 'wages.read', call: () => payroll.calculateMonthlyPayroll(2026, 1) },
   { module: 'payroll.ts', name: 'getMonthWageBill', requires: 'wages.read', call: () => payroll.getMonthWageBill(2026, 1) },
+
+  // Phase 25 (25.1) — per-employee payslip-row toggles are wage STRUCTURE, Owner only.
+  { module: 'pay-components.ts', name: 'getPayComponents', requires: 'wages.read', call: () => payComponents.getPayComponents('e1') },
+  { module: 'pay-components.ts', name: 'getPayComponentsForEmployees', requires: 'wages.read', call: () => payComponents.getPayComponentsForEmployees(['e1']) },
+  { module: 'pay-components.ts', name: 'setPayComponent', requires: 'wages.read', call: () => payComponents.setPayComponent('e1', 'HRA', false) },
+
+  // Phase 25 (25.4, D28) — proposing is attendance.write (Admin/Super Attendance Operator, D28's
+  // own words); every other door is wages.read, Owner only, from the moment a rupee/multiplier
+  // figure can be read back.
+  { module: 'extra-pay-days.ts', name: 'proposeExtraPayDay', requires: 'attendance.write', call: () => extraPayDays.proposeExtraPayDay({ date: new Date('2026-01-01'), kind: 'FLAT_AMOUNT', value: 500, scope: 'ALL_PRESENT', reason: 'test' }) },
+  { module: 'extra-pay-days.ts', name: 'listExtraPayDays', requires: 'wages.read', call: () => extraPayDays.listExtraPayDays() },
+  { module: 'extra-pay-days.ts', name: 'listApprovedExtraPayDaysForMonth', requires: 'wages.read', call: () => extraPayDays.listApprovedExtraPayDaysForMonth(2026, 1) },
+  { module: 'extra-pay-days.ts', name: 'approveExtraPayDay', requires: 'wages.read', call: () => extraPayDays.approveExtraPayDay('x1') },
+  { module: 'extra-pay-days.ts', name: 'rejectExtraPayDay', requires: 'wages.read', call: () => extraPayDays.rejectExtraPayDay('x1') },
+  { module: 'extra-pay-days.ts', name: 'countPendingExtraPayDays', requires: 'wages.read', call: () => extraPayDays.countPendingExtraPayDays() },
+
+  // Phase 25 (D27's missing half) — the period-close/snapshot flow. Every door is wages.read.
+  { module: 'payroll-period.ts', name: 'getPayrollPeriod', requires: 'wages.read', call: () => payrollPeriod.getPayrollPeriod(2026, 1) },
+  { module: 'payroll-period.ts', name: 'getPayrollPreflight', requires: 'wages.read', call: () => payrollPeriod.getPayrollPreflight(2026, 1) },
+  { module: 'payroll-period.ts', name: 'closePayrollPeriod', requires: 'wages.read', call: () => payrollPeriod.closePayrollPeriod(2026, 1) },
+  { module: 'payroll-period.ts', name: 'recordPayrollCorrection', requires: 'wages.read', call: () => payrollPeriod.recordPayrollCorrection(2026, 1, 'test') },
+  { module: 'payroll-period.ts', name: 'recordPayrollExport', requires: 'wages.read', call: () => payrollPeriod.recordPayrollExport(2026, 1) },
 
   { module: 'reports.ts', name: 'getProductionReport', requires: 'reports.read', call: () => reports.getProductionReport(RANGE) },
   { module: 'reports.ts', name: 'getAttendanceReport', requires: 'reports.read', call: () => reports.getAttendanceReport(RANGE) },
@@ -101,6 +127,9 @@ const NOT_A_DOOR: Record<string, string[]> = {
   'business-rules.ts': ['getOfflineRules', 'getFactoryTimezone', 'getCorrectionWindowDays', 'getRuleValue', 'getLineClearanceRule', 'getAqlThresholds'],
   'payroll.ts': [],
   'reports.ts': [],
+  'pay-components.ts': [],
+  'extra-pay-days.ts': [],
+  'payroll-period.ts': [],
 };
 
 async function refused(call: () => Promise<unknown>): Promise<boolean> {

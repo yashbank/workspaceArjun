@@ -4,6 +4,7 @@ import { getMisRole } from '@/server/mis/roles';
 import { can } from '@/lib/mis/permissions';
 import { getEmployee } from '@/server/mis/employee';
 import { getMonthlyAttendance } from '@/server/mis/attendance';
+import { getPayComponents } from '@/server/mis/pay-components';
 import { notFound } from 'next/navigation';
 import { EmployeeProfileScreen } from '@/components/mis/employees/employee-profile-screen';
 
@@ -13,12 +14,18 @@ export default async function EmployeeProfilePage({ params }: { params: Promise<
   const user = await requireMisAccess();
   const role = await getMisRole(user.id);
   const canWrite = can(role, 'employees.write');
+  // Phase 25 (25.1): the payslip-row toggles are wage STRUCTURE, wages.read, Owner only — a
+  // separate door from `employees.write`, which Admin also holds.
+  const isOwner = can(role, 'wages.read');
 
   const employee = await getEmployee(id);
   if (!employee) notFound();
 
   const now = new Date();
-  const attendance = await getMonthlyAttendance(id, now.getFullYear(), now.getMonth() + 1);
+  const [attendance, payComponents] = await Promise.all([
+    getMonthlyAttendance(id, now.getFullYear(), now.getMonth() + 1),
+    isOwner ? getPayComponents(id) : Promise.resolve(null),
+  ]);
 
   const present = attendance.filter((a: any) => ['PRESENT', 'HALF_DAY'].includes(a.status)).length;
   const absent = attendance.filter((a: any) => a.status === 'ABSENT').length;
@@ -38,6 +45,7 @@ export default async function EmployeeProfilePage({ params }: { params: Promise<
       }}
       monthStats={{ present, absent, leave, totalOT }}
       canWrite={canWrite}
+      payComponents={isOwner ? payComponents : null}
     />
   );
 }

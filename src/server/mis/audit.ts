@@ -18,6 +18,20 @@ const REDACTED_KEYS = new Set<string>([
   'salary',
   'amount',
   'netPay',
+  // Phase 25 (D24): the payroll rework's own money fields. Every writer that touches one of these
+  // (wage-type.ts, extra-pay-days.ts, payroll-period.ts) already keeps it OUT of its audit payload
+  // on purpose (see each module's own auditSafe()/comment) — this is defence in depth, not the
+  // only guard, exactly like the material-price keys above.
+  'otRatePerHour',
+  'hraAmount',
+  'allowanceAmount',
+  'bonusAmount',
+  'basicWage',
+  'otPay',
+  'bonus',
+  'extraPay',
+  'latePenalty',
+  'grossPay',
 ]);
 
 type Diff = Record<string, unknown> | null | undefined;

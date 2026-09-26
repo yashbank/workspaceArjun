@@ -40,18 +40,33 @@ export const state: {
   auditRows: Row[];
   rawAudit: Row[];
   writes: string[];
-} = { wageTypes: [], rules: [], attendance: [], storeTxns: [], boms: null, attendanceWhere: [], auditRows: [], rawAudit: [], writes: [] };
+  /** Phase 25 — empty in every pre-25 fixture world; `payroll-25.test.ts` populates these. */
+  payrollPeriods: Row[];
+  payrollSnapshotLines: Row[];
+  payComponents: Row[];
+  extraPayDays: Row[];
+  extraPayDayEmployees: Row[];
+  extraPayDayDepartments: Row[];
+  employees: Row[];
+  leaveRequests: Row[];
+} = {
+  wageTypes: [], rules: [], attendance: [], storeTxns: [], boms: null, attendanceWhere: [],
+  auditRows: [], rawAudit: [], writes: [], payrollPeriods: [], payrollSnapshotLines: [],
+  payComponents: [], extraPayDays: [], extraPayDayEmployees: [], extraPayDayDepartments: [],
+  employees: [], leaveRequests: [],
+};
 
 const match = (row: Row, where: Row = {}): boolean =>
   Object.entries(where).every(([key, cond]) => {
     const value = row[key];
     if (cond !== null && typeof cond === 'object' && !(cond instanceof Date)) {
       const ops = Object.keys(cond);
-      const known = ops.every((op) => ['lte', 'gte', 'in'].includes(op));
+      const known = ops.every((op) => ['lte', 'gte', 'in', 'not'].includes(op));
       if (!known) throw new Error(`fake db: unsupported operator in ${JSON.stringify(cond)}`);
       if ('lte' in cond && !(value <= cond.lte)) return false;
       if ('gte' in cond && !(value >= cond.gte)) return false;
       if ('in' in cond && !cond.in.includes(value)) return false;
+      if ('not' in cond && value === cond.not) return false;
       return true;
     }
     return value === cond;
@@ -124,11 +139,13 @@ export const fakeDb = {
       state.attendanceWhere.push(args.where ?? {});
       return state.attendance.filter((r) => (args.where?.date ? match(r, { date: args.where.date }) : true));
     },
+    count: async (args: Row = {}) => state.attendance.filter((r) => match(r, args.where)).length,
   },
   misStoreTransaction: { findMany: async () => state.storeTxns },
   misBom: { findUnique: async () => state.boms },
   misEmployee: {
     findUnique: async () => ({ ...EMP, role: 'WORKER', isActive: true, deletedAt: null, userProfile: null }),
+    count: async (args: Row = {}) => state.employees.filter((r) => match(r, args.where)).length,
   },
   misAuditLog: {
     create: async ({ data }: Row) => {
@@ -137,7 +154,58 @@ export const fakeDb = {
     },
     findMany: async () => state.auditRows.map((r, i) => ({ id: `log-${i}`, createdAt: LONG_AGO, entityId: null, actor: null, ...r })),
   },
-  $transaction: (ops: unknown[]) => Promise.all(ops),
+  // Phase 25 — no closed period in any pre-25 fixture world, so every payroll test here keeps
+  // computing live, exactly as before. `payroll-25.test.ts` seeds `state.payrollPeriods` itself.
+  misPayrollPeriod: {
+    findUnique: async ({ where }: Row) => state.payrollPeriods.find((p) => p.year === where.year_month.year && p.month === where.year_month.month) ?? null,
+    create: async ({ data }: Row) => { const row = { id: nextId(), correctionsAfterClose: 0, closedById: null, closedAt: null, lastExportedById: null, lastExportedAt: null, ...data }; state.payrollPeriods.push(row); return row; },
+    update: async ({ where, data }: Row) => { const row = state.payrollPeriods.find((p) => p.id === where.id)!; Object.assign(row, data); return row; },
+  },
+  misPayrollSnapshotLine: {
+    findMany: async (args: Row = {}) => sortRows(state.payrollSnapshotLines.filter((r) => match(r, args.where)), args.orderBy),
+    deleteMany: async ({ where }: Row) => {
+      const before = state.payrollSnapshotLines.length;
+      state.payrollSnapshotLines = state.payrollSnapshotLines.filter((r) => !match(r, where));
+      return { count: before - state.payrollSnapshotLines.length };
+    },
+    createMany: async ({ data }: Row) => { state.payrollSnapshotLines.push(...data.map((d: Row) => ({ id: nextId(), ...d }))); return { count: data.length }; },
+  },
+  // Phase 25 — every employee here still has none of the new fields set, so `payType` defaults
+  // (in payroll.ts's own fallback) to DAILY and `wageTypeCode` falls back to the historic global
+  // default, matching the pre-25 behaviour this fixture's numbers are pinned to. Seedable via
+  // `state.payComponents` / `state.extraPayDays` for Phase 25's own tests.
+  misEmployeePayComponent: {
+    findMany: async (args: Row = {}) => state.payComponents.filter((r) => match(r, args.where)),
+    findUnique: async ({ where }: Row) => state.payComponents.find((r) => r.employeeId === where.employeeId_component.employeeId && r.component === where.employeeId_component.component) ?? null,
+    upsert: async ({ where, create, update }: Row) => {
+      const existing = state.payComponents.find((r) => r.employeeId === where.employeeId_component.employeeId && r.component === where.employeeId_component.component);
+      if (existing) { Object.assign(existing, update); return existing; }
+      const row = { id: nextId(), ...create };
+      state.payComponents.push(row);
+      return row;
+    },
+  },
+  misExtraPayDay: {
+    findMany: async (args: Row = {}) => sortRows(state.extraPayDays.filter((r) => match(r, args.where)), args.orderBy),
+    findUnique: async ({ where }: Row) => state.extraPayDays.find((r) => r.id === where.id) ?? null,
+    create: async ({ data }: Row) => { const row = { id: nextId(), ...data }; state.extraPayDays.push(row); return row; },
+    update: async ({ where, data }: Row) => { const row = state.extraPayDays.find((r) => r.id === where.id)!; Object.assign(row, data); return row; },
+    count: async (args: Row = {}) => state.extraPayDays.filter((r) => match(r, args.where)).length,
+  },
+  misExtraPayDayEmployee: {
+    findMany: async (args: Row = {}) => state.extraPayDayEmployees.filter((r) => match(r, args.where)),
+    createMany: async ({ data }: Row) => { state.extraPayDayEmployees.push(...data); return { count: data.length }; },
+  },
+  misExtraPayDayDepartment: {
+    findMany: async (args: Row = {}) => state.extraPayDayDepartments.filter((r) => match(r, args.where)),
+    createMany: async ({ data }: Row) => { state.extraPayDayDepartments.push(...data); return { count: data.length }; },
+  },
+  misLeaveRequest: { count: async (args: Row = {}) => state.leaveRequests.filter((r) => match(r, args.where)).length },
+  // Phase 25's writers use the callback form (`$transaction(async (tx) => ...)`) as well as the
+  // array form; the fixture has no real isolation, so a callback just runs against the same fake
+  // db (fine for a test — nothing here needs rollback semantics).
+  $transaction: (ops: unknown[] | ((tx: unknown) => Promise<unknown>)) =>
+    typeof ops === 'function' ? ops(fakeDb) : Promise.all(ops),
 };
 
 // ---------------------------------------------------------------------------
@@ -154,6 +222,14 @@ export function seedWorld() {
   state.attendanceWhere = [];
   state.auditRows = [];
   state.rawAudit = [];
+  state.payrollPeriods = [];
+  state.payrollSnapshotLines = [];
+  state.payComponents = [];
+  state.extraPayDays = [];
+  state.extraPayDayEmployees = [];
+  state.extraPayDayDepartments = [];
+  state.employees = [];
+  state.leaveRequests = [];
   state.wageTypes = [
     { id: 'w1', code: 'WG-DAILY-01', name: 'General', nameHi: null, amount: DAILY_WAGE, unit: 'DAILY', effectiveFrom: LONG_AGO, isActive: true, deletedAt: null },
     { id: 'w2', code: 'WG-MONTHLY-01', name: 'Staff', nameHi: null, amount: MONTHLY_WAGE, unit: 'MONTHLY', effectiveFrom: LONG_AGO, isActive: true, deletedAt: null },

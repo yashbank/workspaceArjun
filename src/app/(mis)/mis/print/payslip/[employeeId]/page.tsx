@@ -109,14 +109,44 @@ export default async function PayslipPage({
                 </tr>
               </thead>
               <tbody>
+                {/* 25.1 — six named rows behind five stored components. BASIC prints as "Salary"
+                    for a MONTHLY employee and "Basic Wage" for a DAILY one (a display label on
+                    payType, D33) — the underlying figure and toggle are the same either way. A
+                    component at 0 (toggled off, or the code sets nothing for it) does not print. */}
                 <tr className="border-b border-gray-100">
-                  <td className="py-2 text-gray-700">Basic Wages ({payroll.present} day{payroll.present !== 1 ? 's' : ''})</td>
+                  <td className="py-2 text-gray-700">
+                    {payroll.payType === 'MONTHLY' ? 'Salary' : `Basic Wage (${payroll.present} day${payroll.present !== 1 ? 's' : ''})`}
+                  </td>
                   <td className="py-2 text-right text-gray-900">{fmtCurrency(payroll.basicWage)}</td>
                 </tr>
+                {payroll.hra > 0 && (
+                  <tr className="border-b border-gray-100">
+                    <td className="py-2 text-gray-700">HRA</td>
+                    <td className="py-2 text-right text-gray-900">{fmtCurrency(payroll.hra)}</td>
+                  </tr>
+                )}
+                {payroll.allowance > 0 && (
+                  <tr className="border-b border-gray-100">
+                    <td className="py-2 text-gray-700">Allowance</td>
+                    <td className="py-2 text-right text-gray-900">{fmtCurrency(payroll.allowance)}</td>
+                  </tr>
+                )}
                 {payroll.otPay > 0 && (
                   <tr className="border-b border-gray-100">
                     <td className="py-2 text-gray-700">Overtime Pay</td>
                     <td className="py-2 text-right text-blue-600">+{fmtCurrency(payroll.otPay)}</td>
+                  </tr>
+                )}
+                {payroll.bonus > 0 && (
+                  <tr className="border-b border-gray-100">
+                    <td className="py-2 text-gray-700">Bonus</td>
+                    <td className="py-2 text-right text-blue-600">+{fmtCurrency(payroll.bonus)}</td>
+                  </tr>
+                )}
+                {payroll.extraPay > 0 && (
+                  <tr className="border-b border-gray-100">
+                    <td className="py-2 text-gray-700">Extra pay</td>
+                    <td className="py-2 text-right text-blue-600">+{fmtCurrency(payroll.extraPay)}</td>
                   </tr>
                 )}
                 {payroll.latePenalty > 0 && (

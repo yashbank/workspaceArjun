@@ -105,7 +105,12 @@ describe('the employee model holds no money — so no employee function can retu
     const block = schema.slice(start, schema.indexOf('\n}', start));
     const columns = block.split('\n').map((l) => l.trim().split(/\s+/)[0]).filter((c) => /^[a-z]/.test(c));
     expect(columns.length).toBeGreaterThan(10); // the block was found and parsed
-    expect(columns.filter((c) => /wage|salary|rate|pay|ctc|amount|price|cost/i.test(c))).toEqual([]);
+    // Phase 25 (D33): `wageTypeCode` is a CODE (matches MisWageType.code, never an amount — see
+    // its own schema comment), `payType` is the MONTHLY/DAILY enum flag, and `payComponents` is
+    // the relation array to MisEmployeePayComponent (a table of booleans, not money) — three
+    // reviewed non-money names the substring regex below cannot tell apart from a real one.
+    const reviewed = ['wageTypeCode', 'payType', 'payComponents'];
+    expect(columns.filter((c) => /wage|salary|rate|pay|ctc|amount|price|cost/i.test(c) && !reviewed.includes(c))).toEqual([]);
   });
 
   it('every Mis* column that looks like money is on the reviewed list (a new one needs an owner-only decision)', () => {
@@ -118,7 +123,23 @@ describe('the employee model holds no money — so no employee function can retu
         if (/wage|salary|amount|price|cost|rate(?!d)|gross|ctc/i.test(col) && /Decimal|Float|Int/.test(type)) found.push(`${m[1]}.${col}`);
       }
     }
-    expect(found.sort()).toEqual(['MisBomMaterial.ratePerUnit', 'MisItem.pricePerUnit', 'MisPoItem.ratePerUnit', 'MisWageType.amount']);
+    // Phase 25 (D26, D28, 25.1) — every new one is a reviewed wage figure, Owner-only (D24) at the
+    // server-function level (payroll.ts, payroll-period.ts, wage-type.ts all gate on wages.read;
+    // this scanner only catches columns whose NAME matches, so MisPayrollSnapshotLine's other
+    // money columns — hra, allowance, otPay, bonus, extraPay, latePenalty — are real money too,
+    // just not caught by this regex; the server gate does not depend on this list).
+    expect(found.sort()).toEqual([
+      'MisBomMaterial.ratePerUnit',
+      'MisItem.pricePerUnit',
+      'MisPayrollSnapshotLine.basicWage',
+      'MisPayrollSnapshotLine.grossPay',
+      'MisPoItem.ratePerUnit',
+      'MisWageType.allowanceAmount',
+      'MisWageType.amount',
+      'MisWageType.bonusAmount',
+      'MisWageType.hraAmount',
+      'MisWageType.otRatePerHour',
+    ]);
   });
 });
 
