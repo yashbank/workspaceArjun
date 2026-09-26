@@ -135,6 +135,45 @@ export async function getOfflineRules(): Promise<{ clockSkewMinutes: number; max
 }
 
 /**
+ * D2/D34: the ONE rupee threshold that decides a PO's approval chain — below it,
+ * `ADMIN_ONLY`; at or above it, `BOTH` (Admin then Owner). Purpose is never an input
+ * (D2 — identical thresholds for a buffer-stock PO and an order-linked PO of the same
+ * value). `OWNER_ONLY` is a manual override chosen by an Owner at submission, never
+ * derived from this value. Effective-dated like every other rule, so a later change
+ * cannot move a PO's `approvalMode` once decided (`po.ts`'s `submitForApproval` reads
+ * this only at the moment of submission and freezes the result onto the row).
+ */
+const PO_APPROVAL_THRESHOLD_KEY = 'po_approval_threshold';
+
+async function ensurePoApprovalThresholdDefault() {
+  const existing = await db.misBusinessRule.findFirst({ where: { ruleKey: PO_APPROVAL_THRESHOLD_KEY } });
+  if (existing) return;
+  await db.misBusinessRule.create({
+    data: {
+      ruleKey: PO_APPROVAL_THRESHOLD_KEY,
+      ruleValue: '50000',
+      valueType: 'number',
+      label: 'PO approval threshold',
+      description: 'POs below this value need Admin approval only. At or above it, Admin then Owner.',
+      effectiveFrom: new Date(),
+    },
+  });
+}
+
+/**
+ * The threshold in force now. Ungated, like getRuleValue/getLineClearanceRule/
+ * getOfflineRules — this is a policy figure, not a PO's actual value (that stays
+ * behind wages.read, per computePoTotal). The gate that matters is on changing it
+ * (settings.write, via updateBusinessRule — no dedicated screen needed for one number).
+ */
+export async function getPoApprovalThreshold(): Promise<number> {
+  await ensurePoApprovalThresholdDefault();
+  const raw = await getRuleValue(PO_APPROVAL_THRESHOLD_KEY);
+  const parsed = raw != null ? Number.parseFloat(raw) : NaN;
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 50000;
+}
+
+/**
  * D22: the factory's timezone — an IANA zone, seeded `Asia/Kolkata`. Every
  * day-boundary, shift-window and attendance-day derivation resolves through this
  * and never through the server's local clock, because the database (UTC+8) and the

@@ -117,6 +117,8 @@ const TABLE: Entry[] = [
   { module: 'reports.ts', name: 'getOrdersReport', requires: 'reports.read', call: () => reports.getOrdersReport(RANGE) },
   { module: 'reports.ts', name: 'getStoreReport', requires: 'reports.read', call: () => reports.getStoreReport(RANGE) },
   { module: 'reports.ts', name: 'getWastageReport', requires: 'reports.read', call: () => reports.getWastageReport({ weeks: 4 }) },
+  // Phase 21 (D1) — all money, so wages.read like computePoTotal, not reports.read.
+  { module: 'reports.ts', name: 'getBufferDriftReport', requires: 'wages.read', call: () => reports.getBufferDriftReport(RANGE) },
 ];
 
 /** Functions in these modules deliberately not in TABLE: ungated internals (see server-gates.test.ts). */
@@ -124,7 +126,7 @@ const NOT_A_DOOR: Record<string, string[]> = {
   'employee.ts': [],
   'users.ts': [],
   'wage-type.ts': [],
-  'business-rules.ts': ['getOfflineRules', 'getFactoryTimezone', 'getCorrectionWindowDays', 'getRuleValue', 'getLineClearanceRule', 'getAqlThresholds'],
+  'business-rules.ts': ['getOfflineRules', 'getFactoryTimezone', 'getCorrectionWindowDays', 'getRuleValue', 'getLineClearanceRule', 'getAqlThresholds', 'getPoApprovalThreshold'],
   'payroll.ts': [],
   'reports.ts': [],
   'pay-components.ts': [],

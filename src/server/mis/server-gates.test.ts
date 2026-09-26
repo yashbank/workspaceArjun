@@ -58,6 +58,7 @@ const REVIEWED_UNGATED: Record<string, Reviewed> = {
   'business-rules.ts#getOfflineRules': { reason: 'internal; idempotency.ts reads the tolerance (D15)' },
   'business-rules.ts#getFactoryTimezone': { reason: 'internal; carries no wage or personal data (D22)' },
   'business-rules.ts#getCorrectionWindowDays': { reason: 'internal; carries no wage or personal data (D21)' },
+  'business-rules.ts#getPoApprovalThreshold': { reason: 'internal; carries a policy figure, not a wage or a PO\'s own value (D2/D34) — po.ts reads it after its own po.write gate' },
   'wage-type.ts#listWageCodes': { reason: 'opens by calling the gated listWageTypes()', alsoContains: 'listWageTypes' },
   'line-clearance.ts#assertLineCleared': { reason: 'internal precondition called by production.ts after its own gate' },
   'line-clearance.ts#getClearanceStatus': { reason: 'wraps assertLineCleared; internal', alsoContains: 'assertLineCleared' },
