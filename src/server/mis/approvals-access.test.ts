@@ -1,8 +1,11 @@
 /**
- * Phase 14 · MIS-49 (cross-role visibility) — the approvals list is one call that gathers
- * three kinds of thing (BOMs, leave requests, purchase orders) behind ONE permission,
- * orders.read. Each kind has its own read permission in the matrix, so a role that may not
- * read leave requests or POs directly can still receive them here (F-13).
+ * Phase 14 · MIS-49 (cross-role visibility), fixed post-launch (F-13) — the approvals list
+ * gathers three kinds of thing (BOMs, leave requests, purchase orders, plus 25.4's extra-pay
+ * days) behind ONE permission. Originally that permission was the broad orders.read, which let
+ * QC/Supervisor see this Owner/Admin sign-off inbox as a side effect of holding order context —
+ * the exact F-13 leak. The gate is now the dedicated approvals.read, held only by OWNER/ADMIN,
+ * both of whom also hold every kind's own read permission, so the "returned without direct
+ * read access" leak this file used to document no longer has a role to exercise it.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -37,14 +40,14 @@ const as = (role: MisRoleName) => {
 };
 
 describe('who may call it', () => {
-  it.each(MIS_ROLES)('%s: allowed exactly when the role holds orders.read', async (role) => {
+  it.each(MIS_ROLES)('%s: allowed exactly when the role holds approvals.read', async (role) => {
     as(role);
     const call = getPendingApprovals();
     // Phase 25 (D28): OWNER also holds wages.read, so the one seeded extra-pay day joins the
-    // count for OWNER only — every other orders.read role gets 3, the pre-25 figure.
+    // count for OWNER only — ADMIN (approvals.read but not wages.read) gets 3, the pre-25 figure.
     const expectedTotal = can(role, 'wages.read') ? 4 : 3;
-    if (can(role, 'orders.read')) await expect(call).resolves.toMatchObject({ total: expectedTotal });
-    else await expect(call).rejects.toThrow(/Not permitted: orders\.read/);
+    if (can(role, 'approvals.read')) await expect(call).resolves.toMatchObject({ total: expectedTotal });
+    else await expect(call).rejects.toThrow(/Not permitted: approvals\.read/);
   });
 });
 
@@ -56,8 +59,8 @@ describe('25.4/D28 — extra-pay days are folded in ONLY for a wages.read holder
     expect(out.extraPayDays[0]).toMatchObject({ value: 999, kind: 'FLAT_AMOUNT' });
   });
 
-  it.each(MIS_ROLES.filter((r) => can(r, 'orders.read') && !can(r, 'wages.read')))(
-    '%s (orders.read but not wages.read) never sees it, not even redacted',
+  it.each(MIS_ROLES.filter((r) => can(r, 'approvals.read') && !can(r, 'wages.read')))(
+    '%s (approvals.read but not wages.read) never sees it, not even redacted',
     async (role) => {
       as(role);
       const out = await getPendingApprovals();
@@ -66,24 +69,20 @@ describe('25.4/D28 — extra-pay days are folded in ONLY for a wages.read holder
   );
 });
 
-describe('F-13 — each kind is returned to a role that cannot read it directly', () => {
+describe('F-13, closed — approvals.read is never granted without every kind\'s own read permission', () => {
+  // The old leak: a role could hold the broad orders.read (enough to pass the gate) without
+  // holding a given kind's own permission, and still receive that kind here. Restricting the
+  // gate to approvals.read (OWNER/ADMIN only, both full-breadth roles) removes any role that
+  // could exercise that gap — this asserts the gap is actually closed, not just narrowed.
   const KIND: { key: 'leaves' | 'pos'; needs: MisAction }[] = [
     { key: 'leaves', needs: 'attendance.read' },
     { key: 'pos', needs: 'po.read' },
   ];
 
   for (const { key, needs } of KIND) {
-    // Roles that hold orders.read (so they get past the gate) but not the kind's own permission.
-    const missing = MIS_ROLES.filter((r) => can(r, 'orders.read') && !can(r, needs));
-    it(`the matrix leaves someone without ${needs} but with orders.read (else this section tests nothing)`, () => {
-      expect(missing.length).toBeGreaterThan(0);
+    it(`every approvals.read holder also holds ${needs} (no one can reach '${key}' without it)`, () => {
+      const gap = MIS_ROLES.filter((r) => can(r, 'approvals.read') && !can(r, needs));
+      expect(gap).toEqual([]);
     });
-    for (const role of missing) {
-      it.fails(`${role} (no ${needs}) receives no '${key}' from the approvals list`, async () => {
-        as(role);
-        const out = await getPendingApprovals();
-        expect(out[key]).toEqual([]);
-      });
-    }
   }
 });

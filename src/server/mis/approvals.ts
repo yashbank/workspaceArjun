@@ -5,7 +5,9 @@ import { getMisRole } from '@/server/mis/roles';
 import { listExtraPayDays, type ExtraPayDayRow } from '@/server/mis/extra-pay-days';
 
 export async function getPendingApprovals() {
-  const actor = await requirePermission('orders.read');
+  // F-13 fix: previously orders.read, which let QC/Supervisor see this inbox as a side effect
+  // of holding order context. Approvals are Owner/Admin-only sign-off work.
+  const actor = await requirePermission('approvals.read');
 
   const [pendingBoms, pendingLeaves, pendingPos] = await Promise.all([
     db.misBom.findMany({
