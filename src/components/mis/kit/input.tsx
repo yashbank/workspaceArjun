@@ -103,9 +103,10 @@ type SelectProps = {
   children: ReactNode;
   error?: string | null;
   hint?: string;
+  disabled?: boolean;
 };
 
-export function Select({ label, value, onChange, children, error, hint }: SelectProps) {
+export function Select({ label, value, onChange, children, error, hint, disabled }: SelectProps) {
   const generatedId = useId();
   const id = generatedId;
   return (
@@ -115,7 +116,8 @@ export function Select({ label, value, onChange, children, error, hint }: Select
         id={id}
         value={value}
         onChange={onChange}
-        className="min-h-12 w-full rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-2 focus:outline-offset-0 focus:outline-slate-900"
+        disabled={disabled}
+        className="min-h-12 w-full rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-2 focus:outline-offset-0 focus:outline-slate-900 disabled:bg-slate-50 disabled:text-slate-500"
       >
         {children}
       </select>

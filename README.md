@@ -144,8 +144,6 @@ Dashboard page
 | `pnpm db:push` | Push schema (no migration file) |
 | `pnpm db:studio` | Open Prisma Studio |
 | `pnpm db:seed` | Seed workspace settings |
-| `pnpm demo:seed` | Populate realistic demo data (folders, files, activity) |
-| `pnpm demo:reset` | Wipe all data and re-seed fresh demo content |
 
 ## File Management
 
@@ -504,27 +502,15 @@ For production deployment, see the docs in `../docs/`:
 
 ## Demo Data
 
-To populate the workspace with realistic sample content for demos:
-
-```bash
-# Seed demo data (requires a logged-in owner account + ALLOW_BOOTSTRAP=true)
-pnpm demo:seed
-
-# Full reset: wipe everything and re-seed fresh demo data
-pnpm demo:reset
-```
-
-The demo seed creates:
-- 5 top-level folders with realistic subfolders (Client Designs, Invoices, etc.)
-- 16 sample files (PDF, CDR, AI, PSD, EPS, PNG) with metadata
-- Version history on select files
-- Starred/favorite items
-- Audit trail with realistic activity
-- Storage usage tracking
+`pnpm demo:seed` / `pnpm demo:reset` (`prisma/seed-demo.ts`, `prisma/seed-reset.ts`) were removed
+in Phase 22 (MIS PHASE_LOG) — stale against the current schema and excluded from `tsc`, so they
+would have errored immediately if run. Not repaired here; a future ticket can rebuild a
+demo-data seeder against the current schema if one is wanted again.
 
 ### Client demo cleanup (production-safe)
 
-**Build/deploy never runs demo seed.** Only `pnpm db:seed` (workspace settings) is documented for production — not `demo:seed`.
+**Build/deploy never runs a demo seed.** Only `pnpm db:seed` (workspace settings) is documented
+for production.
 
 Before a client review, run from `app/` as **owner**:
 
