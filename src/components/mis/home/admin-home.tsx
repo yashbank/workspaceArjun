@@ -27,6 +27,8 @@ export type AdminHomeProps = {
   }[];
   attendance: { present: number; headcount: number; recorded: boolean };
   hindiGap: { total: number };
+  /** Phase 23 — Appendix B §B.7's inbox: writes nobody has resolved yet. */
+  queue: { total: number };
 };
 
 /**
@@ -36,7 +38,7 @@ export type AdminHomeProps = {
  * the orders that are waiting on an office decision, each one already carrying
  * the next step in words.
  */
-export function AdminHome({ header, orders, attendance, hindiGap }: AdminHomeProps) {
+export function AdminHome({ header, orders, attendance, hindiGap, queue }: AdminHomeProps) {
   return (
     <HomeStack>
       <HeaderCard title={header.title} meta={header.meta} />
@@ -103,6 +105,24 @@ export function AdminHome({ header, orders, attendance, hindiGap }: AdminHomePro
         <OkCard>
           <SectionLabel>Data health</SectionLabel>
           <p className="mt-1 font-semibold text-slate-900">Every master has a Hindi name.</p>
+        </OkCard>
+      )}
+
+      {queue.total > 0 ? (
+        <WarnCard>
+          <SectionLabel>Parked writes</SectionLabel>
+          <p className="mt-1 font-semibold text-slate-900">
+            {queue.total} {queue.total === 1 ? 'entry is' : 'entries are'} stuck in the queue
+          </p>
+          <p className="mb-3 text-sm text-slate-600">
+            A write from a tablet or the portal never landed — see why and resolve it.
+          </p>
+          <SecondaryButton href="/mis/queue">Open the inbox</SecondaryButton>
+        </WarnCard>
+      ) : (
+        <OkCard>
+          <SectionLabel>Parked writes</SectionLabel>
+          <p className="mt-1 font-semibold text-slate-900">Nothing is stuck in the queue.</p>
         </OkCard>
       )}
     </HomeStack>

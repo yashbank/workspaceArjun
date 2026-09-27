@@ -2,14 +2,17 @@ import type { Prisma } from '@/generated/prisma/client';
 import {
   isIdempotencyKey,
   isRetryablePark,
+  QUEUEABLE_KINDS,
   TIME_SOURCE,
   type ParkReason,
   type QueuedWriteEnvelope,
   type QueuedWriteKind,
   type ReplayOutcome,
 } from '@/lib/mis/offline/idempotency';
+import { can, type MisAction } from '@/lib/mis/permissions';
 import { db } from '@/server/db';
-import { isMisForbiddenError } from '@/server/mis/auth';
+import { isMisForbiddenError, MisForbiddenError, requirePermission } from '@/server/mis/auth';
+import { logAuditEvent } from '@/server/mis/audit';
 import { getOfflineRules } from '@/server/mis/business-rules';
 import { isJobPhaseError } from '@/server/mis/job-phases';
 import { LineClearanceBlockedError } from '@/server/mis/line-clearance';
@@ -31,7 +34,8 @@ import { LineClearanceBlockedError } from '@/server/mis/line-clearance';
  * always do, and this module only reads what they threw. There is no second
  * write path here to drift out of step with the first.
  *
- * Listing and resolving parked writes is the inbox phase's screen, not this file.
+ * Phase 23 adds the inbox's own doors at the bottom of this file: list, detail,
+ * discard and the audited overrides. The screen lives elsewhere; this is all of it.
  */
 
 /** The transaction handle a business write must use so §B.7's rule holds. */
@@ -61,6 +65,31 @@ export type RunOptions = {
    * nothing.
    */
   retry?: boolean;
+  /**
+   * Phase 23's inbox: an audited override or office-resolve, by someone other
+   * than the original actor (`queuedBy`) — the whole reason the inbox exists is
+   * a device nobody is holding. `by`/`note` become `resolvedById`/`resolutionNote`
+   * in place of the plain-retry default, so the audit trail names who took
+   * responsibility and why (§B.5.1, §B.5.2, §B.10.4).
+   *
+   * Presence of `override` also lets a PARKED row past the `isRetryablePark`
+   * gate below — the caller (`queue-resolve.ts`) has already separately
+   * required the specific right this reason needs (`clearance.write`,
+   * `attendance.write`) before calling in, on top of `queue.review`.
+   *
+   * `skipTiming` re-runs everything BUT `checkTiming` — the only way past
+   * `CLOCK_SKEW`/`TOO_OLD`, which a plain retry can never clear (D15: only a
+   * person may vouch for a time the device got wrong). Domain-specific flags
+   * (`skipClearance` for production, `skipEmployeeChecks` for punches) are read
+   * by the apply callback itself; unused ones are simply ignored.
+   */
+  override?: {
+    by: string;
+    note: string;
+    skipTiming?: boolean;
+    skipClearance?: boolean;
+    skipEmployeeChecks?: boolean;
+  };
 };
 
 /**
@@ -236,7 +265,7 @@ export async function runIdempotent<T>(
   apply: (tx: MisTx) => Promise<ApplyResult<T>>,
   options: RunOptions = {},
 ): Promise<IdempotentResult<T>> {
-  const { live = false, retry = false } = options;
+  const { live = false, retry = false, override } = options;
   const { key, kind, payload, clientRecordedAt, deviceId, actorId } = envelope;
 
   // A client-supplied identifier is not trusted until it looks like one.
@@ -253,16 +282,19 @@ export async function runIdempotent<T>(
   // The entry itself is wrong. A new key is the fix, never a replay of this one.
   if (existing?.status === 'REJECTED') return storedVerdict(existing);
   if (existing?.status === 'PARKED') {
-    // Already in front of a human. Only an explicit human retry, and only for a
-    // reason whose blocker was a state of the world (D17), re-runs the gates.
-    if (!(retry && isRetryablePark(existing.parkReason))) return storedVerdict(existing);
+    // Already in front of a human. A plain retry only for a reason whose blocker was a state
+    // of the world (D17). `override` is the inbox's own audited path past everything else —
+    // the caller has already separately required the right this specific reason needs.
+    if (!override && !(retry && isRetryablePark(existing.parkReason))) return storedVerdict(existing);
   }
 
   const recordedAt = new Date(clientRecordedAt);
   const attempts = existing?.attempts ?? 0;
   const releasing = existing?.status === 'PARKED';
 
-  const timing = await checkTiming(kind, recordedAt);
+  // A person vouching for the time (D15) is the only way past CLOCK_SKEW/TOO_OLD — an
+  // override built for that reason skips this check entirely rather than re-failing it.
+  const timing = override?.skipTiming ? null : await checkTiming(kind, recordedAt);
   if (timing) {
     if (!live) await park(key, envelope, attempts, timing);
     return timing;
@@ -308,9 +340,9 @@ export async function runIdempotent<T>(
         parkDetail: null,
         ...(releasing
           ? {
-              resolvedById: actorId ?? null,
+              resolvedById: override?.by ?? actorId ?? null,
               resolvedAt: new Date(),
-              resolutionNote: 'Released by a retry after the blocker was resolved.',
+              resolutionNote: override?.note ?? 'Released by a retry after the blocker was resolved.',
             }
           : {}),
       };
@@ -394,4 +426,133 @@ async function touchAttempt(key: string, envelope: Envelope, attempts: number, d
     },
     update: { attempts: attempts + 1, lastAttemptAt: new Date(), parkDetail: detail ?? null },
   });
+}
+
+// ---------------------------------------------------------------------------
+// Phase 23 · the parked-writes inbox (Appendix B §B.7)
+// ---------------------------------------------------------------------------
+
+/**
+ * Which domain read permission a kind's own data belongs to (D-guide Phase 23's own
+ * warning, F-13): `queue.review` is the door into the inbox at all, but a Super
+ * Attendance Operator holds `queue.review` + `attendance.read`, not `production.read`
+ * — so a production-log park must never reach them just because they hold the one
+ * inbox permission. Every `QueuedWriteKind` must have an entry; a new kind with none
+ * fails at the type level (Record over the exact union), not silently at runtime.
+ */
+export const KIND_READ_PERMISSION: Record<QueuedWriteKind, MisAction> = {
+  'production.log': 'production.read',
+  'production.waste_reason': 'production.read',
+  'attendance.punch_in': 'attendance.read',
+  'attendance.punch_out': 'attendance.read',
+};
+
+export type ParkedWriteRow = {
+  key: string;
+  kind: QueuedWriteKind;
+  /** The screen tells PARKED (the world must change) from REJECTED (the entry itself is
+   * wrong — discard only, per §B.10.4's own table) by this, never by guessing from the reason. */
+  status: 'PARKED' | 'REJECTED';
+  payload: unknown;
+  parkReason: ParkReason | null;
+  parkDetail: string | null;
+  clientRecordedAt: Date | null;
+  deviceId: string | null;
+  actorId: string | null;
+  attempts: number;
+  firstSeenAt: Date;
+  lastAttemptAt: Date | null;
+};
+
+/** The kinds this caller may see at all, past the base `queue.review` door. */
+async function visibleKindsFor(role: Parameters<typeof can>[0]): Promise<QueuedWriteKind[]> {
+  return QUEUEABLE_KINDS.filter((kind) => can(role, KIND_READ_PERMISSION[kind]));
+}
+
+/** The stored row is `kind`/`parkReason` as plain strings (no DB enum); narrow at the boundary. */
+function toParkedWriteRow(row: {
+  key: string; kind: string; status: string; payload: unknown; parkReason: string | null; parkDetail: string | null;
+  clientRecordedAt: Date | null; deviceId: string | null; actorId: string | null; attempts: number;
+  firstSeenAt: Date; lastAttemptAt: Date | null;
+}): ParkedWriteRow {
+  return {
+    key: row.key,
+    kind: row.kind as QueuedWriteKind,
+    status: row.status as 'PARKED' | 'REJECTED',
+    payload: row.payload,
+    parkReason: row.parkReason as ParkReason | null,
+    parkDetail: row.parkDetail,
+    clientRecordedAt: row.clientRecordedAt,
+    deviceId: row.deviceId,
+    actorId: row.actorId,
+    attempts: row.attempts,
+    firstSeenAt: row.firstSeenAt,
+    lastAttemptAt: row.lastAttemptAt,
+  };
+}
+
+/**
+ * Every write still stuck in front of a human: `PARKED` (the world must change) and
+ * `REJECTED` (the entry itself is wrong) both belong here — `APPLIED`/`DUPLICATE`/
+ * `IN_FLIGHT`/`RETRY` are not stuck. `resolvedAt: null` excludes anything already
+ * closed out, including a `BADGE_UNKNOWN` the tablet's own Fix already resolved
+ * (D23) — this inbox is for what is STILL waiting, not a history of every park ever.
+ */
+export async function listParkedWrites(): Promise<ParkedWriteRow[]> {
+  const actor = await requirePermission('queue.review');
+  const kinds = await visibleKindsFor(actor.role);
+  if (kinds.length === 0) return [];
+  const rows = await db.misQueuedWrite.findMany({
+    where: { status: { in: ['PARKED', 'REJECTED'] }, resolvedAt: null, kind: { in: kinds } },
+    orderBy: { firstSeenAt: 'asc' },
+  });
+  return rows.map(toParkedWriteRow);
+}
+
+/**
+ * One parked write's full detail — same visibility rule as the list, so a caller
+ * cannot reach a row by key that the list would never have shown them.
+ */
+export async function getParkedWriteDetail(key: string): Promise<ParkedWriteRow | null> {
+  const actor = await requirePermission('queue.review');
+  const row = await db.misQueuedWrite.findUnique({ where: { key } });
+  if (!row) return null;
+  if (!can(actor.role, KIND_READ_PERMISSION[row.kind as QueuedWriteKind])) return null;
+  return toParkedWriteRow(row);
+}
+
+/**
+ * `queue.review` alone may see and discard with a reason — never apply something the
+ * caller could not have applied themselves (Appendix B §B.7). Both `PARKED` and
+ * `REJECTED` rows may be discarded: a `REJECTED` entry can never be applied at all —
+ * its only resolution is a fresh entry under a new key (§B.10.4's own table).
+ */
+export async function discardParkedWrite(key: string, reason: string): Promise<ParkedWriteRow> {
+  const actor = await requirePermission('queue.review');
+  const trimmed = reason.trim();
+  if (trimmed.length < 3) {
+    throw new Error('A reason of at least three characters is required to discard a parked write.');
+  }
+  const row = await db.misQueuedWrite.findUnique({ where: { key } });
+  if (!row) throw new Error(`No parked write found for key ${key}.`);
+  const kindPermission = KIND_READ_PERMISSION[row.kind as QueuedWriteKind];
+  if (!can(actor.role, kindPermission)) throw new MisForbiddenError(kindPermission, key);
+  if (row.status !== 'PARKED' && row.status !== 'REJECTED') {
+    throw new Error(`This write is ${row.status.toLowerCase()}, not stuck — nothing to discard.`);
+  }
+  if (row.resolvedAt) throw new Error('This write was already resolved.');
+
+  const updated = await db.misQueuedWrite.update({
+    where: { key },
+    data: { resolvedById: actor.userId, resolvedAt: new Date(), resolutionNote: trimmed },
+  });
+  await logAuditEvent({
+    actorId: actor.userId,
+    action: 'queue.discard',
+    entity: 'MisQueuedWrite',
+    entityId: key,
+    before: { status: row.status, parkReason: row.parkReason },
+    after: { resolutionNote: trimmed },
+  });
+  return toParkedWriteRow(updated);
 }

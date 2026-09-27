@@ -55,6 +55,9 @@ const NAV: NavDefinition[] = [
   { id: 'bom', labelKey: 'nav.bom', href: '/mis/bom', icon: 'database', primary: false, requires: 'orders.read' },
   { id: 'traceability', labelKey: 'nav.traceability', href: '/mis/traceability', icon: 'chart', primary: false, requires: 'orders.read' },
   { id: 'approvals', labelKey: 'nav.approvals', href: '/mis/approvals', icon: 'check', primary: false, requires: 'orders.read' },
+  // Phase 23 — the parked-writes inbox (Appendix B §B.7). OWNER, ADMIN and
+  // SUPER_ATTENDANCE_OPERATOR only, exactly who holds queue.review.
+  { id: 'queue', labelKey: 'nav.queue', href: '/mis/queue', icon: 'clipboard', primary: false, requires: 'queue.review' },
   { id: 'kiosk', labelKey: 'nav.kiosk', href: '/mis/kiosk', icon: 'users', primary: false, requires: 'attendance.write' },
   { id: 'audit', labelKey: 'nav.audit', href: '/mis/audit', icon: 'clipboard', primary: false, requires: 'settings.read' },
   { id: 'payroll', labelKey: 'nav.payroll', href: '/mis/payroll', icon: 'chart', primary: false, requires: 'wages.read' },
@@ -122,14 +125,14 @@ export async function getNavBadges(
   try {
     switch (resolved) {
       case 'OWNER': {
-        const { getPendingApprovals } = await import('./approvals');
-        const approvals = await getPendingApprovals();
-        return { approvals: approvals.total };
+        const [{ getPendingApprovals }, { listParkedWrites }] = await Promise.all([import('./approvals'), import('./idempotency')]);
+        const [approvals, parked] = await Promise.all([getPendingApprovals(), listParkedWrites()]);
+        return { approvals: approvals.total, queue: parked.length };
       }
       case 'ADMIN': {
-        const { listOrdersNeedingAction } = await import('./orders');
-        const orders = await listOrdersNeedingAction(20);
-        return { orders: orders.filter((o) => o.lateRisk).length };
+        const [{ listOrdersNeedingAction }, { listParkedWrites }] = await Promise.all([import('./orders'), import('./idempotency')]);
+        const [orders, parked] = await Promise.all([listOrdersNeedingAction(20), listParkedWrites()]);
+        return { orders: orders.filter((o) => o.lateRisk).length, queue: parked.length };
       }
       case 'SUPERVISOR': {
         // The Crew tab now opens the worker board (Phase 8), so its badge is
@@ -150,11 +153,15 @@ export async function getNavBadges(
         const board = await getTodayQcBoard();
         return { defects: board.failures.length };
       }
-      case 'ATTENDANCE_OPERATOR':
-      case 'SUPER_ATTENDANCE_OPERATOR': {
+      case 'ATTENDANCE_OPERATOR': {
         const { getDayAttendanceSummary } = await import('./attendance');
         const today = await getDayAttendanceSummary();
         return { register: today.notClockedOut.length };
+      }
+      case 'SUPER_ATTENDANCE_OPERATOR': {
+        const [{ getDayAttendanceSummary }, { listParkedWrites }] = await Promise.all([import('./attendance'), import('./idempotency')]);
+        const [today, parked] = await Promise.all([getDayAttendanceSummary(), listParkedWrites()]);
+        return { register: today.notClockedOut.length, queue: parked.length };
       }
       case 'STORE_GUY': {
         const [{ listOpenGRNs }, { getStoreDashboard }] = await Promise.all([

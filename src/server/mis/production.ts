@@ -72,7 +72,19 @@ export async function assertOrderOpen(orderId: string): Promise<void> {
  * (§B.7). The audit event is *not* written here: it is written after commit, by
  * the caller, because an audit row for a write that then rolled back is a lie.
  */
-async function createProductionLog(data: LogProductionInput, client: MisTx | typeof db) {
+async function createProductionLog(
+  data: LogProductionInput,
+  client: MisTx | typeof db,
+  opts: {
+    /**
+     * §B.5.1's audited override: a `clearance.write` holder confirmed this entry against the
+     * clearance that was in force at `clientRecordedAt`, not the one in force now — a fresh
+     * clearance would certify the machine NOW, which is not the same claim (D7). The inbox
+     * (`queue-resolve.ts`) requires `clearance.write` itself before ever setting this.
+     */
+    skipClearance?: boolean;
+  } = {},
+) {
   const actor = await requirePermission('production.write');
 
   // D8 defence in depth. The types already say machineId is required, but this
@@ -85,7 +97,7 @@ async function createProductionLog(data: LogProductionInput, client: MisTx | typ
   }
 
   await assertOrderOpen(data.orderId);
-  await assertLineCleared(data.machineId);
+  if (!opts.skipClearance) await assertLineCleared(data.machineId);
   const jobPhaseId = await resolveJobPhaseForProduction(data.orderId, data.jobPhaseId);
 
   // Named fields only. Spreading caller input into a create is how a client
@@ -247,13 +259,19 @@ export async function submitProductionLog(
   const out = await runIdempotent<ProductionLogResult>(
     { ...envelope, kind: 'production.log', actorId },
     async (tx) => {
-      if (envelope.queuedBy && envelope.queuedBy !== user.id) {
+      // An inbox override is by definition someone other than the original actor — that is
+      // the whole reason it exists (a device nobody is holding) — so this identity check is
+      // deliberately skipped only when `options.override` is set (§B.10.2 still applies to
+      // every live attempt and every plain retry).
+      if (!options.override && envelope.queuedBy && envelope.queuedBy !== user.id) {
         throw parkable(
           'FORBIDDEN',
           'This entry was recorded by a different user than the one signed in now, so it will not be sent under their name. Ask them to sign in.',
         );
       }
-      const { rec } = await createProductionLog(toLogInput(envelope.payload, envelope.clientRecordedAt), tx);
+      const { rec } = await createProductionLog(toLogInput(envelope.payload, envelope.clientRecordedAt), tx, {
+        skipClearance: options.override?.skipClearance,
+      });
       return { entityType: 'MisProductionLog', entityId: rec.id, result: summarise(rec) };
     },
     options,
