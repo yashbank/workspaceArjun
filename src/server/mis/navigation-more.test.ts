@@ -35,7 +35,7 @@ const REQUIRES: Record<string, MisAction | null> = {
   documents: 'orders.read',
   bom: 'orders.read',
   traceability: 'orders.read',
-  approvals: 'orders.read',
+  approvals: 'approvals.read',
   queue: 'queue.review',
   kiosk: 'attendance.write',
   audit: 'settings.read',
