@@ -60,6 +60,11 @@ export const MIS_ACTIONS = [
   // Gate tablets (D18): pair, rename and retire a device. Owner and Admin only.
   // Seeing kiosk health on the attendance home needs only attendance.read.
   'kiosk.manage',
+  // Phase 23 — the parked-writes inbox (Appendix B §B.7). This is the DOOR into
+  // the inbox at all; which ROWS a holder actually sees is filtered again, per
+  // kind, by that kind's own read permission (production.read / attendance.read)
+  // — one action gating three kinds of data was exactly F-13's mistake.
+  'queue.review',
 ] as const;
 
 export type MisAction = (typeof MIS_ACTIONS)[number];
@@ -104,6 +109,7 @@ const MATRIX: Record<MisRoleName, readonly MisAction[]> = {
     'phase.read',
     'phase.write',
     'kiosk.manage',
+    'queue.review',
   ],
 
   SUPERVISOR: [
@@ -131,6 +137,7 @@ const MATRIX: Record<MisRoleName, readonly MisAction[]> = {
     'attendance.read',
     'attendance.write',
     'reports.read',
+    'queue.review',
   ],
 
   ATTENDANCE_OPERATOR: ['employees.read', 'attendance.read', 'attendance.write'],
