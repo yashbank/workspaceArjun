@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { EXPECTED, PREVIOUS_PHASE_LOG_ENTRIES, PRODUCTION_LOG_ENTRIES } from '@/test/fixtures/production-signoff';
+
 const getCurrentUser = vi.fn();
 vi.mock('@/server/auth', () => ({ getCurrentUser: (...a: unknown[]) => getCurrentUser(...a) }));
 
@@ -188,6 +190,66 @@ describe('the transition table', () => {
     readyToSign();
     phaseFindFirst.mockResolvedValue(phase({ status: 'REOPENED' }));
     await expect(signOffPhase('ph-2')).resolves.toMatchObject({ status: 'SIGNED_OFF' });
+  });
+});
+
+// Phase 16's own BOM finding (F-37 — a status check silently missing) is exactly the class of
+// bug Appendix A §A.3 exists to prevent here: "the table is the spec — every ✗ cell deserves a
+// test." The cases above cover what earlier phases already named; these are the remaining ✗
+// cells with no test yet, one per (from, verb) pair not in job-phases.ts's own TRANSITIONS
+// table. Each is expected to REFUSE today — `assertTransition` already guards every verb
+// (unlike bom.ts's approveBom/submitBomForApproval, which have no such guard at all) — so this
+// locks Appendix A's spec at the test level rather than reporting a new bug.
+describe('every remaining ✗ cell in Appendix A §A.3 (MIS-147, MIS-165)', () => {
+  it('refuses REOPENED → IN_PROGRESS (startPhase)', async () => {
+    phaseFindFirst.mockResolvedValue(phase({ status: 'REOPENED' }));
+    await expect(startPhase('ph-2')).rejects.toMatchObject({ reason: 'ILLEGAL_TRANSITION' });
+  });
+
+  it('refuses NOT_APPLICABLE → SIGNED_OFF (signOffPhase)', async () => {
+    phaseFindFirst.mockResolvedValue(phase({ status: 'NOT_APPLICABLE' }));
+    await expect(signOffPhase('ph-2')).rejects.toMatchObject({ reason: 'ILLEGAL_TRANSITION' });
+  });
+
+  it('refuses SIGNED_OFF → SIGNED_OFF (signOffPhase, already in state)', async () => {
+    phaseFindFirst.mockResolvedValue(phase({ status: 'SIGNED_OFF' }));
+    await expect(signOffPhase('ph-2')).rejects.toMatchObject({ reason: 'ALREADY_IN_STATE' });
+  });
+
+  it('refuses REOPENED → NOT_APPLICABLE (markNotApplicable)', async () => {
+    getMisRole.mockResolvedValue('ADMIN');
+    phaseFindFirst.mockResolvedValue(phase({ status: 'REOPENED' }));
+    await expect(markNotApplicable('ph-2', 'not needed')).rejects.toMatchObject({ reason: 'ILLEGAL_TRANSITION' });
+  });
+
+  it('refuses NOT_APPLICABLE → NOT_APPLICABLE (markNotApplicable, already in state)', async () => {
+    getMisRole.mockResolvedValue('ADMIN');
+    phaseFindFirst.mockResolvedValue(phase({ status: 'NOT_APPLICABLE' }));
+    await expect(markNotApplicable('ph-2', 'not needed')).rejects.toMatchObject({ reason: 'ALREADY_IN_STATE' });
+  });
+
+  it('refuses PENDING → PENDING (restorePhase, already in state)', async () => {
+    getMisRole.mockResolvedValue('ADMIN');
+    phaseFindFirst.mockResolvedValue(phase({ status: 'PENDING' }));
+    await expect(restorePhase('ph-2', 'reason')).rejects.toMatchObject({ reason: 'ALREADY_IN_STATE' });
+  });
+
+  it.each(['IN_PROGRESS', 'SIGNED_OFF', 'REOPENED'])('refuses %s → PENDING (restorePhase)', async (status) => {
+    getMisRole.mockResolvedValue('ADMIN');
+    phaseFindFirst.mockResolvedValue(phase({ status }));
+    await expect(restorePhase('ph-2', 'reason')).rejects.toMatchObject({ reason: 'ILLEGAL_TRANSITION' });
+  });
+
+  it.each(['PENDING', 'IN_PROGRESS', 'NOT_APPLICABLE'])('refuses %s → REOPENED (reopenPhase)', async (status) => {
+    getMisRole.mockResolvedValue('OWNER');
+    phaseFindFirst.mockResolvedValue(phase({ status }));
+    await expect(reopenPhase('ph-2', 'reason')).rejects.toMatchObject({ reason: 'ILLEGAL_TRANSITION' });
+  });
+
+  it('refuses REOPENED → REOPENED (reopenPhase, already in state)', async () => {
+    getMisRole.mockResolvedValue('OWNER');
+    phaseFindFirst.mockResolvedValue(phase({ status: 'REOPENED' }));
+    await expect(reopenPhase('ph-2', 'reason')).rejects.toMatchObject({ reason: 'ALREADY_IN_STATE' });
   });
 });
 
@@ -641,5 +703,32 @@ describe('the sign-off summary (MIS-164)', () => {
     expect(summary.waste).toBe(20);
     expect(summary.handedOver).toEqual({ processName: 'Printing', output: 1000 });
     expect(summary.wastePercent).toBeCloseTo(2);
+  });
+
+  it('ties out against a hand-checked fixture (MIS-162) — six fractional entries, not round numbers', async () => {
+    phaseFindFirst
+      .mockResolvedValueOnce(phase())
+      .mockResolvedValueOnce(
+        phase({
+          id: 'ph-1',
+          sequence: 1,
+          status: 'SIGNED_OFF',
+          process: { id: 'proc-1', name: 'Printing', nameHi: null, code: 'PROC-003' },
+        }),
+      );
+    logFindMany
+      .mockResolvedValueOnce([...PRODUCTION_LOG_ENTRIES])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([...PREVIOUS_PHASE_LOG_ENTRIES]);
+    qcFindMany.mockResolvedValue([]);
+
+    const summary = await getSignOffSummary('ph-2');
+
+    expect(summary.output).toBe(EXPECTED.output);
+    expect(summary.waste).toBe(EXPECTED.waste);
+    expect(summary.wastePercent).toBeCloseTo(EXPECTED.wastePercent, 10);
+    expect(summary.entries).toBe(EXPECTED.entries);
+    expect(summary.unit).toBe(EXPECTED.unit);
+    expect(summary.handedOver).toEqual(EXPECTED.handedOver);
   });
 });
