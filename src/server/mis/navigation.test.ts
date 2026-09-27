@@ -17,7 +17,7 @@ const { getNavigationFor, splitNavigation, MAX_PRIMARY_NAV } = await import('./n
 
 const ALL = [
   'masters', 'orders', 'production', 'quality', 'attendance', 'machine-board', 'reports', 'settings', 'employees',
-  'po', 'grn', 'inventory', 'customers', 'suppliers', 'documents', 'bom', 'traceability', 'approvals', 'kiosk',
+  'po', 'grn', 'inventory', 'customers', 'suppliers', 'documents', 'bom', 'traceability', 'approvals', 'queue', 'kiosk',
   'audit', 'payroll', 'store',
 ];
 
@@ -27,7 +27,7 @@ const EXPECTED: Record<MisRoleName, string[]> = {
   SUPERVISOR: ['masters', 'orders', 'production', 'quality', 'attendance', 'machine-board', 'reports', 'employees', 'grn', 'inventory', 'customers', 'documents', 'bom', 'traceability', 'approvals', 'store'],
   QC: ['masters', 'orders', 'production', 'quality', 'machine-board', 'reports', 'customers', 'documents', 'bom', 'traceability', 'approvals'],
   ATTENDANCE_OPERATOR: ['attendance', 'employees', 'kiosk'],
-  SUPER_ATTENDANCE_OPERATOR: ['attendance', 'reports', 'employees', 'kiosk'],
+  SUPER_ATTENDANCE_OPERATOR: ['attendance', 'reports', 'employees', 'queue', 'kiosk'],
   STORE_GUY: ['po', 'grn', 'inventory', 'suppliers', 'store'],
   WORKER: [],
 };

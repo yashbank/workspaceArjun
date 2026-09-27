@@ -120,6 +120,14 @@ async function applyPunch(
   tx: MisTx,
   envelope: QueuedWriteEnvelope,
   source: Source,
+  /**
+   * Phase 23's audited override (Appendix B, the Phase 13 stamp's own words: "apply the
+   * punch through the same path as any other — extract it rather than copying it"). Skips
+   * `EMPLOYEE_INACTIVE` and `CORRECTION_WINDOW_CLOSED` only — never `BADGE_UNKNOWN`, which
+   * has its own resolution (the tablet's Fix, K2, re-recording under `correctsKey`). The
+   * inbox (`queue-resolve.ts`) requires `attendance.write` itself before ever setting this.
+   */
+  overrideFlags?: { skipEmployeeChecks?: boolean },
 ): Promise<{ entityType: string; entityId: string; result: PunchResult }> {
   const direction = envelope.kind === 'attendance.punch_in' ? 'IN' : 'OUT';
   const payload = parsePayload(envelope.payload);
@@ -137,7 +145,7 @@ async function applyPunch(
   });
   const scanned = `${formatFactoryTime(recordedAt, timeZone)} · code ${payload.badgeCode}`;
   if (!employee) throw parkable('BADGE_UNKNOWN', `Badge not recognised. Scanned ${scanned}.`);
-  if (!employee.isActive || employee.deletedAt) {
+  if (!overrideFlags?.skipEmployeeChecks && (!employee.isActive || employee.deletedAt)) {
     throw parkable('EMPLOYEE_INACTIVE', `${employee.name} is no longer on the active roll. Scanned ${scanned}.`);
   }
 
@@ -179,7 +187,7 @@ async function applyPunch(
     [...after.values()].find((d) => d.punchIds.includes(punchId))?.workDate ??
     workDateFor(recordedAt, shifts, timeZone, hintShiftId).workDate;
 
-  if (!isWithinCorrectionWindow(workDate, new Date(), windowDays, timeZone)) {
+  if (!overrideFlags?.skipEmployeeChecks && !isWithinCorrectionWindow(workDate, new Date(), windowDays, timeZone)) {
     throw parkable(
       'CORRECTION_WINDOW_CLOSED',
       `${workDate} is past the ${windowDays}-day correction window. A Super Attendance Operator must decide this punch (${employee.name}, ${direction === 'IN' ? 'in' : 'out'}, ${scanned}).`,
@@ -393,14 +401,17 @@ export async function submitPunch(
   const out = await runIdempotent<PunchResult>(
     { ...clean, deviceId: envelope.deviceId, actorId: envelope.queuedBy ?? user.id },
     async (tx) => {
-      if (envelope.queuedBy && envelope.queuedBy !== user.id) {
+      // An inbox override is by definition someone other than the original actor (the whole
+      // reason it exists — a tablet nobody is holding), so this identity check is deliberately
+      // skipped only when `options.override` is set (§B.10.2 still applies otherwise).
+      if (!options.override && envelope.queuedBy && envelope.queuedBy !== user.id) {
         throw parkable(
           'FORBIDDEN',
           'This punch was recorded by a different user than the one signed in now, so it will not be sent under their name. Ask them to sign in.',
         );
       }
       await requirePermission('attendance.write');
-      return applyPunch(tx, clean, { kind: 'user', userId: user.id });
+      return applyPunch(tx, clean, { kind: 'user', userId: user.id }, { skipEmployeeChecks: options.override?.skipEmployeeChecks });
     },
     options,
   );

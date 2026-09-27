@@ -15,6 +15,7 @@ import {
   getDayAttendanceSummary,
 } from '@/server/mis/attendance';
 import { listOpenGRNs } from '@/server/mis/grn';
+import { listParkedWrites } from '@/server/mis/idempotency';
 import { listPhasesAwaitingMySignOff } from '@/server/mis/job-phases';
 import { requireMisAccess } from '@/server/mis/guard';
 import { getMachineStatusCounts } from '@/server/mis/machines-board';
@@ -89,13 +90,14 @@ async function OwnerScreen({
   yesterday: Date;
   ago: (d: Date) => string;
 }) {
-  const [approvals, machines, failures, lateOrders, dayBefore, wages] = await Promise.all([
+  const [approvals, machines, failures, lateOrders, dayBefore, wages, parkedWrites] = await Promise.all([
     getPendingApprovals(),
     getMachineStatusCounts(),
     listRecentQcFailures(3),
     listOrdersNeedingAction(5),
     getDayProductionSummary(yesterday),
     getMonthWageBill(now.getFullYear(), now.getMonth() + 1),
+    listParkedWrites(),
   ]);
 
   const approvalRows = [
@@ -122,6 +124,20 @@ async function OwnerScreen({
   ].slice(0, 2);
 
   const alerts: OwnerAlert[] = [
+    // Phase 23 — the parked-writes inbox (Appendix B §B.7): a write nobody has resolved yet
+    // is real factory data not landed, so it goes in "Needs attention" alongside a down
+    // machine or a QC failure, not off in its own separate card.
+    ...(parkedWrites.length > 0
+      ? [
+          {
+            id: 'queue',
+            tone: 'risk' as const,
+            title: `${parkedWrites.length} ${parkedWrites.length === 1 ? 'entry is' : 'entries are'} stuck in the queue`,
+            detail: 'A write from a tablet or the portal never landed — see why and resolve it.',
+            href: '/mis/queue',
+          },
+        ]
+      : []),
     ...machines.downMachines.map((m) => ({
       id: `machine-${m.id}`,
       tone: 'stopped' as const,
@@ -177,10 +193,11 @@ async function AdminScreen({
 }: {
   header: { title: string; meta: string };
 }) {
-  const [orders, attendance, hindiGap] = await Promise.all([
+  const [orders, attendance, hindiGap, parkedWrites] = await Promise.all([
     listOrdersNeedingAction(4),
     getDayAttendanceSummary(),
     countMastersMissingHindiName(),
+    listParkedWrites(),
   ]);
 
   return (
@@ -199,6 +216,7 @@ async function AdminScreen({
         recorded: attendance.recorded,
       }}
       hindiGap={{ total: hindiGap.total }}
+      queue={{ total: parkedWrites.length }}
     />
   );
 }

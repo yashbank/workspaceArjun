@@ -40,6 +40,27 @@ function queuedApi(get: () => FakeState, hooks: { failOn?: string }) {
       const row = get().queued.get(where.key);
       return row ? { ...row } : null;
     },
+    // Phase 23's inbox: status/kind `in` filters and a `resolvedAt: null` check, the
+    // exact shape `listParkedWrites` queries with — nothing fancier is needed here.
+    findMany: async ({ where, orderBy }: { where?: Row; orderBy?: { firstSeenAt?: 'asc' | 'desc' } } = {}) => {
+      let rows = [...get().queued.values()];
+      if (where?.status && typeof where.status === 'object' && 'in' in (where.status as object)) {
+        const statuses = (where.status as { in: string[] }).in;
+        rows = rows.filter((r) => statuses.includes(r.status as string));
+      }
+      if (where?.kind && typeof where.kind === 'object' && 'in' in (where.kind as object)) {
+        const kinds = (where.kind as { in: string[] }).in;
+        rows = rows.filter((r) => kinds.includes(r.kind as string));
+      }
+      if (where && 'resolvedAt' in where && where.resolvedAt === null) {
+        rows = rows.filter((r) => (r.resolvedAt ?? null) === null);
+      }
+      if (orderBy?.firstSeenAt) {
+        const dir = orderBy.firstSeenAt === 'desc' ? -1 : 1;
+        rows = rows.sort((a, b) => dir * ((a.firstSeenAt as Date).getTime() - (b.firstSeenAt as Date).getTime()));
+      }
+      return rows.map((r) => ({ ...r }));
+    },
     create: async ({ data }: { data: Row }) => {
       const key = data.key as string;
       if (get().queued.has(key)) throw unique();

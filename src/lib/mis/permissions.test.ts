@@ -58,7 +58,7 @@ describe('permission matrix', () => {
 //
 // permissions.ts is one table; this is a SECOND, hand-written copy of it. That is the point:
 // widening a role now needs two deliberate edits, so it cannot happen as a side effect of
-// touching one. Every role × every action is asserted (8 × 33), not just the interesting ones.
+// touching one. Every role × every action is asserted (8 × 34), not just the interesting ones.
 // ---------------------------------------------------------------------------
 type Role = (typeof MIS_ROLES)[number];
 type Action = (typeof MIS_ACTIONS)[number];
@@ -68,7 +68,7 @@ const ADMIN_GRANTS: Action[] = [
   'production.read', 'production.write', 'qc.read', 'qc.write', 'attendance.read', 'attendance.write',
   'reports.read', 'settings.read', 'settings.write', 'inventory.read', 'inventory.write', 'po.read', 'po.write',
   'grn.read', 'grn.write', 'store.read', 'store.write', 'store.count', 'clearance.read', 'clearance.write',
-  'phase.read', 'phase.write', 'kiosk.manage',
+  'phase.read', 'phase.write', 'kiosk.manage', 'queue.review',
 ];
 
 const EXPECTED: Record<Role, Action[]> = {
@@ -81,7 +81,7 @@ const EXPECTED: Record<Role, Action[]> = {
   ],
   QC: ['masters.read', 'orders.read', 'production.read', 'qc.read', 'qc.write', 'reports.read', 'phase.read'],
   ATTENDANCE_OPERATOR: ['employees.read', 'attendance.read', 'attendance.write'],
-  SUPER_ATTENDANCE_OPERATOR: ['employees.read', 'attendance.read', 'attendance.write', 'reports.read'],
+  SUPER_ATTENDANCE_OPERATOR: ['employees.read', 'attendance.read', 'attendance.write', 'reports.read', 'queue.review'],
   WORKER: [],
   STORE_GUY: ['inventory.read', 'grn.read', 'grn.write', 'po.read', 'store.read', 'store.write', 'store.count'],
 };
@@ -89,7 +89,7 @@ const EXPECTED: Record<Role, Action[]> = {
 describe('the full matrix — every role × every action, against a hand-written copy', () => {
   it('the copy names every action and every role exactly once (a new action cannot slip past unlisted)', () => {
     expect(Object.keys(EXPECTED).sort()).toEqual([...MIS_ROLES].sort());
-    expect(MIS_ACTIONS.length).toBe(33);
+    expect(MIS_ACTIONS.length).toBe(34);
     expect(new Set(MIS_ACTIONS).size).toBe(MIS_ACTIONS.length);
     for (const role of MIS_ROLES) {
       for (const a of EXPECTED[role]) expect(MIS_ACTIONS, `${role} lists unknown action ${a}`).toContain(a);
@@ -169,8 +169,8 @@ describe('MIS_UI_SPEC §4.5 — what each role is meant to reach', () => {
     }
   });
 
-  it('SUPER_ATTENDANCE_OPERATOR = ATTENDANCE_OPERATOR + reports.read, and nothing else', () => {
+  it('SUPER_ATTENDANCE_OPERATOR = ATTENDANCE_OPERATOR + reports.read + queue.review (Phase 23), and nothing else', () => {
     const extra = EXPECTED.SUPER_ATTENDANCE_OPERATOR.filter((a) => !EXPECTED.ATTENDANCE_OPERATOR.includes(a));
-    expect(extra).toEqual(['reports.read']);
+    expect(extra.sort()).toEqual(['queue.review', 'reports.read']);
   });
 });

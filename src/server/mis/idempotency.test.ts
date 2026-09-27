@@ -13,7 +13,7 @@ vi.mock('@/server/db', () => ({ db: fake.db }));
 
 vi.mock('@/server/mis/audit', () => ({ logAuditEvent: vi.fn() }));
 
-const { runIdempotent, classifyFailure, checkTiming } = await import('./idempotency');
+const { runIdempotent, classifyFailure, checkTiming, listParkedWrites, getParkedWriteDetail, discardParkedWrite } = await import('./idempotency');
 const { LineClearanceBlockedError } = await import('./line-clearance');
 const { JobPhaseError } = await import('./job-phases');
 const { MisForbiddenError } = await import('./auth');
@@ -419,5 +419,125 @@ describe('whose clock decides (D15, §B.4)', () => {
     );
     expect(result).toMatchObject({ outcome: 'PARKED', reason: 'CLOCK_SKEW' });
     expect(apply).not.toHaveBeenCalled();
+  });
+});
+
+describe('the parked-writes inbox — list and detail (Phase 23, Appendix B §B.7)', () => {
+  function seed(overrides: Record<string, unknown> = {}) {
+    const key = (overrides.key as string) ?? `k-${fake.state.queued.size + 1}`;
+    fake.state.queued.set(key, {
+      key,
+      kind: 'production.log',
+      status: 'PARKED',
+      payload: { orderId: 'ord-1' },
+      parkReason: 'PHASE_SIGNED_OFF',
+      parkDetail: 'the phase closed while this was queued',
+      clientRecordedAt: new Date('2026-01-01T10:00:00Z'),
+      deviceId: 'tablet-1',
+      actorId: 'u1',
+      attempts: 1,
+      firstSeenAt: new Date('2026-01-01T10:05:00Z'),
+      lastAttemptAt: new Date('2026-01-01T10:05:00Z'),
+      resolvedAt: null,
+      resolvedById: null,
+      resolutionNote: null,
+      ...overrides,
+    });
+    return key;
+  }
+
+  it('refuses a role holding neither queue.review nor an override', async () => {
+    getMisRole.mockResolvedValue('QC');
+    await expect(listParkedWrites()).rejects.toThrow(MisForbiddenError);
+  });
+
+  it('lists nothing but real PARKED/REJECTED rows, oldest first', async () => {
+    seed({ key: 'a', status: 'PARKED', firstSeenAt: new Date('2026-01-02T00:00:00Z') });
+    seed({ key: 'b', status: 'REJECTED', firstSeenAt: new Date('2026-01-01T00:00:00Z') });
+    seed({ key: 'c', status: 'APPLIED', resolvedAt: null });
+    seed({ key: 'd', status: 'PARKED', resolvedAt: new Date('2026-01-03T00:00:00Z') }); // already resolved
+
+    getMisRole.mockResolvedValue('OWNER');
+    const rows = await listParkedWrites();
+    expect(rows.map((r) => r.key)).toEqual(['b', 'a']);
+    // The screen tells PARKED from REJECTED by this field, never by guessing from the reason.
+    expect(rows.map((r) => r.status)).toEqual(['REJECTED', 'PARKED']);
+  });
+
+  it("a Super Attendance Operator sees punch kinds only — queue.review does not also hand it production.read's data (F-13's own mistake)", async () => {
+    seed({ key: 'punch-1', kind: 'attendance.punch_in' });
+    seed({ key: 'log-1', kind: 'production.log' });
+
+    getMisRole.mockResolvedValue('SUPER_ATTENDANCE_OPERATOR');
+    const rows = await listParkedWrites();
+    expect(rows.map((r) => r.key)).toEqual(['punch-1']);
+  });
+
+  it('getParkedWriteDetail applies the identical per-kind visibility rule as the list', async () => {
+    const key = seed({ kind: 'production.log' });
+    getMisRole.mockResolvedValue('SUPER_ATTENDANCE_OPERATOR');
+    await expect(getParkedWriteDetail(key)).resolves.toBeNull(); // no production.read
+
+    getMisRole.mockResolvedValue('ADMIN');
+    const row = await getParkedWriteDetail(key);
+    expect(row?.key).toBe(key);
+    expect(row?.parkReason).toBe('PHASE_SIGNED_OFF');
+  });
+
+  it('getParkedWriteDetail returns null for a key that does not exist, not an error', async () => {
+    getMisRole.mockResolvedValue('OWNER');
+    await expect(getParkedWriteDetail('no-such-key')).resolves.toBeNull();
+  });
+
+  describe('discardParkedWrite — queue.review alone, never apply', () => {
+    it('refuses a role holding neither queue.review nor an override', async () => {
+      const key = seed();
+      getMisRole.mockResolvedValue('QC');
+      await expect(discardParkedWrite(key, 'not needed')).rejects.toThrow(MisForbiddenError);
+    });
+
+    it("refuses a role that holds queue.review but not this row's own kind permission", async () => {
+      const key = seed({ kind: 'production.log' });
+      getMisRole.mockResolvedValue('SUPER_ATTENDANCE_OPERATOR'); // queue.review, but no production.read
+      await expect(discardParkedWrite(key, 'not needed')).rejects.toThrow(MisForbiddenError);
+    });
+
+    it('requires a real reason', async () => {
+      const key = seed();
+      getMisRole.mockResolvedValue('OWNER');
+      await expect(discardParkedWrite(key, '')).rejects.toThrow(/reason/i);
+      await expect(discardParkedWrite(key, 'ok')).rejects.toThrow(/reason/i); // 2 chars, too short
+    });
+
+    it('discards a PARKED row: resolved, audited, and it drops out of the list', async () => {
+      const key = seed();
+      getMisRole.mockResolvedValue('OWNER');
+      const discarded = await discardParkedWrite(key, 'duplicate of a live entry, safe to drop');
+      expect(discarded.key).toBe(key);
+
+      const row = fake.state.queued.get(key) as Record<string, unknown>;
+      expect(row.resolvedById).toBe('u1');
+      expect(row.resolutionNote).toBe('duplicate of a live entry, safe to drop');
+      expect(row.resolvedAt).toBeInstanceOf(Date);
+
+      expect(await listParkedWrites()).toEqual([]);
+    });
+
+    it('also discards a REJECTED row — it can never be applied, only discarded (§B.10.4)', async () => {
+      const key = seed({ status: 'REJECTED', parkReason: 'MALFORMED' });
+      getMisRole.mockResolvedValue('OWNER');
+      await expect(discardParkedWrite(key, 'bad payload, worker will re-enter it')).resolves.toMatchObject({ key });
+    });
+
+    it('refuses to discard a write already resolved', async () => {
+      const key = seed({ resolvedAt: new Date() });
+      getMisRole.mockResolvedValue('OWNER');
+      await expect(discardParkedWrite(key, 'already handled')).rejects.toThrow(/already resolved/i);
+    });
+
+    it('refuses a key that does not exist', async () => {
+      getMisRole.mockResolvedValue('OWNER');
+      await expect(discardParkedWrite('no-such-key', 'whatever')).rejects.toThrow(/no parked write/i);
+    });
   });
 });
