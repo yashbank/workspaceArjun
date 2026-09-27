@@ -68,7 +68,6 @@ Tests are colocated as `*.test.ts` next to the module.
 
 - **DB connection:** use the Supabase **session pooler (port 5432)**, never the transaction pooler (6543) — 6543 breaks prepared statements. Runtime reads `RUNTIME_DATABASE_URL`; Prisma CLI reads `DIRECT_URL`.
 - **Storage** defaults to local filesystem (`.local-storage/`); set `STORAGE_DRIVER=s3` for MinIO/IDrive e2. Downloads use signed, expiring URLs.
-- Never run `pnpm demo:seed` / `demo:reset` against production.
 - First admin: set `ALLOW_BOOTSTRAP=true`, create account at `/login`, then disable it. Users are invite-only (max 15 seats).
 - Treat `docs/` as the source of truth; log meaningful changes in `CHANGELOG.md`.
 
