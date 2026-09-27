@@ -44,6 +44,7 @@ describe('WAGE_RULE_KEYS', () => {
       'OFFLINE_MAX_AGE_KEY', // D15
       'OFFLINE_SKEW_KEY', // D15
       'key', // getAqlThresholds maps over AQL_RULE_KEYS — the AQL keys, D6
+      'PO_APPROVAL_THRESHOLD_KEY', // D2/D34 — a procurement policy threshold, not a wage rate
     ]);
     const reads: string[] = [];
     for (const file of listFiles('src', /\.tsx?$/).filter((f) => !/\.test\.tsx?$/.test(f) && !f.includes('/generated/') && !f.includes('/testing/'))) {

@@ -655,8 +655,23 @@ model MisPurchaseOrder {
   supplierId   String?      @map("supplier_id") @db.Uuid
   status       MisPoStatus  @default(DRAFT)
   bomRef       String?      @map("bom_ref")
+  /// Phase 21 (D1). Derived from `bomRef` (`lib/mis/po-purpose.ts`); promoted to a real column
+  /// so SQL itself can filter/group on it (D1's buffer-drift report). Purpose is NOT an axis of
+  /// the approval chain (D2) — `approvalMode` below never reads this field.
+  purpose      MisPoPurpose @default(FOR_ORDER)
   notes        String?
   createdById  String?      @map("created_by_id") @db.Uuid
+  /// Phase 21 (D2, D34). Decided ONCE, at `submitForApproval`, from the threshold rule in force
+  /// that day (or an explicit override) — snapshotted here and never recomputed, so a later
+  /// threshold change cannot reopen a PO already on its way through approval (this phase's own
+  /// acceptance check). Null until submitted.
+  approvalMode      MisPoApprovalMode? @map("approval_mode")
+  /// BOTH mode's first step (an Admin). Unused for ADMIN_ONLY/OWNER_ONLY, whose one approval is
+  /// `approvedById`/`approvedAt` below.
+  adminApprovedById String?            @map("admin_approved_by_id") @db.Uuid
+  adminApprovedAt   DateTime?          @map("admin_approved_at")
+  /// The FINAL sign-off, whichever mode got it there: Admin's for ADMIN_ONLY, Owner's for
+  /// OWNER_ONLY and for BOTH's second step.
   approvedById String?      @map("approved_by_id") @db.Uuid
   approvedAt   DateTime?    @map("approved_at")
   createdAt    DateTime     @default(now()) @map("created_at")
@@ -664,7 +679,24 @@ model MisPurchaseOrder {
   supplier     MisSupplier? @relation(fields: [supplierId], references: [id])
   items        MisPoItem[]
   grns         MisGrn[]
+  @@index([purpose])
   @@map("mis_purchase_orders")
+}
+
+enum MisPoPurpose {
+  FOR_ORDER
+  BUFFER_STOCK
+  @@map("mis_po_purpose")
+}
+
+/// D2/D34 — MIS-275's configurable approval chain. Decided from ONE value threshold (D34),
+/// snapshotted onto the PO at submission; never re-derived from a threshold that may since
+/// have changed (this phase's own acceptance check: "never re-opens a PO already approved").
+enum MisPoApprovalMode {
+  OWNER_ONLY
+  ADMIN_ONLY
+  BOTH
+  @@map("mis_po_approval_mode")
 }
 
 model MisPoItem {
