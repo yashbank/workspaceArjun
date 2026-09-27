@@ -28,8 +28,9 @@ WORKER is intentionally permission-less (Android kiosk is a separate app).
 - `mis_employees.updated_at` is NOT NULL with **no default** — always pass it on raw SQL insert.
 - Item codes use `-` not `/` (`BPP-CUS-013`), else URL encoding breaks.
 - Wage/salary figures are OWNER-only. Never write them into `before`/`after` audit payloads.
-- Verify with: `node_modules/.bin/tsc --noEmit --skipLibCheck 2>&1 | grep -v seed-demo`
-  (`prisma/seed-demo.ts` has pre-existing errors — ignore those, never "fix" them.)
+- Verify with: `node_modules/.bin/tsc --noEmit --skipLibCheck` — no grep filter needed
+  (`prisma/seed-demo.ts`/`seed-reset.ts`, the source of the old pre-existing errors, were
+  deleted in Phase 22; see §8).
 
 - **Two layouts, three widths, one component tree (D1/D3, Phase 24).** `MisShell` renders the
   desktop frame (`components/mis/desktop/desktop-shell.tsx`) and the phone frame together and
@@ -242,19 +243,20 @@ workspace reset can still clear the table.
 
 ## 8. Verification — `tsc` is the inner loop, `pnpm build` is the gate
 
-`prisma/*.ts` are tsx-run scripts, not part of the Next bundle, and `prisma/seed-demo.ts`
-carries 10 pre-existing errors from schema drift. `tsconfig.json` now excludes `prisma/**`
-(it previously excluded only `prisma/seed.ts`, which is why `next build` still failed on
-seed-demo while filtered `tsc` looked clean).
+`prisma/*.ts` are tsx-run scripts, not part of the Next bundle. `tsconfig.json` excludes
+`prisma/**` entirely.
 
-Consequence: **`node_modules/.bin/tsc --noEmit --skipLibCheck` must now be silent with no
-grep filter.** If you find yourself piping it through `grep -v`, something regressed — fix
-the cause, don't widen the filter. `pnpm build` is the real acceptance gate and must pass
-before a phase is called done.
+Consequence: **`node_modules/.bin/tsc --noEmit --skipLibCheck` must be silent with no grep
+filter.** If you find yourself piping it through `grep -v`, something regressed — fix the
+cause, don't widen the filter. `pnpm build` is the real acceptance gate and must pass before
+a phase is called done.
 
-**Tech debt:** `prisma/seed-demo.ts` (and `seed-reset.ts`) are stale against the current
-schema and now unchecked. The live DB already holds real seeded data, so these scripts are
-candidates for deletion rather than repair. Do not "fix" them inside an unrelated phase.
+**Resolved (Phase 22):** `prisma/seed-demo.ts` and `seed-reset.ts` were stale against the
+current schema (10+ errors — wrong enum values, field names that no longer exist) and
+excluded from `tsc`, so they would have errored on first run. Deleted, along with the
+`demo:seed`/`demo:reset` package.json scripts — the live DB already holds real seeded data,
+and a broken "capability" documented as working is worse than no capability. A future ticket
+can rebuild a demo-data seeder against the current schema if one is wanted again.
 
 **Update (Phase 4):** `db:migrate` is now an *alias* of `prisma migrate deploy`, identical to
 `db:deploy`. Agents kept echoing the script name `db:migrate` from package.json even when the

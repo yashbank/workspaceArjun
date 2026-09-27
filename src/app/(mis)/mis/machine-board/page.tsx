@@ -1,10 +1,12 @@
 import { MachineTimelineDesktop } from '@/components/mis/desktop/machine-timeline-desktop';
 import { MachineBoardScreen } from '@/components/mis/machine-board/machine-board-screen';
 import { factoryDateKey } from '@/lib/mis/factory-time';
+import { isOrderClosed } from '@/lib/mis/order-status';
 import { can } from '@/lib/mis/permissions';
 import { getFactoryTimezone } from '@/server/mis/business-rules';
 import { requireMisAccess } from '@/server/mis/guard';
 import { getMachineBoard, getMachineDayTimeline } from '@/server/mis/machines-board';
+import { listOrders } from '@/server/mis/orders';
 import { getMisRole } from '@/server/mis/roles';
 
 /**
@@ -22,13 +24,19 @@ export default async function MachineBoardPage() {
   const canWrite = can(role, 'production.write');
 
   const now = new Date();
-  const [machines, timeline, timeZone] = await Promise.all([
+  const [machines, timeline, timeZone, allOrders] = await Promise.all([
     getMachineBoard(),
     getMachineDayTimeline(now),
     getFactoryTimezone(),
+    canWrite ? listOrders() : Promise.resolve([]),
   ]);
+  // 22.1's picker offers open orders only — a closed order has nothing left to allocate a
+  // machine against, and `allocateMachine` would refuse its phases as inactive anyway.
+  const openOrders = allOrders
+    .filter((o) => !isOrderClosed(o.status))
+    .map((o) => ({ id: o.id, orderNumber: o.orderNumber }));
 
-  const grid = <MachineBoardScreen machines={machines} canWrite={canWrite} />;
+  const grid = <MachineBoardScreen machines={machines} canWrite={canWrite} orders={openOrders} />;
 
   // "07/09": the shift's own day when there is one, otherwise the factory's today (D22).
   const key = timeline?.shift.dateKey ?? factoryDateKey(now, timeZone);

@@ -4,8 +4,8 @@ import Link from 'next/link';
 import { Button } from '@/components/mis/kit/button';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { SlideOver } from '@/components/mis/kit/slide-over';
-import { Input, NumberInput } from '@/components/mis/kit/input';
-import { allocateMachineAction, releaseMachineAction } from '@/app/(mis)/mis/machine-board/actions';
+import { NumberInput, Select } from '@/components/mis/kit/input';
+import { allocateMachineAction, getOpenPhasesForOrderAction, releaseMachineAction } from '@/app/(mis)/mis/machine-board/actions';
 
 type Machine = {
   id: string; name: string; code: string; machineType: string | null; isActive: boolean;
@@ -14,11 +14,30 @@ type Machine = {
   currentAllocation: { id: string; jobRef: string | null; endsAt: Date; order: { orderNumber: string } | null } | null;
 };
 
-function MachineCard({ machine, canWrite }: { machine: Machine; canWrite: boolean }) {
+type OrderOption = { id: string; orderNumber: string };
+type PhaseOption = { id: string; sequence: number; processName: string };
+
+function MachineCard({ machine, canWrite, orders }: { machine: Machine; canWrite: boolean; orders: OrderOption[] }) {
   const [allocOpen, setAllocOpen] = useState(false);
-  const [jobRef, setJobRef] = useState('');
+  const [orderId, setOrderId] = useState('');
+  const [phases, setPhases] = useState<PhaseOption[]>([]);
+  const [jobPhaseId, setJobPhaseId] = useState('');
+  const [phasesPending, setPhasesPending] = useState(false);
   const [hours, setHours] = useState('8');
   const [isPending, startTransition] = useTransition();
+
+  // 22.1: picking an order loads ITS open phases — a phase belongs to one order (Appendix A),
+  // so the two selects are always cascading, never independent.
+  const onOrderChange = (id: string) => {
+    setOrderId(id);
+    setJobPhaseId('');
+    setPhases([]);
+    if (!id) return;
+    setPhasesPending(true);
+    getOpenPhasesForOrderAction(id)
+      .then(setPhases)
+      .finally(() => setPhasesPending(false));
+  };
 
   // P1: free = green, running = amber, offline = grey. Red is reserved for a breakdown, which this board has no data for.
   const dotColor = machine.status === 'FREE' ? 'bg-green-500' : machine.status === 'BUSY' ? 'bg-amber-500' : 'bg-slate-300';
@@ -53,13 +72,33 @@ function MachineCard({ machine, canWrite }: { machine: Machine; canWrite: boolea
       )}
       <SlideOver open={allocOpen} onClose={() => setAllocOpen(false)} title={`Allocate — ${machine.name}`}>
         <div className="flex flex-col gap-4 p-4">
-          <Input label="Job / Order Ref" value={jobRef} onChange={e => setJobRef(e.target.value)} />
+          <Select label="Order" value={orderId} onChange={e => onOrderChange(e.target.value)}>
+            <option value="">Select an order…</option>
+            {orders.map(o => <option key={o.id} value={o.id}>{o.orderNumber}</option>)}
+          </Select>
+          <Select
+            label="Phase"
+            value={jobPhaseId}
+            onChange={e => setJobPhaseId(e.target.value)}
+            disabled={!orderId || phasesPending}
+            hint={orderId && !phasesPending && phases.length === 0 ? 'No open phase on this order.' : undefined}
+          >
+            <option value="">{phasesPending ? 'Loading…' : 'Select a phase…'}</option>
+            {phases.map(p => <option key={p.id} value={p.id}>{p.processName}</option>)}
+          </Select>
           <NumberInput label="Duration (hours)" value={hours} onChange={e => setHours(e.target.value)} />
           <div className="flex gap-2">
             <Button onClick={() => startTransition(async () => {
               const start = new Date(); const end = new Date(start.getTime() + Number(hours) * 3600000);
-              await allocateMachineAction({ machineId: machine.id, jobRef: jobRef || undefined, startsAt: start, endsAt: end });
+              await allocateMachineAction({
+                machineId: machine.id,
+                orderId: orderId || undefined,
+                jobPhaseId: jobPhaseId || undefined,
+                startsAt: start,
+                endsAt: end,
+              });
               setAllocOpen(false);
+              setOrderId(''); setJobPhaseId(''); setPhases([]);
             })} disabled={isPending || !hours}>Confirm</Button>
             <Button variant="ghost" onClick={() => setAllocOpen(false)}>Cancel</Button>
           </div>
@@ -69,7 +108,7 @@ function MachineCard({ machine, canWrite }: { machine: Machine; canWrite: boolea
   );
 }
 
-export function MachineBoardScreen({ machines, canWrite }: { machines: Machine[]; canWrite: boolean }) {
+export function MachineBoardScreen({ machines, canWrite, orders }: { machines: Machine[]; canWrite: boolean; orders: OrderOption[] }) {
   const [search, setSearch] = useState('');
   const filtered = search.trim()
     ? machines.filter(m => m.name.toLowerCase().includes(search.toLowerCase()) || m.code.toLowerCase().includes(search.toLowerCase()) || (m.department?.name ?? '').toLowerCase().includes(search.toLowerCase()) || (m.machineType ?? '').toLowerCase().includes(search.toLowerCase()))
@@ -90,7 +129,7 @@ export function MachineBoardScreen({ machines, canWrite }: { machines: Machine[]
         <input type="search" placeholder="Search machines…" value={search} onChange={e => setSearch(e.target.value)} className="w-full max-w-sm min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500" />
       </div>
       <div className="grid grid-cols-1 min-[560px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-        {filtered.map(m => <MachineCard key={m.id} machine={m} canWrite={canWrite} />)}
+        {filtered.map(m => <MachineCard key={m.id} machine={m} canWrite={canWrite} orders={orders} />)}
       </div>
       {filtered.length === 0 && <div className="rounded-xl border border-dashed border-slate-300 py-12 text-center text-sm text-slate-500">{search ? 'No machines match your search.' : 'No machines configured yet.'}</div>}
     </div>
