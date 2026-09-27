@@ -65,6 +65,10 @@ export const MIS_ACTIONS = [
   // kind, by that kind's own read permission (production.read / attendance.read)
   // — one action gating three kinds of data was exactly F-13's mistake.
   'queue.review',
+  // The Approvals inbox (F-13 fix): previously gated by the broad orders.read,
+  // which let QC/Supervisor see it as a side effect of holding order context.
+  // Owner and Admin only, per the sign-off rule this screen exists to enforce.
+  'approvals.read',
 ] as const;
 
 export type MisAction = (typeof MIS_ACTIONS)[number];
@@ -110,6 +114,7 @@ const MATRIX: Record<MisRoleName, readonly MisAction[]> = {
     'phase.write',
     'kiosk.manage',
     'queue.review',
+    'approvals.read',
   ],
 
   SUPERVISOR: [

@@ -24,8 +24,8 @@ const ALL = [
 const EXPECTED: Record<MisRoleName, string[]> = {
   OWNER: ALL,
   ADMIN: ALL.filter((id) => id !== 'payroll'), // Payroll is a wage screen: Owner only (F-01, D24)
-  SUPERVISOR: ['masters', 'orders', 'production', 'quality', 'attendance', 'machine-board', 'reports', 'employees', 'grn', 'inventory', 'customers', 'documents', 'bom', 'traceability', 'approvals', 'store'],
-  QC: ['masters', 'orders', 'production', 'quality', 'machine-board', 'reports', 'customers', 'documents', 'bom', 'traceability', 'approvals'],
+  SUPERVISOR: ['masters', 'orders', 'production', 'quality', 'attendance', 'machine-board', 'reports', 'employees', 'grn', 'inventory', 'customers', 'documents', 'bom', 'traceability', 'store'],
+  QC: ['masters', 'orders', 'production', 'quality', 'machine-board', 'reports', 'customers', 'documents', 'bom', 'traceability'],
   ATTENDANCE_OPERATOR: ['attendance', 'employees', 'kiosk'],
   SUPER_ATTENDANCE_OPERATOR: ['attendance', 'reports', 'employees', 'queue', 'kiosk'],
   STORE_GUY: ['po', 'grn', 'inventory', 'suppliers', 'store'],
