@@ -2,10 +2,8 @@ import { test, expect } from '@playwright/test';
 
 import { storageStatePath } from './roles';
 
-// Both are "access correctly refused" outcomes — see permission-boundaries.spec.ts's header
-// comment for why the generic copy sometimes shows instead of the calm one (a real, pre-existing,
-// non-security gap reported separately).
-const ACCESS_DENIED = /You do not have access to this|Something went wrong/;
+// MisForbiddenError.digest (src/server/mis/auth.ts) makes this the reliable copy in production.
+const ACCESS_DENIED = 'You do not have access to this';
 
 test.describe('STORE_GUY — critical pages must not crash (bug regressions)', () => {
   test.use({ storageState: storageStatePath('STORE_GUY') });
