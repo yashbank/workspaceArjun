@@ -81,15 +81,25 @@ export function getRuntimeSslRejectUnauthorized(): false | null {
  * saved by a wider pool, and F-24's real fix — one query for the whole set — is what actually
  * matters and stays true at any pool width (store-pool.test.ts still enforces it).
  *
- * `max: 4` was tried next, reasoned against Postgres's own `max_connections` (60). That reasoning
- * was wrong: production connects through Supabase's session pooler (Supavisor, port 5432, per
- * CLAUDE.md), which has its OWN much smaller hard cap — confirmed live in `supavisor_logs`,
+ * `max: 4`, then `max: 2` (2026-09-29 incident) were both still narrow-pool-width band-aids on
+ * top of the actual problem: production ran through Supabase's SESSION-mode pooler (port 5432),
+ * which has a hard 15-CLIENT cap for the whole project, not a per-app-instance one — a ceiling
+ * that a serverless app with many independent warm function instances (each with its own pool)
+ * blows through regardless of how narrow any single pool is. Confirmed live in `supavisor_logs`:
  * `(EMAXCONNSESSION) max clients reached in session mode - max clients are limited to pool_size:
- * 15`, 1000+ occurrences over several hours on 2026-09-28, breaking login and kiosk punches
- * app-wide (any request doing 2+ sequential queries could lose the race for a pooler slot).
- * `max: 2` halves each instance's worst-case share of that 15-client ceiling. If Promise.all
- * concurrency needs restoring later, it has to come with a real fix for *why* connections
- * accumulate under Fluid Compute's warm-instance reuse instead of just raising this number again.
+ * 15`, 1000+ occurrences, breaking login and kiosk punches app-wide.
+ *
+ * The real fix: `RUNTIME_DATABASE_URL` now points at the TRANSACTION-mode pooler (port 6543),
+ * built for exactly this "many small serverless clients" shape — it multiplexes far more client
+ * connections onto a small backend pool instead of dedicating one backend per client. This is
+ * only safe because nothing here ever names a prepared statement — `PrismaPg` is constructed
+ * with no `pgOptions.statementNameGenerator` in `index.ts`, so every query is an unnamed/ephemeral
+ * prepared statement, which is exactly what transaction-mode pooling requires (a NAMED statement
+ * cached across calls would break the moment the pooler hands out a different backend connection).
+ * Migrations still use `DIRECT_URL`/session mode via `prisma.config.ts`, untouched by this.
+ *
+ * `max` can stay meaningfully wider than the session-mode band-aids now that the pooler itself
+ * is the concurrency layer, not this pool.
  */
 export function createPoolConfig(connectionString: string): PoolConfig {
   const normalizedUrl = normalizeDatabaseUrlForPg(connectionString);
@@ -98,7 +108,7 @@ export function createPoolConfig(connectionString: string): PoolConfig {
   return {
     connectionString: normalizedUrl,
     ssl,
-    max: 2,
+    max: 10,
     idleTimeoutMillis: 10_000,
     connectionTimeoutMillis: 10_000,
   };
