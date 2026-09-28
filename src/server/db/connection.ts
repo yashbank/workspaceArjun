@@ -81,14 +81,15 @@ export function getRuntimeSslRejectUnauthorized(): false | null {
  * saved by a wider pool, and F-24's real fix — one query for the whole set — is what actually
  * matters and stays true at any pool width (store-pool.test.ts still enforces it).
  *
- * But a narrow-of-1 pool also means every `Promise.all([...])` of independent, already-batched
- * queries (a dashboard fetching 5-7 unrelated things at once, `masters` counting each master
- * table) serializes anyway — measured live: /mis 13.6s, /mis/masters 10.2s. `max: 4` lets that
- * existing Promise.all concurrency actually run concurrently. Checked safe before changing:
- * this project's Postgres `max_connections` is 60, with ~15 permanently held by Supabase's own
- * infra (PostgREST, Supavisor, pg_cron, postgres_exporter) — none of it ours. At ~10 factory
- * users this realistically never has more than a handful of warm Vercel instances at once, so
- * 4 × instances stays well under the ~45 headroom. Revisit if usage grows enough to need more.
+ * `max: 4` was tried next, reasoned against Postgres's own `max_connections` (60). That reasoning
+ * was wrong: production connects through Supabase's session pooler (Supavisor, port 5432, per
+ * CLAUDE.md), which has its OWN much smaller hard cap — confirmed live in `supavisor_logs`,
+ * `(EMAXCONNSESSION) max clients reached in session mode - max clients are limited to pool_size:
+ * 15`, 1000+ occurrences over several hours on 2026-09-28, breaking login and kiosk punches
+ * app-wide (any request doing 2+ sequential queries could lose the race for a pooler slot).
+ * `max: 2` halves each instance's worst-case share of that 15-client ceiling. If Promise.all
+ * concurrency needs restoring later, it has to come with a real fix for *why* connections
+ * accumulate under Fluid Compute's warm-instance reuse instead of just raising this number again.
  */
 export function createPoolConfig(connectionString: string): PoolConfig {
   const normalizedUrl = normalizeDatabaseUrlForPg(connectionString);
@@ -97,7 +98,7 @@ export function createPoolConfig(connectionString: string): PoolConfig {
   return {
     connectionString: normalizedUrl,
     ssl,
-    max: 4,
+    max: 2,
     idleTimeoutMillis: 10_000,
     connectionTimeoutMillis: 10_000,
   };
