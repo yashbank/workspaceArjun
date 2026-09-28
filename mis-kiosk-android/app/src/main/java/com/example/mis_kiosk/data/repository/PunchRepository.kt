@@ -27,6 +27,8 @@ sealed interface PunchAttemptResult {
     data class RetryNeeded(val detail: String?) : PunchAttemptResult
 }
 
+private const val PUNCH_LOG_TAG = "PunchRepository"
+
 class PunchRepository(
     private val context: Context,
     private val api: KioskApi,
@@ -106,10 +108,16 @@ class PunchRepository(
      * trigger (regained connectivity, app foreground, periodic nudge) resumes from the top.
      */
     suspend fun flushQueue() {
-        for (entry in punchQueueDao.pendingOrdered()) {
+        val pending = punchQueueDao.pendingOrdered()
+        android.util.Log.i(PUNCH_LOG_TAG, "FLUSH start, ${pending.size} pending")
+        for (entry in pending) {
             val result = attempt(entry.key, entry.employeeId, entry.badgeCode, entry.shiftId, entry.kind, entry.clientRecordedAt)
-            if (result is PunchAttemptResult.RetryNeeded) break
+            if (result is PunchAttemptResult.RetryNeeded) {
+                android.util.Log.i(PUNCH_LOG_TAG, "FLUSH stopped early: ${entry.key.takeLast(8)} still needs retry")
+                break
+            }
         }
+        android.util.Log.i(PUNCH_LOG_TAG, "FLUSH done")
     }
 
     private suspend fun attempt(
@@ -130,7 +138,23 @@ class PunchRepository(
             clientRecordedAt = clientRecordedAtIso,
             health = health,
         )
-        return when (val response = api.punch(device.token, body)) {
+        val startMillis = System.currentTimeMillis()
+        val shortKey = key.takeLast(8)
+        android.util.Log.i(PUNCH_LOG_TAG, "SEND key=…$shortKey employee=$employeeId kind=$kind")
+        val result = attemptResult(api.punch(device.token, body), key, employeeId)
+        android.util.Log.i(
+            PUNCH_LOG_TAG,
+            "DONE key=…$shortKey employee=$employeeId kind=$kind result=${result::class.simpleName} in ${System.currentTimeMillis() - startMillis}ms",
+        )
+        return result
+    }
+
+    private suspend fun attemptResult(
+        response: ApiResult<com.example.mis_kiosk.data.network.dto.PunchResponse>,
+        key: String,
+        employeeId: String,
+    ): PunchAttemptResult {
+        return when (response) {
             is ApiResult.Success -> when (val outcome = response.body.outcome) {
                 "APPLIED", "DUPLICATE" -> {
                     val punchResult = response.body.result

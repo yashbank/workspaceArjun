@@ -7,6 +7,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -72,7 +73,9 @@ import java.util.Locale
 import kotlinx.coroutines.delay
 
 private const val SUCCESS_AUTO_DISMISS_MS = 2000L
-private const val RETRY_AUTO_REPLAY_MS = 30_000L
+// Was 30s, matched to a slow backend. Now that /punch measures ~1s live, an 8s replay clears
+// a real transient blip almost as fast as a person could react to the on-screen prompt anyway.
+private const val RETRY_AUTO_REPLAY_MS = 8_000L
 
 @Composable
 fun PunchScreen(
@@ -622,7 +625,14 @@ private fun SubmissionOverlay(
     onDismiss: () -> Unit,
 ) {
     Box(
-        modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f)),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.55f))
+            // A plain .background() draws over the screen behind it but does not intercept
+            // touches — without this, a tap outside the centered card during e.g. InProgress
+            // reaches IdleContent/ManualEntryContent underneath, letting a second punch start
+            // while the first is still in flight and racing the shared submission state.
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {},
         contentAlignment = Alignment.Center,
     ) {
         Surface(

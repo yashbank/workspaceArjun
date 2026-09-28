@@ -260,6 +260,13 @@ class PunchViewModel @JvmOverloads constructor(
     // ---- Submission ---------------------------------------------------------------------
 
     private fun beginAttempt(employee: EmployeeEntity, kind: String) {
+        // Defense-in-depth: the overlay is now fixed to block touches to the screen behind it
+        // (the actual way a second attempt could start mid-flight), but this guard means a
+        // second entry point never can, however it's reached.
+        if (_submission.value is PunchSubmission.InProgress) {
+            android.util.Log.w("PunchViewModel", "beginAttempt ignored: a punch is already in flight")
+            return
+        }
         _mode.value = PunchMode.Idle
         _submission.value = PunchSubmission.InProgress
         val attempt = PendingAttempt(
@@ -287,6 +294,7 @@ class PunchViewModel @JvmOverloads constructor(
     }
 
     fun retry() {
+        if (_submission.value is PunchSubmission.InProgress) return
         val attempt = pending ?: return
         _submission.value = PunchSubmission.InProgress
         viewModelScope.launch {

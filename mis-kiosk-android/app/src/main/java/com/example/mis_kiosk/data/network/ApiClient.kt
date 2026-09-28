@@ -18,15 +18,15 @@ object ApiClient {
         // BASIC only: it never logs headers or bodies, so a device token or poll
         // secret can never end up in logcat even in a debug build (HANDOVER.md §6).
         val logging = HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC }
-        // Measured live against this backend's actual Vercel deployment: a cold serverless
-        // function can take 5-8s to respond, so an 8s timeout (the shipped web kiosk's number)
-        // would spuriously fail a cold-start punch and push it to the offline queue for no
-        // reason. 12s gives real cold starts headroom while still failing well short of
-        // leaving someone standing at a turnstile indefinitely.
+        // 12s was set to cover a measured 5-8s Vercel cold start (US-East compute hitting a
+        // Singapore DB). That's now fixed backend-side (region pinned to sin1 + Fluid Compute)
+        // — /punch measures ~1s live. 6s keeps ~6x headroom over that while failing a genuine
+        // outage much faster than 12s did, so the tablet falls back to the offline queue
+        // promptly instead of leaving someone waiting at a turnstile.
         OkHttpClient.Builder()
             .addInterceptor(logging)
-            .connectTimeout(12, TimeUnit.SECONDS)
-            .readTimeout(12, TimeUnit.SECONDS)
+            .connectTimeout(6, TimeUnit.SECONDS)
+            .readTimeout(6, TimeUnit.SECONDS)
             .build()
     }
 }
