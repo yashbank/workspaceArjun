@@ -41,11 +41,6 @@ interface KioskScreenProps {
 /** Older than this and the list is called out as old, online or not (D16). */
 const STALE_AFTER_MS = 5 * 60 * 1000;
 
-/** How often the screen polls for punches recorded elsewhere (this factory's Android kiosks, another tab). */
-const LIVE_POLL_MS = 1500;
-
-type LiveRow = { employeeId: string; clockIn: string | null; clockOut: string | null; status: string };
-
 const en = createTranslator('en');
 const hi = createTranslator('hi');
 
@@ -72,7 +67,6 @@ export function KioskScreen({ employees, shifts, date, userId, timeZone, loadedA
   const [fixing, setFixing] = useState<QueuedItem | null>(null);
   const [fixSearch, setFixSearch] = useState('');
   const [isPending, startTransition] = useTransition();
-  const [live, setLive] = useState<Record<string, LiveRow>>({});
 
   // Time is read AFTER mount: rendering it during SSR would differ from the client's first paint.
   const [now, setNow] = useState<number | null>(null);
@@ -86,49 +80,11 @@ export function KioskScreen({ employees, shifts, date, userId, timeZone, loadedA
     };
   }, []);
 
-  // Live in/out: poll the day's register so a punch made anywhere (an Android kiosk
-  // tablet, another open tab) shows up here without a refresh. Skipped while offline —
-  // the banner above already says so, and a failing fetch would just be noise.
-  useEffect(() => {
-    if (!online) return;
-    let cancelled = false;
-    async function poll() {
-      try {
-        const res = await fetch(`/api/mis/attendance/live?date=${date}`, { cache: 'no-store' });
-        if (!res.ok || cancelled) return;
-        const data = (await res.json()) as { attendance: LiveRow[] };
-        if (cancelled) return;
-        setLive(Object.fromEntries(data.attendance.map((row) => [row.employeeId, row])));
-      } catch {
-        // A dropped poll just tries again next tick — never surfaced as an error.
-      }
-    }
-    poll();
-    const id = setInterval(poll, LIVE_POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, [date, online]);
-
-  // Server-loaded employees, patched with whatever the live poll knows — local (this
-  // screen's own in-flight punch) still wins in `lastDirection` below either way.
-  const liveEmployees = useMemo(() => {
-    if (Object.keys(live).length === 0) return employees;
-    return employees.map((e) => {
-      const row = live[e.id];
-      if (!row) return e;
-      return {
-        ...e,
-        attendance: {
-          id: e.attendance?.id ?? e.id,
-          clockIn: row.clockIn ? new Date(row.clockIn) : null,
-          clockOut: row.clockOut ? new Date(row.clockOut) : null,
-          status: row.status,
-        },
-      };
-    });
-  }, [employees, live]);
+  // Live-poll was pulled (2026-09-29): even at 1.5s it added enough sustained load to
+  // help exhaust Supabase's session-pooler cap (15 clients), which broke login and
+  // kiosk punches app-wide. Reintroduce only with a much longer interval and real
+  // headroom confirmed first — see docs/ (connection.ts's own comment has the story).
+  const liveEmployees = employees;
 
   const clock = now === null ? '' : formatFactoryTime(new Date(now), timeZone);
   const stale = now !== null && now - new Date(loadedAt).getTime() > STALE_AFTER_MS;
