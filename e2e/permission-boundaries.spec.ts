@@ -8,16 +8,13 @@ import { ROLES, EXPECTED_NAV, hrefFor, storageStatePath, type MisRoleName } from
  * security boundary (mis-shell's own convention, see checkPermission's docstring); this proves
  * the server gate actually refuses the page too, for the screens where a leak would matter most.
  *
- * The (mis) error boundary's own docstring flags a real, pre-existing gap: Next sanitises a
- * thrown error's `name` in production, so `error.tsx` cannot always tell "forbidden" apart from
- * a genuine crash and falls back to the generic "Something went wrong" copy — a page's own
- * try/catch + <Forbidden/> (used by documents/traceability/rules/master-data already) is the
- * only reliable route to the calm copy. Found live via this suite (payroll/settings/audit/queue/
- * approvals all hit the unreliable path), reported separately — not a security bug (access is
- * still correctly refused, no data renders either way) so this assertion accepts both screens and
- * only requires that no real data table rendered underneath.
+ * `MisForbiddenError.digest` (src/server/mis/auth.ts) is what makes the calm copy reliable in
+ * production — Next strips the subclass/`name` crossing the Server Component boundary, but
+ * carries `digest` across untouched, so the boundary keys off that. Found live via an earlier
+ * run of this exact suite (every one of these screens fell back to "Something went wrong"
+ * before that fix); this now requires the calm copy specifically, not either.
  */
-const ACCESS_DENIED = /You do not have access to this|Something went wrong/;
+const ACCESS_DENIED = 'You do not have access to this';
 // /mis/queue (Phase 23, D30) deliberately answers with a plain 404 instead of a forbidden
 // message — "absent, not refused on open" — so a role without queue.review never learns the
 // screen exists at all. That is a stricter, intentional design choice, not the same gap as the
