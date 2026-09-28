@@ -3,6 +3,7 @@ import { requireMisAccess } from '@/server/mis/guard';
 import { PrintButton } from '@/components/mis/print/print-button';
 import { getEmployee } from '@/server/mis/employee';
 import { notFound } from 'next/navigation';
+import QRCode from 'qrcode';
 
 export default async function WorkerBadgePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -13,8 +14,11 @@ export default async function WorkerBadgePage({ params }: { params: Promise<{ id
 
   const emp = employee as any;
 
-  // Simple QR code as SVG data (encode the employee ID as a URL)
-  const qrData = `/mis/kiosk?emp=${emp.employeeCode}`;
+  // The kiosk scanner (CameraX + ML Kit) matches the raw decoded string against
+  // `badgeCode` — the same `employeeCode` value the API exposes as `badgeCode`
+  // (kiosk-device.ts). The QR must encode exactly this, nothing else: not JSON,
+  // not a URL (see docs/ANDROID_KIOSK_BACKEND_ALIGNMENT.md §8).
+  const qrSvg = await QRCode.toString(emp.employeeCode, { type: 'svg', margin: 0 });
 
   return (
     <div className="p-8 max-w-[794px] mx-auto font-sans">
@@ -28,19 +32,11 @@ export default async function WorkerBadgePage({ params }: { params: Promise<{ id
 
       {/* Badge — credit card size 85.6mm × 54mm scaled to screen */}
       <div className="w-[342px] h-[216px] border-2 border-gray-800 rounded-xl overflow-hidden bg-gradient-to-br from-blue-700 to-blue-900 text-white flex p-4 gap-4 shadow-2xl">
-        {/* Left: QR code placeholder */}
-        <div className="w-20 h-20 bg-white rounded-lg flex items-center justify-center flex-shrink-0 self-center">
-          {/* SVG QR placeholder — real implementation would use a QR library */}
-          <svg width="64" height="64" viewBox="0 0 64 64" className="text-gray-900">
-            <text x="32" y="38" textAnchor="middle" fontSize="8" fill="currentColor" fontFamily="monospace">{emp.employeeCode}</text>
-            <rect x="4" y="4" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="3"/>
-            <rect x="8" y="8" width="10" height="10" fill="currentColor"/>
-            <rect x="42" y="4" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="3"/>
-            <rect x="46" y="8" width="10" height="10" fill="currentColor"/>
-            <rect x="4" y="42" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="3"/>
-            <rect x="8" y="46" width="10" height="10" fill="currentColor"/>
-          </svg>
-        </div>
+        {/* Left: real, scannable QR code encoding the plain badgeCode */}
+        <div
+          className="w-20 h-20 bg-white rounded-lg flex items-center justify-center flex-shrink-0 self-center [&_svg]:w-16 [&_svg]:h-16"
+          dangerouslySetInnerHTML={{ __html: qrSvg }}
+        />
 
         {/* Right: Employee info */}
         <div className="flex flex-col justify-center flex-1 min-w-0">
