@@ -41,6 +41,11 @@ interface KioskScreenProps {
 /** Older than this and the list is called out as old, online or not (D16). */
 const STALE_AFTER_MS = 5 * 60 * 1000;
 
+/** How often the screen polls for punches recorded elsewhere (this factory's Android kiosks, another tab). */
+const LIVE_POLL_MS = 1500;
+
+type LiveRow = { employeeId: string; clockIn: string | null; clockOut: string | null; status: string };
+
 const en = createTranslator('en');
 const hi = createTranslator('hi');
 
@@ -67,6 +72,7 @@ export function KioskScreen({ employees, shifts, date, userId, timeZone, loadedA
   const [fixing, setFixing] = useState<QueuedItem | null>(null);
   const [fixSearch, setFixSearch] = useState('');
   const [isPending, startTransition] = useTransition();
+  const [live, setLive] = useState<Record<string, LiveRow>>({});
 
   // Time is read AFTER mount: rendering it during SSR would differ from the client's first paint.
   const [now, setNow] = useState<number | null>(null);
@@ -80,6 +86,50 @@ export function KioskScreen({ employees, shifts, date, userId, timeZone, loadedA
     };
   }, []);
 
+  // Live in/out: poll the day's register so a punch made anywhere (an Android kiosk
+  // tablet, another open tab) shows up here without a refresh. Skipped while offline —
+  // the banner above already says so, and a failing fetch would just be noise.
+  useEffect(() => {
+    if (!online) return;
+    let cancelled = false;
+    async function poll() {
+      try {
+        const res = await fetch(`/api/mis/attendance/live?date=${date}`, { cache: 'no-store' });
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as { attendance: LiveRow[] };
+        if (cancelled) return;
+        setLive(Object.fromEntries(data.attendance.map((row) => [row.employeeId, row])));
+      } catch {
+        // A dropped poll just tries again next tick — never surfaced as an error.
+      }
+    }
+    poll();
+    const id = setInterval(poll, LIVE_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [date, online]);
+
+  // Server-loaded employees, patched with whatever the live poll knows — local (this
+  // screen's own in-flight punch) still wins in `lastDirection` below either way.
+  const liveEmployees = useMemo(() => {
+    if (Object.keys(live).length === 0) return employees;
+    return employees.map((e) => {
+      const row = live[e.id];
+      if (!row) return e;
+      return {
+        ...e,
+        attendance: {
+          id: e.attendance?.id ?? e.id,
+          clockIn: row.clockIn ? new Date(row.clockIn) : null,
+          clockOut: row.clockOut ? new Date(row.clockOut) : null,
+          status: row.status,
+        },
+      };
+    });
+  }, [employees, live]);
+
   const clock = now === null ? '' : formatFactoryTime(new Date(now), timeZone);
   const stale = now !== null && now - new Date(loadedAt).getTime() > STALE_AFTER_MS;
   const summary = useMemo(() => {
@@ -90,13 +140,13 @@ export function KioskScreen({ employees, shifts, date, userId, timeZone, loadedA
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
-    return employees.filter((e) => e.name.toLowerCase().includes(q) || e.employeeCode.toLowerCase().includes(q));
-  }, [employees, search]);
+    return liveEmployees.filter((e) => e.name.toLowerCase().includes(q) || e.employeeCode.toLowerCase().includes(q));
+  }, [liveEmployees, search]);
 
   const fixMatches = useMemo(() => {
     const q = fixSearch.toLowerCase();
-    return employees.filter((e) => e.name.toLowerCase().includes(q) || e.employeeCode.toLowerCase().includes(q)).slice(0, 8);
-  }, [employees, fixSearch]);
+    return liveEmployees.filter((e) => e.name.toLowerCase().includes(q) || e.employeeCode.toLowerCase().includes(q)).slice(0, 8);
+  }, [liveEmployees, fixSearch]);
 
   const timeOf = (iso: string) => formatFactoryTime(new Date(iso), timeZone);
   const dirWord = (d: Direction) => (d === 'IN' ? t('kiosk.in') : t('kiosk.out'));
@@ -155,9 +205,9 @@ export function KioskScreen({ employees, shifts, date, userId, timeZone, loadedA
   const heldCount = summary.waiting + summary.failed.length;
   const offlineOrOld = !online || stale;
   const counts = {
-    total: employees.length,
-    inNow: employees.filter((e) => lastDirection(e, local)?.direction === 'IN').length,
-    done: employees.filter((e) => lastDirection(e, local)?.direction === 'OUT').length,
+    total: liveEmployees.length,
+    inNow: liveEmployees.filter((e) => lastDirection(e, local)?.direction === 'IN').length,
+    done: liveEmployees.filter((e) => lastDirection(e, local)?.direction === 'OUT').length,
   };
 
   return (
@@ -316,7 +366,7 @@ export function KioskScreen({ employees, shifts, date, userId, timeZone, loadedA
             })}
           </div>
           <div className="border-t border-gray-100 px-4 py-2 text-xs text-gray-400">
-            {filtered.length} / {employees.length}
+            {filtered.length} / {liveEmployees.length}
           </div>
         </div>
 

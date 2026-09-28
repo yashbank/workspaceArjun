@@ -32,6 +32,21 @@ export async function listAttendance(date?: string) {
   });
 }
 
+/**
+ * The kiosk screen's live poll: same register and gate as `listAttendance`, but the
+ * leanest shape possible — no employee/shift join — since this is fetched every
+ * ~1.5s while the screen is open, so in/out state updates without a page refresh
+ * whichever device (this screen or an Android kiosk tablet) recorded the punch.
+ */
+export async function listAttendanceLive(date?: string) {
+  await requirePermission('attendance.read');
+  const d = date ?? (await today());
+  return db.misAttendance.findMany({
+    where: { date: new Date(d) },
+    select: { employeeId: true, clockIn: true, clockOut: true, status: true },
+  });
+}
+
 export async function getMonthlyAttendance(employeeId: string, year: number, month: number) {
   await requirePermission('attendance.read');
   const start = new Date(year, month - 1, 1);
