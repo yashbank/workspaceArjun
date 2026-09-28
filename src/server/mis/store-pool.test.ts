@@ -42,8 +42,8 @@ beforeEach(() => {
   getMisRole.mockResolvedValue('OWNER');
 });
 
-it('the runtime pool is narrow (2026-09-29: 2, was 4, was 1) — still far too narrow for one query per item to work', () => {
-  expect(createPoolConfig('postgresql://u:p@db.example.com:5432/x').max).toBe(2);
+it('the runtime pool is narrow (2026-09-29: 10, via transaction-mode pooling, was 2, was 4, was 1) — still far too narrow for one query per item to work', () => {
+  expect(createPoolConfig('postgresql://u:p@db.example.com:5432/x').max).toBe(10);
 });
 
 describe.each([
