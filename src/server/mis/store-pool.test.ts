@@ -2,12 +2,13 @@
  * Phase 24F · F-24 — the store and inventory pages did not open.
  *
  * Found in the browser: /mis/store, /mis/store/stock, /mis/store/dashboard, /mis/store/count, /mis/store/transactions,
- * /mis/store/ledger/[id] and /mis/inventory all died with "timeout exceeded when trying to connect". The runtime pool is
- * ONE connection wide on purpose (`createPoolConfig`, `max: 1`), and each page asked for every item's balance with one
- * query per item — 176 on the live data — so the queries queued behind each other for more than the 10 s connect timeout.
+ * /mis/store/ledger/[id] and /mis/inventory all died with "timeout exceeded when trying to connect". The runtime pool
+ * was narrow on purpose (`createPoolConfig`), and each page asked for every item's balance with one query per item —
+ * 176 on the live data — so the queries queued behind each other for more than the 10 s connect timeout.
  *
- * The fix is one query for all items. These tests fail without it: they count queries against a fake database whose
- * connection would be exhausted by an N+1, and they check the balances are still the right ones.
+ * The fix is one query for all items, and it holds at ANY pool width — a page doing one query per row cannot be saved
+ * by a wider pool, only by not doing that. These tests fail without it: they count queries against a fake database
+ * whose connection would be exhausted by an N+1, and they check the balances are still the right ones.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -41,8 +42,8 @@ beforeEach(() => {
   getMisRole.mockResolvedValue('OWNER');
 });
 
-it('the runtime pool is one connection wide — which is why one query per item cannot work', () => {
-  expect(createPoolConfig('postgresql://u:p@db.example.com:5432/x').max).toBe(1);
+it('the runtime pool is narrow (Phase 29: 4, was 1) — still far too narrow for one query per item to work', () => {
+  expect(createPoolConfig('postgresql://u:p@db.example.com:5432/x').max).toBe(4);
 });
 
 describe.each([

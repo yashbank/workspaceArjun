@@ -448,7 +448,7 @@ Error: timeout exceeded when trying to connect
     at getStockBalance …
 ```
 
-**Cause.** The runtime pool is deliberately ONE connection (`createPoolConfig`, `max: 1`, `connectionTimeoutMillis: 10000`). A page that runs one query per row (`items.map(async (i) => db…findFirst(i))` over 176 items) puts them all in one queue, and the last one waits longer than the connect timeout. It is not a connection problem and raising `max` is not the fix.
+**Cause.** The runtime pool is deliberately narrow (`createPoolConfig`, `max: 4` as of Phase 29 — was `1`, `connectionTimeoutMillis: 10000`). A page that runs one query per row (`items.map(async (i) => db…findFirst(i))` over 176 items) puts them all in one queue regardless of pool width, and the last one waits longer than the connect timeout. It is not a connection problem and raising `max` is not the fix for THIS — Phase 29 raised it modestly (1→4, checked safe against this project's actual `max_connections` and non-app connection usage) to stop unrelated, already-batched, already-`Promise.all`'d queries from needlessly serializing — it does not and must not paper over a per-row query loop.
 
 **Fix.** One query for the whole set — `SELECT DISTINCT ON (item_id) …` (see `getStockBalances` in `server/mis/store.ts`), a `findMany` with `in`, or a `groupBy` — then look each row up in a `Map`. `store-pool.test.ts` shows how to test it: count the queries against a fake database. Found by opening `/mis/store` in a browser (F-24); no unit test had caught it because the tests' fake database has no pool.
 
