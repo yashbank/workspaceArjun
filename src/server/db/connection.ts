@@ -75,6 +75,21 @@ export function getRuntimeSslRejectUnauthorized(): false | null {
   return usesSupabaseSsl(getRuntimeDatabaseUrl()) ? false : null;
 }
 
+/**
+ * Phase 29 (perf) — was `max: 1` ("deliberately ONE connection wide", Phase 24F/F-24). That
+ * choice was correct for the bug it fixed: a page doing one query per row (176 items) cannot be
+ * saved by a wider pool, and F-24's real fix — one query for the whole set — is what actually
+ * matters and stays true at any pool width (store-pool.test.ts still enforces it).
+ *
+ * But a narrow-of-1 pool also means every `Promise.all([...])` of independent, already-batched
+ * queries (a dashboard fetching 5-7 unrelated things at once, `masters` counting each master
+ * table) serializes anyway — measured live: /mis 13.6s, /mis/masters 10.2s. `max: 4` lets that
+ * existing Promise.all concurrency actually run concurrently. Checked safe before changing:
+ * this project's Postgres `max_connections` is 60, with ~15 permanently held by Supabase's own
+ * infra (PostgREST, Supavisor, pg_cron, postgres_exporter) — none of it ours. At ~10 factory
+ * users this realistically never has more than a handful of warm Vercel instances at once, so
+ * 4 × instances stays well under the ~45 headroom. Revisit if usage grows enough to need more.
+ */
 export function createPoolConfig(connectionString: string): PoolConfig {
   const normalizedUrl = normalizeDatabaseUrlForPg(connectionString);
   const ssl = usesSupabaseSsl(normalizedUrl) ? RUNTIME_PG_SSL : undefined;
@@ -82,7 +97,7 @@ export function createPoolConfig(connectionString: string): PoolConfig {
   return {
     connectionString: normalizedUrl,
     ssl,
-    max: 1,
+    max: 4,
     idleTimeoutMillis: 10_000,
     connectionTimeoutMillis: 10_000,
   };
