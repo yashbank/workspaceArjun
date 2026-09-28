@@ -69,7 +69,14 @@ export default async function DashboardLayout({ children }: { children: React.Re
           return null;
         })
       : Promise.resolve(null),
-    userHasDuplicateDisplayName(profile.id),
+    // Same fail-open policy as the observation call above: a UX nudge (asking
+    // someone to pick a unique display name) must never crash the whole layout.
+    userHasDuplicateDisplayName(profile.id).catch((error) => {
+      if (process.env.NODE_ENV === 'development') {
+        console.error('[profile] duplicate-name check failed:', error);
+      }
+      return false;
+    }),
   ]);
 
   let accessBlocked = false;
