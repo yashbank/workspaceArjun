@@ -12,12 +12,11 @@ import { useT } from '@/components/mis/shell/locale-provider';
  * When the server says no, the user sees something calm and readable instead of
  * a stack trace or a blank screen.
  *
- * Caveat worth knowing: Next sanitises server error messages in production, so
- * `error.name` is only reliable in development. Rather than guess, anything we
- * cannot positively identify as a permission refusal is shown as a general
- * error — better a generic message than a wrong one. Server modules that want a
- * guaranteed forbidden screen should render <Forbidden/> directly rather than
- * relying on the throw reaching here intact.
+ * Caveat worth knowing: Next sanitises server error messages AND the subclass name in
+ * production, so `error.name` alone is only reliable in development — `MisForbiddenError` sets
+ * `digest` to a fixed fingerprint specifically because `digest` is the one property Next carries
+ * across untouched, and that is what this boundary actually keys off. Server modules that want a
+ * guaranteed forbidden screen can still render <Forbidden/> directly instead of throwing.
  */
 export default function MisError({
   error,
@@ -27,7 +26,7 @@ export default function MisError({
   reset: () => void;
 }) {
   const t = useT();
-  const forbidden = error.name === 'MisForbiddenError';
+  const forbidden = error.name === 'MisForbiddenError' || error.digest === 'MIS_FORBIDDEN';
 
   useEffect(() => {
     console.error('[mis] boundary caught', error);
