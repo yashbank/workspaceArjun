@@ -1,5 +1,7 @@
 package com.example.mis_kiosk.ui.punch
 
+import com.example.mis_kiosk.data.local.EmployeeEntity
+
 sealed interface PunchUiState {
     /** No cached roster yet and a sync is in flight — nothing to punch against. */
     data object Loading : PunchUiState
@@ -10,6 +12,7 @@ sealed interface PunchUiState {
         val syncing: Boolean,
         val syncError: String?,
         val queuedCount: Int,
+        val clockedInCount: Int,
     ) : PunchUiState
 
     /** No cache, and the first sync failed — nothing usable to show at all. */
@@ -17,6 +20,18 @@ sealed interface PunchUiState {
 
     /** Server said `{"error":"REVOKED","wipe":true}` — screen should return to pairing. */
     data object Revoked : PunchUiState
+}
+
+/**
+ * Where the operator currently is in the punch flow (K1 resting → scan → confirm, or the
+ * K8 keypad fallback). Independent of [PunchUiState.Ready] — the roster status bar always
+ * shows, this just drives what's below it.
+ */
+sealed interface PunchMode {
+    data object Idle : PunchMode
+    data object Scanning : PunchMode
+    data object ManualEntry : PunchMode
+    data class Confirming(val employee: EmployeeEntity, val kind: String) : PunchMode
 }
 
 /** The outcome of one submitted punch attempt, shown as an overlay on the entry screen. */

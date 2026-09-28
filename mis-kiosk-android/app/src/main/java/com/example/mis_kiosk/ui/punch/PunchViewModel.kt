@@ -3,6 +3,7 @@ package com.example.mis_kiosk.ui.punch
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.mis_kiosk.data.local.EmployeeEntity
 import com.example.mis_kiosk.data.local.PunchQueueDatabase
 import com.example.mis_kiosk.data.local.RosterDatabase
 import com.example.mis_kiosk.data.local.RosterPreferences
@@ -16,6 +17,7 @@ import com.example.mis_kiosk.data.security.DeviceCredentialStore
 import com.example.mis_kiosk.data.work.PunchFlushScheduler
 import java.time.Instant
 import java.util.UUID
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -25,9 +27,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /** The attempt behind a [PunchSubmission.RetryPrompt] currently on screen — reused verbatim
- *  on retry (same key, same kind, same clientRecordedAt) rather than re-timestamped (D15).
- *  It's already durably queued in Room by the time this is held; this is just enough to call
- *  [PunchRepository.retry] again without re-reading the database. */
+ *  on retry (same key, same kind, same clientRecordedAt) rather than re-timestamped (D15). */
 private class PendingAttempt(
     val employeeId: String,
     val employeeName: String,
@@ -36,6 +36,16 @@ private class PendingAttempt(
     val kind: String,
     val key: String,
     val clientRecordedAtIso: String,
+)
+
+private const val ROSTER_SYNC_INTERVAL_MS = 60_000L
+
+private data class RosterSnapshot(
+    val employees: List<EmployeeEntity>,
+    val syncing: Boolean,
+    val syncError: String?,
+    val revoked: Boolean,
+    val queuedCount: Int,
 )
 
 class PunchViewModel @JvmOverloads constructor(
@@ -67,23 +77,31 @@ class PunchViewModel @JvmOverloads constructor(
     private val syncError = MutableStateFlow<String?>(null)
     private val revoked = MutableStateFlow(false)
 
-    val uiState: StateFlow<PunchUiState> = combine(
+    private val rosterSnapshot: StateFlow<RosterSnapshot> = combine(
         rosterRepository.employees,
         syncing,
         syncError,
         revoked,
         punchRepository.pendingCount,
     ) { employees, isSyncing, error, isRevoked, queuedCount ->
+        RosterSnapshot(employees, isSyncing, error, isRevoked, queuedCount)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), RosterSnapshot(emptyList(), true, null, false, 0))
+
+    val uiState: StateFlow<PunchUiState> = combine(
+        rosterSnapshot,
+        database.punchStateDao().observeClockedInCount(),
+    ) { snapshot, clockedIn ->
         when {
-            isRevoked -> PunchUiState.Revoked
-            employees.isEmpty() && error != null -> PunchUiState.Error(error)
-            employees.isEmpty() && isSyncing -> PunchUiState.Loading
+            snapshot.revoked -> PunchUiState.Revoked
+            snapshot.employees.isEmpty() && snapshot.syncError != null -> PunchUiState.Error(snapshot.syncError)
+            snapshot.employees.isEmpty() && snapshot.syncing -> PunchUiState.Loading
             else -> PunchUiState.Ready(
-                employeeCount = employees.size,
+                employeeCount = snapshot.employees.size,
                 lastSyncedAtMillis = rosterRepository.lastSyncedAtMillis,
-                syncing = isSyncing,
-                syncError = if (employees.isNotEmpty()) error else null,
-                queuedCount = queuedCount,
+                syncing = snapshot.syncing,
+                syncError = if (snapshot.employees.isNotEmpty()) snapshot.syncError else null,
+                queuedCount = snapshot.queuedCount,
+                clockedInCount = clockedIn,
             )
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PunchUiState.Loading)
@@ -91,17 +109,46 @@ class PunchViewModel @JvmOverloads constructor(
     val needsAttention = punchRepository.needsAttention
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    private val _mode = MutableStateFlow<PunchMode>(PunchMode.Idle)
+    val mode: StateFlow<PunchMode> = _mode.asStateFlow()
+
     private val _badgeInput = MutableStateFlow("")
     val badgeInput: StateFlow<String> = _badgeInput.asStateFlow()
+
+    private val _manualMatch = MutableStateFlow<EmployeeEntity?>(null)
+    val manualMatch: StateFlow<EmployeeEntity?> = _manualMatch.asStateFlow()
+
+    private val _scanHint = MutableStateFlow<String?>(null)
+    val scanHint: StateFlow<String?> = _scanHint.asStateFlow()
 
     private val _submission = MutableStateFlow<PunchSubmission?>(null)
     val submission: StateFlow<PunchSubmission?> = _submission.asStateFlow()
 
     private var pending: PendingAttempt? = null
+    private var scanHintClearJob: Job? = null
 
     init {
         refresh()
         PunchFlushScheduler.schedule(application)
+        startPeriodicRosterSync()
+    }
+
+    /** A kiosk tablet is foreground for its whole shift, so a foreground poll — not
+     *  WorkManager's 15-minute periodic-work floor — is what keeps roster changes
+     *  (new hires, shift edits) showing up within a minute instead of an admin having
+     *  to reboot the tablet to see them. */
+    private fun startPeriodicRosterSync() {
+        viewModelScope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(ROSTER_SYNC_INTERVAL_MS)
+                refresh()
+                // Also nudges any queued punch left behind by a non-network failure (a
+                // transient 5xx, say) that neither the network callback nor an open
+                // RetryPrompt would otherwise catch — KEEP dedupes this against work
+                // already pending, so it's a no-op when there's nothing to flush.
+                PunchFlushScheduler.schedule(getApplication())
+            }
+        }
     }
 
     fun refresh() {
@@ -119,32 +166,113 @@ class PunchViewModel @JvmOverloads constructor(
         }
     }
 
-    fun onBadgeInputChange(value: String) {
-        _badgeInput.value = value
+    // ---- Idle / mode switching -------------------------------------------------------
+
+    fun startScanning() {
+        _scanHint.value = null
+        _mode.value = PunchMode.Scanning
     }
 
-    fun submitBadge() {
-        val typed = _badgeInput.value.trim()
-        if (typed.isEmpty()) return
-        _submission.value = PunchSubmission.InProgress
+    fun openManualEntry() {
+        _badgeInput.value = ""
+        _manualMatch.value = null
+        _mode.value = PunchMode.ManualEntry
+    }
+
+    fun backToIdle() {
+        _mode.value = PunchMode.Idle
+        _scanHint.value = null
+    }
+
+    // ---- Scanning ---------------------------------------------------------------------
+
+    /** Called on every decoded QR frame — may fire repeatedly for the same code while the
+     *  camera holds it in frame, so this is deliberately idempotent (re-entering Confirming
+     *  with the same employee is harmless; once in Confirming, further scans are ignored by
+     *  the screen no longer showing a live camera). */
+    fun onQrScanned(rawValue: String) {
+        if (_mode.value !is PunchMode.Scanning) return
         viewModelScope.launch {
-            // The server itself uppercases badgeCode before matching (attendance-punch.ts) —
-            // match the same way locally so case never causes a spurious "not recognised".
-            val employee = employeeDao.findByBadgeCode(typed) ?: employeeDao.findByBadgeCode(typed.uppercase())
+            val code = rawValue.trim()
+            val employee = employeeDao.findByBadgeCode(code) ?: employeeDao.findByBadgeCode(code.uppercase())
             if (employee == null) {
-                _submission.value = PunchSubmission.Invalid("Badge not recognised: $typed")
+                scanHintClearJob?.cancel()
+                _scanHint.value = "Badge not recognised: $code"
+                scanHintClearJob = viewModelScope.launch {
+                    kotlinx.coroutines.delay(2000)
+                    _scanHint.value = null
+                }
                 return@launch
             }
-            val attempt = PendingAttempt(
-                employeeId = employee.id,
-                employeeName = employee.name,
-                badgeCode = employee.badgeCode,
-                shiftId = employee.shiftId,
-                kind = punchRepository.nextKindFor(employee.id),
-                key = UUID.randomUUID().toString(),
-                clientRecordedAtIso = Instant.now().toString(),
-            )
-            pending = attempt
+            val kind = punchRepository.nextKindFor(employee.id)
+            _mode.value = PunchMode.Confirming(employee, kind)
+        }
+    }
+
+    fun confirmScannedPunch() {
+        val mode = _mode.value as? PunchMode.Confirming ?: return
+        beginAttempt(mode.employee, mode.kind)
+    }
+
+    fun rejectConfirmation() {
+        _mode.value = PunchMode.Idle
+    }
+
+    // ---- Manual entry -------------------------------------------------------------------
+
+    /**
+     * Real badge codes at this factory are alphanumeric (`EMP0061`, `EMP-ARJUNCR-4ETG`, ...),
+     * not the short numeric IDs the K8 mockup assumed — so this takes whatever the system
+     * keyboard produces rather than restricting to a digits-only custom keypad.
+     */
+    fun onManualInputChange(value: String) {
+        _badgeInput.value = value.take(40)
+        lookupManualMatch()
+    }
+
+    /** Cancelled and relaunched on every keystroke, so an in-flight lookup for a code the
+     *  operator has since edited past can never land after (and clobber) a newer one — without
+     *  this a fast typist could see a real badge flash "not recognised" if an older, slower
+     *  query for a shorter prefix happened to resolve after the final one. */
+    private var manualLookupJob: Job? = null
+
+    private fun lookupManualMatch() {
+        val code = _badgeInput.value
+        manualLookupJob?.cancel()
+        if (code.isEmpty()) {
+            _manualMatch.value = null
+            return
+        }
+        manualLookupJob = viewModelScope.launch {
+            val match = employeeDao.findByBadgeCode(code) ?: employeeDao.findByBadgeCode(code.uppercase())
+            _manualMatch.value = match
+        }
+    }
+
+    fun confirmManualEntry() {
+        val employee = _manualMatch.value ?: return
+        viewModelScope.launch {
+            val kind = punchRepository.nextKindFor(employee.id)
+            beginAttempt(employee, kind)
+        }
+    }
+
+    // ---- Submission ---------------------------------------------------------------------
+
+    private fun beginAttempt(employee: EmployeeEntity, kind: String) {
+        _mode.value = PunchMode.Idle
+        _submission.value = PunchSubmission.InProgress
+        val attempt = PendingAttempt(
+            employeeId = employee.id,
+            employeeName = employee.name,
+            badgeCode = employee.badgeCode,
+            shiftId = employee.shiftId,
+            kind = kind,
+            key = UUID.randomUUID().toString(),
+            clientRecordedAtIso = Instant.now().toString(),
+        )
+        pending = attempt
+        viewModelScope.launch {
             val result = punchRepository.enqueueAndAttempt(
                 employeeId = attempt.employeeId,
                 employeeName = attempt.employeeName,
@@ -181,6 +309,7 @@ class PunchViewModel @JvmOverloads constructor(
         _submission.value = null
         pending = null
         _badgeInput.value = ""
+        _manualMatch.value = null
     }
 
     fun dismissNeedsAttention(key: String) {
