@@ -10,9 +10,20 @@ import { getMisRole } from './roles';
  * A distinct class so the (mis) error boundary can tell "you may not" apart
  * from "it broke" and render a calm page instead of a stack trace.
  */
+/**
+ * Next redacts a thrown error's `message` and drops the subclass entirely once it crosses the
+ * Server Component boundary in a production build — `error.name` reliably reads 'Error' there,
+ * not 'MisForbiddenError', which is why the (mis) error boundary used to fall back to its
+ * generic copy for every real permission refusal (found live via the E2E suite). `digest` is the
+ * one property Next does carry across untouched (it's how `notFound()`/`redirect()` identify
+ * themselves client-side too), so it doubles as this class's fingerprint.
+ */
+const MIS_FORBIDDEN_DIGEST = 'MIS_FORBIDDEN';
+
 export class MisForbiddenError extends Error {
   readonly action: MisAction;
   readonly resource?: string;
+  readonly digest = MIS_FORBIDDEN_DIGEST;
 
   constructor(action: MisAction, resource?: string) {
     super(`Not permitted: ${action}${resource ? ` on ${resource}` : ''}`);
@@ -23,7 +34,11 @@ export class MisForbiddenError extends Error {
 }
 
 export function isMisForbiddenError(error: unknown): error is MisForbiddenError {
-  return error instanceof MisForbiddenError || (error as Error)?.name === 'MisForbiddenError';
+  return (
+    error instanceof MisForbiddenError ||
+    (error as Error)?.name === 'MisForbiddenError' ||
+    (error as { digest?: string })?.digest === MIS_FORBIDDEN_DIGEST
+  );
 }
 
 export type MisActor = {
