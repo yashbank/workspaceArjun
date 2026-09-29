@@ -1,6 +1,6 @@
 import { EmptyState } from '@/components/mis/kit/empty-state';
 import { KioskScreen } from '@/components/mis/kiosk/kiosk-screen';
-import { factoryDateKey } from '@/lib/mis/factory-time';
+import { factoryDateKey, previousDateKey } from '@/lib/mis/factory-time';
 import { listAttendance, listShifts } from '@/server/mis/attendance';
 import { getFactoryTimezone } from '@/server/mis/business-rules';
 import { listEmployeeRoster } from '@/server/mis/employee';
@@ -14,13 +14,19 @@ export default async function KioskPage() {
   const timeZone = await getFactoryTimezone();
   const now = new Date();
   const today = factoryDateKey(now, timeZone);
+  // A night shift wrapping midnight keeps its early-morning punches on the PREVIOUS
+  // work-date (workDateFor, attendance-day.ts) — so someone who clocked in at 00:30
+  // is invisible here if this screen only ever asks for "today". Pull yesterday too
+  // and let anyone still clocked in from it take priority below.
+  const yesterday = previousDateKey(today);
 
-  let employees, shifts, todayAttendance;
+  let employees, shifts, todayAttendance, yesterdayAttendance;
   try {
-    [employees, shifts, todayAttendance] = await Promise.all([
+    [employees, shifts, todayAttendance, yesterdayAttendance] = await Promise.all([
       listEmployeeRoster(),
       listShifts(),
       listAttendance(today),
+      listAttendance(yesterday),
     ]);
   } catch {
     // A transient DB/network hiccup on this data load must never surface as a raw
@@ -43,10 +49,20 @@ export default async function KioskPage() {
     );
   }
 
-  // Build a map of employeeId -> attendance record for today
+  // Build a map of employeeId -> current attendance record. Today's row wins by
+  // default; yesterday's overrides it ONLY while still open (clocked in, not out) —
+  // that person is still on shift regardless of which calendar date rolled over
+  // underneath them. Yesterday's row is used as a fallback (last known state) only
+  // when there is no row for today at all.
   const attendanceMap: Record<string, { id: string; clockIn: Date | null; clockOut: Date | null; status: string }> = {};
   for (const a of todayAttendance) {
     attendanceMap[a.employeeId] = { id: a.id, clockIn: a.clockIn, clockOut: a.clockOut, status: a.status };
+  }
+  for (const a of yesterdayAttendance) {
+    const stillOpen = a.clockIn && !a.clockOut;
+    if (stillOpen || !attendanceMap[a.employeeId]) {
+      attendanceMap[a.employeeId] = { id: a.id, clockIn: a.clockIn, clockOut: a.clockOut, status: a.status };
+    }
   }
 
   const employeesWithStatus = employees
