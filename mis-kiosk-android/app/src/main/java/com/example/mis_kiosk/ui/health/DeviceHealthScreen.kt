@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -29,6 +30,7 @@ import java.util.concurrent.TimeUnit
 fun DeviceHealthScreen(
     viewModel: DeviceHealthViewModel = viewModel(),
     onClose: () -> Unit,
+    onEndShift: (() -> Unit)? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
 
@@ -106,6 +108,14 @@ fun DeviceHealthScreen(
                 Spacer(Modifier.height(32.dp))
                 Button(onClick = viewModel::retrySyncNow, modifier = Modifier.fillMaxWidth().height(56.dp)) {
                     Text("Retry sync now")
+                }
+
+                if (onEndShift != null) {
+                    Spacer(Modifier.height(16.dp))
+                    // K11 — hands the tablet to the next operator; they must sign in fresh.
+                    OutlinedButton(onClick = onEndShift, modifier = Modifier.fillMaxWidth().height(56.dp)) {
+                        Text("End shift / hand over", color = KioskColors.TextPrimary)
+                    }
                 }
             }
         }

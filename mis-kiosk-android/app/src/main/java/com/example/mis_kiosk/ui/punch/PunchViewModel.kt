@@ -124,6 +124,47 @@ class PunchViewModel @JvmOverloads constructor(
     private val _submission = MutableStateFlow<PunchSubmission?>(null)
     val submission: StateFlow<PunchSubmission?> = _submission.asStateFlow()
 
+    /** The signed-in kiosk operator (K9) — required before the punch screen is usable.
+     *  In-memory only, cleared on end-of-shift (K11) or app restart; deliberately not persisted,
+     *  since a new operator must sign in fresh each time the kiosk is (re)started. */
+    private val _currentOperator = MutableStateFlow<EmployeeEntity?>(null)
+    val currentOperator: StateFlow<EmployeeEntity?> = _currentOperator.asStateFlow()
+
+    private val _operatorInput = MutableStateFlow("")
+    val operatorInput: StateFlow<String> = _operatorInput.asStateFlow()
+
+    private val _operatorMatch = MutableStateFlow<EmployeeEntity?>(null)
+    val operatorMatch: StateFlow<EmployeeEntity?> = _operatorMatch.asStateFlow()
+
+    private var operatorLookupJob: Job? = null
+
+    fun onOperatorInputChange(value: String) {
+        _operatorInput.value = value.take(40)
+        operatorLookupJob?.cancel()
+        val code = _operatorInput.value
+        if (code.isEmpty()) {
+            _operatorMatch.value = null
+            return
+        }
+        operatorLookupJob = viewModelScope.launch {
+            val match = employeeDao.findByBadgeCode(code) ?: employeeDao.findByBadgeCode(code.uppercase())
+            _operatorMatch.value = match
+        }
+    }
+
+    fun confirmOperatorSignIn() {
+        val operator = _operatorMatch.value ?: return
+        _currentOperator.value = operator
+        _operatorInput.value = ""
+        _operatorMatch.value = null
+    }
+
+    /** End of shift (K11) — clears the signed-in operator, sending the screen back to the
+     *  sign-in gate so the next operator identifies themselves before punching anyone. */
+    fun endShift() {
+        _currentOperator.value = null
+    }
+
     private var pending: PendingAttempt? = null
     private var scanHintClearJob: Job? = null
 
@@ -288,6 +329,7 @@ class PunchViewModel @JvmOverloads constructor(
                 kind = attempt.kind,
                 key = attempt.key,
                 clientRecordedAtIso = attempt.clientRecordedAtIso,
+                operatorId = _currentOperator.value?.id,
             )
             applyResult(attempt, result)
         }
@@ -305,6 +347,7 @@ class PunchViewModel @JvmOverloads constructor(
                 kind = attempt.kind,
                 key = attempt.key,
                 clientRecordedAtIso = attempt.clientRecordedAtIso,
+                operatorId = _currentOperator.value?.id,
             )
             applyResult(attempt, result)
         }

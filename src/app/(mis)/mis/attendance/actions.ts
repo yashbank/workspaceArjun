@@ -1,5 +1,5 @@
 'use server';
-import { clockIn, clockOut, approveClockOut, editAttendance, requestLeave, approveLeave, saveShift, markAbsentBulk } from '@/server/mis/attendance';
+import { clockIn, clockOut, approveClockOut, editAttendance, requestLeave, approveLeave, saveShift, markAbsentBulk, listPunchesForDay } from '@/server/mis/attendance';
 import { revalidatePath } from 'next/cache';
 
 export async function clockInAction(employeeId: string, shiftId?: string) {
@@ -33,4 +33,7 @@ export async function saveShiftAction(id: string | null, data: { name: string; s
 export async function markAbsentBulkAction(employeeIds: string[], date?: string) {
   await markAbsentBulk(employeeIds, date);
   revalidatePath('/mis/attendance');
+}
+export async function listPunchesForDayAction(employeeId: string, date: string) {
+  return listPunchesForDay(employeeId, date);
 }

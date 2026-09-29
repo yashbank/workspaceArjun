@@ -67,6 +67,7 @@ class PunchRepository(
         kind: String,
         key: String,
         clientRecordedAtIso: String,
+        operatorId: String? = null,
     ): PunchAttemptResult {
         punchQueueDao.insert(
             PunchQueueEntity(
@@ -81,7 +82,7 @@ class PunchRepository(
                 status = PunchQueueStatus.PENDING,
             ),
         )
-        return attempt(key, employeeId, badgeCode, shiftId, kind, clientRecordedAtIso)
+        return attempt(key, employeeId, badgeCode, shiftId, kind, clientRecordedAtIso, operatorId)
     }
 
     /** Clears a PARKED/REJECTED entry the operator has acknowledged — never called for a
@@ -97,7 +98,8 @@ class PunchRepository(
         kind: String,
         key: String,
         clientRecordedAtIso: String,
-    ): PunchAttemptResult = attempt(key, employeeId, badgeCode, shiftId, kind, clientRecordedAtIso)
+        operatorId: String? = null,
+    ): PunchAttemptResult = attempt(key, employeeId, badgeCode, shiftId, kind, clientRecordedAtIso, operatorId)
 
     /**
      * Drains every PENDING entry, oldest tap first, strictly one at a time — HANDOVER.md's
@@ -127,6 +129,7 @@ class PunchRepository(
         shiftId: String?,
         kind: String,
         clientRecordedAtIso: String,
+        operatorId: String? = null,
     ): PunchAttemptResult {
         val device = credentialStore.activeDevice
             ?: return PunchAttemptResult.RetryNeeded("This tablet is not paired.")
@@ -134,7 +137,7 @@ class PunchRepository(
         val body = PunchRequest(
             key = key,
             kind = kind,
-            payload = PunchPayloadDto(badgeCode = badgeCode, shiftId = shiftId),
+            payload = PunchPayloadDto(badgeCode = badgeCode, shiftId = shiftId, operatorId = operatorId),
             clientRecordedAt = clientRecordedAtIso,
             health = health,
         )
