@@ -2,6 +2,7 @@ import { db } from '@/server/db';
 import { requirePermission } from '@/server/mis/auth';
 import { logAuditEvent } from '@/server/mis/audit';
 import { getCorrectionWindowDays, getFactoryTimezone } from '@/server/mis/business-rules';
+import { deriveDays } from '@/lib/mis/attendance-day';
 import { addDaysToDateKey, dateKeyToDbDate, factoryDateKey } from '@/lib/mis/factory-time';
 import { resolveShiftAt } from '@/lib/mis/shift-window';
 
@@ -30,6 +31,58 @@ export async function listAttendance(date?: string) {
     include: { employee: { select: { id: true, name: true, employeeCode: true, role: true } }, shift: true },
     orderBy: { employee: { name: 'asc' } },
   });
+}
+
+/**
+ * The raw punch log behind one employee's one day (K9) — which device recorded each
+ * punch and, since the Android kiosk's operator sign-in (2026-09-29,
+ * docs/KIOSK_OPERATOR_SIGNIN_2026-09-29.md), which employee was signed in as the
+ * kiosk operator when it was confirmed. D21 made `operatorId` optional and it stays
+ * so here: a punch from before this feature, or from the portal, just shows none.
+ *
+ * There is no stored link from a day row back to "its" punches — the day is
+ * DERIVED from punches (attendance-day.ts), not the other way round — so this reuses
+ * the exact same `deriveDays` grouping the write path uses, over a wide-enough
+ * window either side of `date` to catch a shift that wraps midnight, rather than a
+ * naive same-calendar-day query that would silently miss or misattribute punches
+ * the same way the kiosk screen's own count did before that was fixed.
+ */
+export async function listPunchesForDay(employeeId: string, date: string) {
+  await requirePermission('attendance.read');
+  const [timeZone, shifts] = await Promise.all([getFactoryTimezone(), db.misShift.findMany({ where: { isActive: true } })]);
+
+  const dayStart = dateKeyToDbDate(date);
+  const windowStart = new Date(dayStart.getTime() - 24 * 60 * 60 * 1000);
+  const windowEnd = new Date(dayStart.getTime() + 48 * 60 * 60 * 1000);
+
+  const rows = await db.misAttendancePunch.findMany({
+    where: { employeeId, punchedAt: { gte: windowStart, lt: windowEnd } },
+    include: { device: { select: { name: true } } },
+    orderBy: { punchedAt: 'asc' },
+  });
+
+  const days = deriveDays(
+    rows.map((p) => ({ id: p.id, direction: p.direction, punchedAt: p.punchedAt, shiftId: p.shiftId })),
+    shifts,
+    timeZone,
+  );
+  const punchIds = new Set(days.get(date)?.punchIds ?? []);
+  const dayRows = rows.filter((p) => punchIds.has(p.id));
+
+  const operatorIds = [...new Set(dayRows.map((p) => p.operatorId).filter((id): id is string => !!id))];
+  const operators = operatorIds.length
+    ? await db.misEmployee.findMany({ where: { id: { in: operatorIds } }, select: { id: true, name: true } })
+    : [];
+  const operatorNames = new Map(operators.map((o) => [o.id, o.name]));
+
+  return dayRows.map((p) => ({
+    id: p.id,
+    direction: p.direction,
+    punchedAt: p.punchedAt,
+    deviceName: p.device?.name ?? null,
+    fromRevokedDevice: p.fromRevokedDevice,
+    operatorName: p.operatorId ? (operatorNames.get(p.operatorId) ?? 'Unknown') : null,
+  }));
 }
 
 /**

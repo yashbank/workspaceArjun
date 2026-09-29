@@ -6,7 +6,7 @@ import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { Card } from '@/components/mis/kit/card';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import { Input, NumberInput } from '@/components/mis/kit/input';
-import { clockInAction, clockOutAction, approveClockOutAction, editAttendanceAction, markAbsentBulkAction } from '@/app/(mis)/mis/attendance/actions';
+import { clockInAction, clockOutAction, approveClockOutAction, editAttendanceAction, markAbsentBulkAction, listPunchesForDayAction } from '@/app/(mis)/mis/attendance/actions';
 import Link from 'next/link';
 
 type AttendanceRec = {
@@ -14,6 +14,10 @@ type AttendanceRec = {
   approvedOut: boolean; lateMinutes: number; otMinutes: number; notes: string | null;
   employee: { id: string; name: string; employeeCode: string; role: string } | null;
   shift: { name: string; startTime: string; endTime: string } | null;
+};
+type PunchRow = {
+  id: string; direction: 'IN' | 'OUT'; punchedAt: Date;
+  deviceName: string | null; fromRevokedDevice: boolean; operatorName: string | null;
 };
 type SummaryRec = { employee: { id: string; name: string; employeeCode: string } | null; present: number; absent: number; otMinutes: number; lateMinutes: number };
 
@@ -65,6 +69,19 @@ export function AttendanceScreen({ records, summary, shifts, canWrite, view, yea
 
   const openEdit = (r: AttendanceRec) => { setEditRec(r); setEditStatus(r.status); setEditNotes(r.notes ?? ''); setEditOpen(true); };
 
+  const [punchesOpen, setPunchesOpen] = useState(false);
+  const [punchesRec, setPunchesRec] = useState<AttendanceRec | null>(null);
+  const [punches, setPunches] = useState<PunchRow[] | null>(null);
+
+  const openPunches = async (r: AttendanceRec) => {
+    if (!r.employee) return;
+    setPunchesRec(r);
+    setPunches(null);
+    setPunchesOpen(true);
+    const dateKey = new Date(r.date).toISOString().slice(0, 10);
+    setPunches(await listPunchesForDayAction(r.employee.id, dateKey));
+  };
+
   const dailyCols: Column<AttendanceRec>[] = [
     ...(canWrite ? [{
       key: 'select', header: '', render: (r: AttendanceRec) => r.employee ? (
@@ -89,6 +106,7 @@ export function AttendanceScreen({ records, summary, shifts, canWrite, view, yea
         {canWrite && !r.clockIn && <Button variant="ghost" onClick={() => startTransition(async () => { await clockInAction(r.employee!.id); })}>Clock In</Button>}
         {canWrite && r.clockIn && !r.clockOut && <Button variant="ghost" onClick={() => startTransition(async () => { await clockOutAction(r.id); })}>Clock Out</Button>}
         {canWrite && r.clockOut && !r.approvedOut && <Button variant="ghost" onClick={() => startTransition(async () => { await approveClockOutAction(r.id); })}>Approve Out</Button>}
+        {(r.clockIn || r.clockOut) && <Button variant="ghost" onClick={() => openPunches(r)}>Punches</Button>}
         {canWrite && <Button variant="ghost" onClick={() => openEdit(r)}>Edit</Button>}
       </div>
     )},
@@ -152,6 +170,30 @@ export function AttendanceScreen({ records, summary, shifts, canWrite, view, yea
             <Button onClick={() => startTransition(async () => { if (editRec) { await editAttendanceAction(editRec.id, { status: editStatus, notes: editNotes }); setEditOpen(false); } })} disabled={isPending}>Save</Button>
             <Button variant="ghost" onClick={() => setEditOpen(false)}>Cancel</Button>
           </div>
+        </div>
+      </SlideOver>
+
+      <SlideOver open={punchesOpen} onClose={() => setPunchesOpen(false)} title={punchesRec?.employee ? `Punches — ${punchesRec.employee.name}` : 'Punches'}>
+        <div className="flex flex-col gap-2 p-4">
+          {punches === null && <p className="text-sm text-slate-500">Loading…</p>}
+          {punches !== null && punches.length === 0 && <p className="text-sm text-slate-500">No punches recorded for this day.</p>}
+          {punches !== null && punches.length > 0 && (
+            <ul className="divide-y divide-slate-100">
+              {punches.map((p) => (
+                <li key={p.id} className="py-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-slate-900">{p.direction === 'IN' ? 'Clock In' : 'Clock Out'}</span>
+                    <span className="font-mono text-sm text-slate-500">{fmtTime(p.punchedAt)}</span>
+                  </div>
+                  <div className="mt-0.5 text-xs text-slate-500">
+                    {p.deviceName ?? 'Portal'}
+                    {p.operatorName && ` · Operator: ${p.operatorName}`}
+                    {p.fromRevokedDevice && ' · retired device'}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </SlideOver>
     </div>
