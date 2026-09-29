@@ -131,7 +131,26 @@ fun PunchScreen(
     }
 
     if (showHealthScreen) {
-        DeviceHealthScreen(onClose = { showHealthScreen = false })
+        DeviceHealthScreen(
+            onClose = { showHealthScreen = false },
+            onEndShift = {
+                viewModel.endShift()
+                showHealthScreen = false
+            },
+        )
+        return
+    }
+
+    val currentOperator by viewModel.currentOperator.collectAsStateWithLifecycle()
+    if (currentOperator == null && uiState is PunchUiState.Ready) {
+        val operatorInput by viewModel.operatorInput.collectAsStateWithLifecycle()
+        val operatorMatch by viewModel.operatorMatch.collectAsStateWithLifecycle()
+        OperatorSignInScreen(
+            operatorInput = operatorInput,
+            match = operatorMatch,
+            onInputChange = viewModel::onOperatorInputChange,
+            onConfirm = viewModel::confirmOperatorSignIn,
+        )
         return
     }
 
@@ -537,6 +556,64 @@ private fun ConfirmCardContent(
                 OutlinedButton(onClick = onReject, modifier = Modifier.fillMaxWidth().height(56.dp)) {
                     Text("Not this person")
                 }
+            }
+        }
+    }
+}
+
+// ---- Operator sign-in (K9) ---------------------------------------------------------------
+
+/**
+ * Gates the punch screen until a kiosk operator identifies themselves — their id then rides
+ * along on every punch they process (`payload.operatorId`, optional server-side per D21) so
+ * who ran the gate is on record. No badge match here counts as an actual punch.
+ */
+@Composable
+private fun OperatorSignInScreen(
+    operatorInput: String,
+    match: EmployeeEntity?,
+    onInputChange: (String) -> Unit,
+    onConfirm: () -> Unit,
+) {
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+
+    Surface(modifier = Modifier.fillMaxSize(), color = KioskColors.Background) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            BilingualText("Operator sign-in", "ऑपरेटर साइन-इन", style = MaterialTheme.typography.headlineSmall)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Enter your own code to start this shift on this tablet.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = KioskColors.TextSecondary,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(24.dp))
+            OutlinedTextField(
+                value = operatorInput,
+                onValueChange = onInputChange,
+                singleLine = true,
+                placeholder = { Text("Your employee code") },
+                textStyle = MaterialTheme.typography.headlineSmall.copy(fontFamily = KioskMono, textAlign = TextAlign.Center),
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters, imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { if (match != null) onConfirm() }),
+                modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
+            )
+            Spacer(Modifier.height(16.dp))
+            if (match != null) {
+                Text(match.name, style = MaterialTheme.typography.titleMedium, color = KioskColors.TextPrimary)
+                Spacer(Modifier.height(16.dp))
+            }
+            Button(
+                onClick = onConfirm,
+                enabled = match != null,
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+            ) {
+                Text("Start shift")
             }
         }
     }

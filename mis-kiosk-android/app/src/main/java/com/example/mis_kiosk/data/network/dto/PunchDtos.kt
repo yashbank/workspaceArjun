@@ -12,6 +12,10 @@ object PunchKind {
 data class PunchPayloadDto(
     val badgeCode: String,
     val shiftId: String? = null,
+    /** The signed-in kiosk operator who processed this punch (K9). Optional server-side (D21) —
+     *  never persisted in the offline queue, so a background-flushed retry sends it without one
+     *  rather than block on Room migration for an optional accountability field. */
+    val operatorId: String? = null,
 )
 
 /**
