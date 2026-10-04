@@ -43,7 +43,7 @@ line-clearance blocker card are unexercised. Per inventory: 14 NO, 17 PARTIAL (s
 score). Covers QC grid, defects, COA print, documents, reports screens.
 
 ## Track 3 — E1: Foundation & Access Control gaps
-**Status:** DONE (PR #<PR_NUMBER>, 2026-10-04) — all 16 "NO" tickets were already built (landed
+**Status:** DONE (PR #53, 2026-10-04) — all 16 "NO" tickets were already built (landed
 Phases 1-3 and 14/14F, after the 2026-09-15 inventory snapshot); only a stray eslint error
 (unescaped apostrophe) in the wage-type screen needed fixing.
 All 16 re-checked against current code, not against the stale inventory: E1-06 wage types
