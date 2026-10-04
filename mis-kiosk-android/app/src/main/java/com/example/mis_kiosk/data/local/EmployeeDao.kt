@@ -21,4 +21,21 @@ interface EmployeeDao {
 
     @Insert
     suspend fun insertAll(employees: List<EmployeeEntity>)
+
+    /** Read-only roster-cache rollup for the kiosk's "View shifts" info screen — distinct
+     *  shifts currently present locally, with how many cached employees sit on each. */
+    @Query(
+        "SELECT shiftId, shiftName, shiftStartTime, shiftEndTime, COUNT(*) AS employeeCount " +
+            "FROM employees WHERE shiftId IS NOT NULL " +
+            "GROUP BY shiftId ORDER BY shiftStartTime ASC",
+    )
+    fun observeShiftSummaries(): Flow<List<ShiftSummary>>
 }
+
+data class ShiftSummary(
+    val shiftId: String,
+    val shiftName: String?,
+    val shiftStartTime: String?,
+    val shiftEndTime: String?,
+    val employeeCount: Int,
+)

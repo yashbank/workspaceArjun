@@ -17,6 +17,10 @@ interface PunchQueueDao {
     @Query("SELECT * FROM punch_queue WHERE status != 'PENDING' ORDER BY queuedAtMillis DESC")
     fun observeNeedsAttention(): Flow<List<PunchQueueEntity>>
 
+    /** K2 — offline sync queue screen: every entry regardless of status, newest first. */
+    @Query("SELECT * FROM punch_queue ORDER BY queuedAtMillis DESC")
+    fun observeAllOrdered(): Flow<List<PunchQueueEntity>>
+
     @Query("SELECT COUNT(*) FROM punch_queue WHERE status = 'PENDING'")
     fun observePendingCount(): Flow<Int>
 

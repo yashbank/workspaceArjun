@@ -17,12 +17,17 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.mis_kiosk.ui.queue.QueueScreen
+import com.example.mis_kiosk.ui.shifts.ShiftsScreen
 import com.example.mis_kiosk.ui.theme.KioskColors
 import java.util.concurrent.TimeUnit
 
@@ -33,6 +38,18 @@ fun DeviceHealthScreen(
     onEndShift: (() -> Unit)? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    var showShifts by remember { mutableStateOf(false) }
+    var showQueue by remember { mutableStateOf(false) }
+
+    if (showShifts) {
+        ShiftsScreen(onClose = { showShifts = false })
+        return
+    }
+
+    if (showQueue) {
+        QueueScreen(onClose = { showQueue = false })
+        return
+    }
 
     Surface(modifier = Modifier.fillMaxSize(), color = KioskColors.Background) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -108,6 +125,18 @@ fun DeviceHealthScreen(
                 Spacer(Modifier.height(32.dp))
                 Button(onClick = viewModel::retrySyncNow, modifier = Modifier.fillMaxWidth().height(56.dp)) {
                     Text("Retry sync now")
+                }
+
+                Spacer(Modifier.height(16.dp))
+                // Read-only roster-cache rollup; no shift editing lives on this tablet.
+                OutlinedButton(onClick = { showShifts = true }, modifier = Modifier.fillMaxWidth().height(56.dp)) {
+                    Text("View shifts", color = KioskColors.TextPrimary)
+                }
+
+                Spacer(Modifier.height(16.dp))
+                // K2 — offline sync queue; read-only, same local-nav pattern as "View shifts".
+                OutlinedButton(onClick = { showQueue = true }, modifier = Modifier.fillMaxWidth().height(56.dp)) {
+                    Text("View queue", color = KioskColors.TextPrimary)
                 }
 
                 if (onEndShift != null) {
