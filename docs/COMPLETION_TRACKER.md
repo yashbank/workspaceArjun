@@ -56,9 +56,25 @@ for-order, MIS_UI_SPEC §6) is fully wired across every surface listed there (li
 card, printed PO, approval queue row, receive screen chip) — built once, not re-checked since.
 
 ## Track 5 — E4: Worker allocation engine
-**Status:** TODO
-`mis_worker_allocations`: 0 rows. Inventory: "no trace of them exists in schema or server code"
-for E4-02/E4-03 — Track 0 confirms whether this changed.
+**Status:** DONE (PR #52, 2026-10-04) — already complete, no code change needed
+`mis_worker_allocations`: 0 rows, but the table (and all surrounding code) is fully built —
+the Sept 15 inventory's "no trace in schema or server code" is stale. It landed in commit
+`d7a8411` ("MIS phases 1-14F"), already on `phase-a`/`origin/phase-a`, well before this check:
+schema (`MisWorkerAllocation`, `prisma/migrations/20260921000000_mis_worker_allocations/`,
+confirmed live on Supabase via read-only `execute_sql` — table exists with the exact columns
+the migration describes), server (`src/server/mis/worker-allocation.ts` — `assignWorkers`,
+`releaseWorker`, `getWorkerAvailability`, `getCrewSummary`, each behind `requirePermission`
+and audited via `logAuditEvent`, pool-scoped through `resolveVisibleEmployeeWhere`, with the
+MIS-262 "warn not refuse" overlap rule and the MIS-265 job-phase/order cross-check), tests
+(`worker-allocation.test.ts`, 30 cases, all passing), UI (`/mis/crew` page + slide-over crew
+assignment, wired into the SUPERVISOR bottom nav and i18n in English+Hindi), and the home-screen
+wiring the ticket asked for (`getCrewSummary()` → `SupervisorHome`'s "My crew today" card in
+`src/app/(mis)/mis/page.tsx` / `supervisor-home.tsx`). Zero rows simply means no supervisor has
+used it yet in the live data, not that it's unbuilt. Verified clean: `tsc --noEmit --skipLibCheck`
+silent, `eslint` clean on the feature files, `pnpm test` 4310 passed, `pnpm build` green. Not
+verified: a printed job card showing assigned crew (MIS-261's "wire to job cards" may partly mean
+this) — left alone since `print/job-card` is Production-owned territory for this track's scope,
+and the explicit ask (allocate → reflected in home crew count) was already satisfied end to end.
 
 ## Track 6 — Desktop responsive pass + full regression (no epic, cross-cutting)
 **Status:** TODO
