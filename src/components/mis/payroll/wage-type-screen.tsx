@@ -269,7 +269,7 @@ export function WageTypeScreen({
           <NumberInput label="Allowance (₹, optional)" value={rateAllowance} onChange={(e) => setRateAllowance(e.target.value)} />
           <NumberInput label="Bonus (₹, optional)" value={rateBonus} onChange={(e) => setRateBonus(e.target.value)} />
           <p className="text-sm text-slate-500">
-            The old rate stays on record for pay periods already decided — this adds a new one, it never overwrites history. Any field left blank here carries over from the code's current row.
+            The old rate stays on record for pay periods already decided — this adds a new one, it never overwrites history. Any field left blank here carries over from the code&apos;s current row.
           </p>
           <div className="flex gap-2 pt-2">
             <Button onClick={handleAddRate} disabled={isPending || !rateCode || !rateAmount}>
