@@ -29,12 +29,24 @@ short punch list per epic, replacing guesswork. Do NOT re-read the 294-ticket fi
 chat context — one agent does this and writes the refreshed list back into this section.
 
 ## Track 1 — E6: Production & Wastage / BPR sign-off spine
-**Status:** TODO
-`mis_job_phases` has 0 live rows despite the phase-gate trigger + `server/mis/job-phases.ts`
-being built (Phase 7) — the BPR sequential sign-off flow has never run end-to-end. Per
-TICKET_INVENTORY.md (2026-09-15): 18 NO, 8 PARTIAL, highest remaining-work score of all epics.
-Fix scope: whatever NO/PARTIAL items Track 0 confirms still stand, built against
-`docs/DEVELOPMENT_GUIDE.md` Appendix A (full phase transition table) and MIS_UI_SPEC §7.1.
+**Status:** DONE (PR #54, 2026-10-04)
+Re-checked all 9 E6 sub-areas against current code rather than trusting the stale (2026-09-15)
+TICKET_INVENTORY.md verdict. Almost everything was already built and tested in commits dated
+2026-09-19 through 2026-09-27, after that inventory ran: E6-01 phase model/state machine
+(`server/mis/job-phases.ts`, matches DEVELOPMENT_GUIDE.md Appendix A exactly, 64 tests),
+E6-02 line clearance (`line-clearance.ts`, 12 tests), E6-03 production entry (already YES),
+E6-04 offline production + idempotent sync (`idempotency.ts`, `queue-resolve.ts` parked-writes
+inbox, `submit-production.ts`), E6-05 material consumption/traceability (`traceability-view.ts`,
+31 tests), E6-06 wastage roll-up (already YES, `getWastageReport` in `reports.ts`), E6-07 phase
+sign-off/handover gate (`signOffPhase()`, the sign-off screen, Supervisor home), E6-08 live
+order status board (already YES) were all confirmed DONE with no further work needed. The one
+genuine remaining gap was E6-09 (BPR print): `/mis/print/job-card/[id]` rendered BOM stages and
+three generic blank signature boxes with no connection to the real per-phase sign-off machine.
+Fixed: added a "Work Flow — Section Sign-Off" table from `getPhasesForOrder()` (status,
+in-charge, started/signed-off timestamps, signature line, the client's own hand-off rule text,
+and the D10 "No phase plan · not gated" message for ungated orders). `mis_job_phases` still has
+0 live rows in production — that is a usage/exercise gap, not a code gap; every path is built
+and tested (job-phases.gate.db.test.ts exercises the live DB trigger directly).
 
 ## Track 2 — E7: Quality, COA, Documents & Reports
 **Status:** TODO
