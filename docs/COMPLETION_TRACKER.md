@@ -43,11 +43,27 @@ line-clearance blocker card are unexercised. Per inventory: 14 NO, 17 PARTIAL (s
 score). Covers QC grid, defects, COA print, documents, reports screens.
 
 ## Track 3 — E1: Foundation & Access Control gaps
-**Status:** TODO
-Inventory calls out, with no code found at all: E1-06 (wage types admin UI — note
-`mis_wage_types` has 5 rows so *data* exists, the management screen may not), E1-07 (pool
-visibility resolver), E1-08 (MIS user management/invites). 16 NO total for this epic. Confirm via
-Track 0 before building — these may have landed since Sept 15.
+**Status:** DONE (PR #53, 2026-10-04) — all 16 "NO" tickets were already built (landed
+Phases 1-3 and 14/14F, after the 2026-09-15 inventory snapshot); only a stray eslint error
+(unescaped apostrophe) in the wage-type screen needed fixing.
+All 16 re-checked against current code, not against the stale inventory: E1-06 wage types
+(`src/server/mis/wage-type.ts` + `src/app/(mis)/mis/settings/wages/` — full Owner-only create/
+add-rate/activate-deactivate admin UI, `mis_wage_types`' 5 rows are real seeded codes, not a stub),
+E1-07 pool visibility resolver (`src/server/mis/visibility.ts`, D4, with scoped pickers + honest
+empty states on the employee screen), E1-08 user management/invites (`src/server/mis/users.ts` +
+`src/app/(mis)/mis/settings/users/` — Owner invites/grants, Admin view-only, reuses the workspace's
+own seat-limited invite pipeline) are genuinely implemented and permission-gated. The four QA-only
+NO tickets (MIS-34 role-resolution, MIS-40 nav/toggle-persistence, MIS-43 employee full-slice,
+MIS-272 "a rule change never moves a closed month") were closed by Phase 14/14F and are covered by
+`roles.test.ts`, `navigation.test.ts`/`navigation-more.test.ts`/`lang-toggle.test.tsx`,
+`employee.test.ts`/`employee-slice.test.ts`, and `rule-history.test.ts`'s F-08 block respectively.
+Verified: every forbidden-role case is asserted (not just the happy path) in `wage-type.test.ts`,
+`wage-leak.test.ts`, `users.test.ts`, `users-lifecycle.test.ts`, `visibility.test.ts`,
+`visibility-lists.test.ts`; swept `logAuditEvent` call sites by hand for wage/rate/amount/salary/₹
+keys — the one hit (`store.ts`'s `pricePerUnit` before/after) is caught by `audit.ts`'s own
+`redact()` (`MONEY_FIELDS`), so it never reaches the stored row. No wage/salary figure is fetched
+on any non-OWNER code path. `tsc --noEmit --skipLibCheck` silent, `pnpm test` 206 files / 4310
+passed (unchanged), `pnpm build` succeeds, every `/mis/*` route present.
 
 ## Track 4 — E5: Orders, BOM & Job Cards gaps
 **Status:** TODO
