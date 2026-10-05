@@ -137,25 +137,36 @@ describe('approval bypass attempts (MIS-123)', () => {
   it('the Owner CAN approve — the refusals above are the role, not a broken fixture', async () => {
     const bom = await createBom('order-1');
     getMisRole.mockResolvedValue('OWNER');
+    await submitBomForApproval(bom.id); // PENDING_APPROVAL — a DRAFT has nothing to approve (F-37)
     const approved = await approveBom(bom.id);
     expect(approved.status).toBe('APPROVED');
   });
 
-  // Stale client state: the UI only shows "Approve" once a BOM is PENDING_APPROVAL, and only
-  // shows "Submit" once. Neither function checks the BOM's own current status before acting —
-  // so a stale/replayed client request can approve a DRAFT BOM that was never submitted, or
-  // re-submit/re-approve one already APPROVED. New finding (F-37): this is spec-correct
-  // behaviour under it.fails, matching this project's own convention for a QA-found gap.
-  it.fails('approveBom refuses a BOM that was never submitted for approval (still DRAFT)', async () => {
+  // F-37, fixed (Track 4, Phase 28): stale client state — the UI only shows "Approve" once a BOM
+  // is PENDING_APPROVAL, and only shows "Submit" once, but neither function used to check the
+  // BOM's own current status before acting, so a stale/replayed client request could approve a
+  // DRAFT BOM that was never submitted, or re-submit/re-approve one already APPROVED. Both now
+  // check `before.status` first.
+  it('approveBom refuses a BOM that was never submitted for approval (still DRAFT)', async () => {
     const bom = await createBom('order-1'); // status: DRAFT, never submitted
     getMisRole.mockResolvedValue('OWNER');
     await expect(approveBom(bom.id)).rejects.toThrow();
   });
 
-  it.fails('approveBom refuses a BOM that is already APPROVED — a second approval is not a no-op', async () => {
+  it('approveBom refuses a BOM that is already APPROVED — a second approval is not a no-op', async () => {
     const bom = await createBom('order-1');
     getMisRole.mockResolvedValue('OWNER');
+    await submitBomForApproval(bom.id);
     await approveBom(bom.id);
     await expect(approveBom(bom.id)).rejects.toThrow();
+  });
+
+  it('submitBomForApproval refuses a BOM that is not DRAFT — no re-submitting a PENDING or APPROVED one', async () => {
+    const bom = await createBom('order-1');
+    getMisRole.mockResolvedValue('OWNER');
+    await submitBomForApproval(bom.id);
+    await expect(submitBomForApproval(bom.id)).rejects.toThrow();
+    await approveBom(bom.id);
+    await expect(submitBomForApproval(bom.id)).rejects.toThrow();
   });
 });

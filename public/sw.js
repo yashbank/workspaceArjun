@@ -150,7 +150,7 @@ function isCacheableDocument(response, path) {
   if (type.indexOf('text/html') === -1) return false;
   try {
     return normalisePath(new URL(response.url).pathname) === path;
-  } catch (e) {
+  } catch {
     return false;
   }
 }

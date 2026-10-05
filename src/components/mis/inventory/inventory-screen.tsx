@@ -73,7 +73,7 @@ export function InventoryScreen({ summary, canWrite = false }: Props) {
         await adjustInventoryAction(adjustItem.itemId, qty, adjNotes || undefined);
         setSuccess(`${adjustItem.name} adjusted by ${qty > 0 ? '+' : ''}${qty}`);
         setAdjustItem(null); setChangeQty(''); setAdjNotes('');
-      } catch (e: any) { setError(e.message ?? 'Adjustment failed'); }
+      } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Adjustment failed'); }
     });
   };
 
@@ -85,7 +85,7 @@ export function InventoryScreen({ summary, canWrite = false }: Props) {
         const res = await createItemAction({ name: addName, code: addCode || undefined, sku: addSku || undefined, category: addCategory, unit: addUnit, pricePerUnit: addPrice || undefined });
         setSuccess(`Item ${res.code} created`);
         setShowAddItem(false); setAddName(''); setAddCode(''); setAddSku(''); setAddPrice(''); setAddCategory(MisItemCategory.OTHER); setAddUnit(MisItemUnit.PIECE);
-      } catch (e: any) { setAddError(e.message ?? 'Failed to create item'); }
+      } catch (e: unknown) { setAddError(e instanceof Error ? e.message : 'Failed to create item'); }
     });
   };
 
@@ -99,7 +99,7 @@ export function InventoryScreen({ summary, canWrite = false }: Props) {
       const json = await res.json();
       if (!res.ok) { setImportError(json.error ?? 'Import failed'); }
       else { setImportResult(json); setImportFile(null); if (fileInputRef.current) fileInputRef.current.value = ''; }
-    } catch (e: any) { setImportError(e.message ?? 'Import failed'); }
+    } catch (e: unknown) { setImportError(e instanceof Error ? e.message : 'Import failed'); }
     finally { setImporting(false); }
   };
 

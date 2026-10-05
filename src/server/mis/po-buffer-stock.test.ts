@@ -29,7 +29,31 @@ const D = (n: number) => ({ toNumber: () => n, valueOf: () => n });
 function makeDb(): Row {
   const db: Row = {
     misPurchaseOrder: {
-      create: async ({ data }: Row) => { const row = { id: nextId(), status: 'APPROVED', ...data }; state.pos.push(row); return row; },
+      // Mirrors the live `mis_purchase_orders_purpose_bom_ref_ck` CHECK constraint (Phase 21
+      // migration `20260915000000_mis_po_purpose`) plus the column's own Prisma default
+      // (`purpose @default(FOR_ORDER)`), so a `createPO` that forgets to write `purpose`
+      // explicitly fails here exactly as it would against the real database — this is what
+      // Phase 28's Track 4 re-check found: the column existed and was read by the buffer-drift
+      // report, but `createPO` never set it, so every buffer-stock PO raised after that
+      // migration would have been rejected by Postgres in production.
+      create: async ({ data }: Row) => {
+        const purpose = data.purpose ?? 'FOR_ORDER';
+        const bomRef = data.bomRef ?? null;
+        const ok = (purpose === 'FOR_ORDER' && bomRef !== null) || (purpose === 'BUFFER_STOCK' && bomRef === null);
+        if (!ok) {
+          throw new Error(
+            `mis_purchase_orders_purpose_bom_ref_ck violation: purpose=${purpose} bom_ref=${JSON.stringify(bomRef)}`,
+          );
+        }
+        // Mirrors the live unique constraint on `po_number` (MIS-111's same finding, applied to
+        // POs too — see `po-numbering.test.ts`'s own comment).
+        if (state.pos.some((p) => p.poNumber === data.poNumber)) {
+          throw Object.assign(new Error('Unique constraint failed on the fields: (`po_number`)'), { code: 'P2002' });
+        }
+        const row = { id: nextId(), status: 'APPROVED', ...data, purpose };
+        state.pos.push(row);
+        return row;
+      },
       update: async ({ where, data }: Row) => { const row = state.pos.find((p) => p.id === where.id)!; Object.assign(row, data); return row; },
       findUnique: async ({ where, include }: Row) => {
         const po = state.pos.find((p) => p.id === where.id);
@@ -131,6 +155,25 @@ describe('createPO — FOR_ORDER validation (MIS-279 cases 2 & 3)', () => {
   it('omitting purpose infers FOR_ORDER from a present bomRef, and BUFFER_STOCK from none — existing callers are unaffected', async () => {
     expect((await createPO({ bomRef: 'BOM-9' })).bomRef).toBe('BOM-9');
     expect((await createPO({})).bomRef).toBeNull();
+  });
+});
+
+describe('createPO writes `purpose` in step with `bomRef` (Track 4 Part B — the stored column, not just the derived one)', () => {
+  it('a buffer-stock PO (null bomRef) is created with purpose=BUFFER_STOCK, never left at the FOR_ORDER default', async () => {
+    const po = await createPO({ purpose: 'BUFFER_STOCK' });
+    expect(po.bomRef).toBeNull();
+    expect((po as Row).purpose).toBe('BUFFER_STOCK');
+  });
+
+  it('inferring BUFFER_STOCK from an absent bomRef also writes the column — never blocked, never flagged', async () => {
+    const po = await createPO({});
+    expect(po.bomRef).toBeNull();
+    expect((po as Row).purpose).toBe('BUFFER_STOCK');
+  });
+
+  it('a FOR_ORDER PO is created with purpose=FOR_ORDER, matching its bomRef', async () => {
+    const po = await createPO({ bomRef: 'BOM-900' });
+    expect((po as Row).purpose).toBe('FOR_ORDER');
   });
 });
 

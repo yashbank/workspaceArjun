@@ -3,7 +3,6 @@
 import Link from 'next/link';
 
 import { LIST_PAGE_SIZE, NAV_GROUPS, masterSpec, type DirectoryEntry, type MasterKey, type MasterListView } from '@/lib/mis/master-directory';
-import type { TranslationKey } from '@/lib/mis/i18n';
 import { cn } from '@/lib/utils';
 
 import { useT } from '../shell/locale-provider';

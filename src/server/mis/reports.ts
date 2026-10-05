@@ -1,4 +1,5 @@
 import { addDaysToDateKey, dateKeyToDbDate, factoryDateKey } from '@/lib/mis/factory-time';
+import { buildMachineUtilisation, type MachineUtilisationReport } from '@/lib/mis/machine-utilisation';
 import { withoutMoneyFields } from '@/lib/mis/money-fields';
 import { can } from '@/lib/mis/permissions';
 import { db } from '@/server/db';
@@ -7,10 +8,6 @@ import { requirePermission } from '@/server/mis/auth';
 import { getFactoryTimezone } from '@/server/mis/business-rules';
 
 export type ReportRange = { from: Date; to: Date };
-
-// Machine utilisation (E7-11) can now be computed by joining
-// MisMachineAllocation to MisOrder/MisJobPhase by id — jobPhaseId landed in
-// Phase 9 (MIS-261/265). Not built here; this phase only wires the link.
 
 /** Production summary by order — qty produced, waste, entry count */
 export async function getProductionReport(range: ReportRange) {
@@ -38,7 +35,44 @@ export async function getProductionReport(range: ReportRange) {
   return { rows: Object.values(byOrder), raw: logs };
 }
 
-/** Attendance summary by employee for a date range */
+/**
+ * E7-11's machine utilisation report — how much of `range` each machine was booked for, against
+ * an order. Unblocked by Phase 9's `jobPhaseId` wiring; the comment this replaced said so and
+ * named the shape ("can now be computed by joining MisMachineAllocation… — not built here").
+ *
+ * No money (D24): quantities and minutes only.
+ */
+export async function getMachineUtilisationReport(range: ReportRange): Promise<MachineUtilisationReport> {
+  await requirePermission('reports.read');
+  const [machines, allocations] = await Promise.all([
+    db.misMachine.findMany({
+      where: { deletedAt: null },
+      select: { id: true, code: true, name: true, isActive: true },
+      orderBy: { sortOrder: 'asc' },
+    }),
+    // A simple overlap filter — releasedAt only ever SHORTENS the effective window (never past
+    // endsAt), so filtering on endsAt alone cannot drop an allocation the pure builder would
+    // still count; the exact clip happens there.
+    db.misMachineAllocation.findMany({
+      where: { startsAt: { lt: range.to }, endsAt: { gt: range.from } },
+      select: { machineId: true, startsAt: true, endsAt: true, releasedAt: true },
+    }),
+  ]);
+  return buildMachineUtilisation({ machines, allocations, range });
+}
+
+/**
+ * Attendance summary by employee for a date range.
+ *
+ * F-39/MIS-267: "present" and "late" must agree with this codebase's OTHER two readers of the
+ * same `misAttendance` rows, not invent a third definition. `payroll.ts`'s own `present` count
+ * is PRESENT + HALF_DAY ("a POLICY, not an attendance fact", its own comment) — a half-day is a
+ * paid day, not an absence, so this report must not silently drop it from either total.
+ * `attendance.ts`'s own `late` filter is `lateMinutes > 0 || status === 'LATE'` — the
+ * punch-derived day-builder marks a day PRESENT even when it carries real `lateMinutes`, so
+ * checking the literal status string alone undercounts every late arrival that never got the
+ * `LATE` status written.
+ */
 export async function getAttendanceReport(range: ReportRange) {
   await requirePermission('reports.read');
   const records = await db.misAttendance.findMany({
@@ -61,9 +95,9 @@ export async function getAttendanceReport(range: ReportRange) {
         present: 0, absent: 0, late: 0, ot: 0,
       };
     }
-    if (r.status === 'PRESENT') byEmp[key].present++;
+    if (r.status === 'PRESENT' || r.status === 'HALF_DAY') byEmp[key].present++;
     if (r.status === 'ABSENT') byEmp[key].absent++;
-    if (r.status === 'LATE') byEmp[key].late++;
+    if ((r.lateMinutes ?? 0) > 0 || r.status === 'LATE') byEmp[key].late++;
     if (r.otMinutes > 0) byEmp[key].ot++;
   }
   return { rows: Object.values(byEmp), raw: records };

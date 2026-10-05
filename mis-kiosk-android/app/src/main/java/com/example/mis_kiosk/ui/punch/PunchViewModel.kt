@@ -63,11 +63,13 @@ class PunchViewModel @JvmOverloads constructor(
         rosterPreferences = RosterPreferences(application),
         credentialStore = credentialStore,
     )
+    private val punchQueueDao = PunchQueueDatabase.getInstance(application).punchQueueDao()
+
     private val punchRepository = PunchRepository(
         context = application,
         api = api,
         punchStateDao = database.punchStateDao(),
-        punchQueueDao = PunchQueueDatabase.getInstance(application).punchQueueDao(),
+        punchQueueDao = punchQueueDao,
         credentialStore = credentialStore,
     )
 
@@ -387,7 +389,28 @@ class PunchViewModel @JvmOverloads constructor(
             }
             is PunchAttemptResult.RetryNeeded -> {
                 PunchFlushScheduler.schedule(getApplication())
+                watchForExternalResolution(attempt.key)
                 PunchSubmission.RetryPrompt(attempt.employeeName, result.detail ?: "Could not reach the server.")
+            }
+        }
+    }
+
+    private var staleWatchJob: Job? = null
+
+    /** A RetryPrompt left on screen can be resolved by someone else entirely — WorkManager's
+     *  background flush runs its own [PunchRepository] instance and has no way to tell this
+     *  screen it already applied the same key. Without this, the operator can sit looking at
+     *  "Can't reach the server" for a punch that's already gone through. */
+    private fun watchForExternalResolution(key: String) {
+        staleWatchJob?.cancel()
+        staleWatchJob = viewModelScope.launch {
+            punchQueueDao.observeAllOrdered().collect { entries ->
+                val entry = entries.find { it.key == key }
+                val resolvedElsewhere = entry == null || entry.status != com.example.mis_kiosk.data.local.PunchQueueStatus.PENDING
+                if (resolvedElsewhere && pending?.key == key && _submission.value is PunchSubmission.RetryPrompt) {
+                    pending = null
+                    _submission.value = null
+                }
             }
         }
     }

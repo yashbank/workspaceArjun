@@ -5,6 +5,7 @@ import { getBom } from '@/server/mis/bom';
 import { getProductionForOrder, getProductionSummary } from '@/server/mis/production';
 import { getPhasesForOrder } from '@/server/mis/job-phases';
 import { getQcForOrder, getQcSummary } from '@/server/mis/qc';
+import { listDocuments } from '@/server/mis/documents';
 import { getMisRole } from '@/server/mis/roles';
 import { can } from '@/lib/mis/permissions';
 import { OrderDetailDesktop } from '@/components/mis/desktop/order-detail-desktop';
@@ -28,7 +29,7 @@ export default async function OrderDetailPage({
   const order = await getOrder(id);
   if (!order) notFound();
 
-  const [bom, productionLogs, productionSummary, qcLogs, qcSummary, phases] = await Promise.all([
+  const [bom, productionLogs, productionSummary, qcLogs, qcSummary, phases, documents] = await Promise.all([
     getBom(id).catch(() => null),
     getProductionForOrder(id).catch(() => []),
     getProductionSummary(id).catch(() => ({ totalProduced: 0, totalWaste: 0, entries: 0 })),
@@ -40,6 +41,7 @@ export default async function OrderDetailPage({
     // Every role that can reach this page holds phase.read; if that ever stops
     // being true, this should break loudly rather than lie.
     getPhasesForOrder(id),
+    listDocuments(id).catch(() => []),
   ]);
 
   const canWrite = can(role, 'orders.write');
@@ -53,7 +55,7 @@ export default async function OrderDetailPage({
 
   const phone = (
     <OrderDetailScreen
-      order={order as any}
+      order={order}
       phases={phases.map((p) => ({
         id: p.id,
         sequence: p.sequence,
@@ -62,11 +64,16 @@ export default async function OrderDetailPage({
         inChargeName: p.inCharge?.name ?? null,
         downstreamFlagged: p.downstreamFlagged,
       }))}
-      bom={bom as any}
-      productionLogs={productionLogs as any[]}
-      productionSummary={productionSummary as any}
-      qcLogs={qcLogs as any[]}
-      qcSummary={qcSummary as any}
+      bom={bom}
+      productionLogs={productionLogs.map((l) => ({
+        ...l,
+        qtyProduced: Number(l.qtyProduced),
+        qtyWaste: Number(l.qtyWaste),
+      }))}
+      productionSummary={productionSummary}
+      qcLogs={qcLogs}
+      qcSummary={qcSummary}
+      documents={documents}
       canWrite={canWrite}
       canSeeWages={canSeeWages}
       canProduction={canProduction}

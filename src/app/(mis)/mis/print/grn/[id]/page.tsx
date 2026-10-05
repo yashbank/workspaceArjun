@@ -72,8 +72,8 @@ export default async function GrnPrintPage({ params }: { params: Promise<{ id: s
           </tr>
         </thead>
         <tbody>
-          {grn.items.map((grnItem: any, idx: number) => {
-            const poItem = grn.po?.items?.find((pi: any) => pi.id === grnItem.poItemId);
+          {grn.items.map((grnItem, idx) => {
+            const poItem = grn.po?.items?.find((pi) => pi.id === grnItem.poItemId);
             return (
               <tr key={grnItem.id} className="border-b border-gray-100">
                 <td className="py-2 text-gray-400">{idx + 1}</td>

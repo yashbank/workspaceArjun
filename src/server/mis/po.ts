@@ -29,12 +29,22 @@ export type PoItemInput = {
   ratePerUnit: number;
 };
 
-function nextPoNumber(): string {
+/**
+ * `attempt` (MIS-111's same finding, F-38, applied here too — `orders.ts`'s `nextOrderNumber`
+ * had the identical bug). Two `createPO` calls in the same millisecond derive the identical
+ * number and the second write throws the `poNumber` unique-constraint violation; `attempt`
+ * offsets the number on each retry so a collision does not need the clock to tick first.
+ */
+function nextPoNumber(attempt = 0): string {
   const now = new Date();
   const y = now.getFullYear();
   const m = String(now.getMonth() + 1).padStart(2, '0');
-  const ms = String(Date.now()).slice(-5);
+  const ms = String(Date.now() + attempt * 7919 + Math.floor(Math.random() * 97)).slice(-5);
   return `PO-${y}${m}-${ms}`;
+}
+
+function isUniqueConstraintError(err: unknown): boolean {
+  return Boolean(err && typeof err === 'object' && (err as { code?: unknown }).code === 'P2002');
 }
 
 /** Format a Decimal or number as Indian currency string, server-side. */
@@ -98,15 +108,32 @@ export async function createPO(input: PoInput) {
   if (purpose === 'FOR_ORDER' && !bomRef) {
     throw new Error('A PO raised from a BOM needs the BOM reference. For a stock top-up, raise it as buffer stock instead.');
   }
-  const created = await db.misPurchaseOrder.create({
-    data: {
-      poNumber: nextPoNumber(),
-      supplierId: input.supplierId || null,
-      bomRef,
-      notes: input.notes?.trim() || null,
-      createdById: actor.userId,
-    },
-  });
+  let created;
+  const MAX_ATTEMPTS = 6;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      created = await db.misPurchaseOrder.create({
+        data: {
+          poNumber: nextPoNumber(attempt),
+          supplierId: input.supplierId || null,
+          bomRef,
+          // `purpose` is a real column (Phase 21, D1) behind
+          // `mis_purchase_orders_purpose_bom_ref_ck`, which requires it to agree with `bomRef` on
+          // every row. The column's own Prisma default is FOR_ORDER, so leaving this out would
+          // insert a mismatched row for every buffer-stock PO and the database would refuse it —
+          // this write is what keeps the two in step, not the default.
+          purpose,
+          notes: input.notes?.trim() || null,
+          createdById: actor.userId,
+        },
+      });
+      break;
+    } catch (err) {
+      if (!isUniqueConstraintError(err) || attempt >= MAX_ATTEMPTS - 1) throw err;
+      // A collided PO number is a clock coincidence (MIS-111's finding, same root cause as
+      // orders.ts), not a programming error — propose another one and try again.
+    }
+  }
   await logAuditEvent({ actorId: actor.userId, action: 'po.create', entity: 'MisPurchaseOrder', entityId: created.id, after: created });
   return created;
 }

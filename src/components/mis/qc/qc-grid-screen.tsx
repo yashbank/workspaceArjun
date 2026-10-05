@@ -2,26 +2,38 @@
 import Link from 'next/link';
 import { useState, useTransition } from 'react';
 import { Button } from '@/components/mis/kit/button';
+import { Input } from '@/components/mis/kit/input';
 import { Select, type SelectOption } from '@/components/mis/kit/select';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { addQcCheckAction } from '@/app/(mis)/mis/qc/actions';
 
 type Check = { id: string; checkTime: Date; result: string; parameterName: string | null; orderId: string; order: { orderNumber: string } | null };
 type Order = { id: string; orderNumber: string };
+type DefectTypeOption = { id: string; code: string; name: string; severity: string };
 
 // Standard factory shift hours (6am–6pm in 1-hour slots)
 const HOURS = Array.from({ length: 12 }, (_, i) => i + 6); // 6 through 17
 
 const PARAMETERS = ['GSM', 'Caliper', 'Burst Factor', 'Moisture', 'Tension', 'Visual Check'];
 
-export function QcGridScreen({ orders, todayChecks, canWrite }: { orders: Order[]; todayChecks: Check[]; canWrite: boolean }) {
+// '' is the sentinel for "not in the master" — QC holds masters.read, not masters.write, so a
+// defect that is not yet classified must still be recordable, as free text (F-19/D14).
+const OTHER_DEFECT = '';
+
+export function QcGridScreen({ orders, todayChecks, canWrite, defectTypes }: { orders: Order[]; todayChecks: Check[]; canWrite: boolean; defectTypes: DefectTypeOption[] }) {
   const [selectedOrderId, setSelectedOrderId] = useState(orders[0]?.id ?? '');
   const [addingHour, setAddingHour] = useState<number | null>(null);
   const [param, setParam] = useState(PARAMETERS[0]);
   const [result, setResult] = useState<'PASS' | 'FAIL' | 'NA'>('PASS');
+  const [defectTypeCode, setDefectTypeCode] = useState(OTHER_DEFECT);
+  const [defectTypeOther, setDefectTypeOther] = useState('');
   const [isPending, startTransition] = useTransition();
 
   const orderOptions: SelectOption[] = orders.map(o => ({ value: o.id, label: o.orderNumber }));
+  const defectTypeOptions: SelectOption[] = [
+    { value: OTHER_DEFECT, label: 'Not listed — describe below' },
+    ...defectTypes.map((dt) => ({ value: dt.code, label: `${dt.name} (${dt.severity})` })),
+  ];
 
   // Group today's checks by order × hour
   const checksByHour: Record<string, Record<number, Check[]>> = {};
@@ -39,8 +51,15 @@ export function QcGridScreen({ orders, todayChecks, canWrite }: { orders: Order[
   const handleAdd = () => {
     if (!selectedOrderId || addingHour === null) return;
     startTransition(async () => {
-      await addQcCheckAction({ orderId: selectedOrderId, result, parameterName: param });
+      await addQcCheckAction({
+        orderId: selectedOrderId,
+        result,
+        parameterName: param,
+        defectType: result === 'FAIL' ? (defectTypeCode || defectTypeOther.trim()) || undefined : undefined,
+      });
       setAddingHour(null);
+      setDefectTypeCode(OTHER_DEFECT);
+      setDefectTypeOther('');
     });
   };
 
@@ -139,6 +158,14 @@ export function QcGridScreen({ orders, todayChecks, canWrite }: { orders: Order[
                 <div className="space-y-4">
                   <Select label="Parameter" value={param} onChange={setParam} options={PARAMETERS.map(p => ({ value: p, label: p }))} />
                   <Select label="Result" value={result} onChange={(v) => setResult(v as 'PASS' | 'FAIL' | 'NA')} options={resultOptions} />
+                  {result === 'FAIL' && (
+                    <>
+                      <Select label="Defect Type" value={defectTypeCode} options={defectTypeOptions} onChange={setDefectTypeCode} />
+                      {defectTypeCode === OTHER_DEFECT && (
+                        <Input label="Describe the defect" value={defectTypeOther} onChange={(e) => setDefectTypeOther(e.target.value)} />
+                      )}
+                    </>
+                  )}
                 </div>
                 <div className="flex gap-2 mt-6">
                   <Button onClick={handleAdd} disabled={isPending}>{isPending ? 'Saving…' : 'Save'}</Button>

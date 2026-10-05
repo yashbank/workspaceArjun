@@ -6,8 +6,8 @@ import { TraceabilityDesktopServer } from '@/components/mis/desktop/traceability
 export default async function TraceabilityPage({ searchParams }: { searchParams: Promise<{ view?: string; q?: string }> }) {
   const sp = await searchParams;
   await requireMisAccess();
-  const orders = (await listOrders()).filter((o: any) => !['DRAFT'].includes(o.status));
-  const phone = <TraceabilityScreen orders={orders as any[]} />;
+  const orders = (await listOrders()).filter((o) => !['DRAFT'].includes(o.status));
+  const phone = <TraceabilityScreen orders={orders} />;
 
   // D11 from 1024px up; the existing screen below it. ANY explicit `?view` is the existing screen at every width.
   if (sp.view) return phone;

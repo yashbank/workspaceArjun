@@ -6,16 +6,18 @@ import { Input } from '@/components/mis/kit/input';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import { StatusBadge, type BadgeTone } from '@/components/mis/kit/status-badge';
 import { DataTable, type Column } from '@/components/mis/kit/data-table';
-import { reopenOrderAction } from '@/app/(mis)/mis/orders/actions';
+import { addOrderDocumentAction, reopenOrderAction } from '@/app/(mis)/mis/orders/actions';
 import { useT } from '@/components/mis/shell/locale-provider';
 import { isOrderClosed } from '@/lib/mis/order-status';
+import { validateDocumentInput } from '@/lib/mis/document-library';
 
 type Order = { id: string; orderNumber: string; status: string; description: string | null; deliveryDate: Date | null; notes: string | null; createdAt: Date; customer: { name: string } | null };
-type Bom = { id: string; status: string; stages: any[] } | null;
+type Bom = { id: string; status: string; stages: unknown[] } | null;
 type ProductionLog = { id: string; loggedAt: Date; qtyProduced: number; qtyWaste: number; unit: string; machine: { name: string } | null; employee: { name: string } | null; shift: { name: string } | null };
 type QcLog = { id: string; checkTime: Date; result: string; parameterName: string | null; defectType: string | null; notes: string | null; checkBy: { name: string } | null };
+type OrderDocument = { id: string; name: string; description: string | null; filePath: string; createdAt: Date; uploadedByProfile: { name: string | null; email: string } | null };
 
-type Tab = 'overview' | 'bom' | 'production' | 'qc';
+type Tab = 'overview' | 'bom' | 'production' | 'qc' | 'documents';
 
 type JobPhase = {
   id: string;
@@ -38,6 +40,8 @@ type Props = {
   productionSummary: { totalProduced: number; totalWaste: number; entries: number };
   qcLogs: QcLog[];
   qcSummary: { total: number; pass: number; fail: number };
+  /** Includes the customer's PO once attached — a document, not a field (E5-09, S6-Documents.png). */
+  documents: OrderDocument[];
   canWrite: boolean;
   canSeeWages: boolean;
   canProduction: boolean;
@@ -66,8 +70,8 @@ function statusTone(s: string): BadgeTone {
 }
 
 export function OrderDetailScreen({
-  order, phases, bom, productionLogs, productionSummary, qcLogs, qcSummary,
-  canWrite, canSeeWages, canProduction, canQc,
+  order, phases, bom, productionLogs, productionSummary, qcLogs, qcSummary, documents,
+  canWrite, canSeeWages: _canSeeWages, canProduction, canQc,
 }: Props) {
   const [tab, setTab] = useState<Tab>('overview');
   const t = useT();
@@ -76,6 +80,23 @@ export function OrderDetailScreen({
   const [reopenError, setReopenError] = useState<string | null>(null);
   const [reopening, startReopen] = useTransition();
   const closed = isOrderClosed(order.status);
+
+  const [docOpen, setDocOpen] = useState(false);
+  const [docName, setDocName] = useState('');
+  const [docDesc, setDocDesc] = useState('');
+  const [docPath, setDocPath] = useState('');
+  const [docError, setDocError] = useState<string | null>(null);
+  const [docPending, startDoc] = useTransition();
+
+  const handleAddDocument = () => {
+    const message = validateDocumentInput({ orderId: order.id, name: docName, description: docDesc, link: docPath });
+    if (message) { setDocError(message); return; }
+    setDocError(null);
+    startDoc(async () => {
+      await addOrderDocumentAction(order.id, { name: docName.trim(), description: docDesc.trim() || undefined, filePath: docPath.trim() });
+      setDocName(''); setDocDesc(''); setDocPath(''); setDocOpen(false);
+    });
+  };
 
   const handleReopen = () => startReopen(async () => {
     setReopenError(null);
@@ -93,6 +114,7 @@ export function OrderDetailScreen({
     { key: 'bom', label: 'BOM', show: true },
     { key: 'production', label: 'Production', show: canProduction },
     { key: 'qc', label: 'Quality', show: canQc },
+    { key: 'documents', label: `Documents${documents.length ? ` (${documents.length})` : ''}`, show: true },
   ];
 
   const prodCols: Column<ProductionLog>[] = [
@@ -222,13 +244,15 @@ export function OrderDetailScreen({
         </div>
       </div>
 
-      {/* Tab bar */}
-      <div className="flex gap-1 mb-6 border-b border-slate-200">
+      {/* Tab bar. `overflow-x-auto`: five tabs, and "Documents (N)" (E5-09) grows with the
+          count — doesn't fit a 390px phone screen; scrolls inside its own row instead of
+          blowing out the page width. */}
+      <div className="flex gap-1 mb-6 overflow-x-auto scrollbar-none border-b border-slate-200">
         {tabs.filter(t => t.show).map(t => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`inline-flex min-h-11 items-center px-4 text-sm font-medium border-b-2 transition-colors ${
+            className={`inline-flex min-h-11 shrink-0 items-center whitespace-nowrap px-4 text-sm font-medium border-b-2 transition-colors ${
               tab === t.key ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700'
             }`}
           >
@@ -296,6 +320,56 @@ export function OrderDetailScreen({
           emptyBody="No quality checks have been recorded for this order yet."
         />
       )}
+
+      {tab === 'documents' && (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-sm text-slate-500">
+              The customer&rsquo;s PO and anything else sent or generated for this order — a name and a link, kept here, never overwritten.
+            </p>
+            {canWrite && <Button onClick={() => setDocOpen(true)}>+ Add document</Button>}
+          </div>
+          {documents.length === 0 ? (
+            <div className="text-center py-12">
+              <p className="text-slate-500 mb-1">No documents yet.</p>
+              <p className="text-slate-400 text-sm">Attach the customer&rsquo;s PO, artwork approval or any other file.</p>
+            </div>
+          ) : (
+            <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white">
+              {documents.map((doc) => (
+                <li key={doc.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-slate-900">{doc.name}</p>
+                    <p className="truncate text-xs text-slate-500">
+                      {new Date(doc.createdAt).toLocaleDateString('en-IN')}
+                      {doc.uploadedByProfile?.name ? ` · ${doc.uploadedByProfile.name}` : ''}
+                      {doc.description ? ` · ${doc.description}` : ''}
+                    </p>
+                  </div>
+                  <a href={doc.filePath} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 shrink-0 items-center text-sm font-medium text-indigo-700 hover:underline">
+                    Open
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      <SlideOver open={docOpen} onClose={() => { setDocOpen(false); setDocError(null); }} title="Add document">
+        <div className="flex flex-col gap-4 p-4">
+          <Input label="Name" value={docName} onChange={e => setDocName(e.target.value)} placeholder="e.g. Customer PO" />
+          <Input label="Description (optional)" value={docDesc} onChange={e => setDocDesc(e.target.value)} />
+          <Input label="File link" value={docPath} onChange={e => setDocPath(e.target.value)} placeholder="https://..." />
+          {docError && (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900">{docError}</div>
+          )}
+          <div className="flex gap-2 pt-2">
+            <Button onClick={handleAddDocument} disabled={docPending}>{docPending ? 'Saving…' : 'Add'}</Button>
+            <Button variant="ghost" onClick={() => { setDocOpen(false); setDocError(null); }}>Cancel</Button>
+          </div>
+        </div>
+      </SlideOver>
 
       <SlideOver open={reopenOpen} onClose={() => { setReopenOpen(false); setReopenError(null); }} title={t('order.reopen')}>
         <div className="flex flex-col gap-4 p-4">

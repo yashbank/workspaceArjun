@@ -4,6 +4,7 @@ import { requireMisAccess } from '@/server/mis/guard';
 import { checkPermission } from '@/server/mis/auth';
 import { getPO, computePoTotal } from '@/server/mis/po';
 import { notFound } from 'next/navigation';
+import Link from 'next/link';
 import { poPurpose, poPurposeLabel } from '@/lib/mis/po-purpose';
 
 export default async function PoPrintPage({ params }: { params: Promise<{ id: string }> }) {
@@ -36,7 +37,7 @@ export default async function PoPrintPage({ params }: { params: Promise<{ id: st
     <div className="max-w-3xl mx-auto py-8 px-6 font-sans text-sm text-gray-900">
       <div className="no-print mb-6 flex gap-3">
         <PrintButton />
-        <a href="/mis/po" className="px-4 py-2 border border-gray-200 rounded text-sm hover:bg-gray-50">Back to POs</a>
+        <Link href="/mis/po" className="px-4 py-2 border border-gray-200 rounded text-sm hover:bg-gray-50">Back to POs</Link>
       </div>
 
       <div className="flex justify-between items-start mb-6 pb-4 border-b-2 border-gray-800">
@@ -91,7 +92,7 @@ export default async function PoPrintPage({ params }: { params: Promise<{ id: st
           </tr>
         </thead>
         <tbody>
-          {po.items.map((item: any, idx: number) => {
+          {po.items.map((item, idx) => {
             const qty = Number(item.quantity);
             const rate = Number(item.ratePerUnit);
             const amount = qty * rate;

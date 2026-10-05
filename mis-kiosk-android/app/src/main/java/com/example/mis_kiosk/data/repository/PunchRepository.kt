@@ -29,6 +29,22 @@ sealed interface PunchAttemptResult {
 
 private const val PUNCH_LOG_TAG = "PunchRepository"
 
+/**
+ * Process-wide guard against the same key being sent twice at once. `WorkManager`'s background
+ * flush and the punch screen's own 8s on-screen retry-prompt replay each run against their own
+ * [PunchRepository] instance with no shared state — nothing stopped both from retrying the same
+ * still-PENDING key within the same few seconds, confirmed live (two concurrent POSTs for one
+ * key, both landing as Applied, saved only by the server's own idempotency dedup). A key-level
+ * lock here is the one place both paths actually go through.
+ */
+private object InFlightPunchKeys {
+    private val keys = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    fun tryAcquire(key: String): Boolean = keys.add(key)
+    fun release(key: String) {
+        keys.remove(key)
+    }
+}
+
 class PunchRepository(
     private val context: Context,
     private val api: KioskApi,
@@ -130,6 +146,26 @@ class PunchRepository(
         kind: String,
         clientRecordedAtIso: String,
         operatorId: String? = null,
+    ): PunchAttemptResult {
+        if (!InFlightPunchKeys.tryAcquire(key)) {
+            android.util.Log.i(PUNCH_LOG_TAG, "SKIP key=…${key.takeLast(8)} already in flight elsewhere")
+            return PunchAttemptResult.RetryNeeded("Already retrying — try again shortly.")
+        }
+        try {
+            return attemptLocked(key, employeeId, badgeCode, shiftId, kind, clientRecordedAtIso, operatorId)
+        } finally {
+            InFlightPunchKeys.release(key)
+        }
+    }
+
+    private suspend fun attemptLocked(
+        key: String,
+        employeeId: String,
+        badgeCode: String,
+        shiftId: String?,
+        kind: String,
+        clientRecordedAtIso: String,
+        operatorId: String?,
     ): PunchAttemptResult {
         val device = credentialStore.activeDevice
             ?: return PunchAttemptResult.RetryNeeded("This tablet is not paired.")

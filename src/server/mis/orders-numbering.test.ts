@@ -50,13 +50,11 @@ beforeEach(() => {
 });
 
 describe('order numbering under concurrency (MIS-111)', () => {
-  // New finding (F-38): `nextOrderNumber()` is not collision-proof. Fired concurrently (no real
-  // I/O delay in this fake, so every call executes inside the same millisecond — the exact
-  // scenario the ticket asks to hammer), several calls compute the IDENTICAL orderNumber and the
-  // later ones throw the unique-constraint error instead of retrying or serialising. Asserted as
-  // the spec-correct behaviour ("hammers the generator... asserts no duplicates") under
-  // `it.fails`, per this project's convention for a QA-found gap.
-  it.fails('creating 20 orders concurrently produces 20 distinct order numbers, none dropped or thrown away', async () => {
+  // F-38, fixed (Track 4, Phase 28): `nextOrderNumber()` alone was not collision-proof — several
+  // calls landing in the same millisecond computed the IDENTICAL number and the later ones threw
+  // the raw unique-constraint error. `createOrder` now retries on exactly that error (P2002) with
+  // a re-offset number, up to 6 attempts, so a clock coincidence is absorbed instead of surfaced.
+  it('creating 20 orders concurrently produces 20 distinct order numbers, none dropped or thrown away', async () => {
     const results = await Promise.allSettled(Array.from({ length: 20 }, () => createOrder({})));
     const succeeded = results.filter((r) => r.status === 'fulfilled');
     expect(succeeded).toHaveLength(20);

@@ -9,7 +9,7 @@ export default async function ProcessesPage({ searchParams }: { searchParams: Pr
   const sp = await searchParams;
   await requireMisAccess();
   const [processes, depts, canWrite] = await Promise.all([listProcesses(), listDepts(), checkPermission('masters.write')]);
-  const phone = <ProcessScreen processes={processes as any} depts={depts} canWrite={canWrite} />;
+  const phone = <ProcessScreen processes={processes} depts={depts} canWrite={canWrite} />;
 
   // D10 from 1024px up; the existing screen below it. ANY explicit `?view` is the existing screen at every width.
   if (sp.view) return phone;

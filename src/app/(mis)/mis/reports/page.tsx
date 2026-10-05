@@ -2,7 +2,7 @@ import { toPlain } from '@/lib/mis/plain';
 import { requireMisAccess } from '@/server/mis/guard';
 import { getMisRole } from '@/server/mis/roles';
 import { can } from '@/lib/mis/permissions';
-import { getProductionReport, getAttendanceReport, getQcReport, getOrdersReport, getStoreReport } from '@/server/mis/reports';
+import { getProductionReport, getAttendanceReport, getQcReport, getOrdersReport, getStoreReport, getMachineUtilisationReport } from '@/server/mis/reports';
 import { ReportsScreen } from '@/components/mis/reports/reports-screen';
 import { WastageDesktop } from '@/components/mis/desktop/wastage-desktop';
 import { getWastageReport } from '@/server/mis/reports';
@@ -31,12 +31,13 @@ export default async function ReportsPage({
   const month = parseInt(sp.month ?? String(now.getMonth() + 1), 10);
 
   const range = monthRange(year, month);
-  const [production, attendance, qc, orders, store] = await Promise.all([
+  const [production, attendance, qc, orders, store, machines] = await Promise.all([
     getProductionReport(range),
     getAttendanceReport(range),
     getQcReport(range),
     getOrdersReport(range),
     getStoreReport(range),
+    getMachineUtilisationReport(range),
   ]);
 
   const canSeeWages = can(role, 'wages.read');
@@ -49,8 +50,9 @@ export default async function ReportsPage({
       production={toPlain(production)}
       attendance={toPlain(attendance)}
       qc={toPlain(qc)}
-      orders={toPlain(orders) as any[]}
+      orders={toPlain(orders)}
       store={toPlain(store)}
+      machines={toPlain(machines)}
       canSeeWages={canSeeWages}
       isOwner={isOwner}
       rangeLabel={`${MONTHS[month - 1]} ${year}`}

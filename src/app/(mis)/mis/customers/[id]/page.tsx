@@ -27,7 +27,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
   });
   if (!customer) notFound();
 
-  const orders = (customer.orders ?? []).map((o: any) => ({
+  const orders = (customer.orders ?? []).map((o) => ({
     id: o.id,
     orderNumber: o.orderNumber,
     status: o.status,

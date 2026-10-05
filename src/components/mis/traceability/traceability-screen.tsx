@@ -4,12 +4,41 @@ import { Select } from '@/components/mis/kit/select';
 import { StatusBadge, type BadgeTone } from '@/components/mis/kit/status-badge';
 
 type Order = { id: string; orderNumber: string; description: string | null; status: string };
+
+// Shape of the JSON body returned by `GET /api/mis/trace/[orderId]` (`getOrderTrace`,
+// server/mis/traceability.ts). Dates and Decimals cross the wire as strings, hence the
+// `new Date(...)`/`Number(...)` conversions below rather than using them directly.
+type TraceOrder = {
+  orderNumber: string;
+  status: string;
+  deliveryDate: string | null;
+  customer: { name: string } | null;
+};
+type TraceBomMaterial = { id: string };
+type TraceBomStage = { id: string; stageName: string; materials: TraceBomMaterial[] | null };
+type TraceBom = { stages: TraceBomStage[] | null } | null;
+type TraceProductionLog = {
+  id: string;
+  loggedAt: string;
+  qtyProduced: number | string;
+  unit: string;
+  employee: { name: string } | null;
+  machine: { name: string } | null;
+};
+type TraceQcCheck = {
+  id: string;
+  checkTime: string;
+  parameterName: string | null;
+  result: string;
+  checkBy: { name: string } | null;
+};
+type TraceDocument = { id: string; name: string; filePath: string };
 type TraceResult = {
-  order: any;
-  bom: any;
-  productionLogs: any[];
-  qcChecks: any[];
-  documents: any[];
+  order: TraceOrder | null;
+  bom: TraceBom;
+  productionLogs: TraceProductionLog[];
+  qcChecks: TraceQcCheck[];
+  documents: TraceDocument[];
   totalProduced: number;
   totalWaste: number;
   passChecks: number;
@@ -88,13 +117,13 @@ export function TraceabilityScreen({ orders }: { orders: Order[] }) {
           <Section title="Bill of Materials" count={trace.bom?.stages?.length ?? 0}>
             {trace.bom ? (
               <div className="space-y-3">
-                {trace.bom.stages?.map((stage: any, i: number) => (
+                {trace.bom.stages?.map((stage, i) => (
                   <div key={stage.id} className="flex gap-3 items-start">
                     <span className="bg-slate-200 text-slate-700 text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
                     <div>
                       <p className="font-medium text-sm">{stage.stageName}</p>
-                      {stage.materials?.length > 0 && (
-                        <p className="text-xs text-slate-500 mt-0.5">{stage.materials.length} material(s)</p>
+                      {(stage.materials?.length ?? 0) > 0 && (
+                        <p className="text-xs text-slate-500 mt-0.5">{stage.materials?.length} material(s)</p>
                       )}
                     </div>
                   </div>
@@ -107,7 +136,7 @@ export function TraceabilityScreen({ orders }: { orders: Order[] }) {
           <Section title="Production Log" count={trace.productionLogs.length}>
             {trace.productionLogs.length > 0 ? (
               <div className="space-y-2">
-                {trace.productionLogs.map((log: any) => (
+                {trace.productionLogs.map((log) => (
                   <div key={log.id} className="flex items-center gap-4 text-sm border-b border-slate-100 pb-2">
                     <span className="text-slate-500 w-24 flex-shrink-0">{new Date(log.loggedAt).toLocaleDateString('en-IN')}</span>
                     <span className="font-medium">{Number(log.qtyProduced).toLocaleString('en-IN')} {log.unit}</span>
@@ -123,7 +152,7 @@ export function TraceabilityScreen({ orders }: { orders: Order[] }) {
           <Section title="Quality Checks" count={trace.qcChecks.length}>
             {trace.qcChecks.length > 0 ? (
               <div className="space-y-2">
-                {trace.qcChecks.map((check: any) => (
+                {trace.qcChecks.map((check) => (
                   <div key={check.id} className="flex items-center gap-4 text-sm border-b border-slate-100 pb-2">
                     <span className="text-slate-500 w-24 flex-shrink-0">{new Date(check.checkTime).toLocaleDateString('en-IN')}</span>
                     <span className="font-medium">{check.parameterName}</span>
@@ -143,7 +172,7 @@ export function TraceabilityScreen({ orders }: { orders: Order[] }) {
           <Section title="Documents" count={trace.documents.length}>
             {trace.documents.length > 0 ? (
               <div className="space-y-2">
-                {trace.documents.map((doc: any) => (
+                {trace.documents.map((doc) => (
                   <div key={doc.id} className="flex items-center gap-3 text-sm">
                     <span className="font-medium">{doc.name}</span>
                     <a href={doc.filePath} target="_blank" rel="noopener" className="text-blue-600 hover:underline text-xs">Download</a>

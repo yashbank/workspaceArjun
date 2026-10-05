@@ -27,10 +27,10 @@ export default async function EmployeeProfilePage({ params }: { params: Promise<
     isOwner ? getPayComponents(id) : Promise.resolve(null),
   ]);
 
-  const present = attendance.filter((a: any) => ['PRESENT', 'HALF_DAY'].includes(a.status)).length;
-  const absent = attendance.filter((a: any) => a.status === 'ABSENT').length;
-  const leave = attendance.filter((a: any) => a.status === 'LEAVE').length;
-  const totalOT = attendance.reduce((s: number, a: any) => s + (a.otMinutes ?? 0), 0);
+  const present = attendance.filter((a) => ['PRESENT', 'HALF_DAY'].includes(a.status)).length;
+  const absent = attendance.filter((a) => a.status === 'ABSENT').length;
+  const leave = attendance.filter((a) => a.status === 'LEAVE').length;
+  const totalOT = attendance.reduce((s, a) => s + (a.otMinutes ?? 0), 0);
 
   return (
     <EmployeeProfileScreen
