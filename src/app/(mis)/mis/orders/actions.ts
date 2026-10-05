@@ -2,6 +2,7 @@
 import { revalidatePath } from 'next/cache';
 import { isMisForbiddenError } from '@/server/mis/auth';
 import { createOrder, OrderReopenError, reopenOrder, updateOrder, updateOrderStatus } from '@/server/mis/orders';
+import { addDocument } from '@/server/mis/documents';
 
 export async function saveOrderAction(id: string | null, values: { customerId?: string | null; description?: string | null; deliveryDate?: string | null; notes?: string | null }) {
   if (id) { await updateOrder(id, values); } else { await createOrder(values); }
@@ -11,6 +12,20 @@ export async function saveOrderAction(id: string | null, values: { customerId?: 
 export async function updateOrderStatusAction(id: string, status: string) {
   await updateOrderStatus(id, status);
   revalidatePath('/mis/orders');
+}
+
+/**
+ * E5-09 (MIS-108/132/133): a customer PO is captured as a document hanging off the order
+ * (`S6-Documents.png`'s own pattern — a name and a link, same shape every generated/uploaded
+ * file on an order uses), never a structured field — `mis_purchase_orders` already has its own,
+ * unrelated `bomRef`/`purpose` and this is a different "PO" entirely (a customer's paper, not a
+ * supplier purchase order; see D3's note in bom.test.ts). Thin wrapper over the existing,
+ * unmodified `documents.ts` module so the order screen can offer "attach the customer's PO"
+ * without a second document-storage path.
+ */
+export async function addOrderDocumentAction(orderId: string, data: { name: string; description?: string; filePath: string }) {
+  await addDocument(orderId, data);
+  revalidatePath(`/mis/orders/${orderId}`);
 }
 
 /**

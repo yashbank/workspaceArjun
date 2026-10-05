@@ -78,10 +78,17 @@ on any non-OWNER code path. `tsc --noEmit --skipLibCheck` silent, `pnpm test` 20
 passed (unchanged), `pnpm build` succeeds, every `/mis/*` route present.
 
 ## Track 4 — E5: Orders, BOM & Job Cards gaps
-**Status:** TODO
-9 NO, 12 PARTIAL. Also re-verify the client's Sep-2026 PO-purpose change (buffer-stock vs
-for-order, MIS_UI_SPEC §6) is fully wired across every surface listed there (list column, detail
-card, printed PO, approval queue row, receive screen chip) — built once, not re-checked since.
+**Status:** DONE (PR #55, 2026-10-05) — Part A: fixed order/PO numbering races (MIS-111, F-38) and
+the BOM approval gate (MIS-123, F-37: `approveBom`/`submitBomForApproval` now check status);
+confirmed E5-04 (BOM costing/owner-gate) and MIS-114/120 (BOM tree integrity/money isolation)
+already done; BOM versioning schema prepared in `prisma/migrations-pending/` (not yet wired —
+needs a human `pnpm db:deploy` first); added order-detail "Documents" tab (E5-09) reusing the
+existing document-library module; E5-06 (job card template builder) and the rest of E5-09 flagged
+as blocked on the parallel E7/Documents track, not built. Part B: found and fixed a real bug —
+`createPO` never wrote the `purpose` column (Phase 21's `mis_purchase_orders_purpose_bom_ref_ck`),
+so every buffer-stock PO raised since that migration would have been rejected by Postgres in
+production; every spec-listed surface (list, detail, print, approval queue, receive chip) was
+already correctly deriving via `poPurpose()`. See PR for full detail.
 
 ## Track 5 — E4: Worker allocation engine
 **Status:** DONE (PR #52, 2026-10-04) — already complete, no code change needed
