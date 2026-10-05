@@ -49,10 +49,45 @@ and the D10 "No phase plan · not gated" message for ungated orders). `mis_job_p
 and tested (job-phases.gate.db.test.ts exercises the live DB trigger directly).
 
 ## Track 2 — E7: Quality, COA, Documents & Reports
-**Status:** TODO
-`mis_defect_types` and `mis_line_clearances`: 0 rows — QC defect master and the Supervisor-home
-line-clearance blocker card are unexercised. Per inventory: 14 NO, 17 PARTIAL (second-highest
-score). Covers QC grid, defects, COA print, documents, reports screens.
+**Status:** DONE (PR #56, 2026-10-05) — re-checked every E7 ticket against current code (most of
+the 2026-09-15 inventory's 14 NO/17 PARTIAL was already closed by Phase 24E/18, not re-verified
+since): AQL engine (E7-04), the QC home board/grid/defect-type master/line-clearance blocker
+(E7-02/E6-02, already fully wired into `supervisor-home.tsx`), document storage, traceability,
+attendance summary and the owner dashboard alerts (E7-09/10/12/13) were all genuinely done. Fixed
+what was still genuinely broken, all within QC/documents/reports files only:
+- **E7-03 (defect logging + notification):** the "Add QC Check" FAIL flow (`qc-screen.tsx`,
+  `qc-detail-screen.tsx`, `qc-grid-screen.tsx`) took the defect type as free text, never touching
+  `mis_defect_types` — only the separate "Run AQL Sample" flow used the master (F-19). Now a
+  `<Select>` sourced from `listDefectTypes()`, with a "not listed" free-text fallback since QC
+  holds `masters.read` only. A FAIL check or a rejected AQL sample now fans a `mis.qc_defect`
+  notification out to every active SUPERVISOR (`server/notifications`), the same table
+  `job-phases.ts`'s sign-off handover already uses.
+- **F-18/F-34 (QC home timezone bug):** `getTodayQcBoard` used the server's own clock
+  (`getHours`/`setHours`) to decide "today" and "which hour", not the factory's zone — fixed to
+  match `getQcHourlyGrid`'s existing discipline (D22).
+- **F-39/MIS-267 (attendance report bug):** `getAttendanceReport`'s present/late counts disagreed
+  with `payroll.ts`/`attendance.ts`'s own definitions (dropped HALF_DAY from "present", missed a
+  PRESENT day with real `lateMinutes` from "late") — fixed, `it.fails` markers flipped to passing.
+- **E7-07 (COA print, new bug found):** the Certificate of Analysis print page read
+  `checkedAt`/`checkedBy`/`defectDescription` — fields that don't exist on a QC row (the real
+  names are `checkTime`/`checkBy`/`defectType`+`notes`) — so every printed COA showed "Invalid
+  Date" and blank Checked-By/Notes regardless of what was recorded. Fixed.
+- **F-23(8)/(9) (document link safety):** the phone documents screen turned any pasted string
+  straight into an `href` (unlike the desktop library's `safeHref`, D31) — fixed. `addDocument`/
+  `deleteDocument` wrote the document's `filePath` into the audit payload, which can carry a
+  signed URL's token and is Admin-readable — now withheld.
+- **E7-11 (machine utilisation, new):** built `getMachineUtilisationReport` + a "Machines" tab on
+  `/mis/reports`, unblocked by Phase 9's `jobPhaseId` wiring on `MisMachineAllocation`. Honest
+  about what it counts: booked time against wall-clock time in the range, never a downtime claim
+  (`MisMachine` carries no history of when it went down, F-14).
+Explicitly NOT built, flagged rather than guessed: **E7-01** (configurable checklist templates —
+no master exists at all, F-20, and no product decision on what the templates/items even are) and
+**E7-08** (document versioning/categories/retention — D31 already records this as an open
+"Ask Arjun" question, SCHEMA GATE Half A, not something to invent here). `mis_defect_types` and
+`mis_line_clearances` still show 0 live rows — that remains a usage/exercise gap (nobody has
+added a defect type or cleared a line yet), not a code gap; every path is now built and tested.
+`tsc --noEmit --skipLibCheck` silent, `pnpm test` 216 files / 4423 passed (includes 7 new test
+files this track added), `pnpm build` succeeds, every `/mis/*` route present.
 
 ## Track 3 — E1: Foundation & Access Control gaps
 **Status:** DONE (PR #53, 2026-10-04) — all 16 "NO" tickets were already built (landed
