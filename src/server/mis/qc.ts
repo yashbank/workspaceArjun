@@ -1,8 +1,10 @@
 import { evaluateAql, type AqlResult } from '@/lib/mis/aql';
+import { addDaysToDateKey, dateKeyToDbDate, factoryDateKey, factoryMinuteOfDay } from '@/lib/mis/factory-time';
 import { db } from '@/server/db';
 import { requirePermission } from '@/server/mis/auth';
 import { logAuditEvent } from '@/server/mis/audit';
-import { getAqlThresholds } from '@/server/mis/business-rules';
+import { getAqlThresholds, getFactoryTimezone } from '@/server/mis/business-rules';
+import { notifySupervisorsOfQcDefect } from '@/server/notifications';
 
 /** checkById has no formal FK (it can point at any Supabase auth user, not
  * just a mis_employees row) so it isn't a Prisma relation — resolve names
@@ -29,7 +31,29 @@ export async function addQcCheck(data: {
     data: { ...data, parameterName: data.parameterName ?? 'General', checkTime: new Date(), checkById: actor.userId },
   });
   await logAuditEvent({ actorId: actor.userId, action: 'ADD_QC_CHECK', entity: 'MisQcCheck', entityId: rec.id, after: rec });
+  if (rec.result === 'FAIL') await notifyOfDefect(rec);
   return rec;
+}
+
+/**
+ * MIS-174/191 — "immediate notification": every active SUPERVISOR learns of a FAIL the moment
+ * it is logged, the same `notification` table `job-phases.ts`'s sign-off handover already writes
+ * to (MIS-163's precedent, no second notification system). Best-effort, same discipline as
+ * `logAuditEvent`: a failed write here must never fail — or re-throw past — the QC check itself.
+ */
+async function notifyOfDefect(check: { id: string; orderId: string; parameterName: string | null; defectType: string | null; checkTime: Date }) {
+  try {
+    const order = await db.misOrder.findUnique({ where: { id: check.orderId }, select: { orderNumber: true } });
+    await notifySupervisorsOfQcDefect({
+      orderId: check.orderId,
+      orderNumber: order?.orderNumber ?? '—',
+      parameterName: check.parameterName ?? 'General',
+      defectType: check.defectType,
+      checkTime: check.checkTime.toISOString(),
+    });
+  } catch (error) {
+    console.error('[mis-qc] failed to notify supervisors of a defect', { checkId: check.id, error });
+  }
 }
 
 export type AqlDefectLine = { defectTypeId: string; qty: number };
@@ -98,6 +122,8 @@ export async function recordAqlSample(input: {
       defects: input.defects,
     },
   });
+
+  if (check.result === 'FAIL') await notifyOfDefect(check);
 
   return { check, result };
 }
@@ -187,25 +213,36 @@ function toQcRow(c: {
  * A slot with no row is 'never' — an absence of data, which the grid draws with
  * a dashed border rather than a grey fill. Grey ('makeready') means someone did
  * record something and it was N/A. The two must not look alike.
+ *
+ * Time is the factory's, never the server's (D22, F-18/F-34): "today" and "which hour" are
+ * read against the `factory.timezone` rule, not `getHours()`/`setHours()` on the server's own
+ * clock — the database and the plant can sit hours apart, so the server-clock version put a
+ * night-shift check in the wrong slot or the wrong day. The query is widened a day either side
+ * (`dateKeyToDbDate` is UTC midnight, not the factory's) and the exact cut happens below with
+ * `factoryDateKey`/`factoryMinuteOfDay`, the same discipline `getQcHourlyGrid` already uses.
  */
-export async function getTodayQcBoard(): Promise<QcTodayBoard> {
+export async function getTodayQcBoard(now: Date = new Date()): Promise<QcTodayBoard> {
   await requirePermission('qc.read');
 
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(start);
-  end.setDate(end.getDate() + 1);
+  const timeZone = await getFactoryTimezone();
+  const todayKey = factoryDateKey(now, timeZone);
 
   const checks = await db.misQcCheck.findMany({
-    where: { checkTime: { gte: start, lt: end } },
+    where: {
+      checkTime: {
+        gte: dateKeyToDbDate(addDaysToDateKey(todayKey, -1)),
+        lt: dateKeyToDbDate(addDaysToDateKey(todayKey, 2)),
+      },
+    },
     include: { order: { select: { orderNumber: true } } },
     orderBy: { checkTime: 'desc' },
   });
+  const todayChecks = checks.filter((c) => factoryDateKey(c.checkTime, timeZone) === todayKey);
 
   const slots: QcSlot[] = [];
   for (let i = 0; i < QC_SLOT_COUNT; i += 1) {
     const hour = QC_FIRST_SLOT_HOUR + i;
-    const inSlot = checks.filter((c) => c.checkTime.getHours() === hour);
+    const inSlot = todayChecks.filter((c) => Math.floor(factoryMinuteOfDay(c.checkTime, timeZone) / 60) === hour);
     let state: QcSlotState = 'never';
     if (inSlot.some((c) => c.result === 'FAIL')) state = 'fail';
     else if (inSlot.some((c) => c.result === 'PASS')) state = 'pass';
@@ -218,17 +255,16 @@ export async function getTodayQcBoard(): Promise<QcTodayBoard> {
     });
   }
 
-  const now = new Date();
-  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const nowMinutes = factoryMinuteOfDay(now, timeZone);
   const pending = slots.find((s) => s.state === 'never' && s.hour * 60 + 60 > nowMinutes);
   const dueSlot = pending
     ? { label: pending.label, minutesAway: pending.hour * 60 - nowMinutes }
     : null;
 
-  const rows = checks.map(toQcRow);
+  const rows = todayChecks.map(toQcRow);
   return {
     slots,
-    checksToday: checks.length,
+    checksToday: todayChecks.length,
     failures: rows.filter((r) => r.result === 'FAIL'),
     alsoToday: rows.filter((r) => r.result !== 'FAIL').slice(0, 5),
     dueSlot,

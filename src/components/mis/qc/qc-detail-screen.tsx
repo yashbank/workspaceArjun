@@ -57,11 +57,16 @@ const resultBadge = (r: string) => {
 const defectTypeOptions = (types: DefectTypeOption[]): SelectOption[] =>
   types.map((dt) => ({ value: dt.id, label: `${dt.name} (${dt.severity})` }));
 
+// '' is the sentinel for "not in the master" — QC holds masters.read, not masters.write, so a
+// defect that is not yet classified must still be recordable, as free text (F-19/D14).
+const OTHER_DEFECT = '';
+
 export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes }: Props) {
   const [open, setOpen] = useState(false);
   const [result, setResult] = useState<'PASS' | 'FAIL' | 'NA'>('PASS');
   const [parameterName, setParameterName] = useState('');
-  const [defectType, setDefectType] = useState('');
+  const [defectTypeCode, setDefectTypeCode] = useState(OTHER_DEFECT);
+  const [defectTypeOther, setDefectTypeOther] = useState('');
   const [defectQty, setDefectQty] = useState('');
   const [notes, setNotes] = useState('');
   const [isPending, startTransition] = useTransition();
@@ -74,16 +79,21 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes }
 
   const passRate = summary.total > 0 ? Math.round((summary.pass / summary.total) * 100) : 0;
 
+  const plainDefectTypeOptions: SelectOption[] = [
+    { value: OTHER_DEFECT, label: 'Not listed — describe below' },
+    ...defectTypes.map((dt) => ({ value: dt.code, label: `${dt.name} (${dt.severity})` })),
+  ];
+
   const handleAdd = () => startTransition(async () => {
     await addQcCheckAction({
       orderId: order.id,
       result,
       parameterName: parameterName || undefined,
-      defectType: defectType || undefined,
+      defectType: (defectTypeCode || defectTypeOther.trim()) || undefined,
       defectQty: defectQty ? parseFloat(defectQty) : undefined,
       notes: notes || undefined,
     });
-    setResult('PASS'); setParameterName(''); setDefectType(''); setDefectQty(''); setNotes('');
+    setResult('PASS'); setParameterName(''); setDefectTypeCode(OTHER_DEFECT); setDefectTypeOther(''); setDefectQty(''); setNotes('');
     setOpen(false);
   });
 
@@ -223,7 +233,10 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes }
           <Input label="Parameter Name" value={parameterName} onChange={(e) => setParameterName(e.target.value)} />
           {result === 'FAIL' && (
             <>
-              <Input label="Defect Type" value={defectType} onChange={(e) => setDefectType(e.target.value)} />
+              <Select label="Defect Type" value={defectTypeCode} options={plainDefectTypeOptions} onChange={setDefectTypeCode} />
+              {defectTypeCode === OTHER_DEFECT && (
+                <Input label="Describe the defect" value={defectTypeOther} onChange={(e) => setDefectTypeOther(e.target.value)} />
+              )}
               <NumberInput label="Defect Qty" value={defectQty} onChange={(e) => setDefectQty(e.target.value)} />
             </>
           )}

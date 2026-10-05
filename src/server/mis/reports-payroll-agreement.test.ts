@@ -35,12 +35,10 @@ beforeEach(() => {
 });
 
 describe('MIS-267 — present-day counts must agree', () => {
-  // New finding (F-39): they do not. `payroll.ts` counts a HALF_DAY as present (its own comment
-  // calls this "a POLICY, not an attendance fact" — but the policy is only applied on one side).
-  // `getAttendanceReport` checks `status === 'PRESENT'` alone, so a half-day is invisible to it —
-  // neither present nor absent, silently dropped from the report's own arithmetic. Asserted as
-  // the spec-correct behaviour ("agree to the rupee") under `it.fails`.
-  it.fails('a HALF_DAY counts as present on both sides, or on neither — not one and not the other', async () => {
+  // F-39, fixed: `payroll.ts` counts a HALF_DAY as present (its own comment calls this "a
+  // POLICY, not an attendance fact") and `getAttendanceReport` now applies the same policy,
+  // instead of checking `status === 'PRESENT'` alone and silently dropping the half-day.
+  it('a HALF_DAY counts as present on both sides, or on neither — not one and not the other', async () => {
     state.attendance = [rec('a1', '2026-01-05', 'PRESENT'), rec('a2', '2026-01-06', 'HALF_DAY')];
 
     const [payrollRow] = await calculateMonthlyPayroll(2026, 1);
@@ -50,12 +48,10 @@ describe('MIS-267 — present-day counts must agree', () => {
     expect(reportRow.present).toBe(payrollRow.present); // payroll counts PRESENT+HALF_DAY = 2
   });
 
-  // New finding, same root cause (F-39): `getAttendanceReport`'s `late` counter checks only the
-  // literal string `status === 'LATE'`, a status the punch-derived day-builder never writes
-  // (`attendance.ts`'s own `late` logic — the codebase's other reader of this same data — checks
-  // `lateMinutes > 0 || status === 'LATE'`, not the status alone). A day marked PRESENT with a
-  // real `lateMinutes` figure is invisible to the report's own "late" count.
-  it.fails('a day with real lateMinutes but status PRESENT is counted late, matching attendance.ts\'s own definition', async () => {
+  // F-39, fixed: `getAttendanceReport`'s `late` counter now matches `attendance.ts`'s own
+  // definition — `lateMinutes > 0 || status === 'LATE'` — instead of checking the literal status
+  // string alone, which undercounted a day marked PRESENT with a real `lateMinutes` figure.
+  it('a day with real lateMinutes but status PRESENT is counted late, matching attendance.ts\'s own definition', async () => {
     state.attendance = [rec('a1', '2026-01-05', 'PRESENT', 15)]; // 15 minutes late, status never changed
     const report = await getAttendanceReport(RANGE);
     const reportRow = report.rows.find((r) => r.code === EMP.employeeCode)!;

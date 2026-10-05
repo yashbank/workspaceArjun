@@ -38,7 +38,18 @@ export async function getProductionReport(range: ReportRange) {
   return { rows: Object.values(byOrder), raw: logs };
 }
 
-/** Attendance summary by employee for a date range */
+/**
+ * Attendance summary by employee for a date range.
+ *
+ * F-39/MIS-267: "present" and "late" must agree with this codebase's OTHER two readers of the
+ * same `misAttendance` rows, not invent a third definition. `payroll.ts`'s own `present` count
+ * is PRESENT + HALF_DAY ("a POLICY, not an attendance fact", its own comment) — a half-day is a
+ * paid day, not an absence, so this report must not silently drop it from either total.
+ * `attendance.ts`'s own `late` filter is `lateMinutes > 0 || status === 'LATE'` — the
+ * punch-derived day-builder marks a day PRESENT even when it carries real `lateMinutes`, so
+ * checking the literal status string alone undercounts every late arrival that never got the
+ * `LATE` status written.
+ */
 export async function getAttendanceReport(range: ReportRange) {
   await requirePermission('reports.read');
   const records = await db.misAttendance.findMany({
@@ -61,9 +72,9 @@ export async function getAttendanceReport(range: ReportRange) {
         present: 0, absent: 0, late: 0, ot: 0,
       };
     }
-    if (r.status === 'PRESENT') byEmp[key].present++;
+    if (r.status === 'PRESENT' || r.status === 'HALF_DAY') byEmp[key].present++;
     if (r.status === 'ABSENT') byEmp[key].absent++;
-    if (r.status === 'LATE') byEmp[key].late++;
+    if ((r.lateMinutes ?? 0) > 0 || r.status === 'LATE') byEmp[key].late++;
     if (r.otMinutes > 0) byEmp[key].ot++;
   }
   return { rows: Object.values(byEmp), raw: records };

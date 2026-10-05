@@ -5,6 +5,7 @@ import { Input } from '@/components/mis/kit/input';
 import { Select } from '@/components/mis/kit/select';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import { DataTable, type Column } from '@/components/mis/kit/data-table';
+import { safeHref } from '@/lib/mis/document-library';
 import { addDocumentAction, deleteDocumentAction } from '@/app/(mis)/mis/documents/actions';
 
 type Doc = { id: string; name: string; description: string | null; filePath: string; fileSize: number | null; mimeType: string | null; createdAt: Date; uploadedByProfile: { name: string | null; email: string } | null };
@@ -64,12 +65,22 @@ export function DocumentsScreen({ orders, canWrite }: Props) {
     { key: 'mimeType', header: 'Type', render: r => r.mimeType ?? '—' },
     { key: 'uploadedBy', header: 'Uploaded By', render: r => r.uploadedByProfile?.name ?? '—' },
     { key: 'createdAt', header: 'Date', render: r => new Date(r.createdAt).toLocaleDateString('en-IN') },
-    { key: 'actions', header: '', render: r => (
-      <div className="flex gap-2 justify-end">
-        <a href={r.filePath} target="_blank" rel="noopener" className="text-sm text-blue-600 hover:underline">Download</a>
-        {canWrite && <Button variant="ghost" onClick={() => handleDelete(r.id)}>Delete</Button>}
-      </div>
-    )},
+    { key: 'actions', header: '', render: r => {
+      // D31: a pasted link may be followed only if it is an absolute http(s) URL or a path on
+      // this site — the same rule the desktop document library already enforces (`safeHref`).
+      // An unsafe scheme (`javascript:`, `data:`, …) reads as text, never becomes an `href`.
+      const href = safeHref(r.filePath);
+      return (
+        <div className="flex gap-2 justify-end">
+          {href ? (
+            <a href={href} target="_blank" rel="noopener" className="text-sm text-blue-600 hover:underline">Download</a>
+          ) : (
+            <span className="text-sm text-slate-400">Link not safe to open</span>
+          )}
+          {canWrite && <Button variant="ghost" onClick={() => handleDelete(r.id)}>Delete</Button>}
+        </div>
+      );
+    }},
   ];
 
   const orderOptions = [
