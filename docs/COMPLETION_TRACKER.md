@@ -167,10 +167,51 @@ only selects `id, name, badgeCode, shift`). Deliberately left unbuilt until you 
 extend that API contract — flag to the user if wanted.
 
 ## Track 6 — Desktop responsive pass + full regression (no epic, cross-cutting)
+Split into two independent halves once Tracks 1–5 all landed, so two agents could run them in
+parallel without stepping on each other.
+
+### Track 6a — Code-level regression gate + eslint cleanup
+**Status:** DONE (PR #57, 2026-10-05)
+Ran after all 5 tracks (PRs #52-56) merged into `phase-a`. Pure verification + cleanup, no new
+features, no schema changes:
+- `pnpm install && pnpm db:generate` clean; `node_modules/.bin/tsc --noEmit --skipLibCheck` silent,
+  no grep filter.
+- `pnpm lint` across the whole repo: 74 problems (60 errors / 14 warnings, left behind by the 5
+  parallel tracks in files outside each one's own scope — Production/Orders/Reports/Store/
+  Traceability/Suppliers) fixed down to 6 errors. Fixed: ~50 `no-explicit-any` call sites in
+  page→screen prop-passing by using each server module's own exported Input/return type instead of
+  `any` (or just letting TS infer from the already-typed Prisma result); two real type-looseness
+  spots tsc caught once the `any` stopped hiding them — `orders/[id]/page.tsx`'s `productionLogs`
+  now converts Decimal `qtyProduced`/`qtyWaste` to `Number()` server-side instead of casting the
+  array, and `employee-screen.tsx`'s role field now goes through the existing `isMisRole` guard
+  instead of a bare `string`; ~12 unused-var/import warnings (dead props like `shifts`/
+  `canSeeWages`/`canWrite` threaded through but never read — verified none of them touch money
+  gating, which already runs through `isOwner`/`wages.read` at every site that shows rupees); two
+  static `<a href="/mis/...">` back-links converted to `next/link`. Left deliberately unfixed and
+  flagged rather than guessed: 6 `type Row = Record<string, any>` mock-Prisma plumbing declarations
+  in test files (bom.test.ts, orders-numbering.test.ts, po-buffer-stock.test.ts,
+  qc-aql-decisions.test.ts, reports-buffer-drift.test.ts, api/mis/inventory/import/route.test.ts) —
+  a real type here is a test-infra design decision (a typed mock Prisma client), not a one-line fix.
+- `pnpm test`: 216 files / 4423 tests passing — matches the pre-merge baseline exactly, no
+  regressions.
+- `pnpm build`: succeeds; confirmed every route from all 5 tracks is present (`/mis/print/job-card/
+  [id]`, `/mis/qc/defects`, `/mis/settings/wages`, `/mis/settings/users`, `/mis/crew`,
+  `/mis/orders/[id]`, `/mis/reports`, etc.).
+- Integration spot-checks across the 5 independently-developed branches: no merge-conflict markers
+  anywhere; `permission-matrix.test.ts` (the function-level door-coverage test) passes clean, 404
+  assertions, already accounts for new E7 exports like `getMachineUtilisationReport`; no duplicate
+  exported function names across `src/server/mis/*` or `src/lib/mis/*`; `prisma validate` clean and
+  confirmed Track 4's reverted BOM-versioning schema edit left no half-applied trace in
+  `schema.prisma` (the migration SQL is still correctly parked, unapplied, in
+  `prisma/migrations-pending/`). One pre-existing (predates all 5 tracks, both from Phase 24E, not
+  something this merge introduced) minor duplication found and left alone: `normaliseQuery` is
+  defined identically in both `lib/mis/document-library.ts` and `lib/mis/trace.ts`.
+
+### Track 6b — Desktop responsive pass + visual regression
 **Status:** TODO
 Desktop components exist (`src/components/mis/desktop/*`, confirmed present 2026-10-04) but have
 not been visually load-tested. Check the 1024px/1280px breakpoints from MIS_UI_SPEC §3/§9 render
-correctly for every screen touched by Tracks 1–5, plus a full regression of the already-solid
+correctly for every screen touched by Tracks 1–5, plus a full visual regression of the already-solid
 modules (attendance/kiosk, store/inventory, masters) to confirm nothing in Tracks 1–5 broke them.
 
 ## Track 7 — Deploy + Jira dev-ticket status flip
