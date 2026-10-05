@@ -165,8 +165,8 @@ export function StoreItemScreen({ items, canWrite, isOwner }: Props) {
             : `Stock OUT recorded for ${slideItem.name}`,
         );
         closeSlide();
-      } catch (e: any) {
-        setError(e.message ?? 'Operation failed');
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : 'Operation failed');
       }
     });
   };
@@ -184,8 +184,8 @@ export function StoreItemScreen({ items, canWrite, isOwner }: Props) {
         });
         setSuccess(`${slideItem.name} updated`);
         closeSlide();
-      } catch (e: any) {
-        setError(e.message ?? 'Update failed');
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : 'Update failed');
       }
     });
   };
@@ -198,8 +198,8 @@ export function StoreItemScreen({ items, canWrite, isOwner }: Props) {
         await deactivateStoreItemAction(deactivateItem.id);
         setSuccess(`${deactivateItem.name} deactivated`);
         setDeactivateItem(null);
-      } catch (e: any) {
-        setError(e.message ?? 'Deactivation failed');
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : 'Deactivation failed');
         setDeactivateItem(null);
       }
     });

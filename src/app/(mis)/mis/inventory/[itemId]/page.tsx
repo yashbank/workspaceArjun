@@ -86,7 +86,7 @@ export default async function InventoryItemPage({ params }: { params: Promise<{ 
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {ledger.map((entry: any) => {
+                {ledger.map((entry) => {
                   const change = Number(entry.changeQty);
                   const bal = Number(entry.balanceQty);
                   return (

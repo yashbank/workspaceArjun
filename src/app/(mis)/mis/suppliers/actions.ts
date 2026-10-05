@@ -1,8 +1,8 @@
 'use server';
 import { revalidatePath } from 'next/cache';
-import { createSupplier, updateSupplier, deleteSupplier, restoreSupplier } from '@/server/mis/supplier';
+import { createSupplier, updateSupplier, deleteSupplier, restoreSupplier, type SupplierInput } from '@/server/mis/supplier';
 
-export async function saveSupplierAction(id: string | null, values: any) {
+export async function saveSupplierAction(id: string | null, values: SupplierInput) {
   if (id) { await updateSupplier(id, values); } else { await createSupplier(values); }
   revalidatePath('/mis/suppliers');
 }

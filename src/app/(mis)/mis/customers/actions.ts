@@ -1,8 +1,8 @@
 'use server';
 import { revalidatePath } from 'next/cache';
-import { createCustomer, updateCustomer, deleteCustomer, restoreCustomer } from '@/server/mis/customer';
+import { createCustomer, updateCustomer, deleteCustomer, restoreCustomer, type CustomerInput } from '@/server/mis/customer';
 
-export async function saveCustomerAction(id: string | null, values: any) {
+export async function saveCustomerAction(id: string | null, values: CustomerInput) {
   if (id) { await updateCustomer(id, values); } else { await createCustomer(values); }
   revalidatePath('/mis/customers');
 }

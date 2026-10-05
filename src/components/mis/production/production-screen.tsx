@@ -5,7 +5,6 @@ import { Button } from '@/components/mis/kit/button';
 import { NumberInput, Input } from '@/components/mis/kit/input';
 import { Select, type SelectOption } from '@/components/mis/kit/select';
 import { SlideOver } from '@/components/mis/kit/slide-over';
-import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { clearLineAction, getClearanceHistoryAction } from '@/app/(mis)/mis/production/actions';
 import { useT } from '@/components/mis/shell/locale-provider';
 import { PendingSyncNote } from '@/components/mis/shell/pending-sync-note';

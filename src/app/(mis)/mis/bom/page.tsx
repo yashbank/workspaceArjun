@@ -1,14 +1,10 @@
 import { requireMisAccess } from '@/server/mis/guard';
 import { listOrders } from '@/server/mis/orders';
-import { getMisRole } from '@/server/mis/roles';
-import { can } from '@/lib/mis/permissions';
 import Link from 'next/link';
 
 export default async function BomListPage() {
-  const user = await requireMisAccess();
-  const role = await getMisRole(user.id);
-  const canWrite = can(role, 'orders.write');
-  const orders = (await listOrders()).filter((o: any) => !['CANCELLED', 'DELIVERED'].includes(o.status));
+  await requireMisAccess();
+  const orders = (await listOrders()).filter((o) => !['CANCELLED', 'DELIVERED'].includes(o.status));
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
@@ -17,7 +13,7 @@ export default async function BomListPage() {
         <p className="text-slate-500">No active orders found.</p>
       )}
       <div className="space-y-3">
-        {orders.map((order: any) => (
+        {orders.map((order) => (
           <Link
             key={order.id}
             href={`/mis/bom/${order.id}`}

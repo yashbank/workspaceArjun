@@ -12,7 +12,7 @@ import { isOrderClosed } from '@/lib/mis/order-status';
 import { validateDocumentInput } from '@/lib/mis/document-library';
 
 type Order = { id: string; orderNumber: string; status: string; description: string | null; deliveryDate: Date | null; notes: string | null; createdAt: Date; customer: { name: string } | null };
-type Bom = { id: string; status: string; stages: any[] } | null;
+type Bom = { id: string; status: string; stages: unknown[] } | null;
 type ProductionLog = { id: string; loggedAt: Date; qtyProduced: number; qtyWaste: number; unit: string; machine: { name: string } | null; employee: { name: string } | null; shift: { name: string } | null };
 type QcLog = { id: string; checkTime: Date; result: string; parameterName: string | null; defectType: string | null; notes: string | null; checkBy: { name: string } | null };
 type OrderDocument = { id: string; name: string; description: string | null; filePath: string; createdAt: Date; uploadedByProfile: { name: string | null; email: string } | null };
@@ -71,7 +71,7 @@ function statusTone(s: string): BadgeTone {
 
 export function OrderDetailScreen({
   order, phases, bom, productionLogs, productionSummary, qcLogs, qcSummary, documents,
-  canWrite, canSeeWages, canProduction, canQc,
+  canWrite, canSeeWages: _canSeeWages, canProduction, canQc,
 }: Props) {
   const [tab, setTab] = useState<Tab>('overview');
   const t = useT();

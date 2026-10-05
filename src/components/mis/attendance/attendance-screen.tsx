@@ -3,9 +3,8 @@ import { useState, useTransition } from 'react';
 import { Button } from '@/components/mis/kit/button';
 import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
-import { Card } from '@/components/mis/kit/card';
 import { SlideOver } from '@/components/mis/kit/slide-over';
-import { Input, NumberInput } from '@/components/mis/kit/input';
+import { Input } from '@/components/mis/kit/input';
 import { clockInAction, clockOutAction, approveClockOutAction, editAttendanceAction, markAbsentBulkAction, listPunchesForDayAction } from '@/app/(mis)/mis/attendance/actions';
 import Link from 'next/link';
 
@@ -22,7 +21,7 @@ type PunchRow = {
 type SummaryRec = { employee: { id: string; name: string; employeeCode: string } | null; present: number; absent: number; otMinutes: number; lateMinutes: number };
 
 type Props = {
-  records: AttendanceRec[]; summary: SummaryRec[]; shifts: any[];
+  records: AttendanceRec[]; summary: SummaryRec[]; shifts: { id: string; name: string }[];
   canWrite: boolean; view: string; year: number; month: number; date?: string;
 };
 
@@ -37,7 +36,7 @@ function fmtTime(d: Date | null) {
 
 function fmtMin(m: number) { return m > 0 ? `${m}m` : '—'; }
 
-export function AttendanceScreen({ records, summary, shifts, canWrite, view, year, month, date }: Props) {
+export function AttendanceScreen({ records, summary, shifts: _shifts, canWrite, view, year, month, date }: Props) {
   const [empSearch, setEmpSearch] = useState('');
   const [isPending, startTransition] = useTransition();
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -154,7 +153,7 @@ export function AttendanceScreen({ records, summary, shifts, canWrite, view, yea
           <DataTable columns={dailyCols} rows={filteredRecords} rowKey={(r) => r.id} emptyTitle="No attendance records" emptyBody="Records appear once employees clock in." />
         </>
       ) : (
-        <DataTable columns={monthCols} rows={filteredSummary} rowKey={(r: any) => r.employee?.id ?? Math.random().toString()} emptyTitle="No data for this month" />
+        <DataTable columns={monthCols} rows={filteredSummary} rowKey={(r) => r.employee?.id ?? Math.random().toString()} emptyTitle="No data for this month" />
       )}
 
       <SlideOver open={editOpen} onClose={() => setEditOpen(false)} title="Edit Attendance">

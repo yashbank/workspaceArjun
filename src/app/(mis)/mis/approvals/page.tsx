@@ -10,5 +10,5 @@ export default async function ApprovalsPage() {
   const isOwner = can(role, 'wages.read');
   const canWrite = can(role, 'orders.write');
   const pending = await getPendingApprovals();
-  return <ApprovalsScreen pending={pending as any} isOwner={isOwner} canWrite={canWrite} />;
+  return <ApprovalsScreen pending={pending} isOwner={isOwner} canWrite={canWrite} />;
 }

@@ -76,8 +76,8 @@ export function StoreCountScreen({ items, counts, canCount }: Props) {
         setSelectedItemId('');
         setPhysQty('');
         setNotes('');
-      } catch (e: any) {
-        setError(e.message ?? 'Count failed');
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : 'Count failed');
       }
     });
   };

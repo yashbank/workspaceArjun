@@ -1,8 +1,8 @@
 'use server';
 import { revalidatePath } from 'next/cache';
-import { createEmployee, updateEmployee, deleteEmployee, restoreEmployee } from '@/server/mis/employee';
+import { createEmployee, updateEmployee, deleteEmployee, restoreEmployee, type EmployeeInput } from '@/server/mis/employee';
 
-export async function saveEmployeeAction(id: string | null, values: any) {
+export async function saveEmployeeAction(id: string | null, values: EmployeeInput) {
   if (id) { await updateEmployee(id, values); } else { await createEmployee(values); }
   revalidatePath('/mis/employees');
 }
