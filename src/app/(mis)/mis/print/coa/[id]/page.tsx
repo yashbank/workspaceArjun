@@ -82,30 +82,35 @@ export default async function CoaPrintPage({ params }: { params: Promise<{ id: s
       {qcLogs.length === 0 ? (
         <p className="text-gray-500 italic">No quality checks recorded.</p>
       ) : (
-        <table className="w-full text-xs border-collapse">
-          <thead>
-            <tr className="bg-gray-100">
-              <th className="text-left p-2 border border-gray-200">Parameter</th>
-              <th className="text-left p-2 border border-gray-200">Result</th>
-              <th className="text-left p-2 border border-gray-200">Notes / Defect</th>
-              <th className="text-left p-2 border border-gray-200">Checked By</th>
-              <th className="text-left p-2 border border-gray-200">Date</th>
-            </tr>
-          </thead>
-          <tbody>
-            {qcLogs.map((q) => (
-              <tr key={q.id} className="border border-gray-200">
-                <td className="p-2">{q.parameterName}</td>
-                <td className={`p-2 font-bold ${q.result === 'PASS' ? 'text-green-700' : q.result === 'FAIL' ? 'text-red-700' : 'text-gray-500'}`}>
-                  {q.result}
-                </td>
-                <td className="p-2">{[q.defectType, q.notes].filter(Boolean).join(' · ') || '—'}</td>
-                <td className="p-2">{q.checkBy?.name ?? '—'}</td>
-                <td className="p-2">{new Date(q.checkTime).toLocaleDateString('en-IN')}</td>
+        // `overflow-x-auto`: 5 columns including a free-text Notes/Defect column don't fit a
+        // 390px phone screen on-screen before print — scrolls inside its own box instead of
+        // widening the whole page (the `@page { size: A4 }` print layout is unaffected).
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs border-collapse">
+            <thead>
+              <tr className="bg-gray-100">
+                <th className="text-left p-2 border border-gray-200">Parameter</th>
+                <th className="text-left p-2 border border-gray-200">Result</th>
+                <th className="text-left p-2 border border-gray-200">Notes / Defect</th>
+                <th className="text-left p-2 border border-gray-200">Checked By</th>
+                <th className="text-left p-2 border border-gray-200">Date</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {qcLogs.map((q) => (
+                <tr key={q.id} className="border border-gray-200">
+                  <td className="p-2">{q.parameterName}</td>
+                  <td className={`p-2 font-bold ${q.result === 'PASS' ? 'text-green-700' : q.result === 'FAIL' ? 'text-red-700' : 'text-gray-500'}`}>
+                    {q.result}
+                  </td>
+                  <td className="p-2">{[q.defectType, q.notes].filter(Boolean).join(' · ') || '—'}</td>
+                  <td className="p-2">{q.checkBy?.name ?? '—'}</td>
+                  <td className="p-2">{new Date(q.checkTime).toLocaleDateString('en-IN')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {/* Summary */}
