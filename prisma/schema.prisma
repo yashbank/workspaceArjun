@@ -867,19 +867,12 @@ model MisBom {
   id            String           @id @default(uuid()) @db.Uuid
   orderId       String           @unique @map("order_id") @db.Uuid
   status        String           @default("DRAFT")
-  /// Phase 28 (E5-05, D-pattern P5/MIS-122). Starts at 1; bumped by `reopenBom` when an
-  /// already-APPROVED BOM is reopened for further edits — the only path back to DRAFT.
-  version       Int              @default(1)
   notes         String?
   createdById   String?          @map("created_by_id") @db.Uuid
   approvedById  String?          @map("approved_by_id") @db.Uuid
   approvedAt    DateTime?        @map("approved_at")
-  /// Phase 28. A snapshot of this BOM's materials as of its LAST approval, so the approvals
-  /// queue can show "changed since vN" without a full version-history table. Null until the
-  /// first approval. Never read for costing — `getBomCosting` always reads the live rows.
-  lastApprovedSnapshot Json?     @map("last_approved_snapshot") @db.JsonB
-  createdAt    DateTime          @default(now()) @map("created_at")
-  updatedAt    DateTime          @updatedAt @map("updated_at")
+  createdAt     DateTime         @default(now()) @map("created_at")
+  updatedAt     DateTime         @updatedAt @map("updated_at")
   order         MisOrder         @relation(fields: [orderId], references: [id])
   stages        MisBomStage[]
   @@map("mis_bom")
