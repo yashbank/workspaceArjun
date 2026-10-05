@@ -119,6 +119,8 @@ const TABLE: Entry[] = [
   { module: 'reports.ts', name: 'getWastageReport', requires: 'reports.read', call: () => reports.getWastageReport({ weeks: 4 }) },
   // Phase 21 (D1) — all money, so wages.read like computePoTotal, not reports.read.
   { module: 'reports.ts', name: 'getBufferDriftReport', requires: 'wages.read', call: () => reports.getBufferDriftReport(RANGE) },
+  // E7-11 — same door as every other report in this file; no money in the payload (D24).
+  { module: 'reports.ts', name: 'getMachineUtilisationReport', requires: 'reports.read', call: () => reports.getMachineUtilisationReport(RANGE) },
 ];
 
 /** Functions in these modules deliberately not in TABLE: ungated internals (see server-gates.test.ts). */

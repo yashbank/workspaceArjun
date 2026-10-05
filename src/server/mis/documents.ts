@@ -29,6 +29,16 @@ export async function listDocuments(orderId: string) {
   return withUploaderNames(docs);
 }
 
+/**
+ * What of a `MisDocument` row is safe to put in an audit payload. F-23(9): `filePath` is a
+ * pasted link today, but it can carry a signed URL's token — and Admin (`settings.read`) can
+ * read audit payloads back, so a link written here is a link handed to someone who may not be
+ * the one who should hold it. Everything else about the row is unremarkable and kept.
+ */
+function auditSafeDocument(doc: { id: string; orderId: string; name: string; description: string | null; fileSize: number | null; mimeType: string | null; uploadedBy: string | null; createdAt: Date }) {
+  return { id: doc.id, orderId: doc.orderId, name: doc.name, description: doc.description, fileSize: doc.fileSize, mimeType: doc.mimeType, uploadedBy: doc.uploadedBy, createdAt: doc.createdAt };
+}
+
 export async function addDocument(orderId: string, data: {
   name: string;
   description?: string;
@@ -41,7 +51,7 @@ export async function addDocument(orderId: string, data: {
   const rec = await db.misDocument.create({
     data: { orderId, ...data, uploadedBy: user?.authId },
   });
-  await logAuditEvent({ actorId: actor.userId, action: 'ADD_DOCUMENT', entity: 'MisDocument', entityId: rec.id, after: rec });
+  await logAuditEvent({ actorId: actor.userId, action: 'ADD_DOCUMENT', entity: 'MisDocument', entityId: rec.id, after: auditSafeDocument(rec) });
   return rec;
 }
 
@@ -50,5 +60,5 @@ export async function deleteDocument(documentId: string) {
   const doc = await db.misDocument.findUnique({ where: { id: documentId } });
   if (!doc) throw new Error('Document not found');
   await db.misDocument.delete({ where: { id: documentId } });
-  await logAuditEvent({ actorId: actor.userId, action: 'DELETE_DOCUMENT', entity: 'MisDocument', entityId: documentId, before: doc });
+  await logAuditEvent({ actorId: actor.userId, action: 'DELETE_DOCUMENT', entity: 'MisDocument', entityId: documentId, before: auditSafeDocument(doc) });
 }

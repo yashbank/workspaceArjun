@@ -4,6 +4,7 @@ import type { DefectReportView } from '@/lib/mis/defects';
 import { can } from '@/lib/mis/permissions';
 import { isMisForbiddenError } from '@/server/mis/auth';
 import { getDefectReport } from '@/server/mis/defects';
+import { listDefectTypes } from '@/server/mis/defect-type';
 import { requireMisAccess } from '@/server/mis/guard';
 import { listOrders } from '@/server/mis/orders';
 import { getMisRole } from '@/server/mis/roles';
@@ -15,8 +16,17 @@ export default async function DefectsPage({ searchParams }: { searchParams: Prom
 
   // Defects & rework is a desktop reading screen with no phone twin; below 1024px the quality screen (the phone
   // layer's own) is what a phone shows. Two layouts, chosen in CSS only.
-  const orders = (await listOrders()).filter((o: { status: string }) => !['CANCELLED', 'DELIVERED'].includes(o.status));
-  const phone = <QcScreen orders={orders} canWrite={can(role, 'qc.write')} />;
+  const [orders, defectTypes] = await Promise.all([
+    listOrders().then((rows) => rows.filter((o: { status: string }) => !['CANCELLED', 'DELIVERED'].includes(o.status))),
+    listDefectTypes(),
+  ]);
+  const phone = (
+    <QcScreen
+      orders={orders}
+      canWrite={can(role, 'qc.write')}
+      defectTypes={defectTypes.map((dt) => ({ id: dt.id, code: dt.code, name: dt.name, severity: dt.severity }))}
+    />
+  );
 
   // A second query on a page the phone also serves: a failure is LOGGED (never swallowed) and the desktop half
   // says so, so the phone screen still renders. A refusal is "no access", not "could not load".

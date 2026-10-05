@@ -4,26 +4,35 @@ import { useRouter } from 'next/navigation';
 import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { StatusBadge, type BadgeTone } from '@/components/mis/kit/status-badge';
 
-type ProductionData = { rows: { orderNumber: string; description: string | null; produced: number; waste: number; entries: number }[]; raw: any[] };
-type AttendanceData = { rows: { name: string; code: string; dept: string; present: number; absent: number; late: number; ot: number }[]; raw: any[] };
-type QcData = { rows: { orderNumber: string; pass: number; fail: number; na: number }[]; raw: any[] };
+type ProductionData = { rows: { orderNumber: string; description: string | null; produced: number; waste: number; entries: number }[]; raw: unknown[] };
+type AttendanceData = { rows: { name: string; code: string; dept: string; present: number; absent: number; late: number; ot: number }[]; raw: unknown[] };
+type QcData = { rows: { orderNumber: string; pass: number; fail: number; na: number }[]; raw: unknown[] };
 type StoreItemRow = { id: string; name: string; code: string; unit: string; pricePerUnit?: number | null; totalIn: number; totalOut: number; txnCount: number };
-type StoreData = { rows: StoreItemRow[]; raw: any[] };
+type StoreData = { rows: StoreItemRow[]; raw: unknown[] };
+type MachineUtilisationRow = { machineId: string; code: string; name: string; isActive: boolean; bookedMinutes: number; allocationCount: number; percent: number };
+type MachineData = { rows: MachineUtilisationRow[]; availableMinutes: number; totals: { bookedMinutes: number; allocationCount: number; machineCount: number } };
+type OrderRow = { id: string; orderNumber: string; customer: { name: string } | null; description: string | null; status: string; deliveryDate: string | Date | null };
 
-type Tab = 'production' | 'attendance' | 'qc' | 'orders' | 'store';
+type Tab = 'production' | 'attendance' | 'qc' | 'orders' | 'store' | 'machines';
 
 type Props = {
   production: ProductionData;
   attendance: AttendanceData;
   qc: QcData;
-  orders: any[];
+  orders: OrderRow[];
   store: StoreData;
+  machines: MachineData;
   canSeeWages: boolean;
   isOwner: boolean;
   rangeLabel: string;
   year: number;
   month: number;
 };
+
+/** 420 → "7.0h"; honest about a figure that is booked time, not output (E7-11). */
+function hoursLabel(minutes: number): string {
+  return `${(minutes / 60).toFixed(1)}h`;
+}
 
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -46,7 +55,7 @@ function downloadCsv(filename: string, rows: string[][], headers: string[]) {
   URL.revokeObjectURL(url);
 }
 
-export function ReportsScreen({ production, attendance, qc, orders, store, canSeeWages, isOwner, rangeLabel, year, month }: Props) {
+export function ReportsScreen({ production, attendance, qc, orders, store, machines, canSeeWages, isOwner, rangeLabel, year, month }: Props) {
   const [tab, setTab] = useState<Tab>('production');
   const router = useRouter();
 
@@ -56,6 +65,7 @@ export function ReportsScreen({ production, attendance, qc, orders, store, canSe
     { key: 'qc', label: 'Quality' },
     { key: 'orders', label: 'Orders' },
     { key: 'store', label: 'Store' },
+    { key: 'machines', label: 'Machines' },
   ];
 
   function nav(newYear: number, newMonth: number) {
@@ -106,7 +116,7 @@ export function ReportsScreen({ production, attendance, qc, orders, store, canSe
     }},
   ];
 
-  const orderCols: Column<any>[] = [
+  const orderCols: Column<OrderRow>[] = [
     { key: 'orderNumber', header: 'Order #', render: r => <span className="font-mono text-sm">{r.orderNumber}</span> },
     { key: 'customer', header: 'Customer', render: r => r.customer?.name ?? '—' },
     { key: 'description', header: 'Description', render: r => r.description ?? '—' },
@@ -123,6 +133,22 @@ export function ReportsScreen({ production, attendance, qc, orders, store, canSe
   const totStoreIn = store.rows.reduce((s, r) => s + r.totalIn, 0);
   const totStoreOut = store.rows.reduce((s, r) => s + r.totalOut, 0);
   const totStoreValue = isOwner ? store.rows.reduce((s, r) => s + (r.pricePerUnit ?? 0) * r.totalIn, 0) : null;
+  const avgMachineUtilisation = machines.rows.length > 0 ? Math.round(machines.rows.reduce((s, r) => s + r.percent, 0) / machines.rows.length) : null;
+
+  const machineCols: Column<MachineUtilisationRow>[] = [
+    { key: 'name', header: 'Machine', render: r => <span className="font-medium">{r.name}{!r.isActive && <span className="ml-2 text-xs text-slate-400">(currently inactive)</span>}</span> },
+    { key: 'code', header: 'Code', render: r => <span className="font-mono text-sm">{r.code}</span> },
+    { key: 'bookedMinutes', header: 'Booked', render: r => hoursLabel(r.bookedMinutes) },
+    { key: 'allocationCount', header: 'Bookings', render: r => r.allocationCount.toString() },
+    { key: 'percent', header: 'Utilisation', render: r => (
+      <div className="flex items-center gap-2">
+        <div className="h-2 w-20 overflow-hidden rounded-full bg-slate-100">
+          <div className={`h-full ${r.percent >= 70 ? 'bg-green-500' : r.percent >= 30 ? 'bg-amber-500' : 'bg-slate-300'}`} style={{ width: `${r.percent}%` }} />
+        </div>
+        <span className="font-medium">{r.percent}%</span>
+      </div>
+    ) },
+  ];
 
   const storeCols: Column<StoreItemRow>[] = [
     { key: 'name', header: 'Item', render: r => <span className="font-medium">{r.name}</span> },
@@ -169,6 +195,10 @@ export function ReportsScreen({ production, attendance, qc, orders, store, canSe
         if (isOwner) base.push(r.pricePerUnit != null ? (r.pricePerUnit * r.totalIn).toFixed(2) : '');
         return base;
       });
+      downloadCsv(filename, rows, headers);
+    } else if (tab === 'machines') {
+      const headers = ['Machine', 'Code', 'Booked (h)', 'Bookings', 'Utilisation %'];
+      const rows = machines.rows.map(r => [r.name, r.code, (r.bookedMinutes / 60).toFixed(1), String(r.allocationCount), String(r.percent)]);
       downloadCsv(filename, rows, headers);
     } else {
       const headers = ['Order #', 'Customer', 'Description', 'Status', 'Delivery Date'];
@@ -243,6 +273,11 @@ export function ReportsScreen({ production, attendance, qc, orders, store, canSe
             <p className="text-xs text-slate-400">value of items received</p>
           </div>
         )}
+        <div className="bg-white border border-slate-200 rounded-lg p-4">
+          <p className="text-xs text-slate-500 uppercase tracking-wide">Machine Utilisation</p>
+          <p className="text-2xl font-bold mt-1">{avgMachineUtilisation === null ? '—' : `${avgMachineUtilisation}%`}</p>
+          <p className="text-xs text-slate-400">average across {machines.rows.length} machine{machines.rows.length === 1 ? '' : 's'}, booked time only</p>
+        </div>
       </div>
 
       {/* Tab bar */}
@@ -306,6 +341,20 @@ export function ReportsScreen({ production, attendance, qc, orders, store, canSe
           emptyTitle="No store transactions"
           emptyBody="No store movements found for this period."
         />
+      )}
+      {tab === 'machines' && (
+        <>
+          <p className="text-xs text-slate-500 mb-3">
+            Booked time against the available hours in {rangeLabel} — not actual running time, and not a claim about when a machine was down (no record exists for that yet).
+          </p>
+          <DataTable
+            columns={machineCols}
+            rows={machines.rows}
+            rowKey={r => r.machineId}
+            emptyTitle="No machines"
+            emptyBody="No machines have been added to the masters yet."
+          />
+        </>
       )}
     </div>
   );
