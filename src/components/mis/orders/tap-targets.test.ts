@@ -33,13 +33,20 @@ describe('fixed tap targets stay at least 44px tall', () => {
     const src = readFileSync('src/components/mis/reports/reports-screen.tsx', 'utf8');
     expect(tagAround(src, 'onClick={prevMonth}')).toMatch(/min-h-11/);
     expect(tagAround(src, 'onClick={nextMonth}')).toMatch(/min-h-11/);
-    expect(src).toMatch(/inline-flex min-h-11 items-center px-4 text-sm font-medium border-b-2/);
+    // Track 6b: the tab row gained `overflow-x-auto` and the pill buttons gained `shrink-0
+    // whitespace-nowrap` (six tabs, the new Machines one from E7-11, overflowed a 390px phone
+    // screen) — match on the tab pill's own tag rather than a frozen class-order literal.
+    // (Needle is the button's child text, not `onClick={() => ...}`: tagAround's naive `>`
+    // scan would otherwise stop at the arrow function's own `=>`.)
+    expect(tagAround(src, '{t.label}')).toMatch(/min-h-11/);
   });
 
   it('/mis/orders/[id] — "Print Job Card" and the Overview/BOM tab pills', () => {
     const src = readFileSync('src/components/mis/orders/order-detail-screen.tsx', 'utf8');
     expect(tagAround(src, 'Print Job Card')).toMatch(/min-h-11/);
-    expect(src).toMatch(/inline-flex min-h-11 items-center px-4 text-sm font-medium border-b-2/);
+    // Track 6b: same `overflow-x-auto` / `shrink-0 whitespace-nowrap` fix as reports-screen.tsx
+    // (five tabs, "Documents (N)" growing with the count, overflowed a 390px phone screen).
+    expect(tagAround(src, '{t.label}')).toMatch(/min-h-11/);
   });
 
   it('/mis/approvals — the "View PO" link', () => {

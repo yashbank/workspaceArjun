@@ -244,13 +244,15 @@ export function OrderDetailScreen({
         </div>
       </div>
 
-      {/* Tab bar */}
-      <div className="flex gap-1 mb-6 border-b border-slate-200">
+      {/* Tab bar. `overflow-x-auto`: five tabs, and "Documents (N)" (E5-09) grows with the
+          count — doesn't fit a 390px phone screen; scrolls inside its own row instead of
+          blowing out the page width. */}
+      <div className="flex gap-1 mb-6 overflow-x-auto scrollbar-none border-b border-slate-200">
         {tabs.filter(t => t.show).map(t => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`inline-flex min-h-11 items-center px-4 text-sm font-medium border-b-2 transition-colors ${
+            className={`inline-flex min-h-11 shrink-0 items-center whitespace-nowrap px-4 text-sm font-medium border-b-2 transition-colors ${
               tab === t.key ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700'
             }`}
           >

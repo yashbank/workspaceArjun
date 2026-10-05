@@ -132,39 +132,45 @@ export default async function JobCardPrintPage({ params }: { params: Promise<{ i
           <p className="text-gray-500 text-xs italic">No phase plan · not gated — this order has no planned work-flow sections.</p>
         ) : (
           <>
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="text-gray-500 border-b border-gray-300">
-                  <th className="text-left py-1 pr-2">#</th>
-                  <th className="text-left py-1 pr-2">Section</th>
-                  <th className="text-left py-1 pr-2">Status</th>
-                  <th className="text-left py-1 pr-2">In-Charge</th>
-                  <th className="text-left py-1 pr-2">Started</th>
-                  <th className="text-left py-1 pr-2">Signed Off</th>
-                  <th className="text-left py-1">Signature</th>
-                </tr>
-              </thead>
-              <tbody>
-                {phases.map((phase) => {
-                  const skipped = phase.status === 'NOT_APPLICABLE';
-                  return (
-                    <tr key={phase.id} className={`border-b border-gray-100 ${skipped ? 'text-gray-400 italic' : ''}`}>
-                      <td className="py-1.5 pr-2 align-top">{phase.sequence}</td>
-                      <td className="py-1.5 pr-2 align-top font-medium">{phase.process.name}</td>
-                      <td className="py-1.5 pr-2 align-top">
-                        {phaseStatusLabel(phase.status)}
-                        {skipped && phase.notApplicableReason ? ` (${phase.notApplicableReason})` : ''}
-                        {phase.downstreamFlagged ? ' · an earlier section was reopened after this one started' : ''}
-                      </td>
-                      <td className="py-1.5 pr-2 align-top">{phase.inCharge?.name ?? (skipped ? '—' : 'Not assigned')}</td>
-                      <td className="py-1.5 pr-2 align-top">{phase.startedAt ? formatFactoryDateTime(phase.startedAt, timeZone) : '—'}</td>
-                      <td className="py-1.5 pr-2 align-top">{phase.signedOffAt ? formatFactoryDateTime(phase.signedOffAt, timeZone) : '—'}</td>
-                      <td className="py-1.5 align-top">{skipped ? '—' : <span className="inline-block w-24 border-b border-gray-400">&nbsp;</span>}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            {/* `overflow-x-auto`: 7 columns (including a name column and two timestamp
+                columns) don't fit a 390px phone screen on-screen before print — scrolls inside
+                its own box instead of widening the whole page (the `@page { size: A4 }` print
+                layout is unaffected). Matches the COA print table's same fix. */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-gray-500 border-b border-gray-300">
+                    <th className="text-left py-1 pr-2">#</th>
+                    <th className="text-left py-1 pr-2">Section</th>
+                    <th className="text-left py-1 pr-2">Status</th>
+                    <th className="text-left py-1 pr-2">In-Charge</th>
+                    <th className="text-left py-1 pr-2">Started</th>
+                    <th className="text-left py-1 pr-2">Signed Off</th>
+                    <th className="text-left py-1">Signature</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {phases.map((phase) => {
+                    const skipped = phase.status === 'NOT_APPLICABLE';
+                    return (
+                      <tr key={phase.id} className={`border-b border-gray-100 ${skipped ? 'text-gray-400 italic' : ''}`}>
+                        <td className="py-1.5 pr-2 align-top">{phase.sequence}</td>
+                        <td className="py-1.5 pr-2 align-top font-medium">{phase.process.name}</td>
+                        <td className="py-1.5 pr-2 align-top">
+                          {phaseStatusLabel(phase.status)}
+                          {skipped && phase.notApplicableReason ? ` (${phase.notApplicableReason})` : ''}
+                          {phase.downstreamFlagged ? ' · an earlier section was reopened after this one started' : ''}
+                        </td>
+                        <td className="py-1.5 pr-2 align-top">{phase.inCharge?.name ?? (skipped ? '—' : 'Not assigned')}</td>
+                        <td className="py-1.5 pr-2 align-top">{phase.startedAt ? formatFactoryDateTime(phase.startedAt, timeZone) : '—'}</td>
+                        <td className="py-1.5 pr-2 align-top">{phase.signedOffAt ? formatFactoryDateTime(phase.signedOffAt, timeZone) : '—'}</td>
+                        <td className="py-1.5 align-top">{skipped ? '—' : <span className="inline-block w-24 border-b border-gray-400">&nbsp;</span>}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
             <p className="mt-3 text-[11px] italic text-gray-600">
               Section receiving BPR should not accept BPR if it is not signed by previous section.
             </p>

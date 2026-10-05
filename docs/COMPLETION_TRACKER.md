@@ -208,11 +208,83 @@ features, no schema changes:
   defined identically in both `lib/mis/document-library.ts` and `lib/mis/trace.ts`.
 
 ### Track 6b — Desktop responsive pass + visual regression
-**Status:** TODO
-Desktop components exist (`src/components/mis/desktop/*`, confirmed present 2026-10-04) but have
-not been visually load-tested. Check the 1024px/1280px breakpoints from MIS_UI_SPEC §3/§9 render
-correctly for every screen touched by Tracks 1–5, plus a full visual regression of the already-solid
-modules (attendance/kiosk, store/inventory, masters) to confirm nothing in Tracks 1–5 broke them.
+**Status:** DONE (2026-10-05, no PR number yet — see branch `track6b-visual-qa`)
+Real browser, real DB: `pnpm dev` against the connected Supabase project, driven headless via
+Playwright's own Chromium (already a project dependency — no new tool added) logged in as the
+documented `E2E_OWNER_EMAIL` test account (`e2e-owner@bhaskarpaper.test`, `.env.e2e` — OWNER's nav
+reaches every screen in scope, confirmed against `e2e/roles.ts`'s `EXPECTED_NAV`). Screenshotted
+every Track 1–5 screen named in this track's brief at 390px and 1280px: `/mis/print/job-card/[id]`,
+`/mis/qc`, `/mis/qc/defects`, `/mis/qc/grid`, `/mis/print/coa/[id]`, `/mis/reports` (both the
+default tab and the new Machines tab), `/mis/documents` (including with an order selected, to
+exercise the F-23 `safeHref` fix), `/mis/settings/wages`, `/mis/settings/users`, `/mis/orders/[id]`
+(both Overview and the new Documents tab), `/mis/crew`. Checked each for horizontal overflow
+(`scrollWidth` vs `innerWidth`), console/page errors, and eyeballed every screenshot.
+
+Found and fixed three real phone-width (390px) overflow bugs, all in screens this effort's own
+tracks touched:
+- **`reports-screen.tsx` tab bar** — Track 2's new "Machines" tab (E7-11) made it six non-wrapping,
+  non-scrolling tabs in a plain `flex` row; the row itself (595px) blew the page 205px past a 390px
+  viewport. Fixed: `overflow-x-auto scrollbar-none` on the row, `shrink-0 whitespace-nowrap` on each
+  pill (matches the `scrollbar-none` utility already in `globals.css`, reused rather than inventing
+  a new one).
+- **`reports-screen.tsx` header row** — separately, the month prev/next + CSV/Print controls (5
+  items, one with a `min-w-[120px]` label) don't fit a 390px row either; a smaller, pre-existing
+  overflow the 6-tab bug was masking. Fixed: `flex-wrap` on the controls row.
+- **`order-detail-screen.tsx` tab bar** — same shape of bug: Track 4's new "Documents (N)" tab,
+  whose label grows with the count, pushed five tabs past 390px. Same fix (`overflow-x-auto
+  scrollbar-none` / `shrink-0 whitespace-nowrap`).
+- **Print sheets, defensive fix, not confirmed with real data:** `/mis/print/coa/[id]`'s 5-column
+  QC table overflowed 20px at 390px with real data (an order with 8 real QC checks) — wrapped in
+  `overflow-x-auto` (print output unaffected, `@page { size: A4 }` is a separate media query).
+  `/mis/print/job-card/[id]`'s new 7-column BPR sign-off table (Track 1, E6-09) got the identical
+  wrap pre-emptively: `mis_job_phases` has 0 live rows (tracker-wide, noted above), so no order in
+  the DB could exercise it with real phase rows — every order tested rendered the "No phase plan ·
+  not gated" fallback instead of the table. The table is structurally the same shape as the COA
+  one that did overflow (more columns, same lack of `overflow-x-auto`), so the fix was applied on
+  that reasoning rather than left unverified; flagging here that it is *reasoned*, not *witnessed*.
+
+Confirmed working, no fix needed: COA print now shows real dates and `checkBy` names (Track 2's
+field-name fix, `15/9/2026` / `Arjun` rather than "Invalid Date" / blank) — verified against a real
+order with 8 QC checks. The phone Documents screen's `safeHref` fix (F-23) renders correctly with a
+real document selected ("Link not safe to open" for a non-http `filePath`, matching the desktop
+library's own warning for the same row). `/mis/settings/wages` and `/mis/settings/users` (Track 3)
+render cleanly at both widths. `/mis/crew` (Track 5) still renders cleanly at both widths, no
+desktop-specific twin needed (same component tree, CSS-only, per MIS_UI_SPEC §3). `/mis/qc`,
+`/mis/qc/grid` clean at both widths.
+
+**Not a bug, a documented design split — initially mis-read as two page errors in this session's
+own screenshot script:** `/mis/reports` and `/mis/orders/[id]` each render a genuinely different
+component at >=1024px (`WastageDesktop` / D7, `OrderDetailDesktop` / D4) than the phone-width tabbed
+screen this track's fixes targeted — `?view=classic` is the documented escape hatch back to the
+tabbed version at any width (see the pages' own code comments). `/mis/qc/defects` below 1024px
+intentionally has no phone twin and falls back to the `/mis/qc` board (also code-commented);
+confirmed this is what a phone visiting `/mis/qc/defects` actually shows, not a routing bug.
+**Flagging, not fixing (product decision, not a CSS bug):** the new Machines tab (E7-11) has no
+equivalent on the >=1024px `WastageDesktop` (D7) — `wastage-desktop.tsx`'s own comment ("Machine
+utilisation is not a report yet, so its tab is absent rather than dead") now reads as stale. A
+desktop user only reaches it via `/mis/reports?view=classic`, same as the pre-existing tabbed
+report. Same shape of gap on `order-detail-desktop.tsx` is NOT present — D4 already has its own
+"Documents" card (count + list + link to `/mis/documents`), so Track 4's new phone tab needed no
+desktop counterpart.
+
+One pre-existing, unrelated bug noticed along the way and NOT fixed (out of this track's scope —
+not width-dependent, not specific to any of the 5 tracks' screens, affects the shared `Select` kit
+component everywhere a caller supplies its own placeholder option): `components/mis/kit/select.tsx`
+always renders its own hardcoded `<option value="" disabled>{placeholder ?? t('role.select')}</option>`
+("Select a role") ahead of the caller's options — on `/mis/documents`' order filter (which passes
+its own `— Select Order —` placeholder as `options[0]`), the open dropdown shows a redundant,
+mistranslated "Select a role" entry above the real placeholder. Cosmetic, not a layout bug, not
+scoped to Tracks 1–5 — flagging for a future ticket rather than touching a shared kit file here.
+
+Verification: `node_modules/.bin/tsc --noEmit --skipLibCheck` silent; `pnpm vitest run` 217 files /
+4432 passed (unchanged + one test file updated, see below), `pnpm build` succeeds, every `/mis/*`
+route present. One existing test had to be edited, not weakened: `tap-targets.test.ts` asserted an
+exact, frozen class-order literal (`inline-flex min-h-11 items-center px-4 text-sm font-medium
+border-b-2`) against the two tab bars above; the fix legitimately adds `shrink-0 whitespace-nowrap`
+and reorders nothing load-bearing, so the literal no longer matched even though the actual invariant
+the test exists for (`min-h-11`, 44px tap targets) still holds. Rewrote those two assertions to use
+the file's own `tagAround()` helper against the tab button's own tag (consistent with every other
+assertion in the same file) instead of a whole-file frozen-order literal.
 
 ## Track 7 — Deploy + Jira dev-ticket status flip
 **Status:** TODO — gated on Tracks 0–6 all DONE
