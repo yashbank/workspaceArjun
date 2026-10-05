@@ -5,13 +5,26 @@ import { getOrder } from '@/server/mis/orders';
 import { getQcForOrder } from '@/server/mis/qc';
 import { notFound } from 'next/navigation';
 
+type QcLogRow = {
+  id: string;
+  parameterName: string | null;
+  result: string;
+  defectType: string | null;
+  notes: string | null;
+  checkTime: Date;
+  checkBy: { name: string } | null;
+};
+
 export default async function CoaPrintPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!isUuid(id)) notFound();
   await requireMisAccess();
   const order = await getOrder(id);
   if (!order) notFound();
-  const qcLogs = (await getQcForOrder(id).catch(() => [])) as any[];
+  // getQcForOrder's rows are checkTime/checkBy/defectType+notes — NOT checkedAt/checkedBy/
+  // defectDescription, which this page was reading before (always undefined: "Invalid Date" in
+  // the Date column, "—" in Checked By and Notes/Defect on every row of every COA ever printed).
+  const qcLogs = (await getQcForOrder(id).catch(() => [])) as QcLogRow[];
 
   const printDate = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
   const passCount = qcLogs.filter(q => q.result === 'PASS').length;
@@ -35,7 +48,7 @@ export default async function CoaPrintPage({ params }: { params: Promise<{ id: s
           <p className="text-gray-600 text-xs mt-0.5">Certificate of Analysis</p>
         </div>
         <div className="text-right">
-          <p className="font-bold text-lg font-mono">{(order as any).orderNumber}</p>
+          <p className="font-bold text-lg font-mono">{order.orderNumber}</p>
           <p className="text-xs text-gray-500">Date: {printDate}</p>
         </div>
       </div>
@@ -44,16 +57,16 @@ export default async function CoaPrintPage({ params }: { params: Promise<{ id: s
       <div className="grid grid-cols-2 gap-x-8 gap-y-3 mb-8">
         <div>
           <span className="text-xs text-gray-500 uppercase">Customer</span>
-          <p className="font-medium mt-0.5">{(order as any).customer?.name ?? '—'}</p>
+          <p className="font-medium mt-0.5">{order.customer?.name ?? '—'}</p>
         </div>
         <div>
           <span className="text-xs text-gray-500 uppercase">Product / Description</span>
-          <p className="font-medium mt-0.5">{(order as any).description ?? '—'}</p>
+          <p className="font-medium mt-0.5">{order.description ?? '—'}</p>
         </div>
         <div>
           <span className="text-xs text-gray-500 uppercase">Delivery Date</span>
           <p className="font-medium mt-0.5">
-            {(order as any).deliveryDate ? new Date((order as any).deliveryDate).toLocaleDateString('en-IN') : '—'}
+            {order.deliveryDate ? new Date(order.deliveryDate).toLocaleDateString('en-IN') : '—'}
           </p>
         </div>
         <div>
@@ -80,15 +93,15 @@ export default async function CoaPrintPage({ params }: { params: Promise<{ id: s
             </tr>
           </thead>
           <tbody>
-            {qcLogs.map((q: any) => (
+            {qcLogs.map((q) => (
               <tr key={q.id} className="border border-gray-200">
                 <td className="p-2">{q.parameterName}</td>
                 <td className={`p-2 font-bold ${q.result === 'PASS' ? 'text-green-700' : q.result === 'FAIL' ? 'text-red-700' : 'text-gray-500'}`}>
                   {q.result}
                 </td>
-                <td className="p-2">{q.defectDescription ?? '—'}</td>
-                <td className="p-2">{q.checkedBy?.name ?? '—'}</td>
-                <td className="p-2">{new Date(q.checkedAt).toLocaleDateString('en-IN')}</td>
+                <td className="p-2">{[q.defectType, q.notes].filter(Boolean).join(' · ') || '—'}</td>
+                <td className="p-2">{q.checkBy?.name ?? '—'}</td>
+                <td className="p-2">{new Date(q.checkTime).toLocaleDateString('en-IN')}</td>
               </tr>
             ))}
           </tbody>
