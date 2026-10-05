@@ -286,16 +286,26 @@ the test exists for (`min-h-11`, 44px tap targets) still holds. Rewrote those tw
 the file's own `tagAround()` helper against the tab button's own tag (consistent with every other
 assertion in the same file) instead of a whole-file frozen-order literal.
 
-## Track 7 — Deploy + Jira dev-ticket status flip
-**Status:** TODO — gated on Tracks 0–6 all DONE
-Merge everything to `main`, confirm Vercel production deploy is green, then flip the Jira status
-on tickets Tracks 0–6 actually closed (not a full resync — that happens after the external
-tester's report, see below). Hand `docs/qa/EXTERNAL_TESTER_GUIDE.md` to the tester.
+## Track 7 — Deploy
+**Status:** DONE (2026-10-05) — PR #59 (`phase-a` → `main`), commit `0f53b28`. Vercel production
+deployment `dpl_7Z8b5W6u3kK4hLnekbtQ6gkPiJzE` confirmed `READY`; smoke-checked `/` (307, redirects
+as expected) and `/login` (200). Final pre-merge gate on the fully-combined `phase-a`: `tsc` silent,
+`pnpm test` 217 files / 4432 passed, `pnpm build` clean.
 
-## Track 8 — Post-testing (future, not started)
-**Status:** TODO — gated on tester's report + your own manual spot-check
-Full Jira resync against final reality, then the per-role/per-screen documentation pass with
-screenshots.
+**Jira: explicitly deferred, by your own instruction (2026-10-05).** Not flipping ANY ticket status
+now — not even the dev-tickets-only flip this track originally planned. Full sequence you asked for
+instead: (1) external tester runs `docs/qa/EXTERNAL_TESTER_GUIDE.md` against this deploy, (2) we fix
+whatever bugs the report surfaces, (3) only THEN do we flip Jira tickets back to their proper status,
+all at once, against final reality — not provisionally now, not piecemeal.
+
+`docs/qa/EXTERNAL_TESTER_GUIDE.md` is ready to hand over as-is.
+
+## Track 8 — Post-testing (next up — waiting on the tester's report)
+**Status:** TODO — gated on the external tester's completed report
+1. Fix whatever bugs the report surfaces.
+2. Full Jira sync against final reality (see Track 7's note — deliberately bundled here, not done
+   piecemeal beforehand).
+3. Per-role/per-screen documentation pass with screenshots.
 
 ---
 
