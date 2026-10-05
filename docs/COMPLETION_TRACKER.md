@@ -146,6 +146,26 @@ verified: a printed job card showing assigned crew (MIS-261's "wire to job cards
 this) — left alone since `print/job-card` is Production-owned territory for this track's scope,
 and the explicit ask (allocate → reflected in home crew count) was already satisfied end to end.
 
+## Kiosk alignment check (2026-10-05, ad hoc — not a numbered track)
+**Status:** DONE, no code change needed
+Android kiosk team's `docs/KIOSK_ALIGNMENT_2026-10-05.md` asked for two things to be verified:
+1. **`operatorId` surfaced on the dashboard** — confirmed still intact after all Track 1-5 merges
+   (`listPunchesForDay` in `attendance.ts` resolves it to `operatorName`, shown in the attendance
+   screen's "Punches" slide-over, added by the earlier PR #51).
+2. **`/punch` idempotency dedup under concurrent same-key requests** — read `src/server/mis/
+   idempotency.ts` end to end. Confirmed airtight: `MisQueuedWrite.key` is a DB-level primary key
+   (`@id` in schema.prisma), the claim is taken inside the same transaction as the business write
+   (create-or-conditional-update, never `upsert` — Phase 10's upsert bug is exactly what this
+   replaced), and a losing concurrent attempt is caught via `LostRace`/Postgres `P2002` and
+   answered with the winner's own result. `idempotency.test.ts` has a dedicated test simulating
+   the exact "both attempts read the key as absent" race and asserts only one business row ever
+   commits. No change needed.
+
+**Open, needs your decision, not an engineering gap:** the kiosk can't build a Super Attendance
+Operator distinction because `/pull`'s roster response has no role field at all (`PULL_EMPLOYEE_KEYS`
+only selects `id, name, badgeCode, shift`). Deliberately left unbuilt until you decide whether to
+extend that API contract — flag to the user if wanted.
+
 ## Track 6 — Desktop responsive pass + full regression (no epic, cross-cutting)
 **Status:** TODO
 Desktop components exist (`src/components/mis/desktop/*`, confirmed present 2026-10-04) but have
