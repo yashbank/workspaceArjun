@@ -39,6 +39,7 @@ const reportRows = { rows: [{ qtyProduced: d(10), qtyWaste: d(1) }] };
 vi.mock('@/server/mis/reports', () => ({
   getProductionReport: async () => reportRows, getAttendanceReport: async () => ({ rows: [] }), getQcReport: async () => ({ rows: [{ defectQty: d(2) }] }),
   getOrdersReport: async () => [{ id: 'o', qty: d(3) }], getStoreReport: async () => ({ raw: [{ quantity: d(4), balanceQty: d(6) }] }), getWastageReport: async () => null,
+  getMachineUtilisationReport: async () => ({ rows: [], availableMinutes: 0, totals: { bookedMinutes: 0, allocationCount: 0, machineCount: 0 } }),
 }));
 vi.mock('@/lib/mis/wastage', () => ({ clampWeeks: () => 4 }));
 

@@ -1,4 +1,5 @@
 import { addDaysToDateKey, dateKeyToDbDate, factoryDateKey } from '@/lib/mis/factory-time';
+import { buildMachineUtilisation, type MachineUtilisationReport } from '@/lib/mis/machine-utilisation';
 import { withoutMoneyFields } from '@/lib/mis/money-fields';
 import { can } from '@/lib/mis/permissions';
 import { db } from '@/server/db';
@@ -7,10 +8,6 @@ import { requirePermission } from '@/server/mis/auth';
 import { getFactoryTimezone } from '@/server/mis/business-rules';
 
 export type ReportRange = { from: Date; to: Date };
-
-// Machine utilisation (E7-11) can now be computed by joining
-// MisMachineAllocation to MisOrder/MisJobPhase by id — jobPhaseId landed in
-// Phase 9 (MIS-261/265). Not built here; this phase only wires the link.
 
 /** Production summary by order — qty produced, waste, entry count */
 export async function getProductionReport(range: ReportRange) {
@@ -36,6 +33,32 @@ export async function getProductionReport(range: ReportRange) {
     byOrder[key].entries += 1;
   }
   return { rows: Object.values(byOrder), raw: logs };
+}
+
+/**
+ * E7-11's machine utilisation report — how much of `range` each machine was booked for, against
+ * an order. Unblocked by Phase 9's `jobPhaseId` wiring; the comment this replaced said so and
+ * named the shape ("can now be computed by joining MisMachineAllocation… — not built here").
+ *
+ * No money (D24): quantities and minutes only.
+ */
+export async function getMachineUtilisationReport(range: ReportRange): Promise<MachineUtilisationReport> {
+  await requirePermission('reports.read');
+  const [machines, allocations] = await Promise.all([
+    db.misMachine.findMany({
+      where: { deletedAt: null },
+      select: { id: true, code: true, name: true, isActive: true },
+      orderBy: { sortOrder: 'asc' },
+    }),
+    // A simple overlap filter — releasedAt only ever SHORTENS the effective window (never past
+    // endsAt), so filtering on endsAt alone cannot drop an allocation the pure builder would
+    // still count; the exact clip happens there.
+    db.misMachineAllocation.findMany({
+      where: { startsAt: { lt: range.to }, endsAt: { gt: range.from } },
+      select: { machineId: true, startsAt: true, endsAt: true, releasedAt: true },
+    }),
+  ]);
+  return buildMachineUtilisation({ machines, allocations, range });
 }
 
 /**
