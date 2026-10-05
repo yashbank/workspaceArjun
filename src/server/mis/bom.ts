@@ -131,20 +131,37 @@ export async function addBomMaterial(stageId: string, data: { description: strin
   return forRole(actor.role, rec);
 }
 
+/**
+ * F-37 (MIS-123) — neither this function nor `approveBom` used to check the BOM's own current
+ * status before acting, so a stale or replayed client request (the UI only shows "Submit" once,
+ * but the server never re-checked) could re-submit an already-approved BOM, silently reopening
+ * an approval nobody asked to revisit. Only a DRAFT BOM has anything to submit.
+ */
 export async function submitBomForApproval(bomId: string) {
   const actor = await requirePermission('orders.write');
+  const before = await db.misBom.findUnique({ where: { id: bomId } });
+  if (!before) throw new Error(`BOM ${bomId} not found`);
+  if (before.status !== 'DRAFT') {
+    throw new Error(`This BOM is ${before.status.toLowerCase().replace(/_/g, ' ')}, not a draft — there is nothing to submit.`);
+  }
   const rec = await db.misBom.update({ where: { id: bomId }, data: { status: 'PENDING_APPROVAL' } });
-  await logAuditEvent({ actorId: actor.userId, action: 'SUBMIT_BOM', entity: 'MisBom', entityId: rec.id, after: rec });
+  await logAuditEvent({ actorId: actor.userId, action: 'SUBMIT_BOM', entity: 'MisBom', entityId: rec.id, before, after: rec });
   return rec;
 }
 
+/** F-37 (MIS-123) — see `submitBomForApproval`. Only a BOM actually PENDING_APPROVAL can be approved: not a DRAFT nobody submitted, and not approving an already-APPROVED BOM a second time. */
 export async function approveBom(bomId: string) {
   const actor = await requirePermission('wages.read'); // owner-only gate
+  const before = await db.misBom.findUnique({ where: { id: bomId } });
+  if (!before) throw new Error(`BOM ${bomId} not found`);
+  if (before.status !== 'PENDING_APPROVAL') {
+    throw new Error(`This BOM is ${before.status.toLowerCase().replace(/_/g, ' ')}, not pending approval.`);
+  }
   const rec = await db.misBom.update({
     where: { id: bomId },
     data: { status: 'APPROVED', approvedById: actor.userId, approvedAt: new Date() },
   });
-  await logAuditEvent({ actorId: actor.userId, action: 'APPROVE_BOM', entity: 'MisBom', entityId: rec.id, after: rec });
+  await logAuditEvent({ actorId: actor.userId, action: 'APPROVE_BOM', entity: 'MisBom', entityId: rec.id, before, after: rec });
   return rec;
 }
 

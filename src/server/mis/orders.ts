@@ -10,12 +10,23 @@ export type OrderInput = {
   notes?: string | null;
 };
 
-function nextOrderNumber(): string {
+/**
+ * `attempt` (MIS-111, F-38) — two `createOrder` calls landing in the same millisecond (two
+ * people double-tapping "New order", a batch import) derive the identical number from the clock
+ * and the second write throws the `orderNumber` unique-constraint violation. `attempt` is 0 on
+ * the first try and offsets the number on every retry below, so a collision does not need the
+ * clock to tick before the next attempt succeeds.
+ */
+function nextOrderNumber(attempt = 0): string {
   const now = new Date();
   const y = now.getFullYear();
   const m = String(now.getMonth() + 1).padStart(2, '0');
-  const ms = String(Date.now()).slice(-5);
+  const ms = String(Date.now() + attempt * 7919 + Math.floor(Math.random() * 97)).slice(-5);
   return `ORD-${y}${m}-${ms}`;
+}
+
+function isUniqueConstraintError(err: unknown): boolean {
+  return Boolean(err && typeof err === 'object' && (err as { code?: unknown }).code === 'P2002');
 }
 
 export async function listOrders() {
@@ -36,16 +47,28 @@ export async function getOrder(id: string) {
 
 export async function createOrder(input: OrderInput) {
   const actor = await requirePermission('orders.write');
-  const created = await db.misOrder.create({
-    data: {
-      orderNumber: nextOrderNumber(),
-      customerId: input.customerId || null,
-      description: input.description?.trim() || null,
-      deliveryDate: input.deliveryDate ? new Date(input.deliveryDate) : null,
-      notes: input.notes?.trim() || null,
-      createdById: actor.userId,
-    },
-  });
+
+  let created;
+  const MAX_ATTEMPTS = 6;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      created = await db.misOrder.create({
+        data: {
+          orderNumber: nextOrderNumber(attempt),
+          customerId: input.customerId || null,
+          description: input.description?.trim() || null,
+          deliveryDate: input.deliveryDate ? new Date(input.deliveryDate) : null,
+          notes: input.notes?.trim() || null,
+          createdById: actor.userId,
+        },
+      });
+      break;
+    } catch (err) {
+      if (!isUniqueConstraintError(err) || attempt >= MAX_ATTEMPTS - 1) throw err;
+      // A collided order number is a clock coincidence, not a programming error — propose
+      // another one and try again rather than surfacing a raw constraint violation.
+    }
+  }
   await logAuditEvent({ actorId: actor.userId, action: 'order.create', entity: 'MisOrder', entityId: created.id, after: created });
   return created;
 }
