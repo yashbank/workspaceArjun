@@ -6,7 +6,6 @@ import { SlideOver } from '@/components/mis/kit/slide-over';
 import { Input, NumberInput } from '@/components/mis/kit/input';
 import { Select, type SelectOption } from '@/components/mis/kit/select';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
-import { EmptyState } from '@/components/mis/kit/empty-state';
 import { saveProcessAction, deleteProcessAction, restoreProcessAction } from '@/app/(mis)/mis/masters/processes/actions';
 
 type Process = { id: string; code: string; name: string; nameHi: string | null; departmentId: string | null; standardTimeMinutes: number | null; isActive: boolean; deletedAt: Date | null; department: { name: string } | null };

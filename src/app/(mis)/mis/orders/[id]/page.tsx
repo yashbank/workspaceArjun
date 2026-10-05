@@ -55,7 +55,7 @@ export default async function OrderDetailPage({
 
   const phone = (
     <OrderDetailScreen
-      order={order as any}
+      order={order}
       phases={phases.map((p) => ({
         id: p.id,
         sequence: p.sequence,
@@ -64,12 +64,16 @@ export default async function OrderDetailPage({
         inChargeName: p.inCharge?.name ?? null,
         downstreamFlagged: p.downstreamFlagged,
       }))}
-      bom={bom as any}
-      productionLogs={productionLogs as any[]}
-      productionSummary={productionSummary as any}
-      qcLogs={qcLogs as any[]}
-      qcSummary={qcSummary as any}
-      documents={documents as any[]}
+      bom={bom}
+      productionLogs={productionLogs.map((l) => ({
+        ...l,
+        qtyProduced: Number(l.qtyProduced),
+        qtyWaste: Number(l.qtyWaste),
+      }))}
+      productionSummary={productionSummary}
+      qcLogs={qcLogs}
+      qcSummary={qcSummary}
+      documents={documents}
       canWrite={canWrite}
       canSeeWages={canSeeWages}
       canProduction={canProduction}

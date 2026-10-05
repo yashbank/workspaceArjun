@@ -2,7 +2,6 @@
 import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/mis/kit/button';
-import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import { NumberInput, Select } from '@/components/mis/kit/input';
 import { allocateMachineAction, getOpenPhasesForOrderAction, releaseMachineAction } from '@/app/(mis)/mis/machine-board/actions';

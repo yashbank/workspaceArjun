@@ -9,6 +9,7 @@ import { Select, type SelectOption } from '@/components/mis/kit/select';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { WagePicker } from '@/components/mis/payroll/wage-picker';
 import type { WageTypeCode } from '@/server/mis/wage-type';
+import { isMisRole } from '@/lib/mis/roles';
 import { saveEmployeeAction, deleteEmployeeAction, restoreEmployeeAction } from '@/app/(mis)/mis/employees/actions';
 
 // Same visual weight as the kit's `Button` ghost variant, so a navigation
@@ -90,7 +91,9 @@ export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes
           employeeCode: code,
           name,
           nameHi: nameHi || undefined,
-          role,
+          // The <Select> only ever offers ROLE_OPTIONS' values (every MisRoleName), so this is
+          // always true in practice — the guard keeps the type honest without an unchecked cast.
+          role: isMisRole(role) ? role : undefined,
           managerId,
           // Only an Owner's form ever holds these — an Admin's form never renders the section
           // that sets them, so they stay `undefined` (unchanged) on an Admin's save.

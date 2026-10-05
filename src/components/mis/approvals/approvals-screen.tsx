@@ -24,7 +24,7 @@ type Pending = {
 
 type Props = { pending: Pending; isOwner: boolean; canWrite: boolean };
 
-export function ApprovalsScreen({ pending, isOwner, canWrite }: Props) {
+export function ApprovalsScreen({ pending, isOwner, canWrite: _canWrite }: Props) {
   const [isPending, startTransition] = useTransition();
 
   const approveBom = (id: string) => startTransition(async () => { await approveBomAction(id); });

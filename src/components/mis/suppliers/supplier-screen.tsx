@@ -6,7 +6,6 @@ import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import { Input, NumberInput } from '@/components/mis/kit/input';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
-import { EmptyState } from '@/components/mis/kit/empty-state';
 import { saveSupplierAction, deleteSupplierAction, restoreSupplierAction } from '@/app/(mis)/mis/suppliers/actions';
 
 type Supplier = { id: string; code: string; name: string; phone: string | null; city: string | null; gstNo: string | null; paymentTermsDays: number | null; isActive: boolean; deletedAt: Date | null };

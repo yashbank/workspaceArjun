@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
         await logAuditEvent({ actorId: actor.userId, action: 'item.import_create', entity: 'MisItem', entityId: created.id, after: { name, category, unit } });
         results.push({ row: i + 1, code, status: 'created' });
       }
-    } catch (e: any) { results.push({ row: i + 1, code: code ?? '?', status: 'skipped', reason: e.message }); }
+    } catch (e: unknown) { results.push({ row: i + 1, code: code ?? '?', status: 'skipped', reason: e instanceof Error ? e.message : String(e) }); }
   }
 
   const created = results.filter(r => r.status === 'created').length;

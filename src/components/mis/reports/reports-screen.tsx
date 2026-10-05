@@ -34,8 +34,6 @@ function hoursLabel(minutes: number): string {
   return `${(minutes / 60).toFixed(1)}h`;
 }
 
-const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
 function statusTone(s: string): BadgeTone {
   switch (s) {
     case 'CONFIRMED': return 'info';
@@ -55,7 +53,7 @@ function downloadCsv(filename: string, rows: string[][], headers: string[]) {
   URL.revokeObjectURL(url);
 }
 
-export function ReportsScreen({ production, attendance, qc, orders, store, machines, canSeeWages, isOwner, rangeLabel, year, month }: Props) {
+export function ReportsScreen({ production, attendance, qc, orders, store, machines, canSeeWages: _canSeeWages, isOwner, rangeLabel, year, month }: Props) {
   const [tab, setTab] = useState<Tab>('production');
   const router = useRouter();
 
