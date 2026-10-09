@@ -3,6 +3,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
+import { fmtDate } from '@/lib/mis/client-dates';
 
 type TxnRow = {
   id: string;
@@ -37,7 +38,7 @@ function downloadCsv(item: ItemInfo, txns: TxnRow[]) {
     t.quantity.toFixed(2), t.balanceQty.toFixed(2),
     t.referenceNo ?? '', t.reason ?? '',
     t.isOverIssue ? 'Yes' : '',
-    new Date(t.createdAt).toLocaleDateString('en-IN'),
+    fmtDate(t.createdAt),
   ]);
   const lines = [headers, ...data].map((row) =>
     row.map((c) => `"${String(c ?? '').replace(/"/g, '""')}"`).join(','),
@@ -118,7 +119,7 @@ export function StoreLedgerScreen({ item, txns }: Props) {
       header: 'Date',
       render: (r) => (
         <span className="text-sm text-slate-500 whitespace-nowrap">
-          {new Date(r.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+          {fmtDate(r.createdAt, { day: '2-digit', month: 'short', year: 'numeric' })}
         </span>
       ),
     },

@@ -46,7 +46,7 @@ export function CustomerDetailScreen({ customer, orders, canWrite }: Props) {
           </span>
         </div>
 
-        <div className="mt-5 grid grid-cols-3 gap-4 text-sm">
+        <div className="mt-5 grid grid-cols-1 gap-4 text-sm sm:grid-cols-3">
           {[
             { label: 'Phone', value: customer.phone ?? '—' },
             { label: 'City', value: customer.city ?? '—' },
@@ -54,7 +54,7 @@ export function CustomerDetailScreen({ customer, orders, canWrite }: Props) {
           ].map(item => (
             <div key={item.label}>
               <div className="text-xs text-gray-500">{item.label}</div>
-              <div className="font-medium text-gray-900 mt-0.5">{item.value}</div>
+              <div className="font-medium text-gray-900 mt-0.5 break-all">{item.value}</div>
             </div>
           ))}
         </div>

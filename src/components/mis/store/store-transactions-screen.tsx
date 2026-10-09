@@ -8,6 +8,7 @@ import { Select } from '@/components/mis/kit/select';
 import { Input, NumberInput } from '@/components/mis/kit/input';
 import { storeInAction, storeOutAction } from '@/app/(mis)/mis/store/actions';
 import type { StoreTxnRow, StoreItemRow } from '@/server/mis/store';
+import { fmtDate as fmtFactoryDate, fmtTime as fmtFactoryTime } from '@/lib/mis/client-dates';
 
 type Props = {
   txns: StoreTxnRow[];
@@ -17,12 +18,12 @@ type Props = {
 
 function fmt(d: Date | string) {
   const date = typeof d === 'string' ? new Date(d) : d;
-  return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  return fmtFactoryDate(date, { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 function fmtTime(d: Date | string) {
   const date = typeof d === 'string' ? new Date(d) : d;
-  return date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  return fmtFactoryTime(date, { hour: '2-digit', minute: '2-digit' });
 }
 
 function downloadCsv(rows: StoreTxnRow[]) {

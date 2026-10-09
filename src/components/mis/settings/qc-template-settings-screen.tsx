@@ -66,9 +66,9 @@ export function QcTemplateSettingsScreen({ templates }: { templates: QcTemplateR
       {templates.length === 0 && <p className="py-8 text-center text-slate-400">No templates yet — restore the defaults or add one.</p>}
       {templates.map((t) => (
         <div key={t.id} className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4">
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <div className="flex items-center gap-2 font-semibold text-slate-900">{t.name} {!t.isActive && <StatusBadge tone="neutral">Inactive</StatusBadge>}</div>
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2 font-semibold text-slate-900">{t.name} {!t.isActive && <StatusBadge tone="neutral">Inactive</StatusBadge>}</div>
               <div className="text-sm text-slate-500">{t.processName ?? '—'} · {t.slots.length} slots {t.slotStart}–{t.slotEnd} · {t.parameters.length} parameters</div>
             </div>
             <div className="flex gap-1">

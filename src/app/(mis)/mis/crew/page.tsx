@@ -18,7 +18,9 @@ export default async function CrewPage({
   const role = await getMisRole(user.id);
   const canWrite = can(role, 'production.write');
 
-  const [machines, shifts] = await Promise.all([getMachineBoard(), listShifts()]);
+  // The machine column needs production.read; attendance roles (who reach this via attendance.read) get the
+  // worker list without it rather than a refusal.
+  const [machines, shifts] = await Promise.all([can(role, 'production.read') ? getMachineBoard() : Promise.resolve([]), listShifts()]);
 
   const now = new Date();
   const currentShift = resolveShiftAt(shifts, now, await getFactoryTimezone());

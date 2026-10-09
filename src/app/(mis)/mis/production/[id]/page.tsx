@@ -25,8 +25,9 @@ export default async function ProductionDetailPage({ params }: { params: Promise
   const [logs, summary, employees, machines] = await Promise.all([
     getProductionForOrder(id),
     getProductionSummary(id),
-    listEmployees(),
-    listMachines(),
+    // The pickers feed the log-entry form, which only a writer sees; a QC reader (no employees.read) was refused here.
+    canWrite ? listEmployees() : Promise.resolve([]),
+    canWrite ? listMachines() : Promise.resolve([]),
   ]);
 
   return (

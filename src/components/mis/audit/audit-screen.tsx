@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import { fmtDate as fmtFactoryDate, fmtTime as fmtFactoryTime } from '@/lib/mis/client-dates';
 
 type AuditRow = {
   id: string;
@@ -31,8 +32,7 @@ const entityColors: Record<string, string> = {
 
 function fmtTime(dt: Date | string) {
   const d = typeof dt === 'string' ? new Date(dt) : dt;
-  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) + ' ' +
-    d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+  return fmtFactoryDate(d, { day: '2-digit', month: 'short' }) + ' ' + fmtFactoryTime(d, { hour: '2-digit', minute: '2-digit', hour12: true });
 }
 
 export function AuditScreen({ logs, initialFrom, initialTo }: Props) {
@@ -121,8 +121,8 @@ export function AuditScreen({ logs, initialFrom, initialTo }: Props) {
           <div className="py-12 text-center text-gray-400 text-sm">No audit events found.</div>
         ) : (
           filtered.map((log) => (
-            <div key={log.id} className="flex items-center gap-4 px-5 py-3 hover:bg-gray-50">
-              <div className="text-xs text-gray-400 whitespace-nowrap w-36 shrink-0">{fmtTime(log.createdAt)}</div>
+            <div key={log.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-5 py-3 hover:bg-gray-50">
+              <div className="text-xs text-gray-400 whitespace-nowrap sm:w-36 shrink-0">{fmtTime(log.createdAt)}</div>
               <span className={`text-xs px-2 py-0.5 rounded font-medium shrink-0 ${entityColors[log.entity] ?? 'bg-gray-100 text-gray-600'}`}>
                 {log.entity}
               </span>

@@ -4,12 +4,16 @@ import { factoryDateKey, previousDateKey } from '@/lib/mis/factory-time';
 import { listAttendance, listShifts } from '@/server/mis/attendance';
 import { getFactoryTimezone } from '@/server/mis/business-rules';
 import { listEmployeeRoster } from '@/server/mis/employee';
+import { requirePermission } from '@/server/mis/auth';
 import { requireMisAccess } from '@/server/mis/guard';
 
 export default async function KioskPage() {
   // Left outside the try below on purpose: a Forbidden/Unauthorized here must keep
   // reaching mis/error.tsx's own boundary, not fall into the generic retry state.
   const user = await requireMisAccess();
+  // The menu offers this on attendance.write; the page must refuse on the same line (a Store Guy used to
+  // land on the generic retry card, a Supervisor could open it by URL).
+  await requirePermission('attendance.write');
   // "Today" is the factory's today (D22), not the server's.
   const timeZone = await getFactoryTimezone();
   const now = new Date();

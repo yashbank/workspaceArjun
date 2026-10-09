@@ -2,6 +2,7 @@
 import Link from 'next/link';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
 import type { StoreDashboardStats, StoreTxnRow } from '@/server/mis/store';
+import { fmtDate as fmtFactoryDate, fmtTime as fmtFactoryTime } from '@/lib/mis/client-dates';
 
 type Props = {
   stats: StoreDashboardStats;
@@ -10,12 +11,12 @@ type Props = {
 
 function fmt(d: Date | string) {
   const date = typeof d === 'string' ? new Date(d) : d;
-  return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+  return fmtFactoryDate(date, { day: '2-digit', month: 'short' });
 }
 
 function fmtTime(d: Date | string) {
   const date = typeof d === 'string' ? new Date(d) : d;
-  return date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  return fmtFactoryTime(date, { hour: '2-digit', minute: '2-digit' });
 }
 
 function StatCard({

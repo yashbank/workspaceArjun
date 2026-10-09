@@ -21,10 +21,12 @@ export async function editAttendanceAction(attendanceId: string, data: { status?
 export async function requestLeaveAction(employeeId: string, date: string, reason?: string) {
   await requestLeave(employeeId, date, reason);
   revalidatePath('/mis/attendance');
+  revalidatePath('/mis/attendance/leave');
 }
 export async function approveLeaveAction(leaveId: string, approve: boolean) {
   await approveLeave(leaveId, approve);
   revalidatePath('/mis/attendance');
+  revalidatePath('/mis/attendance/leave');
 }
 export async function saveShiftAction(id: string | null, data: { name: string; startTime: string; endTime: string }) {
   await saveShift(id, data);

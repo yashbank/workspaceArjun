@@ -13,6 +13,7 @@ import { PendingSyncNote } from '@/components/mis/shell/pending-sync-note';
 import { useToast } from '@/components/ui/toast';
 import { newIdempotencyKey, type ParkReason } from '@/lib/mis/offline/idempotency';
 import { isClearanceBlock, submitProduction } from './submit-production';
+import { fmtDate, fmtTime } from '@/lib/mis/client-dates';
 
 type Log = {
   id: string;
@@ -46,8 +47,7 @@ function todayIso() {
 
 function fmt(dt: Date | string) {
   const d = typeof dt === 'string' ? new Date(dt) : dt;
-  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) + ' ' +
-    d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+  return fmtDate(d, { day: '2-digit', month: 'short' }) + ' ' + fmtTime(d, { hour: '2-digit', minute: '2-digit', hour12: true });
 }
 
 export function ProductionDetailScreen({ order, logs, summary, employees, machines, canWrite, userId }: Props) {
@@ -165,7 +165,7 @@ export function ProductionDetailScreen({ order, logs, summary, employees, machin
       <PendingSyncNote />
 
       {/* Progress & Stats */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <div className="text-xs text-gray-500 mb-1">Total Produced</div>
           <div className="text-2xl font-bold text-gray-900">{Number(produced).toFixed(1)} <span className="text-sm font-normal text-gray-500">{unit}</span></div>
@@ -189,7 +189,8 @@ export function ProductionDetailScreen({ order, logs, summary, employees, machin
         {logs.length === 0 ? (
           <div className="py-12 text-center text-gray-400 text-sm">No production logged yet.</div>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[560px] text-sm">
             <thead>
               <tr className="border-b border-gray-100 text-xs text-gray-500">
                 <th className="px-5 py-3 text-left font-medium">Date/Time</th>
@@ -213,6 +214,7 @@ export function ProductionDetailScreen({ order, logs, summary, employees, machin
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

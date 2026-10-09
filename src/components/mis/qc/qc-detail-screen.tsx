@@ -12,6 +12,7 @@ import { addQcCheckAction, recordAqlSampleAction } from '@/app/(mis)/mis/qc/acti
 import type { AqlResult } from '@/lib/mis/aql';
 import type { QcTemplateRow } from '@/server/mis/qc-template';
 import { QcChecklist } from '@/components/mis/qc/qc-checklist';
+import { fmtDate, fmtTime } from '@/lib/mis/client-dates';
 
 type Check = {
   id: string;
@@ -50,8 +51,7 @@ const resultOptions: SelectOption[] = [
 
 function fmt(dt: Date | string) {
   const d = typeof dt === 'string' ? new Date(dt) : dt;
-  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) + ' ' +
-    d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+  return fmtDate(d, { day: '2-digit', month: 'short' }) + ' ' + fmtTime(d, { hour: '2-digit', minute: '2-digit', hour12: true });
 }
 
 const resultBadge = (r: string) => {

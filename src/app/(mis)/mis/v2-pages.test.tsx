@@ -6,6 +6,9 @@
 import { isValidElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+// Page modules are heavy to import; under CPU load (the e2e agents) the default 5 s tripped on a passing test.
+vi.setConfig({ testTimeout: 30_000 });
+
 class Dec { constructor(private n: number) {} toNumber() { return this.n; } toString() { return String(this.n); } }
 const d = (n: number) => new Dec(n);
 const ID = '00000000-0000-4000-8000-00000000000a';

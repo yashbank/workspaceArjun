@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 
 import { DICTIONARIES } from './i18n/dictionaries';
 import { can } from './permissions';
-import { MIS_ROLES, type MisRoleName } from './roles';
+import { MIS_ROLES } from './roles';
 import {
   GRID_COLUMNS,
   GRID_SLOTS,
@@ -135,10 +135,11 @@ describe('the catalogue per role', () => {
     expect(widgetsFor('STORE_GUY')).toEqual([]);
   });
 
-  it('an ADMIN and a SUPERVISOR get the thirteen non-money widgets', () => {
-    for (const role of ['ADMIN', 'SUPERVISOR'] as MisRoleName[]) {
-      expect(widgetsFor(role), role).toHaveLength(13);
-    }
+  it('an ADMIN gets the thirteen non-money widgets; a SUPERVISOR twelve — "Waiting on you" reads the approvals inbox (approvals.read, F-13) and a layout that carried it refused the whole dashboard', () => {
+    expect(widgetsFor('ADMIN')).toHaveLength(13);
+    expect(widgetsFor('SUPERVISOR')).toHaveLength(12);
+    expect(widgetsFor('SUPERVISOR').map((w) => w.key)).not.toContain('orders.waitingOnYou');
+    expect(widgetsFor('QC').map((w) => w.key)).not.toContain('orders.waitingOnYou');
   });
 });
 

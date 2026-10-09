@@ -42,7 +42,7 @@ export function QcChecklist({ orderId, templates, checks, canWrite }: { orderId:
   };
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white">
+    <div className="min-w-0 max-w-full rounded-xl border border-gray-200 bg-white">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-5 py-3">
         <div className="font-medium text-gray-700">Checklist</div>
         <div className="flex items-center gap-2">

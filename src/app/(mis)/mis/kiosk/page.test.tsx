@@ -9,6 +9,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const requireMisAccess = vi.fn();
 vi.mock('@/server/mis/guard', () => ({ requireMisAccess: (...a: unknown[]) => requireMisAccess(...a) }));
+// The page now refuses on attendance.write (the menu's own gate), like every other MIS page; the gate is mocked here as elsewhere.
+vi.mock('@/server/mis/auth', () => ({ requirePermission: async () => ({ userId: 'u1', role: 'ADMIN' }) }));
 vi.mock('@/server/mis/business-rules', () => ({ getFactoryTimezone: async () => 'Asia/Kolkata' }));
 const listEmployeeRoster = vi.fn();
 vi.mock('@/server/mis/employee', () => ({ listEmployeeRoster: (...a: unknown[]) => listEmployeeRoster(...a) }));

@@ -10,6 +10,7 @@ import { addOrderDocumentAction, reopenOrderAction } from '@/app/(mis)/mis/order
 import { useT } from '@/components/mis/shell/locale-provider';
 import { isOrderClosed } from '@/lib/mis/order-status';
 import { validateDocumentInput } from '@/lib/mis/document-library';
+import { fmtDate, fmtDateTime } from '@/lib/mis/client-dates';
 
 type Order = { id: string; orderNumber: string; status: string; description: string | null; deliveryDate: Date | null; notes: string | null; createdAt: Date; customer: { name: string } | null };
 type Bom = { id: string; status: string; stages: unknown[] } | null;
@@ -120,7 +121,7 @@ export function OrderDetailScreen({
   ];
 
   const prodCols: Column<ProductionLog>[] = [
-    { key: 'loggedAt', header: 'Date', render: r => new Date(r.loggedAt).toLocaleDateString('en-IN') },
+    { key: 'loggedAt', header: 'Date', render: r => fmtDate(r.loggedAt) },
     { key: 'employee', header: 'Employee', render: r => r.employee?.name ?? '—' },
     { key: 'machine', header: 'Machine', render: r => r.machine?.name ?? '—' },
     { key: 'shift', header: 'Shift', render: r => r.shift?.name ?? '—' },
@@ -129,7 +130,7 @@ export function OrderDetailScreen({
   ];
 
   const qcCols: Column<QcLog>[] = [
-    { key: 'checkTime', header: 'Date', render: r => new Date(r.checkTime).toLocaleDateString('en-IN') },
+    { key: 'checkTime', header: 'Date', render: r => fmtDate(r.checkTime) },
     { key: 'parameter', header: 'Parameter', render: r => r.parameterName ?? 'General' },
     { key: 'result', header: 'Result', render: r => (
       <StatusBadge tone={r.result === 'PASS' ? 'good' : r.result === 'FAIL' ? 'critical' : 'neutral'}>{r.result}</StatusBadge>
@@ -232,7 +233,7 @@ export function OrderDetailScreen({
         </div>
         <div className="bg-slate-50 rounded-lg p-3">
           <p className="text-xs text-slate-500">Delivery Date</p>
-          <p className="font-medium mt-0.5">{order.deliveryDate ? new Date(order.deliveryDate).toLocaleDateString('en-IN') : '—'}</p>
+          <p className="font-medium mt-0.5">{order.deliveryDate ? fmtDate(order.deliveryDate) : '—'}</p>
         </div>
         <div className="bg-slate-50 rounded-lg p-3">
           <p className="text-xs text-slate-500">Produced</p>
@@ -273,7 +274,7 @@ export function OrderDetailScreen({
           )}
           <div>
             <h3 className="text-sm font-medium text-slate-700 mb-1">Created</h3>
-            <p className="text-slate-600">{new Date(order.createdAt).toLocaleString('en-IN')}</p>
+            <p className="text-slate-600">{fmtDateTime(order.createdAt)}</p>
           </div>
         </div>
       )}
@@ -362,7 +363,7 @@ export function OrderDetailScreen({
                   <div className="min-w-0">
                     <p className="truncate font-medium text-slate-900">{doc.name}</p>
                     <p className="truncate text-xs text-slate-500">
-                      {new Date(doc.createdAt).toLocaleDateString('en-IN')}
+                      {fmtDate(doc.createdAt)}
                       {doc.uploadedByProfile?.name ? ` · ${doc.uploadedByProfile.name}` : ''}
                       {doc.description ? ` · ${doc.description}` : ''}
                     </p>
