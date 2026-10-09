@@ -480,6 +480,7 @@ describe('THE PULL PAYLOAD — id, name, badge code, shift, and nothing else (D1
       name: 'Ramesh Kumar',
       badgeCode: 'EMP-0142',
       shift: { id: 's1', name: 'Shift 1', startTime: '06:00', endTime: '14:00' },
+      photoUrl: null,
     });
   });
 
@@ -494,7 +495,8 @@ describe('THE PULL PAYLOAD — id, name, badge code, shift, and nothing else (D1
   });
 
   it('the allow-list itself is pinned — growing it needs a decision, and never a money word', () => {
-    expect([...kiosk.PULL_EMPLOYEE_KEYS]).toEqual(['id', 'name', 'badgeCode', 'shift']);
+    // V2 Epic 7 (decision: kiosk photo verification): `photoUrl` is a portal PATH, not money.
+    expect([...kiosk.PULL_EMPLOYEE_KEYS]).toEqual(['id', 'name', 'badgeCode', 'shift', 'photoUrl']);
     expect([...kiosk.PULL_SHIFT_KEYS]).toEqual(['id', 'name', 'startTime', 'endTime']);
     for (const k of [...kiosk.PULL_EMPLOYEE_KEYS, ...kiosk.PULL_SHIFT_KEYS]) expect(k).not.toMatch(wageish);
   });
@@ -502,13 +504,13 @@ describe('THE PULL PAYLOAD — id, name, badge code, shift, and nothing else (D1
   it('asks the database for exactly id, code and name — no other employee column is even loaded', async () => {
     const t = await pairTablet();
     await kiosk.pullForDevice(t.header, {});
-    expect(state.lastEmployeeSelect).toEqual({ id: true, employeeCode: true, name: true });
+    expect(state.lastEmployeeSelect).toEqual({ id: true, employeeCode: true, name: true, photoUrl: true });
   });
 
   it('the mapper cannot leak even if a wider row is handed to it', () => {
     const wide = { id: 'e1', name: 'A', employeeCode: 'C', dailyWage: 900, salary: 1, phone: '9', role: 'OWNER' };
     const out = kiosk.toPullEmployee(wide, { id: 's', name: 'S', startTime: '06:00', endTime: '14:00', isDefault: true, hourlyRate: 5 } as never);
-    expect(Object.keys(out).sort()).toEqual(['badgeCode', 'id', 'name', 'shift']);
+    expect(Object.keys(out).sort()).toEqual(['badgeCode', 'id', 'name', 'photoUrl', 'shift']);
     expect(Object.keys(out.shift as object).sort()).toEqual(['endTime', 'id', 'name', 'startTime']);
     expect(JSON.stringify(out)).not.toMatch(/900|hourlyRate|dailyWage|phone|OWNER/);
   });

@@ -54,6 +54,9 @@ const REVIEWED_UNGATED: Record<string, Reviewed> = {
   'grn-alerts.ts#notifyGrnConfirmed': { reason: 'internal; called only by confirmGRN after its grn.write gate' },
   'kiosk-device.ts#pullForDevice': { reason: 'device-token door', alsoContains: 'authenticateDevice', door: true },
   'attendance-punch.ts#ingestDevicePunch': { reason: 'device-token door', alsoContains: 'authenticateDevice', door: true },
+  // V2 Epic 7: the tablet fetches a face with its token, like it pulls the roster.
+  'employee-photo.ts#getEmployeePhotoForDevice': { reason: 'device-token door', alsoContains: 'authenticateDevice', door: true },
+  'employee-photo.ts#normalisePhoto': { reason: 'pure image transform (sharp); only setEmployeePhoto calls it, after its employees.write gate' },
   'attendance-punch.ts#submitPunch': { reason: 'session door: user resolved first, permission checked in the transaction', alsoContains: "requirePermission('attendance.write')", door: true },
   'production.ts#submitProductionLog': { reason: 'session door: user resolved first, permission checked in the transaction', alsoContains: 'requirePermission', door: true },
 

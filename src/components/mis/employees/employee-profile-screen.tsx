@@ -5,6 +5,9 @@ import { useTransition } from 'react';
 import { Button } from '@/components/mis/kit/button';
 import type { MisPayComponent } from '@/generated/prisma/enums';
 import { setPayComponentAction } from '@/app/(mis)/mis/employees/[id]/actions';
+import { uploadEmployeePhotoAction } from '@/app/(mis)/mis/employees/actions';
+import { useState } from 'react';
+import { PhotoPicker } from './photo-picker';
 
 interface Employee {
   id: string;
@@ -14,6 +17,7 @@ interface Employee {
   role: string;
   isActive: boolean;
   createdAt: Date | string;
+  photoUrl?: string | null;
 }
 
 interface MonthStats {
@@ -48,6 +52,15 @@ function fmtOT(m: number) { const h = Math.floor(m / 60); const min = m % 60; re
 export function EmployeeProfileScreen({ employee, monthStats, canWrite, payComponents }: Props) {
   const initials = employee.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
   const [isPending, startTransition] = useTransition();
+  const [photo, setPhoto] = useState<File | null>(null);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const savePhoto = () => startTransition(async () => {
+    if (!photo) return;
+    const form = new FormData();
+    form.append('photo', photo);
+    try { await uploadEmployeePhotoAction(employee.id, form); setPhoto(null); setPhotoError(null); }
+    catch (e) { setPhotoError(e instanceof Error ? e.message : 'Could not save the photo.'); }
+  });
   const toggle = (component: MisPayComponent, enabled: boolean) => {
     startTransition(async () => { await setPayComponentAction(employee.id, component, enabled); });
   };
@@ -64,8 +77,9 @@ export function EmployeeProfileScreen({ employee, monthStats, canWrite, payCompo
       {/* Profile card */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <div className="flex items-start gap-5">
-          <div className="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center text-xl font-bold text-blue-700 shrink-0">
-            {initials}
+          <div className="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center text-xl font-bold text-blue-700 shrink-0 overflow-hidden">
+            {/* eslint-disable-next-line @next/next/no-img-element -- same-origin API image */}
+            {employee.photoUrl ? <img src={employee.photoUrl} alt={employee.name} className="h-full w-full object-cover" /> : initials}
           </div>
           <div className="flex-1">
             <div className="flex items-start justify-between">
@@ -95,6 +109,13 @@ export function EmployeeProfileScreen({ employee, monthStats, canWrite, payCompo
           </div>
         </div>
 
+        {canWrite && (
+          <div className="mt-5 pt-5 border-t border-gray-100 flex flex-wrap items-center gap-3">
+            <PhotoPicker file={photo} onChange={setPhoto} currentUrl={employee.photoUrl ?? null} />
+            {photo && <Button onClick={savePhoto} disabled={isPending}>{isPending ? 'Saving…' : 'Save photo'}</Button>}
+            {photoError && <p role="alert" className="text-sm text-red-600">{photoError}</p>}
+          </div>
+        )}
         {canWrite && (
           <div className="mt-5 pt-5 border-t border-gray-100 flex gap-3">
             <Link href={`/mis/print/badge/${employee.id}`} target="_blank">

@@ -10,7 +10,8 @@ import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { WagePicker } from '@/components/mis/payroll/wage-picker';
 import type { WageTypeCode } from '@/server/mis/wage-type';
 import { isMisRole } from '@/lib/mis/roles';
-import { saveEmployeeAction, deleteEmployeeAction, restoreEmployeeAction } from '@/app/(mis)/mis/employees/actions';
+import { saveEmployeeAction, deleteEmployeeAction, restoreEmployeeAction, uploadEmployeePhotoAction } from '@/app/(mis)/mis/employees/actions';
+import { PhotoPicker } from './photo-picker';
 
 // Same visual weight as the kit's `Button` ghost variant, so a navigation
 // link (View, Badge) sits in the same row as an action button (Edit,
@@ -24,6 +25,7 @@ type Employee = {
   deletedAt: Date | null; managerId: string | null; userProfile: { email: string } | null;
   // Phase 25 (25.2/25.3, D28) — none of the three is money; wageTypeCode is a CODE, never an amount (D33).
   wageTypeCode: string | null; payType: 'MONTHLY' | 'DAILY'; sundayPaid: boolean;
+  photoUrl?: string | null;
 };
 type Props = {
   employees: Employee[];
@@ -72,10 +74,11 @@ export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes
   const [payType, setPayType] = useState<'MONTHLY' | 'DAILY'>('DAILY');
   const [sundayPaid, setSundayPaid] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [photo, setPhoto] = useState<File | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  const openAdd = () => { setEditing(null); setCode(''); setName(''); setNameHi(''); setRole('WORKER'); setManagerId(null); setWageTypeCode(null); setPayType('DAILY'); setSundayPaid(false); setSaveError(null); setOpen(true); };
-  const openEdit = (emp: Employee) => { setEditing(emp); setCode(emp.employeeCode); setName(emp.name); setNameHi(emp.nameHi ?? ''); setRole(emp.role); setManagerId(emp.managerId); setWageTypeCode(emp.wageTypeCode); setPayType(emp.payType); setSundayPaid(emp.sundayPaid); setSaveError(null); setOpen(true); };
+  const openAdd = () => { setEditing(null); setCode(''); setName(''); setNameHi(''); setRole('WORKER'); setManagerId(null); setWageTypeCode(null); setPayType('DAILY'); setSundayPaid(false); setSaveError(null); setPhoto(null); setOpen(true); };
+  const openEdit = (emp: Employee) => { setEditing(emp); setCode(emp.employeeCode); setName(emp.name); setNameHi(emp.nameHi ?? ''); setRole(emp.role); setManagerId(emp.managerId); setWageTypeCode(emp.wageTypeCode); setPayType(emp.payType); setSundayPaid(emp.sundayPaid); setSaveError(null); setPhoto(null); setOpen(true); };
 
   // Picked from the same, already-D4-scoped list this screen received — a
   // manager can only be someone the caller can already see (visibility.ts).
@@ -87,7 +90,7 @@ export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes
     setSaveError(null);
     startTransition(async () => {
       try {
-        await saveEmployeeAction(editing?.id ?? null, {
+        const saved = await saveEmployeeAction(editing?.id ?? null, {
           employeeCode: code,
           name,
           nameHi: nameHi || undefined,
@@ -99,6 +102,12 @@ export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes
           // that sets them, so they stay `undefined` (unchanged) on an Admin's save.
           ...(isOwner ? { wageTypeCode, payType, sundayPaid } : {}),
         });
+        // V2 Epic 7: the photo rides on the saved row's id, so it goes up after the save.
+        if (photo) {
+          const form = new FormData();
+          form.append('photo', photo);
+          await uploadEmployeePhotoAction(saved.id, form);
+        }
         setOpen(false);
       } catch (error) {
         // A manager-cycle rejection is a form error, not a page-level crash —
@@ -200,6 +209,7 @@ export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes
           <Input label="Employee Code" value={code} onChange={(e) => setCode(e.target.value)} required />
           <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} required />
           <Input label="Name (Hindi)" value={nameHi} onChange={(e) => setNameHi(e.target.value)} />
+          <PhotoPicker file={photo} onChange={setPhoto} currentUrl={editing?.photoUrl ?? null} />
           <Select label="Role" value={role} options={ROLE_OPTIONS} onChange={setRole} />
           <Select
             label="Reports to"

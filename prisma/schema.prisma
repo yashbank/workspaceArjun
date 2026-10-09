@@ -364,6 +364,9 @@ model MisEmployee {
   /// `sundayPaid` and actually present (25.3).
   payType       MisPayType @default(DAILY) @map("pay_type")
   sundayPaid    Boolean  @default(false) @map("sunday_paid")
+  /// V2 Epic 7 — the portal URL of a 256×256 WebP taken at onboarding (`employee-photo.ts`).
+  /// Sent to the gate tablet on pull so a scan flashes the face the badge belongs to.
+  photoUrl      String?  @map("photo_url")
 
   userProfile   UserProfile?      @relation(fields: [userProfileId], references: [id], onDelete: SetNull)
   manager       MisEmployee?      @relation("MisReports", fields: [managerId], references: [id], onDelete: SetNull)

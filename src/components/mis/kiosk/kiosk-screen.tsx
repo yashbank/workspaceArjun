@@ -23,7 +23,7 @@ import { submitKioskPunch } from './submit-punch';
 
 type Shift = { id: string; name: string };
 type AttendanceInfo = { id: string; clockIn: Date | null; clockOut: Date | null; status: string } | null;
-type EmployeeRow = { id: string; name: string; employeeCode: string; role: string; attendance: AttendanceInfo };
+type EmployeeRow = { id: string; name: string; employeeCode: string; role: string; attendance: AttendanceInfo; /** V2 Epic 7 — flashed on a punch so a borrowed badge is seen. */ photoUrl?: string | null };
 type Direction = 'IN' | 'OUT';
 
 interface KioskScreenProps {
@@ -62,7 +62,7 @@ export function KioskScreen({ employees, shifts, date, userId, timeZone, loadedA
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<EmployeeRow | null>(null);
   const [selectedShift, setSelectedShift] = useState(shifts[0]?.id ?? '');
-  const [message, setMessage] = useState<{ tone: 'ok' | 'held' | 'error'; text: string } | null>(null);
+  const [message, setMessage] = useState<{ tone: 'ok' | 'held' | 'error'; text: string; photoUrl?: string | null } | null>(null);
   const [local, setLocal] = useState<Record<string, { direction: Direction; at: string }>>({});
   const [fixing, setFixing] = useState<QueuedItem | null>(null);
   const [fixSearch, setFixSearch] = useState('');
@@ -139,8 +139,8 @@ export function KioskScreen({ employees, shifts, date, userId, timeZone, loadedA
       setLocal((prev) => ({ ...prev, [person.id]: { direction, at: out.punchedAt } }));
       setMessage(
         out.kind === 'APPLIED'
-          ? { tone: 'ok', text: `${person.name} · ${dirWord(direction)} ${timeOf(out.punchedAt)}` }
-          : { tone: 'held', text: `${person.name} · ${dirWord(direction)} ${timeOf(out.punchedAt)} — ${t('sync.savedOnDevice')}` },
+          ? { tone: 'ok', text: `${person.name} · ${dirWord(direction)} ${timeOf(out.punchedAt)}`, photoUrl: person.photoUrl }
+          : { tone: 'held', text: `${person.name} · ${dirWord(direction)} ${timeOf(out.punchedAt)} — ${t('sync.savedOnDevice')}`, photoUrl: person.photoUrl },
       );
       setSelected(null);
     });
@@ -212,6 +212,10 @@ export function KioskScreen({ employees, shifts, date, userId, timeZone, loadedA
                 : 'border-red-200 bg-red-50 text-red-800'
           }`}
         >
+          {message.photoUrl && (
+            // eslint-disable-next-line @next/next/no-img-element -- same-origin API image
+            <img src={message.photoUrl} alt="" className="mr-3 inline-block h-16 w-16 rounded-full object-cover align-middle ring-2 ring-white" />
+          )}
           {message.text}
           <button className="ml-3 text-xs underline" onClick={() => setMessage(null)}>×</button>
         </div>

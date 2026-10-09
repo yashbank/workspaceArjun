@@ -72,6 +72,7 @@ export default async function KioskPage() {
       name: e.name,
       employeeCode: e.employeeCode,
       role: e.role,
+      photoUrl: e.photoUrl ?? null,
       attendance: attendanceMap[e.id] ?? null,
     }));
 
