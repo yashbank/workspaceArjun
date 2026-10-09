@@ -4,7 +4,7 @@ import { db } from '@/server/db';
 import { logAuditEvent } from './audit';
 import { requirePermission } from './auth';
 import { NOTIFICATION_TYPES } from '@/lib/mis/notification-copy';
-import { notifyRoles, notifyUser } from './notifications';
+import { notifyRoles } from './notifications';
 import { isUniqueConstraintError } from './orders';
 import { commitIssue, type CartLineInput } from './store';
 
@@ -84,7 +84,7 @@ export async function createMaterialRequest(lines: MaterialRequestLineInput[], m
     lineCount: lines.length,
     orderNumber: order?.orderNumber ?? null,
     departmentName: department?.name ?? null,
-  });
+  }, actor.userId);
   return created;
 }
 
@@ -170,18 +170,12 @@ export async function approveMaterialRequest(id: string, decisions: ApproveLineI
     before: { status: 'PENDING' },
     after: { status: 'APPROVED', reference: result.reference, lineCount: result.lineCount, totalQty: String(result.totalQty) },
   });
-  if (req.requestedById) {
-    await notifyUser(req.requestedById, NOTIFICATION_TYPES.requestDecided, { requestId: id, requestNumber: req.requestNumber, status: 'APPROVED', lineCount: result.lineCount });
-  }
   return result;
 }
 
 export async function rejectMaterialRequest(id: string, reason: string) {
   const actor = await requirePermission('store.write');
   if (!reason?.trim()) throw new Error('A reason is required to reject a request.');
-  // Read what the notification needs BEFORE the write, so nothing after it can throw.
-  const req = await db.misMaterialRequest.findUnique({ where: { id }, select: { requestNumber: true, requestedById: true } });
-  if (!req) throw new Error('Request not found');
   const claimed = await db.misMaterialRequest.updateMany({
     where: { id, status: 'PENDING' },
     data: { status: 'REJECTED', decidedById: actor.userId, decidedAt: new Date(), decisionNote: reason.trim() },
@@ -195,7 +189,4 @@ export async function rejectMaterialRequest(id: string, reason: string) {
     before: { status: 'PENDING' },
     after: { status: 'REJECTED', reason: reason.trim() },
   });
-  if (req.requestedById) {
-    await notifyUser(req.requestedById, NOTIFICATION_TYPES.requestDecided, { requestId: id, requestNumber: req.requestNumber, status: 'REJECTED', reason: reason.trim() });
-  }
 }

@@ -47,7 +47,6 @@ const REVIEWED_UNAUDITED: Record<string, string> = {
   'grn-alerts.ts#notifyGrnConfirmed': 'writes notification (inbox) rows; the GRN confirm itself is audited',
   'grn-alerts.ts#clearGrnAlertsFor': "marks the caller's own inbox rows read",
   'notifications.ts#notifyRoles': 'writes notification (inbox) rows after an audited mutation',
-  'notifications.ts#notifyUser': 'writes one notification (inbox) row after an audited mutation',
   'notifications.ts#markMisNotificationsRead': "marks the caller's own inbox rows read",
 };
 

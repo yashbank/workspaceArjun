@@ -9,10 +9,10 @@ const state: { rows: Row[]; updates: Row[]; profiles: Row[] } = { rows: [], upda
 vi.mock('@/server/db', () => ({
   db: {
     userProfile: {
-      findMany: async ({ where }: { where: { misEmployee: { role: { in: string[] } } } }) =>
+      findMany: async ({ where }: { where: { misEmployee: { role: { in: string[] } }; id?: { not: string } } }) =>
         state.profiles.filter((p) => {
           const e = p.misEmployee as { role: string; isActive: boolean; deletedAt: Date | null };
-          return where.misEmployee.role.in.includes(e.role) && e.isActive && !e.deletedAt;
+          return where.misEmployee.role.in.includes(e.role) && e.isActive && !e.deletedAt && p.id !== where.id?.not;
         }),
       findUnique: async ({ where }: { where: { id: string } }) => state.profiles.find((p) => p.id === where.id) ?? null,
     },
@@ -29,7 +29,7 @@ vi.mock('@/server/auth', () => ({ getCurrentUser: (...a: unknown[]) => getCurren
 const getMisRole = vi.fn();
 vi.mock('@/server/mis/roles', () => ({ getMisRole: (...a: unknown[]) => getMisRole(...a) }));
 
-const { listMisNotifications, markMisNotificationsRead, notifyRoles, notifyUser } = await import('./notifications');
+const { listMisNotifications, markMisNotificationsRead, notifyRoles } = await import('./notifications');
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -37,7 +37,6 @@ beforeEach(() => {
   state.profiles = [
     { id: 'store-1', status: 'active', misEmployee: { role: 'STORE_GUY', isActive: true, deletedAt: null } },
     { id: 'sup-1', status: 'active', misEmployee: { role: 'SUPERVISOR', isActive: true, deletedAt: null } },
-    { id: 'gone-1', status: 'active', misEmployee: { role: 'STORE_GUY', isActive: false, deletedAt: new Date() } },
   ];
   getCurrentUser.mockResolvedValue({ id: 'store-1' });
   getMisRole.mockResolvedValue('STORE_GUY');
@@ -48,13 +47,9 @@ describe('writers', () => {
     await notifyRoles(['STORE_GUY'], 'mis.material_request.raised', { requestId: 'r' });
     expect(state.rows.map((r) => r.userId)).toEqual(['store-1']); // not the Supervisor, not the soft-deleted storekeeper
   });
-  it('notifyUser writes nothing for a role that is not on the bell', async () => {
-    await notifyUser('sup-1', 'mis.material_request.decided', {});
+  it('the actor is left out — nobody is told about their own request', async () => {
+    await notifyRoles(['STORE_GUY'], 'mis.material_request.raised', {}, 'store-1');
     expect(state.rows).toEqual([]);
-    await notifyUser('gone-1', 'mis.material_request.decided', {});
-    expect(state.rows).toEqual([]);
-    await notifyUser('store-1', 'mis.material_request.decided', {});
-    expect(state.rows).toHaveLength(1);
   });
   it('never throws', async () => {
     getMisRole.mockResolvedValue('OWNER');
@@ -78,7 +73,7 @@ describe('readers', () => {
   it('mark-read is scoped to the caller and to the bell\'s own types; junk ids never reach the database', async () => {
     const a = '11111111-1111-4111-8111-111111111111', b = '22222222-2222-4222-8222-222222222222';
     await markMisNotificationsRead([a, 'abc', b]);
-    expect(state.updates[0]).toMatchObject({ where: { id: { in: [a, b] }, userId: 'store-1', type: { in: ['mis.grn_confirmed', 'mis.material_request.raised', 'mis.material_request.decided'] } } });
+    expect(state.updates[0]).toMatchObject({ where: { id: { in: [a, b] }, userId: 'store-1', type: { in: ['mis.grn_confirmed', 'mis.material_request.raised'] } } });
     await markMisNotificationsRead(['abc']);
     expect(state.updates).toHaveLength(1);
   });

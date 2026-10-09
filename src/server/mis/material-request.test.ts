@@ -34,8 +34,7 @@ const commitIssue = vi.fn();
 vi.mock('./store', () => ({ commitIssue: (...a: unknown[]) => commitIssue(...a) }));
 vi.mock('./audit', () => ({ logAuditEvent: async () => undefined }));
 const notifyRoles = vi.fn();
-const notifyUser = vi.fn();
-vi.mock('./notifications', () => ({ notifyRoles: (...a: unknown[]) => notifyRoles(...a), notifyUser: (...a: unknown[]) => notifyUser(...a) }));
+vi.mock('./notifications', () => ({ notifyRoles: (...a: unknown[]) => notifyRoles(...a) }));
 const getCurrentUser = vi.fn();
 vi.mock('@/server/auth', () => ({ getCurrentUser: (...a: unknown[]) => getCurrentUser(...a) }));
 const getMisRole = vi.fn();
@@ -66,7 +65,7 @@ describe('create', () => {
     await createMaterialRequest([{ itemId: 'i-kraft', qty: 3 }], { orderId: 'o1' });
     expect(state.created).toMatchObject({ orderId: 'o1', requestedById: 'u1' });
     expect(commitIssue).not.toHaveBeenCalled();
-    expect(notifyRoles).toHaveBeenCalledWith(['STORE_GUY'], 'mis.material_request.raised', expect.objectContaining({ requestNumber: expect.stringMatching(/^MRN-/), lineCount: 1 }));
+    expect(notifyRoles).toHaveBeenCalledWith(['STORE_GUY'], 'mis.material_request.raised', expect.objectContaining({ requestNumber: expect.stringMatching(/^MRN-/), lineCount: 1 }), 'u1');
   });
 
   it('equipment cannot be booked to an order, but can be requested as overhead', async () => {
@@ -90,7 +89,6 @@ describe('approve', () => {
     expect(commitIssue).toHaveBeenCalledWith([{ itemId: 'i-kraft', qty: 7 }], expect.objectContaining({ orderId: 'o1' }));
     expect(state.request?.status).toBe('APPROVED');
     expect(state.lineUpdates.map((u) => (u as { data: Row }).data.actualIssuedQty)).toEqual([7, 0]);
-    expect(notifyUser).toHaveBeenCalledWith('sup-9', 'mis.material_request.decided', expect.objectContaining({ status: 'APPROVED' }));
   });
 
   it('refuses one unit over the requested qty, before any stock moves', async () => {

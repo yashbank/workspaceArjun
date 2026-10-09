@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { issueRefusal, orderNumberFromRef, remainingAllocation } from './order-allocation';
+import { foldAllocationFigures, issueRefusal, orderNumberFromRef, remainingAllocation } from './order-allocation';
 
 describe('orderNumberFromRef', () => {
   it('accepts an order number in any case or with spaces, and refuses anything else', () => {
@@ -8,6 +8,19 @@ describe('orderNumberFromRef', () => {
     expect(orderNumberFromRef('BOM-500')).toBeNull();
     expect(orderNumberFromRef(null)).toBeNull();
     expect(orderNumberFromRef('ORD-202610-1234')).toBeNull();
+  });
+});
+
+describe('foldAllocationFigures', () => {
+  it('counts only issues from the first earmark onward, per key', () => {
+    const t = (h: number) => new Date(2026, 9, 9, h);
+    const f = foldAllocationFigures(
+      [{ k: 'a', allocatedQty: 50, createdAt: t(10) }, { k: 'a', allocatedQty: 20, createdAt: t(12) }],
+      [{ k: 'a', changeQty: -100, createdAt: t(9) }, { k: 'a', changeQty: -30, createdAt: t(11) }, { k: 'b', changeQty: -5, createdAt: t(11) }],
+      { allocation: (a) => a.k, issue: (i) => i.k },
+    );
+    expect(f.get('a')).toEqual({ allocated: 70, issued: 30 });
+    expect(f.has('b')).toBe(false);
   });
 });
 

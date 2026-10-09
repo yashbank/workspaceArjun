@@ -1,5 +1,5 @@
 import type { Prisma } from '@/generated/prisma/client';
-import { issueRefusal, orderNumberFromRef, remainingAllocation, type AllocationFigures } from '@/lib/mis/order-allocation';
+import { foldAllocationFigures, issueRefusal, orderNumberFromRef, remainingAllocation, type AllocationFigures } from '@/lib/mis/order-allocation';
 import { db } from '@/server/db';
 
 import { requirePermission } from './auth';
@@ -38,20 +38,11 @@ export async function allocationFigures(tx: Tx, orderId: string, itemIds: string
       select: { itemId: true, changeQty: true, createdAt: true },
     }),
   ]);
-  const out = new Map<string, AllocationFigures & { since: Date }>();
-  for (const a of allocations) {
-    const f = out.get(a.itemId) ?? { allocated: 0, issued: 0, since: a.createdAt };
-    f.allocated += a.allocatedQty.toNumber();
-    if (a.createdAt < f.since) f.since = a.createdAt;
-    out.set(a.itemId, f);
-  }
-  // Issues made from general stock BEFORE the order's first earmark of an item are not drawn
-  // against that earmark — otherwise a long-running order's first FOR_ORDER delivery would lock it.
-  for (const i of issues) {
-    const f = out.get(i.itemId);
-    if (f && i.createdAt >= f.since) f.issued += -i.changeQty.toNumber();
-  }
-  return new Map([...out].map(([k, { allocated, issued }]) => [k, { allocated, issued }]));
+  return foldAllocationFigures(
+    allocations.map((a) => ({ itemId: a.itemId, allocatedQty: a.allocatedQty.toNumber(), createdAt: a.createdAt })),
+    issues.map((i) => ({ itemId: i.itemId, changeQty: i.changeQty.toNumber(), createdAt: i.createdAt })),
+    { allocation: (a) => a.itemId, issue: (i) => i.itemId },
+  );
 }
 
 /** The refusal messages for a cart against an order — empty when every line fits its allocation. */
@@ -87,27 +78,21 @@ export async function listOpenOrderAllocations(): Promise<Record<string, OrderAl
   });
   if (allocations.length === 0) return {};
   const orderIds = [...new Set(allocations.map((a) => a.orderId))];
+  const itemIds = [...new Set(allocations.map((a) => a.itemId))];
   const issues = await db.misInventoryLedger.findMany({
-    where: { source: 'STORE_ISSUE', sourceId: { in: orderIds } },
+    where: { source: 'STORE_ISSUE', sourceId: { in: orderIds }, itemId: { in: itemIds } },
     select: { sourceId: true, itemId: true, changeQty: true, createdAt: true },
   });
-  type Acc = AllocationFigures & { since: Date; item: { code: string; name: string; unit: string } };
-  const acc = new Map<string, Acc>(); // key: orderId|itemId
-  for (const a of allocations) {
-    const key = `${a.orderId}|${a.itemId}`;
-    const f = acc.get(key) ?? { allocated: 0, issued: 0, since: a.createdAt, item: a.item };
-    f.allocated += a.allocatedQty.toNumber();
-    if (a.createdAt < f.since) f.since = a.createdAt;
-    acc.set(key, f);
-  }
-  for (const i of issues) {
-    const f = acc.get(`${i.sourceId}|${i.itemId}`);
-    if (f && i.createdAt >= f.since) f.issued += -i.changeQty.toNumber();
-  }
+  const figures = foldAllocationFigures(
+    allocations.map((a) => ({ orderId: a.orderId, itemId: a.itemId, allocatedQty: a.allocatedQty.toNumber(), createdAt: a.createdAt })),
+    issues.map((i) => ({ orderId: i.sourceId ?? '', itemId: i.itemId, changeQty: i.changeQty.toNumber(), createdAt: i.createdAt })),
+    { allocation: (a) => `${a.orderId}|${a.itemId}`, issue: (i) => `${i.orderId}|${i.itemId}` },
+  );
+  const itemOf = new Map(allocations.map((a) => [`${a.orderId}|${a.itemId}`, a.item]));
   const out: Record<string, OrderAllocationRow[]> = {};
-  for (const [key, f] of acc) {
+  for (const [key, f] of figures) {
     const [orderId, itemId] = key.split('|');
-    (out[orderId] ??= []).push({ itemId, ...f.item, allocated: f.allocated, issued: f.issued, remaining: remainingAllocation(f) });
+    (out[orderId] ??= []).push({ itemId, ...itemOf.get(key)!, allocated: f.allocated, issued: f.issued, remaining: remainingAllocation(f) });
   }
   for (const rows of Object.values(out)) rows.sort((a, b) => a.name.localeCompare(b.name));
   return out;

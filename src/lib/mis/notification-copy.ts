@@ -15,7 +15,6 @@ export function isMisNotifyRole(role: string | null | undefined): role is MisNot
 export const NOTIFICATION_TYPES = {
   grnConfirmed: 'mis.grn_confirmed',
   requestRaised: 'mis.material_request.raised',
-  requestDecided: 'mis.material_request.decided',
 } as const;
 
 export type NotificationView = { title: string; detail: string; href: string; tone: 'info' | 'risk' | 'ok' };
@@ -48,15 +47,6 @@ export function notificationView(type: string, payload: unknown): NotificationVi
         href: `/mis/store/requests/${str(p, 'requestId')}`,
         tone: 'info',
       };
-    case NOTIFICATION_TYPES.requestDecided: {
-      const approved = p.status === 'APPROVED';
-      return {
-        title: `${str(p, 'requestNumber')} ${approved ? 'approved and issued' : 'rejected'}`,
-        detail: approved ? `${num(p, 'lineCount')} ${num(p, 'lineCount') === 1 ? 'line' : 'lines'} issued` : str(p, 'reason') || 'No reason given',
-        href: `/mis/store/requests/${str(p, 'requestId')}`,
-        tone: approved ? 'ok' : 'risk',
-      };
-    }
     default:
       return null;
   }

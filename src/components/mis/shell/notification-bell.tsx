@@ -26,35 +26,38 @@ export function NotificationProvider({ userId, role, children }: { userId: strin
   const enabled = isMisNotifyRole(role);
   const { toast } = useToast();
   const [items, setItems] = useState<Item[]>([]);
-  const seen = useRef(new Set<string>());
+  const pending = useRef(new Set<string>()); // dismissed locally, mark-read still in flight
 
-  const add = useCallback(
-    (rows: { id: string; type: string; payload: unknown }[], live: boolean) => {
-      const fresh = rows
-        .filter((r) => !seen.current.has(r.id))
-        .map((r) => {
-          const view = notificationView(r.type, r.payload);
-          return view ? { id: r.id, ...view } : null;
-        })
-        .filter((x): x is Item => x !== null);
-      if (fresh.length === 0) return;
-      for (const f of fresh) seen.current.add(f.id);
-      setItems((prev) => [...fresh, ...prev]);
-      if (live) toast(fresh[0].tone === 'risk' ? 'error' : 'info', fresh[0].title);
+  const toViews = (rows: { id: string; type: string; payload: unknown }[]): Item[] =>
+    rows
+      .map((r) => {
+        const view = notificationView(r.type, r.payload);
+        return view ? { id: r.id, ...view } : null;
+      })
+      .filter((x): x is Item => x !== null);
+
+  /** A live INSERT: prepend (once) and say so through the app's toast. */
+  const addLive = useCallback(
+    (row: { id: string; type: string; payload: unknown }) => {
+      const [fresh] = toViews([row]);
+      if (!fresh) return;
+      setItems((prev) => (prev.some((i) => i.id === fresh.id) ? prev : [fresh, ...prev]));
+      toast(fresh.tone === 'risk' ? 'error' : 'info', fresh.title);
     },
     [toast],
   );
 
+  /** The server's unread list IS the list: a row read elsewhere (home card, another tab) drops out here too. */
   const load = useCallback(async () => {
     try {
       const res = await fetch('/api/mis/notifications', { cache: 'no-store' });
       if (!res.ok) return;
       const data = (await res.json()) as { items?: { id: string; type: string; payload: unknown }[] };
-      add(data.items ?? [], false);
+      setItems(toViews(data.items ?? []).filter((i) => !pending.current.has(i.id)));
     } catch {
       /* offline: the next focus retries */
     }
-  }, [add]);
+  }, []);
 
   useEffect(() => {
     if (!enabled) return;
@@ -69,22 +72,34 @@ export function NotificationProvider({ userId, role, children }: { userId: strin
       ?.channel(`mis-notifications-${userId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, (payload) => {
         const row = payload.new as { id?: string; type?: string; payload?: unknown };
-        if (row?.id && typeof row.type === 'string' && row.type.startsWith('mis.')) add([{ id: row.id, type: row.type, payload: row.payload }], true);
+        if (row?.id && typeof row.type === 'string' && row.type.startsWith('mis.')) addLive({ id: row.id, type: row.type, payload: row.payload });
       })
       .subscribe();
     return () => {
       document.removeEventListener('visibilitychange', onVis);
       if (supabase && channel) void supabase.removeChannel(channel);
     };
-  }, [enabled, userId, load, add]);
+  }, [enabled, userId, load, addLive]);
 
-  const dismiss = useCallback((ids: string[]) => {
-    setItems((prev) => prev.filter((i) => !ids.includes(i.id)));
-    void fetch('/api/mis/notifications/mark-read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) }).catch(() => {
-      // The server row is still unread; forget the ids so the next load can show them again.
-      for (const id of ids) seen.current.delete(id);
-    });
-  }, []);
+  const dismiss = useCallback(
+    (ids: string[]) => {
+      for (const id of ids) pending.current.add(id);
+      setItems((prev) => prev.filter((i) => !ids.includes(i.id)));
+      void (async () => {
+        let ok = false;
+        try {
+          const res = await fetch('/api/mis/notifications/mark-read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) });
+          ok = res.ok;
+        } catch {
+          ok = false;
+        }
+        for (const id of ids) pending.current.delete(id);
+        // Not marked on the server (offline, expired session): bring the rows back rather than hide an unread row.
+        if (!ok) void load();
+      })();
+    },
+    [load],
+  );
 
   return <Ctx.Provider value={{ enabled, items, dismiss }}>{children}</Ctx.Provider>;
 }
@@ -95,10 +110,19 @@ const DOT = { info: 'bg-indigo-500', risk: 'bg-amber-500', ok: 'bg-green-500' } 
 export function NotificationBell() {
   const { enabled, items, dismiss } = useContext(Ctx);
   const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    const onDown = (e: MouseEvent) => { if (root.current && !root.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onDown);
+    return () => { document.removeEventListener('keydown', onKey); document.removeEventListener('mousedown', onDown); };
+  }, [open]);
   if (!enabled) return null;
 
   return (
-    <div className="relative">
+    <div className="relative" ref={root}>
       <button
         type="button"
         aria-label={`Notifications${items.length ? `, ${items.length} unread` : ''}`}

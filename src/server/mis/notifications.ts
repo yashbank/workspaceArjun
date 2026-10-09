@@ -20,10 +20,10 @@ export type MisNotificationRow = { id: string; type: string; payload: unknown; c
 const BELL_TYPES = Object.values(NOTIFICATION_TYPES) as string[];
 
 /** One row per active login holding one of `roles`. Never throws: an alert must not undo the write it reports. */
-export async function notifyRoles(roles: readonly MisNotifyRole[], type: string, payload: Record<string, unknown>): Promise<void> {
+export async function notifyRoles(roles: readonly MisNotifyRole[], type: string, payload: Record<string, unknown>, exceptUserId?: string): Promise<void> {
   try {
     const recipients = await db.userProfile.findMany({
-      where: { status: 'active', misEmployee: { role: { in: [...roles] }, isActive: true, deletedAt: null } },
+      where: { status: 'active', misEmployee: { role: { in: [...roles] }, isActive: true, deletedAt: null }, ...(exceptUserId ? { id: { not: exceptUserId } } : {}) },
       select: { id: true },
     });
     if (recipients.length === 0) return;
@@ -32,18 +32,6 @@ export async function notifyRoles(roles: readonly MisNotifyRole[], type: string,
     });
   } catch (error) {
     console.error('[mis-notify] failed to write notification rows', { type, error });
-  }
-}
-
-/** One row for one login (the person who raised a request), only if their role is on the bell. */
-export async function notifyUser(userId: string, type: string, payload: Record<string, unknown>): Promise<void> {
-  try {
-    const profile = await db.userProfile.findUnique({ where: { id: userId }, select: { status: true, misEmployee: { select: { role: true, isActive: true, deletedAt: true } } } });
-    const emp = profile?.misEmployee;
-    if (profile?.status !== 'active' || !emp?.isActive || emp.deletedAt || !isMisNotifyRole(emp.role)) return;
-    await db.notification.create({ data: { userId, type, payload: payload as Prisma.InputJsonValue } });
-  } catch (error) {
-    console.error('[mis-notify] failed to write a notification row', { type, error });
   }
 }
 

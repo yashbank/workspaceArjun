@@ -7,7 +7,7 @@ import { markMisNotificationsRead } from '@/server/mis/notifications';
 export async function POST(request: Request) {
   try {
     const body = (await request.json().catch(() => null)) as { ids?: unknown } | null;
-    const ids = Array.isArray(body?.ids) ? body.ids.filter((x): x is string => typeof x === 'string').slice(0, 100) : [];
+    const ids = Array.isArray(body?.ids) ? body.ids.filter((x): x is string => typeof x === 'string').slice(0, 500) : [];
     await markMisNotificationsRead(ids);
     return NextResponse.json({ ok: true });
   } catch (err: unknown) {

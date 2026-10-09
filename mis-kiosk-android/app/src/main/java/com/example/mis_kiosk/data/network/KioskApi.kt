@@ -73,18 +73,16 @@ class KioskApi(
      */
     suspend fun fetchPhoto(token: String, path: String): ByteArray? =
         withContext(Dispatchers.IO) {
-            val request = Request.Builder()
-                .url("$baseUrl${path.trimStart('/')}")
-                .header("Authorization", "Bearer $token")
-                .get()
-                .build()
-            try {
+            runCatching {
+                val request = Request.Builder()
+                    .url("$baseUrl${path.trimStart('/')}")
+                    .header("Authorization", "Bearer $token")
+                    .get()
+                    .build()
                 client.newCall(request).execute().use { response ->
                     if (response.isSuccessful) response.body?.bytes() else null
                 }
-            } catch (e: IOException) {
-                null
-            }
+            }.getOrNull()
         }
 
     private suspend fun <T> post(
