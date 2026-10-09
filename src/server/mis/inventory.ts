@@ -55,7 +55,7 @@ export async function adjustInventory(itemId: string, changeQty: number, notes?:
   const current = last?.balanceQty.toNumber() ?? 0;
   const newBalance = current + changeQty;
   if (newBalance < 0) throw new Error('Adjustment would result in negative balance');
-  await db.misInventoryLedger.create({
+  const row = await db.misInventoryLedger.create({
     data: {
       itemId,
       changeQty,
@@ -69,9 +69,9 @@ export async function adjustInventory(itemId: string, changeQty: number, notes?:
     actorId: actor.userId,
     action: 'inventory.adjust',
     entity: 'MisInventoryLedger',
-    entityId: itemId,
-    before: { balanceQty: String(current) },
-    after: { balanceQty: String(newBalance), changeQty: String(changeQty), notes: notes?.trim() || null },
+    entityId: row.id,
+    before: { itemId, balanceQty: String(current) },
+    after: { itemId, balanceQty: String(newBalance), changeQty: String(changeQty), notes: notes?.trim() || null },
   });
   return newBalance;
 }

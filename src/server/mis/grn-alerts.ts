@@ -23,7 +23,7 @@ export async function notifyGrnConfirmed(grnId: string): Promise<void> {
       where: { id: grnId },
       include: {
         po: { select: { poNumber: true, supplier: { select: { name: true } } } },
-        items: { include: { poItem: { select: { description: true, quantity: true, ratePerUnit: true } } } },
+        items: { include: { poItem: { select: { description: true, quantity: true, receivedQuantity: true, ratePerUnit: true } } } },
       },
     });
     if (!grn) return;
@@ -31,6 +31,7 @@ export async function notifyGrnConfirmed(grnId: string): Promise<void> {
       description: i.poItem.description,
       ordered: i.poItem.quantity.toNumber(),
       received: i.receivedQty.toNumber(),
+      receivedToDate: i.poItem.receivedQuantity.toNumber(),
       damaged: i.damageQuantity.toNumber(),
       short: i.shortQuantity?.toNumber() ?? null,
       ratePerUnit: i.poItem.ratePerUnit.toNumber(),
@@ -44,10 +45,14 @@ export async function notifyGrnConfirmed(grnId: string): Promise<void> {
       supplierName: grn.po.supplier?.name ?? null,
       confirmedAt: (grn.receivedAt ?? new Date()).toISOString(),
       ...summary,
-      attention: summary.attention || (variance !== null && variance.variance !== 0),
     };
+    // Only the Owner's copy knows about the invoice at all — including whether it disagrees (D24).
     const ownerPayload: GrnAlertPayload = variance
-      ? { ...base, money: { receivedValue: formatMoney(variance.receivedValue), invoiced: formatMoney(variance.invoiced), variance: formatMoney(variance.variance) } }
+      ? {
+          ...base,
+          attention: base.attention || variance.variance !== 0,
+          money: { receivedValue: formatMoney(variance.receivedValue), invoiced: formatMoney(variance.invoiced), variance: formatMoney(variance.variance) },
+        }
       : base;
 
     const recipients = await db.userProfile.findMany({

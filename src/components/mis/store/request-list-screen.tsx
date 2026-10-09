@@ -20,7 +20,7 @@ export function RequestListScreen({ requests, canDecide }: { requests: RequestLi
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Material requests</h1>
-          <p className="mt-0.5 text-sm text-slate-500">{canDecide ? 'Approve or reject; stock moves on approval.' : 'Your requests and their status.'}</p>
+          <p className="mt-0.5 text-sm text-slate-500">{canDecide ? 'Approve or reject; stock moves on approval.' : 'Every material request and its status.'}</p>
         </div>
         <Link href="/mis/store/requests/new" className="inline-flex min-h-11 items-center rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white">
           + New request

@@ -22,14 +22,14 @@ const db: Row = {
   },
   misDepartment: { findUnique: async () => null },
   misOrderStockAllocation: {
-    create: async ({ data }: Row) => { state.allocations.push(data); return data; },
-    findMany: async ({ where }: Row) => state.allocations.filter((a) => a.orderId === where.orderId).map((a) => ({ itemId: a.itemId, allocatedQty: D(a.allocatedQty) })),
+    create: async ({ data }: Row) => { state.allocations.push({ createdAt: new Date(), ...data }); return data; },
+    findMany: async ({ where }: Row) => state.allocations.filter((a) => a.orderId === where.orderId).map((a) => ({ itemId: a.itemId, allocatedQty: D(a.allocatedQty), createdAt: a.createdAt })),
   },
   misInventoryLedger: {
     create: async ({ data }: Row) => { state.ledger.push({ createdAt: new Date(), ...data }); return data; },
     findFirst: async () => ({ balanceQty: D(1000) }),
     findMany: async ({ where }: Row) =>
-      state.ledger.filter((l) => l.source === where.source && l.sourceId === where.sourceId).map((l) => ({ itemId: l.itemId, changeQty: D(l.changeQty) })),
+      state.ledger.filter((l) => l.source === where.source && l.sourceId === where.sourceId).map((l) => ({ itemId: l.itemId, changeQty: D(l.changeQty), createdAt: l.createdAt })),
   },
   misStoreTransaction: {
     create: async ({ data }: Row) => { state.txns.push(data); return data; },
@@ -65,7 +65,7 @@ describe('confirmGRN earmarks', () => {
   it('a FOR_ORDER line whose ref is an order number', async () => {
     state.grn = grnWith([{ qty: 100, type: 'FOR_ORDER', ref: 'ord-202610-00001' }]);
     await confirmGRN('g1');
-    expect(state.allocations).toEqual([{ orderId: 'o1', itemId: 'i1', allocatedQty: 100, source: 'GRN', sourceId: 'g1' }]);
+    expect(state.allocations).toMatchObject([{ orderId: 'o1', itemId: 'i1', allocatedQty: 100, source: 'GRN', sourceId: 'g1' }]);
     expect(state.ledger[0].changeQty.toNumber()).toBe(100); // general ledger still receives it
   });
 
@@ -75,7 +75,13 @@ describe('confirmGRN earmarks', () => {
     expect(state.allocations).toHaveLength(1);
   });
 
-  it('a GENERAL line, or a ref that is not an order number, earmarks nothing', async () => {
+  it("a GENERAL line of a PO raised against an order earmarks too — the same delivery allocates the same whichever screen received it", async () => {
+    state.grn = grnWith([{ qty: 25 }], 'ORD-202610-00001');
+    await confirmGRN('g1');
+    expect(state.allocations).toMatchObject([{ orderId: 'o1', itemId: 'i1', allocatedQty: 25, source: 'GRN', sourceId: 'g1' }]);
+  });
+
+  it('a GENERAL line of a buffer PO, or a ref that is not an order number, earmarks nothing', async () => {
     state.grn = grnWith([{ qty: 10 }, { qty: 5, type: 'FOR_ORDER', ref: 'BOM-500' }, { qty: 5, type: 'FOR_ORDER', ref: 'ORD-202610-99999' }]);
     await confirmGRN('g1');
     expect(state.allocations).toEqual([]);
@@ -84,7 +90,7 @@ describe('confirmGRN earmarks', () => {
 });
 
 describe('commitIssue against an order', () => {
-  const allocate = (qty: number) => state.allocations.push({ orderId: 'o1', itemId: 'i1', allocatedQty: qty, source: 'GRN', sourceId: 'g1' });
+  const allocate = (qty: number, createdAt = new Date()) => state.allocations.push({ orderId: 'o1', itemId: 'i1', allocatedQty: qty, source: 'GRN', sourceId: 'g1', createdAt });
 
   it('allows up to exactly the remaining allocation across several issues', async () => {
     allocate(100);
@@ -104,6 +110,13 @@ describe('commitIssue against an order', () => {
   it('an item never earmarked for the order still issues from general stock (no lock-out)', async () => {
     await commitIssue([{ itemId: 'i1', qty: 5 }], { orderId: 'o1' });
     expect(state.ledger).toHaveLength(1);
+  });
+
+  it('issues made from general stock BEFORE the first earmark do not count against it (no lock-out of a running order)', async () => {
+    await commitIssue([{ itemId: 'i1', qty: 100 }], { orderId: 'o1' }); // long before any FOR_ORDER delivery
+    allocate(50, new Date(Date.now() + 1000));
+    await commitIssue([{ itemId: 'i1', qty: 50 }], { orderId: 'o1' }); // the whole earmark is still available
+    expect(state.ledger).toHaveLength(2);
   });
 
   it('a general issue (no order) is never capped by anyone\'s allocation', async () => {

@@ -11,6 +11,9 @@ const nextConfig: NextConfig = {
     },
     // Tree-shake the lucide-react barrel for a smaller client bundle.
     optimizePackageImports: ["lucide-react"],
+    // MIS V2 Epic 7: a phone-camera badge photo (2–5 MB) is posted through a server action;
+    // the default 1 MB cap rejected it before employee-photo.ts's own 5 MB check could run.
+    serverActions: { bodySizeLimit: "6mb" },
   },
 };
 

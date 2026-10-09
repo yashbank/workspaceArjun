@@ -32,23 +32,26 @@ export async function allocateFromReceipt(
 /** Allocated and already-issued totals per item for one order. Items with no allocation are absent. */
 export async function allocationFigures(tx: Tx, orderId: string, itemIds: string[]): Promise<Map<string, AllocationFigures>> {
   const [allocations, issues] = await Promise.all([
-    tx.misOrderStockAllocation.findMany({ where: { orderId, itemId: { in: itemIds } }, select: { itemId: true, allocatedQty: true } }),
+    tx.misOrderStockAllocation.findMany({ where: { orderId, itemId: { in: itemIds } }, select: { itemId: true, allocatedQty: true, createdAt: true } }),
     tx.misInventoryLedger.findMany({
       where: { source: 'STORE_ISSUE', sourceId: orderId, itemId: { in: itemIds } },
-      select: { itemId: true, changeQty: true },
+      select: { itemId: true, changeQty: true, createdAt: true },
     }),
   ]);
-  const out = new Map<string, AllocationFigures>();
+  const out = new Map<string, AllocationFigures & { since: Date }>();
   for (const a of allocations) {
-    const f = out.get(a.itemId) ?? { allocated: 0, issued: 0 };
+    const f = out.get(a.itemId) ?? { allocated: 0, issued: 0, since: a.createdAt };
     f.allocated += a.allocatedQty.toNumber();
+    if (a.createdAt < f.since) f.since = a.createdAt;
     out.set(a.itemId, f);
   }
+  // Issues made from general stock BEFORE the order's first earmark of an item are not drawn
+  // against that earmark — otherwise a long-running order's first FOR_ORDER delivery would lock it.
   for (const i of issues) {
     const f = out.get(i.itemId);
-    if (f) f.issued += -i.changeQty.toNumber();
+    if (f && i.createdAt >= f.since) f.issued += -i.changeQty.toNumber();
   }
-  return out;
+  return new Map([...out].map(([k, { allocated, issued }]) => [k, { allocated, issued }]));
 }
 
 /** The refusal messages for a cart against an order — empty when every line fits its allocation. */

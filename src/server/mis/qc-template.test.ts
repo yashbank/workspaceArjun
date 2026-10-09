@@ -60,6 +60,10 @@ describe('a tap is a QC check', () => {
     await recordChecklistCheck({ orderId: 'o1', templateId: 't1', parameterName: 'Shade', slotTime: '10:00', status });
     expect(state.checks[0]).toMatchObject({ ...expected, parameterName: 'Shade', templateId: 't1', slotTime: '10:00', orderId: 'o1' });
   });
+  it('a retired form takes no taps', async () => {
+    state.templates[0].isActive = false;
+    await expect(recordChecklistCheck({ orderId: 'o1', templateId: 't1', parameterName: 'Shade', slotTime: '10:00', status: 'PASS' })).rejects.toThrow(/no longer active/);
+  });
   it('refuses a parameter or slot that is not on the form', async () => {
     await expect(recordChecklistCheck({ orderId: 'o1', templateId: 't1', parameterName: 'Nope', slotTime: '10:00', status: 'PASS' })).rejects.toThrow(/parameter/);
     await expect(recordChecklistCheck({ orderId: 'o1', templateId: 't1', parameterName: 'Shade', slotTime: '10:30', status: 'PASS' })).rejects.toThrow(/slot/);

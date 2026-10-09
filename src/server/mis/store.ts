@@ -4,6 +4,7 @@ import { requirePermission } from './auth';
 import { logAuditEvent } from './audit';
 import { nextGrnNumber } from './grn';
 import { allocateFromReceipt, allocationShortfalls } from './order-allocation';
+import { notifyGrnConfirmed } from './grn-alerts';
 import { poPurpose, type PoPurpose } from '@/lib/mis/po-purpose';
 
 // ---------------------------------------------------------------------------
@@ -871,10 +872,19 @@ export async function commitReceipt(
           receivedAt: new Date(),
           receivedById: actor.userId,
           notes: headerNotes || null,
+          supplierInvoiceNo: invoiceNo,
         },
       });
       grnId = grn.id;
       grnNumber = grn.grnNumber;
+      // V2 Epic 1: the cart receipt is a confirmed GRN, so its invoice is a leg of the 3-way match too.
+      if (invoiceNo) {
+        await tx.misSupplierInvoice.upsert({
+          where: { poId_invoiceNo: { poId: po.id, invoiceNo } },
+          create: { poId: po.id, invoiceNo, grnId: grn.id, supplierId: po.supplierId },
+          update: { grnId: grn.id },
+        });
+      }
     }
 
     const reference = grnNumber ?? invoiceNo ?? `Receipt ${new Date().toISOString().slice(0, 10)}`;
@@ -966,6 +976,8 @@ export async function commitReceipt(
 
     return { reference, grnId, lineCount: cart.length, totalQty };
   });
+
+  if (result.grnId) await notifyGrnConfirmed(result.grnId); // V2 Epic 4 — same alert as the GRN screen's confirm
 
   await logAuditEvent({
     actorId: actor.userId,

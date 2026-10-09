@@ -18,10 +18,14 @@ import { commitIssue, type CartLineInput } from './store';
 export type MaterialRequestLineInput = { itemId: string; qty: number };
 export type MaterialRequestMeta = { orderId?: string | null; departmentId?: string | null; notes?: string | null };
 
-function nextRequestNumber(): string {
+/** `attempt` offsets the clock-derived suffix on a unique-constraint retry (same shape as orders.ts#nextOrderNumber). */
+function nextRequestNumber(attempt = 0): string {
   const now = new Date();
-  return `MRN-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}-${String(Date.now()).slice(-5)}`;
+  const ms = String(Date.now() + attempt * 7919 + Math.floor(Math.random() * 97)).slice(-5);
+  return `MRN-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}-${ms}`;
 }
+
+const isUniqueConstraintError = (err: unknown) => Boolean(err && typeof err === 'object' && (err as { code?: unknown }).code === 'P2002');
 
 export async function createMaterialRequest(lines: MaterialRequestLineInput[], meta: MaterialRequestMeta = {}) {
   const actor = await requirePermission('store.read');
@@ -40,16 +44,24 @@ export async function createMaterialRequest(lines: MaterialRequestLineInput[], m
   if (refused.length > 0) {
     throw new Error(`Equipment and other items are department overhead and cannot be booked to an order: ${refused.join(', ')}`);
   }
-  const created = await db.misMaterialRequest.create({
-    data: {
-      requestNumber: nextRequestNumber(),
-      orderId: meta.orderId ?? null,
-      departmentId: meta.departmentId ?? null,
-      notes: meta.notes?.trim() || null,
-      requestedById: actor.userId,
-      lines: { create: lines.map((l) => ({ itemId: l.itemId, requestedQty: l.qty })) },
-    },
-  });
+  let created;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      created = await db.misMaterialRequest.create({
+        data: {
+          requestNumber: nextRequestNumber(attempt),
+          orderId: meta.orderId ?? null,
+          departmentId: meta.departmentId ?? null,
+          notes: meta.notes?.trim() || null,
+          requestedById: actor.userId,
+          lines: { create: lines.map((l) => ({ itemId: l.itemId, requestedQty: l.qty })) },
+        },
+      });
+      break;
+    } catch (err) {
+      if (!isUniqueConstraintError(err) || attempt >= 5) throw err;
+    }
+  }
   await logAuditEvent({
     actorId: actor.userId,
     action: 'material_request.create',
@@ -107,33 +119,36 @@ export async function approveMaterialRequest(id: string, decisions: ApproveLineI
   });
   if (claimed.count !== 1) throw new Error('Request was decided by someone else just now.');
 
+  let result;
   try {
-    const result = await commitIssue(cart, {
+    result = await commitIssue(cart, {
       orderId: req.orderId,
       departmentId: req.departmentId,
       notes: `${req.requestNumber}${note?.trim() ? ` · ${note.trim()}` : ''}`,
     });
-    // shortcut: line quantities are written after the ledger commit, not inside it; upgrade to one
-    // transaction if commitIssue ever exposes a tx client.
-    for (const l of issued) {
-      await db.misMaterialRequestLine.update({ where: { id: l.lineId }, data: { actualIssuedQty: l.qty } });
-    }
-    await logAuditEvent({
-      actorId: actor.userId,
-      action: 'material_request.approve',
-      entity: 'MisMaterialRequest',
-      entityId: id,
-      before: { status: 'PENDING' },
-      after: { status: 'APPROVED', reference: result.reference, lineCount: result.lineCount, totalQty: String(result.totalQty) },
-    });
-    return result;
   } catch (error) {
+    // Only an issue that did NOT move stock re-opens the note. Once commitIssue has returned,
+    // the ledger has changed and the note must stay APPROVED whatever happens below.
     await db.misMaterialRequest.updateMany({
       where: { id, status: 'APPROVED' },
       data: { status: 'PENDING', decidedById: null, decidedAt: null, decisionNote: null },
     });
     throw error;
   }
+  // shortcut: line quantities are written after the ledger commit, not inside it; upgrade to one
+  // transaction if commitIssue ever exposes a tx client.
+  for (const l of issued) {
+    await db.misMaterialRequestLine.update({ where: { id: l.lineId }, data: { actualIssuedQty: l.qty } });
+  }
+  await logAuditEvent({
+    actorId: actor.userId,
+    action: 'material_request.approve',
+    entity: 'MisMaterialRequest',
+    entityId: id,
+    before: { status: 'PENDING' },
+    after: { status: 'APPROVED', reference: result.reference, lineCount: result.lineCount, totalQty: String(result.totalQty) },
+  });
+  return result;
 }
 
 export async function rejectMaterialRequest(id: string, reason: string) {

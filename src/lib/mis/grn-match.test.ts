@@ -9,6 +9,7 @@ describe('shortQuantity', () => {
     expect(shortQuantity(null, 90, 4)).toBeNull();
     expect(() => shortQuantity(100, 98, 3)).toThrow(/more than the 100/);
     expect(() => shortQuantity(100, -1, 0)).toThrow(/negative/);
+    expect(() => shortQuantity(null, 10, -5)).toThrow(/negative/); // no DC qty is not a licence for a negative damage
   });
 });
 

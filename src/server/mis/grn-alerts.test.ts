@@ -39,7 +39,7 @@ beforeEach(() => {
   state.grn = {
     id: 'g1', grnNumber: 'GRN-1', receivedAt: new Date('2026-10-09T10:00:00Z'), supplierInvoiceAmount: D(1000),
     po: { poNumber: 'PO-1', supplier: { name: 'Acme' } },
-    items: [{ receivedQty: D(1), damageQuantity: D(0), shortQuantity: null, poItem: { description: 'Kraft', quantity: D(2), ratePerUnit: D(RATE) } }],
+    items: [{ receivedQty: D(1), damageQuantity: D(0), shortQuantity: null, poItem: { description: 'Kraft', quantity: D(2), receivedQuantity: D(1), ratePerUnit: D(RATE) } }],
   };
   getCurrentUser.mockResolvedValue({ id: 'owner-1' });
   getMisRole.mockResolvedValue('OWNER');
@@ -52,11 +52,15 @@ describe('notifyGrnConfirmed', () => {
     const owner = state.notifications[0].payload, admin = state.notifications[1].payload;
     expect(owner.money).toEqual({ receivedValue: '₹731.19', invoiced: '₹1,000.00', variance: '₹268.81' });
     expect(JSON.stringify(admin)).not.toMatch(/731|money|variance/);
-    expect(admin).toMatchObject({ grnNumber: 'GRN-1', poNumber: 'PO-1', attention: true, lines: [{ ordered: 2, received: 1, underReceived: 1 }] });
+    // A partial delivery with an invoice variance: the Owner is told to look (variance), the Admin is
+    // not — the flag itself would reveal that the invoice disagrees (D24).
+    expect(owner.attention).toBe(true);
+    expect(admin).toMatchObject({ grnNumber: 'GRN-1', poNumber: 'PO-1', attention: false, lines: [{ ordered: 2, received: 1, outstanding: 1 }] });
   });
 
   it('a delivery exactly as ordered with no invoice variance is not flagged for attention', async () => {
     state.grn!.items[0].receivedQty = D(2);
+    state.grn!.items[0].poItem.receivedQuantity = D(2);
     state.grn!.supplierInvoiceAmount = D(2 * RATE);
     await notifyGrnConfirmed('g1');
     expect(state.notifications[0].payload.attention).toBe(false);

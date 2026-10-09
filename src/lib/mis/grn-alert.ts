@@ -8,13 +8,16 @@
 export type GrnAlertLineInput = {
   description: string;
   ordered: number;
+  /** This delivery's good quantity. */
   received: number;
+  /** The PO line's total received across every confirmed GRN, this one included. */
+  receivedToDate?: number;
   damaged: number;
   short: number | null;
   ratePerUnit?: number | null;
 };
 
-export type GrnAlertLine = { description: string; ordered: number; received: number; damaged: number; short: number; underReceived: number };
+export type GrnAlertLine = { description: string; ordered: number; received: number; damaged: number; short: number; /** Still outstanding on the PO line after this delivery (a planned split is not a problem). */ outstanding: number };
 
 export type GrnAlertPayload = {
   grnId: string;
@@ -39,11 +42,12 @@ export function grnAlertLines(lines: GrnAlertLineInput[]): { lines: GrnAlertLine
     received: l.received,
     damaged: l.damaged,
     short: l.short ?? 0,
-    underReceived: Math.max(0, round2(l.ordered - l.received)),
+    outstanding: Math.max(0, round2(l.ordered - (l.receivedToDate ?? l.received))),
   }));
   const sum = (k: 'ordered' | 'received' | 'damaged' | 'short') => round2(out.reduce((s, l) => s + l[k], 0));
   const totals = { ordered: sum('ordered'), received: sum('received'), damaged: sum('damaged'), short: sum('short') };
-  return { lines: out, totals, attention: out.some((l) => l.damaged > 0 || l.short > 0 || l.underReceived > 0) };
+  // Damage or a short challan needs a look; a partial delivery against the PO is normal.
+  return { lines: out, totals, attention: out.some((l) => l.damaged > 0 || l.short > 0) };
 }
 
 /** Received value at PO rates vs the supplier's invoice. Null when a rate or the invoice amount is missing. */

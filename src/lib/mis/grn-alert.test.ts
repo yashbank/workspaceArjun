@@ -10,10 +10,15 @@ const lines = [
 describe('grnAlertLines', () => {
   it('carries PO vs received, damage and short per line, and flags attention when any line is off', () => {
     const a = grnAlertLines(lines);
-    expect(a.lines[0]).toEqual({ description: 'Kraft', ordered: 100, received: 90, damaged: 4, short: 6, underReceived: 10 });
+    expect(a.lines[0]).toEqual({ description: 'Kraft', ordered: 100, received: 90, damaged: 4, short: 6, outstanding: 10 });
     expect(a.totals).toEqual({ ordered: 105, received: 95, damaged: 4, short: 6 });
     expect(a.attention).toBe(true);
     expect(grnAlertLines([lines[1]]).attention).toBe(false);
+  });
+  it('a planned split delivery is not flagged: outstanding uses the PO line\'s received-to-date, and attention needs damage or short', () => {
+    const a = grnAlertLines([{ description: 'Kraft', ordered: 300, received: 100, receivedToDate: 200, damaged: 0, short: null }]);
+    expect(a.lines[0].outstanding).toBe(100);
+    expect(a.attention).toBe(false);
   });
 });
 

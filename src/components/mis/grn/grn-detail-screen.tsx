@@ -42,7 +42,7 @@ type Grn = {
   po: { id: string; poNumber: string; supplier: { id: string; name: string } | null; items: PoItem[] } | null;
   items: GrnItem[];
 };
-type Props = { grn: Grn; canWrite: boolean; canSeeMoney?: boolean };
+type Props = { grn: Grn; canWrite: boolean; canSeeMoney?: boolean; /** Server-formatted (Owner only); null otherwise. */ invoiceAmountFormatted?: string | null };
 
 const isoDate = (d: Date | string | null | undefined) => (d ? new Date(d).toISOString().slice(0, 10) : '');
 
@@ -50,7 +50,7 @@ function toNum(v: { toNumber(): number } | number): number {
   return typeof v === 'number' ? v : v.toNumber();
 }
 
-export function GrnDetailScreen({ grn, canWrite, canSeeMoney = false }: Props) {
+export function GrnDetailScreen({ grn, canWrite, canSeeMoney = false, invoiceAmountFormatted = null }: Props) {
   const [isPending, startTransition] = useTransition();
   const [selectedPoItemId, setSelectedPoItemId] = useState('');
   const [qty, setQty] = useState('');
@@ -67,10 +67,13 @@ export function GrnDetailScreen({ grn, canWrite, canSeeMoney = false }: Props) {
     dcNumber: grn.dcNumber ?? '',
   });
   const [headerSaved, setHeaderSaved] = useState(false);
+  const [headerError, setHeaderError] = useState<string | null>(null);
   const setH = (k: keyof typeof header) => (e: React.ChangeEvent<HTMLInputElement>) => { setHeaderSaved(false); setHeader({ ...header, [k]: e.target.value }); };
 
   const handleSaveHeader = () => {
+    setHeaderError(null);
     startTransition(async () => {
+      try {
       await updateGrnHeaderAction(grn.id, {
         supplierInvoiceNo: header.supplierInvoiceNo || null,
         invoiceDate: header.invoiceDate || null,
@@ -81,6 +84,9 @@ export function GrnDetailScreen({ grn, canWrite, canSeeMoney = false }: Props) {
         dcNumber: header.dcNumber || null,
       });
       setHeaderSaved(true);
+      } catch (e) {
+        setHeaderError(e instanceof Error ? e.message : 'That did not save.');
+      }
     });
   };
   const [type, setType] = useState('GENERAL');
@@ -140,7 +146,7 @@ export function GrnDetailScreen({ grn, canWrite, canSeeMoney = false }: Props) {
         {!isDraft && (
           <>
             {grn.supplierInvoiceNo && <CardRow label="Supplier Invoice" value={`${grn.supplierInvoiceNo}${grn.invoiceDate ? ` · ${new Date(grn.invoiceDate).toLocaleDateString('en-IN')}` : ''}`} />}
-            {canSeeMoney && grn.supplierInvoiceAmount != null && <CardRow label="Invoice Amount" value={`₹${grn.supplierInvoiceAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`} />}
+            {invoiceAmountFormatted && <CardRow label="Invoice Amount" value={invoiceAmountFormatted} />}
             {grn.dcNumber && <CardRow label="DC No" value={grn.dcNumber} />}
             {grn.lrNumber && <CardRow label="LR No" value={grn.lrNumber} />}
             {grn.vehicleNumber && <CardRow label="Vehicle" value={grn.vehicleNumber} />}
@@ -164,6 +170,7 @@ export function GrnDetailScreen({ grn, canWrite, canSeeMoney = false }: Props) {
           <div className="flex items-center gap-3">
             <Button variant="secondary" onClick={handleSaveHeader} disabled={isPending}>{isPending ? 'Saving…' : 'Save paperwork'}</Button>
             {headerSaved && <span className="text-sm text-green-700">Saved</span>}
+            {headerError && <span role="alert" className="text-sm text-red-600">{headerError}</span>}
           </div>
         </div>
       )}

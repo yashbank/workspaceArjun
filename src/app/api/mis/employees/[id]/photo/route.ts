@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { isUuid } from '@/lib/mis/ids';
 import { isMisForbiddenError } from '@/server/mis/auth';
+import { KioskDeviceError, kioskErrorStatus } from '@/server/mis/kiosk-device';
 import { getEmployeePhoto, getEmployeePhotoForDevice } from '@/server/mis/employee-photo';
 
 /**
@@ -20,7 +21,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     });
   } catch (err: unknown) {
     if (isMisForbiddenError(err)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    const status = (err as { status?: number })?.status;
-    return NextResponse.json({ error: status === 401 ? 'Unauthorized' : 'Server error' }, { status: status === 401 ? 401 : 500 });
+    // A tablet with a bad or revoked token gets the kiosk routes' own status (401/403), never a 500.
+    if (err instanceof KioskDeviceError) return NextResponse.json({ error: err.code }, { status: kioskErrorStatus(err.code) });
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }

@@ -91,7 +91,7 @@ export async function seedQcTemplates(): Promise<{ created: number }> {
   const missing = DEFAULT_QC_TEMPLATES.filter((t) => !existing.has(t.name));
   if (missing.length > 0) {
     await db.misQcTemplate.createMany({
-      data: missing.map((t, i) => ({ name: t.name, processName: t.processName, slotStart: t.slotStart, slotEnd: t.slotEnd, parameters: t.parameters as unknown as Prisma.InputJsonValue, sortOrder: DEFAULT_QC_TEMPLATES.indexOf(t) + i })),
+      data: missing.map((t) => ({ name: t.name, processName: t.processName, slotStart: t.slotStart, slotEnd: t.slotEnd, parameters: t.parameters as unknown as Prisma.InputJsonValue, sortOrder: DEFAULT_QC_TEMPLATES.indexOf(t) })),
     });
   }
   await logAuditEvent({ actorId: actor.userId, action: 'qc_template.seed', entity: 'MisQcTemplate', after: { created: missing.map((t) => t.name) } });
@@ -103,7 +103,7 @@ export async function recordChecklistCheck(input: { orderId: string; templateId:
   await requirePermission('qc.write');
   if (!(CHECKLIST_STATUSES as readonly string[]).includes(input.status)) throw new Error(`Unknown status ${String(input.status)}`);
   const template = await db.misQcTemplate.findUnique({ where: { id: input.templateId } });
-  if (!template) throw new Error('Template not found');
+  if (!template || !template.isActive || template.deletedAt) throw new Error('That checklist form is no longer active.');
   if (!parseParameters(template.parameters).includes(input.parameterName)) throw new Error('That parameter is not on this template.');
   if (!slotTimes(template.slotStart, template.slotEnd).includes(input.slotTime)) throw new Error('That slot is not on this template.');
   return addQcCheck({

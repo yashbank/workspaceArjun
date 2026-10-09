@@ -213,10 +213,10 @@ export async function confirmGRN(grnId: string) {
         },
       });
 
-      // V2 Epic 2: a FOR_ORDER line earmarks its quantity for the order its ref (or the PO's) names.
-      if (grnItem.type === 'FOR_ORDER') {
-        await allocateFromReceipt(tx, { ref: grnItem.forOrderRef ?? grn.po.bomRef, itemId, qty: grnItem.receivedQty.toNumber(), sourceId: grnId });
-      }
+      // V2 Epic 2: a PO raised against an order (BOM ref = order number) earmarks every line, exactly as
+      // the store cart does; a FOR_ORDER line may name a different order with its own ref.
+      const ref = grnItem.type === 'FOR_ORDER' ? (grnItem.forOrderRef ?? grn.po.bomRef) : grn.po.bomRef;
+      await allocateFromReceipt(tx, { ref, itemId, qty: grnItem.receivedQty.toNumber(), sourceId: grnId });
 
       // Update received quantity on PO item
       await tx.misPoItem.update({

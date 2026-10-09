@@ -19,8 +19,8 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
  * claims more arrived than the challan carried — that is a typo, not a surplus.
  */
 export function shortQuantity(dc: number | null | undefined, received: number, damage: number): number | null {
+  if (received < 0 || damage < 0 || (dc ?? 0) < 0) throw new Error('Quantities cannot be negative.');
   if (dc === null || dc === undefined) return null;
-  if (received < 0 || damage < 0 || dc < 0) throw new Error('Quantities cannot be negative.');
   const accounted = round2(received + damage);
   if (accounted > dc) {
     throw new Error(`Received ${received} + damaged ${damage} is more than the ${dc} on the delivery challan.`);

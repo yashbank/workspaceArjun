@@ -99,6 +99,13 @@ describe('approve', () => {
     expect(commitIssue).not.toHaveBeenCalled();
   });
 
+  it('once stock has moved, a later failure (line write) does NOT re-open the note — no double issue', async () => {
+    const lineUpdate = vi.spyOn((await import('@/server/db')).db.misMaterialRequestLine, 'update').mockRejectedValueOnce(new Error('connection reset'));
+    await expect(approveMaterialRequest('r1', [{ lineId: 'l1', actualIssuedQty: 5 }])).rejects.toThrow(/connection reset/);
+    expect(state.request?.status).toBe('APPROVED');
+    lineUpdate.mockRestore();
+  });
+
   it('a failed issue puts the note back to PENDING', async () => {
     commitIssue.mockRejectedValue(new Error('Cannot issue more than the stock balance'));
     await expect(approveMaterialRequest('r1', [{ lineId: 'l1', actualIssuedQty: 5 }])).rejects.toThrow(/stock balance/);
