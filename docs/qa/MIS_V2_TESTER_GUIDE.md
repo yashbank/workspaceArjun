@@ -94,6 +94,18 @@ Any difference you did not expect is a bug.
 | 7.3 | Employee without a photo | Confirm card shows the initial letter as before |
 | 7.4 | Turn wifi off → scan again | Photo still shows (cached with the roster) |
 
-## §8. Report
+## §8. Also fixed in this release (found by the automated 7-role sweep) — please re-check
+| # | Role | Where | Was | Now |
+|---|---|---|---|---|
+| 8.1 | All | Store Overview, Store Transactions, Item ledger, Audit Log, Order detail, Production detail, QC order page, QC grid | Console error "Minified React error #418" on load (dates rendered in the server's zone, then re-rendered in IST) | No console error; dates/times always in IST |
+| 8.2 | All (phone width) | Customer detail, Production detail, Audit Log, QC templates, QC checklist | Page wider than the phone (horizontal scroll) | Fits the screen |
+| 8.3 | QC, SUPERVISOR | Sidebar → Dashboard | "You do not have access" | Dashboard opens (the "Waiting on you" widget now appears only for Owner/Admin, who can act on it) |
+| 8.4 | ATTENDANCE roles | More → Crew | "You do not have access" | Opens; the machine column is simply absent for roles without production access |
+| 8.5 | QC | Production → open an order | "You do not have access" | Opens read-only (no log-entry form) |
+| 8.6 | STORE_GUY | Suppliers → View | "You do not have access" | Supplier detail opens |
+| 8.7 | STORE_GUY / SUPERVISOR | `/mis/kiosk` by URL | Store Guy saw "Couldn't load — try again"; Supervisor could open it | Both get the normal "You do not have access" |
+| 8.8 | ATTENDANCE roles | Leave requests → Submit / Reject | List sometimes stale until reload | List updates immediately |
+
+## §9. Report
 Use the Bug template from `EXTERNAL_TESTER_GUIDE.md` §8: what you did, what you expected, what
 happened, role, device/width, time.
