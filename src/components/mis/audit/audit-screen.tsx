@@ -126,10 +126,10 @@ export function AuditScreen({ logs, initialFrom, initialTo }: Props) {
               <span className={`text-xs px-2 py-0.5 rounded font-medium shrink-0 ${entityColors[log.entity] ?? 'bg-gray-100 text-gray-600'}`}>
                 {log.entity}
               </span>
-              <div className="flex-1 min-w-0">
+              <div className="min-w-0 flex-1 basis-40 break-words">
                 <span className="text-sm font-medium text-gray-800">{log.action.replace(/_/g, ' ').replace(/\./g, ' › ')}</span>
                 {log.entityId && (
-                  <span className="ml-2 text-xs text-gray-400 font-mono">{log.entityId.slice(0, 8)}…</span>
+                  <span className="ml-2 break-all text-xs text-gray-400 font-mono">{log.entityId.slice(0, 8)}…</span>
                 )}
               </div>
               <div className="text-sm text-gray-500 shrink-0">{log.actorName}</div>

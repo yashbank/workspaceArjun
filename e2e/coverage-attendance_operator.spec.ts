@@ -26,12 +26,11 @@ const STATIC_ROUTES: Route[] = [
   { path: '/mis/attendance/leave', marker: 'Leave Requests' },
   { path: '/mis/attendance/shifts', marker: 'Shift Management' },
   { path: '/mis/attendance/extra-pay', marker: 'Extra-pay day' },
-  // navigation.ts lists crew under attendance.read (phoneOnly), so the role may open it by URL.
-  { path: '/mis/crew' },
   { path: '/mis/me', marker: 'Signed in as' },
 ];
 
 const FORBIDDEN = [
+  '/mis/crew', // the worker board is production.read (its data is), so the menu no longer offers it
   '/mis/settings',
   '/mis/payroll',
   '/mis/orders',

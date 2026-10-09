@@ -45,7 +45,8 @@ export default async function QcChecklistPrintPage({ params, searchParams }: { p
           <div>Printed: {printDate}</div>
         </div>
       </div>
-      <table className="mb-6 w-full border-collapse text-xs">
+      <div className="mb-6 overflow-x-auto print:overflow-visible">
+      <table className="w-full border-collapse text-xs">
         <thead>
           <tr>
             <th className="border border-gray-400 px-2 py-1 text-left">Parameter</th>
@@ -61,8 +62,9 @@ export default async function QcChecklistPrintPage({ params, searchParams }: { p
           ))}
         </tbody>
       </table>
+      </div>
       <div className="mb-8 text-xs text-gray-500">{(Object.keys(MARK) as ChecklistStatus[]).map((s) => `${MARK[s]} = ${CHECKLIST_LABELS[s]}`).join(' · ')}</div>
-      <div className="mt-12 grid grid-cols-3 gap-8 border-t border-gray-200 pt-6 text-xs text-gray-500">
+      <div className="mt-12 grid grid-cols-1 gap-8 border-t sm:grid-cols-3 print:grid-cols-3 border-gray-200 pt-6 text-xs text-gray-500">
         {['Operator', 'QC Inspector', 'Supervisor'].map((who) => <div key={who}><div className="h-10" /><div className="border-t border-gray-400 pt-2 text-center">{who}</div></div>)}
       </div>
     </div>

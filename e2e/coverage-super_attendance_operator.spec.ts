@@ -20,7 +20,6 @@ const ALLOWED = [
   '/mis',
   '/mis/dashboard',
   ...EXPECTED_NAV[ROLE].map(hrefFor),
-  '/mis/crew', // phoneOnly, requires attendance.read
   '/mis/attendance/leave', // phoneOnly, requires attendance.read
   '/mis/me', // phoneOnly, any role
   '/mis/attendance?view=daily',
@@ -31,6 +30,7 @@ const ALLOWED = [
 
 /** Routes the role must NOT open (no orders/settings/store/po/grn/wages/approvals permission). */
 const FORBIDDEN = [
+  '/mis/crew', // the worker board is production.read (its data is), so the menu no longer offers it
   '/mis/orders',
   '/mis/settings',
   '/mis/settings/qc-templates',

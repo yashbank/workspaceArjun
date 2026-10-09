@@ -137,7 +137,7 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes, 
       </nav>
 
       {/* Header */}
-      <div className="flex items-start justify-between">
+      <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold text-gray-900">{order.orderNumber}</h1>
@@ -145,7 +145,7 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes, 
           </div>
           <p className="text-sm text-gray-500 mt-1">{order.customer?.name ?? 'No customer'}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Link href={`/mis/qc/grid?view=capture&orderId=${order.id}`}>
             <Button variant="ghost">Hourly Grid</Button>
           </Link>
