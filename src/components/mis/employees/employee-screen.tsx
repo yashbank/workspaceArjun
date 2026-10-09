@@ -12,6 +12,7 @@ import type { WageTypeCode } from '@/server/mis/wage-type';
 import { isMisRole } from '@/lib/mis/roles';
 import { saveEmployeeAction, deleteEmployeeAction, restoreEmployeeAction, uploadEmployeePhotoAction } from '@/app/(mis)/mis/employees/actions';
 import { PhotoPicker } from './photo-picker';
+import { unwrap } from '@/lib/mis/action-result';
 
 // Same visual weight as the kit's `Button` ghost variant, so a navigation
 // link (View, Badge) sits in the same row as an action button (Edit,
@@ -108,7 +109,7 @@ export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes
           const form = new FormData();
           form.append('photo', photo);
           try {
-            await uploadEmployeePhotoAction(saved.id, form);
+            unwrap(await uploadEmployeePhotoAction(saved.id, form));
           } catch (photoError) {
             setEditing((current) => current ?? { id: saved.id, employeeCode: code, name, nameHi: nameHi || null, role, isActive: true, deletedAt: null, managerId, userProfile: null, wageTypeCode, payType, sundayPaid });
             setSaveError(`Saved, but the photo did not upload: ${photoError instanceof Error ? photoError.message : 'try again'}`);

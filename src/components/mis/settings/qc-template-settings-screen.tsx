@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 
 import { createQcTemplateAction, seedQcTemplatesAction, setQcTemplateActiveAction, updateQcTemplateAction } from '@/app/(mis)/mis/settings/qc-templates/actions';
 import { Button } from '@/components/mis/kit/button';
+import { unwrap } from '@/lib/mis/action-result';
 import { Input, TimeInput } from '@/components/mis/kit/input';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
 import type { QcTemplateRow } from '@/server/mis/qc-template';
@@ -22,8 +23,8 @@ export function QcTemplateSettingsScreen({ templates }: { templates: QcTemplateR
   const open = (t?: QcTemplateRow) => { setEditing(t ? t.id : 'new'); setDraft(t ? toDraft(t) : EMPTY); setError(null); };
   const save = () => startTransition(async () => {
     try {
-      if (editing === 'new') await createQcTemplateAction(toInput(draft));
-      else if (editing) await updateQcTemplateAction(editing, toInput(draft));
+      if (editing === 'new') unwrap(await createQcTemplateAction(toInput(draft)));
+      else if (editing) unwrap(await updateQcTemplateAction(editing, toInput(draft)));
       setEditing(null);
     } catch (e) { setError(e instanceof Error ? e.message : 'That did not save.'); }
   });

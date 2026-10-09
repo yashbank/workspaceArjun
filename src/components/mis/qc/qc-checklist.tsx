@@ -26,6 +26,7 @@ export function QcChecklist({ orderId, templates, checks, canWrite }: { orderId:
   const [templateId, setTemplateId] = useState(templates[0]?.id ?? '');
   const [active, setActive] = useState<{ parameter: string; slot: string } | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
   const template = templates.find((t) => t.id === templateId);
   if (!template) return null;
 
@@ -35,8 +36,10 @@ export function QcChecklist({ orderId, templates, checks, canWrite }: { orderId:
     if (!active) return;
     const cell = active;
     setActive(null);
+    setError(null);
     startTransition(async () => {
-      await recordChecklistCheckAction({ orderId, templateId: template.id, parameterName: cell.parameter, slotTime: cell.slot, status });
+      const result = await recordChecklistCheckAction({ orderId, templateId: template.id, parameterName: cell.parameter, slotTime: cell.slot, status });
+      if (!result.ok) { setError(result.detail); return; }
       router.refresh();
     });
   };
@@ -84,6 +87,7 @@ export function QcChecklist({ orderId, templates, checks, canWrite }: { orderId:
           </tbody>
         </table>
       </div>
+      {error && <p role="alert" className="border-t border-gray-100 px-5 py-2 text-sm text-red-600">{error}</p>}
       {active && canWrite && (
         <div className="flex flex-wrap items-center gap-2 border-t border-gray-100 px-5 py-3">
           <span className="text-sm text-gray-600">{active.parameter} · {active.slot}:</span>

@@ -6,6 +6,7 @@ import { Button } from '@/components/mis/kit/button';
 import type { MisPayComponent } from '@/generated/prisma/enums';
 import { setPayComponentAction } from '@/app/(mis)/mis/employees/[id]/actions';
 import { uploadEmployeePhotoAction } from '@/app/(mis)/mis/employees/actions';
+import { unwrap } from '@/lib/mis/action-result';
 import { PhotoPicker } from './photo-picker';
 
 interface Employee {
@@ -57,7 +58,7 @@ export function EmployeeProfileScreen({ employee, monthStats, canWrite, payCompo
     if (!photo) return;
     const form = new FormData();
     form.append('photo', photo);
-    try { await uploadEmployeePhotoAction(employee.id, form); setPhoto(null); setPhotoError(null); }
+    try { unwrap(await uploadEmployeePhotoAction(employee.id, form)); setPhoto(null); setPhotoError(null); }
     catch (e) { setPhotoError(e instanceof Error ? e.message : 'Could not save the photo.'); }
   });
   const toggle = (component: MisPayComponent, enabled: boolean) => {

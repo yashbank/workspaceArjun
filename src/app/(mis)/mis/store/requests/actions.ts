@@ -1,6 +1,8 @@
 'use server';
 import { revalidatePath } from 'next/cache';
 
+import { asResult } from '@/lib/mis/action-result';
+
 import {
   approveMaterialRequest,
   createMaterialRequest,
@@ -20,18 +22,26 @@ function revalidate(id?: string) {
 }
 
 export async function createMaterialRequestAction(lines: MaterialRequestLineInput[], meta: MaterialRequestMeta) {
-  const created = await createMaterialRequest(lines, meta);
-  revalidate();
-  return { id: created.id, requestNumber: created.requestNumber };
+  return asResult(async () => {
+    const created = await createMaterialRequest(lines, meta);
+    revalidate();
+    return { id: created.id, requestNumber: created.requestNumber };
+  });
 }
 
 export async function approveMaterialRequestAction(id: string, decisions: ApproveLineInput[], note?: string | null) {
-  const result = await approveMaterialRequest(id, decisions, note);
-  revalidate(id);
-  return result;
+  return asResult(async () => {
+    try {
+      return await approveMaterialRequest(id, decisions, note);
+    } finally {
+      revalidate(id); // a refused approve re-opens the note on the server — the screen must show that too
+    }
+  });
 }
 
 export async function rejectMaterialRequestAction(id: string, reason: string) {
-  await rejectMaterialRequest(id, reason);
-  revalidate(id);
+  return asResult(async () => {
+    await rejectMaterialRequest(id, reason);
+    revalidate(id);
+  });
 }

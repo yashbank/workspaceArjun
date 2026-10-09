@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 
 import { createMaterialRequestAction } from '@/app/(mis)/mis/store/requests/actions';
+import { unwrap } from '@/lib/mis/action-result';
 import { cn } from '@/lib/utils';
 
 import { HeaderCard, HomeStack, InfoCard, Mono, OkCard, SectionLabel } from '../home/cards';
@@ -27,10 +28,10 @@ export function RequestScreen({ header, items, orders, departments }: Props) {
   const [done, setDone] = useState<{ id: string; requestNumber: string } | null>(null);
 
   async function commit(lines: CartLine[]) {
-    const result = await createMaterialRequestAction(
+    const result = unwrap(await createMaterialRequestAction(
       lines.map((l) => ({ itemId: l.itemId, qty: l.qty })),
       { orderId, departmentId },
-    );
+    ));
     setDone(result);
   }
 

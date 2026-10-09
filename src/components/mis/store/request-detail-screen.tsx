@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { useState, useTransition } from 'react';
 
 import { approveMaterialRequestAction, rejectMaterialRequestAction } from '@/app/(mis)/mis/store/requests/actions';
+import { unwrap } from '@/lib/mis/action-result';
 import { Button } from '@/components/mis/kit/button';
 import { Card, CardRow } from '@/components/mis/kit/card';
 import { Input, NumberInput } from '@/components/mis/kit/input';
@@ -33,11 +34,11 @@ export function RequestDetailScreen({ request, canDecide }: { request: Request; 
     setError(null);
     startTransition(async () => {
       try {
-        await approveMaterialRequestAction(
+        unwrap(await approveMaterialRequestAction(
           request.id,
           request.lines.map((l) => ({ lineId: l.id, actualIssuedQty: Number(qty[l.id]) || 0 })),
           note,
-        );
+        ));
       } catch (e) {
         setError(e instanceof Error ? e.message : 'That did not save.');
       }
@@ -48,7 +49,7 @@ export function RequestDetailScreen({ request, canDecide }: { request: Request; 
     if (!note.trim()) { setError('Give a reason to reject.'); return; }
     setError(null);
     startTransition(async () => {
-      try { await rejectMaterialRequestAction(request.id, note); }
+      try { unwrap(await rejectMaterialRequestAction(request.id, note)); }
       catch (e) { setError(e instanceof Error ? e.message : 'That did not save.'); }
     });
   };

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 
 import { commitIssueAction } from '@/app/(mis)/mis/store/actions';
+import { unwrap } from '@/lib/mis/action-result';
 import { cn } from '@/lib/utils';
 
 import { HeaderCard, HomeStack, InfoCard, Mono, OkCard, SectionLabel } from '../home/cards';
@@ -34,7 +35,7 @@ export function IssueScreen({ header, items, orders, departments, allocations = 
   );
 
   async function commit(lines: CartLine[]) {
-    const result = await commitIssueAction(lines, { orderId, departmentId });
+    const result = unwrap(await commitIssueAction(lines, { orderId, departmentId }));
     setDone(result);
   }
 

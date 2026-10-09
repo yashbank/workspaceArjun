@@ -8,6 +8,7 @@ import { DateInput, NumberInput } from '@/components/mis/kit/input';
 import { Select } from '@/components/mis/kit/select';
 import { Input } from '@/components/mis/kit/input';
 import { addGrnItemAction, confirmGrnAction, updateGrnHeaderAction } from '@/app/(mis)/mis/grn/actions';
+import { unwrap } from '@/lib/mis/action-result';
 
 type GrnItem = {
   id: string;
@@ -74,7 +75,7 @@ export function GrnDetailScreen({ grn, canWrite, canSeeMoney = false, invoiceAmo
     setHeaderError(null);
     startTransition(async () => {
       try {
-      await updateGrnHeaderAction(grn.id, {
+      unwrap(await updateGrnHeaderAction(grn.id, {
         supplierInvoiceNo: header.supplierInvoiceNo || null,
         invoiceDate: header.invoiceDate || null,
         ...(canSeeMoney ? { supplierInvoiceAmount: header.supplierInvoiceAmount ? parseFloat(header.supplierInvoiceAmount) : null } : {}),
@@ -82,7 +83,7 @@ export function GrnDetailScreen({ grn, canWrite, canSeeMoney = false, invoiceAmo
         vehicleNumber: header.vehicleNumber || null,
         transporterName: header.transporterName || null,
         dcNumber: header.dcNumber || null,
-      });
+      }));
       setHeaderSaved(true);
       } catch (e) {
         setHeaderError(e instanceof Error ? e.message : 'That did not save.');
@@ -102,7 +103,7 @@ export function GrnDetailScreen({ grn, canWrite, canSeeMoney = false, invoiceAmo
     setItemError(null);
     startTransition(async () => {
       try {
-        await addGrnItemAction(grn.id, {
+        unwrap(await addGrnItemAction(grn.id, {
           poItemId: selectedPoItemId,
           receivedQty: parseFloat(qty),
           type: type as 'GENERAL' | 'FOR_ORDER',
@@ -110,7 +111,7 @@ export function GrnDetailScreen({ grn, canWrite, canSeeMoney = false, invoiceAmo
           batchNo: batchNo || null,
           dcQuantity: dcQty ? parseFloat(dcQty) : null,
           damageQuantity: damageQty ? parseFloat(damageQty) : 0,
-        });
+        }));
         setSelectedPoItemId(''); setQty(''); setOrderRef(''); setBatchNo(''); setDcQty(''); setDamageQty('');
       } catch (e) {
         setItemError(e instanceof Error ? e.message : 'That did not save.');

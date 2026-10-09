@@ -1,5 +1,7 @@
 'use server';
 import { revalidatePath } from 'next/cache';
+
+import { asResult } from '@/lib/mis/action-result';
 import { createGRN, addGRNItem, updateGRNItem, updateGRNHeader, confirmGRN, type GrnHeaderInput, type GrnItemInput } from '@/server/mis/grn';
 
 export async function createGrnAction(poId: string, notes?: string | null) {
@@ -9,18 +11,25 @@ export async function createGrnAction(poId: string, notes?: string | null) {
 }
 
 export async function updateGrnHeaderAction(grnId: string, patch: GrnHeaderInput) {
-  await updateGRNHeader(grnId, patch);
-  revalidatePath(`/mis/grn/${grnId}`);
+  return asResult(async () => {
+    await updateGRNHeader(grnId, patch);
+    revalidatePath(`/mis/grn/${grnId}`);
+  });
 }
 
 export async function addGrnItemAction(grnId: string, input: GrnItemInput) {
-  await addGRNItem(grnId, input);
-  revalidatePath(`/mis/grn/${grnId}`);
+  // "Received + damaged is more than the challan" must reach the storekeeper as words.
+  return asResult(async () => {
+    await addGRNItem(grnId, input);
+    revalidatePath(`/mis/grn/${grnId}`);
+  });
 }
 
 export async function updateGrnItemAction(id: string, grnId: string, patch: Partial<GrnItemInput>) {
-  await updateGRNItem(id, patch);
-  revalidatePath(`/mis/grn/${grnId}`);
+  return asResult(async () => {
+    await updateGRNItem(id, patch);
+    revalidatePath(`/mis/grn/${grnId}`);
+  });
 }
 
 export async function confirmGrnAction(grnId: string) {
