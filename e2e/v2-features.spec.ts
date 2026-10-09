@@ -150,7 +150,8 @@ test.describe('Epic 7 — employee photo picker is offered to employees.write ro
       if ((await first.count()) === 0) test.skip(true, 'no employee to open');
       await first.click();
       await expect(page.getByText(ACCESS_DENIED)).toHaveCount(0);
-      await expect(page.getByText(/Take photo|Retake photo/)).toHaveCount(role === 'ADMIN' ? 1 : 0);
+      // MisShell renders the desktop and phone chromes in one DOM tree, so count only what is on screen.
+      await expect(page.getByText(/Take photo|Retake photo/).filter({ visible: true })).toHaveCount(role === 'ADMIN' ? 1 : 0);
       await ctx.close();
     });
   }
