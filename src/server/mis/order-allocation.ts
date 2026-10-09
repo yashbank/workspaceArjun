@@ -79,23 +79,37 @@ export type OrderAllocationRow = {
 /** For the issue screen: every open order's earmarks, keyed by order id, so the cart can show what is left before Confirm. */
 export async function listOpenOrderAllocations(): Promise<Record<string, OrderAllocationRow[]>> {
   await requirePermission('store.read');
-  const rows = await db.misOrderStockAllocation.findMany({
+  // Two queries for every open order at once (not two per order): the earmarks, then the issues
+  // against those orders. The same "issues after the first earmark" rule as allocationFigures.
+  const allocations = await db.misOrderStockAllocation.findMany({
     where: { order: { status: { in: ['CONFIRMED', 'IN_PRODUCTION'] } } },
-    select: { orderId: true, itemId: true, item: { select: { code: true, name: true, unit: true } } },
-    distinct: ['orderId', 'itemId'],
+    select: { orderId: true, itemId: true, allocatedQty: true, createdAt: true, item: { select: { code: true, name: true, unit: true } } },
   });
-  const out: Record<string, OrderAllocationRow[]> = {};
-  const byOrder = new Map<string, typeof rows>();
-  for (const r of rows) byOrder.set(r.orderId, [...(byOrder.get(r.orderId) ?? []), r]);
-  for (const [orderId, items] of byOrder) {
-    const figures = await allocationFigures(db, orderId, items.map((i) => i.itemId));
-    out[orderId] = items
-      .map((i) => {
-        const f = figures.get(i.itemId) ?? { allocated: 0, issued: 0 };
-        return { itemId: i.itemId, ...i.item, allocated: f.allocated, issued: f.issued, remaining: remainingAllocation(f) };
-      })
-      .sort((a, b) => a.name.localeCompare(b.name));
+  if (allocations.length === 0) return {};
+  const orderIds = [...new Set(allocations.map((a) => a.orderId))];
+  const issues = await db.misInventoryLedger.findMany({
+    where: { source: 'STORE_ISSUE', sourceId: { in: orderIds } },
+    select: { sourceId: true, itemId: true, changeQty: true, createdAt: true },
+  });
+  type Acc = AllocationFigures & { since: Date; item: { code: string; name: string; unit: string } };
+  const acc = new Map<string, Acc>(); // key: orderId|itemId
+  for (const a of allocations) {
+    const key = `${a.orderId}|${a.itemId}`;
+    const f = acc.get(key) ?? { allocated: 0, issued: 0, since: a.createdAt, item: a.item };
+    f.allocated += a.allocatedQty.toNumber();
+    if (a.createdAt < f.since) f.since = a.createdAt;
+    acc.set(key, f);
   }
+  for (const i of issues) {
+    const f = acc.get(`${i.sourceId}|${i.itemId}`);
+    if (f && i.createdAt >= f.since) f.issued += -i.changeQty.toNumber();
+  }
+  const out: Record<string, OrderAllocationRow[]> = {};
+  for (const [key, f] of acc) {
+    const [orderId, itemId] = key.split('|');
+    (out[orderId] ??= []).push({ itemId, ...f.item, allocated: f.allocated, issued: f.issued, remaining: remainingAllocation(f) });
+  }
+  for (const rows of Object.values(out)) rows.sort((a, b) => a.name.localeCompare(b.name));
   return out;
 }
 

@@ -1,5 +1,6 @@
 import type { Prisma } from '@/generated/prisma/client';
-import { isMisNotifyRole, type MisNotifyRole } from '@/lib/mis/notification-copy';
+import { NOTIFICATION_TYPES, isMisNotifyRole, type MisNotifyRole } from '@/lib/mis/notification-copy';
+import { isUuid } from '@/lib/mis/ids';
 import { db } from '@/server/db';
 
 import { requirePermission } from './auth';
@@ -14,6 +15,9 @@ import { requirePermission } from './auth';
  */
 
 export type MisNotificationRow = { id: string; type: string; payload: unknown; createdAt: Date };
+
+/** Only the types the bell can render. `mis.phase_ready` / `mis.qc_defect` belong to other surfaces and never clog this list. */
+const BELL_TYPES = Object.values(NOTIFICATION_TYPES) as string[];
 
 /** One row per active login holding one of `roles`. Never throws: an alert must not undo the write it reports. */
 export async function notifyRoles(roles: readonly MisNotifyRole[], type: string, payload: Record<string, unknown>): Promise<void> {
@@ -34,8 +38,9 @@ export async function notifyRoles(roles: readonly MisNotifyRole[], type: string,
 /** One row for one login (the person who raised a request), only if their role is on the bell. */
 export async function notifyUser(userId: string, type: string, payload: Record<string, unknown>): Promise<void> {
   try {
-    const profile = await db.userProfile.findUnique({ where: { id: userId }, select: { status: true, misEmployee: { select: { role: true } } } });
-    if (profile?.status !== 'active' || !isMisNotifyRole(profile.misEmployee?.role)) return;
+    const profile = await db.userProfile.findUnique({ where: { id: userId }, select: { status: true, misEmployee: { select: { role: true, isActive: true, deletedAt: true } } } });
+    const emp = profile?.misEmployee;
+    if (profile?.status !== 'active' || !emp?.isActive || emp.deletedAt || !isMisNotifyRole(emp.role)) return;
     await db.notification.create({ data: { userId, type, payload: payload as Prisma.InputJsonValue } });
   } catch (error) {
     console.error('[mis-notify] failed to write a notification row', { type, error });
@@ -47,7 +52,7 @@ export async function listMisNotifications(limit = 20): Promise<MisNotificationR
   const actor = await requirePermission('grn.read');
   if (!isMisNotifyRole(actor.role)) return [];
   const rows = await db.notification.findMany({
-    where: { userId: actor.userId, type: { startsWith: 'mis.' }, readAt: null },
+    where: { userId: actor.userId, type: { in: BELL_TYPES }, readAt: null },
     orderBy: { createdAt: 'desc' },
     take: limit,
   });
@@ -57,6 +62,7 @@ export async function listMisNotifications(limit = 20): Promise<MisNotificationR
 /** Marks the caller's own rows read. Another user's ids are silently ignored by the `userId` filter. */
 export async function markMisNotificationsRead(ids: string[]): Promise<void> {
   const actor = await requirePermission('grn.read');
-  if (ids.length === 0) return;
-  await db.notification.updateMany({ where: { id: { in: ids }, userId: actor.userId, type: { startsWith: 'mis.' } }, data: { readAt: new Date() } });
+  const valid = ids.filter(isUuid);
+  if (valid.length === 0) return;
+  await db.notification.updateMany({ where: { id: { in: valid }, userId: actor.userId, type: { in: BELL_TYPES } }, data: { readAt: new Date() } });
 }

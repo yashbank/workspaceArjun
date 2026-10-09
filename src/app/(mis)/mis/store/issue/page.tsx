@@ -16,7 +16,7 @@ export default async function StoreIssuePage() {
   const [items, targets, allocations] = await Promise.all([
     listPickerItems(),
     listIssueTargets(),
-    listOpenOrderAllocations().catch(() => ({})),
+    listOpenOrderAllocations(),
   ]);
 
   const meta = `${format(new Date(), 'EEE d MMM · HH:mm')} · ${user.name ?? user.email}`;

@@ -26,7 +26,7 @@ export default async function QcDetailPage({ params }: { params: Promise<{ id: s
     getQcForOrder(id),
     getQcSummary(id),
     listDefectTypes(),
-    listQcTemplates().catch(() => []),
+    listQcTemplates(),
   ]);
 
   return (

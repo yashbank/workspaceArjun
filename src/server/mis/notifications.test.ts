@@ -9,7 +9,11 @@ const state: { rows: Row[]; updates: Row[]; profiles: Row[] } = { rows: [], upda
 vi.mock('@/server/db', () => ({
   db: {
     userProfile: {
-      findMany: async () => state.profiles,
+      findMany: async ({ where }: { where: { misEmployee: { role: { in: string[] } } } }) =>
+        state.profiles.filter((p) => {
+          const e = p.misEmployee as { role: string; isActive: boolean; deletedAt: Date | null };
+          return where.misEmployee.role.in.includes(e.role) && e.isActive && !e.deletedAt;
+        }),
       findUnique: async ({ where }: { where: { id: string } }) => state.profiles.find((p) => p.id === where.id) ?? null,
     },
     notification: {
@@ -31,8 +35,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   state.rows = []; state.updates = [];
   state.profiles = [
-    { id: 'store-1', status: 'active', misEmployee: { role: 'STORE_GUY' } },
-    { id: 'sup-1', status: 'active', misEmployee: { role: 'SUPERVISOR' } },
+    { id: 'store-1', status: 'active', misEmployee: { role: 'STORE_GUY', isActive: true, deletedAt: null } },
+    { id: 'sup-1', status: 'active', misEmployee: { role: 'SUPERVISOR', isActive: true, deletedAt: null } },
+    { id: 'gone-1', status: 'active', misEmployee: { role: 'STORE_GUY', isActive: false, deletedAt: new Date() } },
   ];
   getCurrentUser.mockResolvedValue({ id: 'store-1' });
   getMisRole.mockResolvedValue('STORE_GUY');
@@ -41,10 +46,12 @@ beforeEach(() => {
 describe('writers', () => {
   it('notifyRoles writes one row per matching login', async () => {
     await notifyRoles(['STORE_GUY'], 'mis.material_request.raised', { requestId: 'r' });
-    expect(state.rows.map((r) => r.userId)).toEqual(['store-1', 'sup-1']); // the fake findMany ignores the where; the shape is what matters
+    expect(state.rows.map((r) => r.userId)).toEqual(['store-1']); // not the Supervisor, not the soft-deleted storekeeper
   });
   it('notifyUser writes nothing for a role that is not on the bell', async () => {
     await notifyUser('sup-1', 'mis.material_request.decided', {});
+    expect(state.rows).toEqual([]);
+    await notifyUser('gone-1', 'mis.material_request.decided', {});
     expect(state.rows).toEqual([]);
     await notifyUser('store-1', 'mis.material_request.decided', {});
     expect(state.rows).toHaveLength(1);
@@ -61,16 +68,18 @@ describe('writers', () => {
 describe('readers', () => {
   it('STORE_GUY reads their own unread mis.* rows; SUPERVISOR gets an empty list; QC is refused', async () => {
     state.rows = [{ userId: 'store-1', type: 'mis.grn_confirmed', payload: {}, readAt: null }, { userId: 'other', type: 'mis.grn_confirmed', payload: {}, readAt: null }];
+    // the fake findMany filters on userId only; the real query also narrows `type` to the bell's own list
     expect((await listMisNotifications()).map((n) => n.type)).toEqual(['mis.grn_confirmed']);
     getMisRole.mockResolvedValue('SUPERVISOR');
     expect(await listMisNotifications()).toEqual([]);
     getMisRole.mockResolvedValue('QC');
     await expect(listMisNotifications()).rejects.toThrow(/Not permitted/);
   });
-  it('mark-read is scoped to the caller and to mis.* rows', async () => {
-    await markMisNotificationsRead(['n1', 'n2']);
-    expect(state.updates[0]).toMatchObject({ where: { id: { in: ['n1', 'n2'] }, userId: 'store-1', type: { startsWith: 'mis.' } } });
-    await markMisNotificationsRead([]);
+  it('mark-read is scoped to the caller and to the bell\'s own types; junk ids never reach the database', async () => {
+    const a = '11111111-1111-4111-8111-111111111111', b = '22222222-2222-4222-8222-222222222222';
+    await markMisNotificationsRead([a, 'abc', b]);
+    expect(state.updates[0]).toMatchObject({ where: { id: { in: [a, b] }, userId: 'store-1', type: { in: ['mis.grn_confirmed', 'mis.material_request.raised', 'mis.material_request.decided'] } } });
+    await markMisNotificationsRead(['abc']);
     expect(state.updates).toHaveLength(1);
   });
 });

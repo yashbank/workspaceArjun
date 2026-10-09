@@ -43,8 +43,8 @@ export async function createMaterialRequest(lines: MaterialRequestLineInput[], m
     throw new Error('One of the items is no longer active.');
   }
   const [order, department] = await Promise.all([
-    meta.orderId ? db.misOrder.findUnique({ where: { id: meta.orderId }, select: { id: true } }) : Promise.resolve(null),
-    meta.departmentId ? db.misDepartment.findUnique({ where: { id: meta.departmentId }, select: { id: true } }) : Promise.resolve(null),
+    meta.orderId ? db.misOrder.findUnique({ where: { id: meta.orderId }, select: { id: true, orderNumber: true } }) : Promise.resolve(null),
+    meta.departmentId ? db.misDepartment.findUnique({ where: { id: meta.departmentId }, select: { id: true, name: true } }) : Promise.resolve(null),
   ]);
   if (meta.orderId && !order) throw new Error('That order no longer exists — reload and pick again.');
   if (meta.departmentId && !department) throw new Error('That department no longer exists — reload and pick again.');
@@ -77,17 +77,13 @@ export async function createMaterialRequest(lines: MaterialRequestLineInput[], m
     entityId: created.id,
     after: { requestNumber: created.requestNumber, orderId: created.orderId, departmentId: created.departmentId, lineCount: lines.length },
   });
-  // V2 — the Store hears about it now. Best-effort, after the write.
-  const [orderRow, deptRow] = await Promise.all([
-    created.orderId ? db.misOrder.findUnique({ where: { id: created.orderId }, select: { orderNumber: true } }) : null,
-    created.departmentId ? db.misDepartment.findUnique({ where: { id: created.departmentId }, select: { name: true } }) : null,
-  ]);
+  // V2 — the Store hears about it now. Best-effort (notifyRoles never throws), after the write.
   await notifyRoles(['STORE_GUY'], NOTIFICATION_TYPES.requestRaised, {
     requestId: created.id,
     requestNumber: created.requestNumber,
     lineCount: lines.length,
-    orderNumber: orderRow?.orderNumber ?? null,
-    departmentName: deptRow?.name ?? null,
+    orderNumber: order?.orderNumber ?? null,
+    departmentName: department?.name ?? null,
   });
   return created;
 }
@@ -183,6 +179,9 @@ export async function approveMaterialRequest(id: string, decisions: ApproveLineI
 export async function rejectMaterialRequest(id: string, reason: string) {
   const actor = await requirePermission('store.write');
   if (!reason?.trim()) throw new Error('A reason is required to reject a request.');
+  // Read what the notification needs BEFORE the write, so nothing after it can throw.
+  const req = await db.misMaterialRequest.findUnique({ where: { id }, select: { requestNumber: true, requestedById: true } });
+  if (!req) throw new Error('Request not found');
   const claimed = await db.misMaterialRequest.updateMany({
     where: { id, status: 'PENDING' },
     data: { status: 'REJECTED', decidedById: actor.userId, decidedAt: new Date(), decisionNote: reason.trim() },
@@ -196,8 +195,7 @@ export async function rejectMaterialRequest(id: string, reason: string) {
     before: { status: 'PENDING' },
     after: { status: 'REJECTED', reason: reason.trim() },
   });
-  const req = await db.misMaterialRequest.findUnique({ where: { id }, select: { requestNumber: true, requestedById: true } });
-  if (req?.requestedById) {
+  if (req.requestedById) {
     await notifyUser(req.requestedById, NOTIFICATION_TYPES.requestDecided, { requestId: id, requestNumber: req.requestNumber, status: 'REJECTED', reason: reason.trim() });
   }
 }

@@ -408,7 +408,7 @@ async function StoreScreen({
   header: { title: string; meta: string };
   ago: (d: Date) => string;
 }) {
-  const [store, grns, pendingRequests] = await Promise.all([getStoreDashboard(), listOpenGRNs(4), countPendingMaterialRequests().catch(() => 0)]);
+  const [store, grns, pendingRequests] = await Promise.all([getStoreDashboard(), listOpenGRNs(4), countPendingMaterialRequests()]);
 
   return (
     <StoreHome

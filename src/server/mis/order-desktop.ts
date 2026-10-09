@@ -70,7 +70,7 @@ export async function getOrderDesktopView(orderId: string, now: Date = new Date(
     getOrderSchedule(orderId),
     getFactoryShiftWindow(now),
     getFactoryTimezone(),
-    getOrderAllocations(orderId).catch(() => []),
+    getOrderAllocations(orderId),
   ]);
 
   const inputs = phases.map((p) => ({ id: p.id, sequence: p.sequence, status: p.status as PhaseStatus }));

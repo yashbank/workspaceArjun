@@ -20,4 +20,6 @@ data class EmployeeEntity(
     val shiftEndTime: String?,
     /** MIS V2 — the 256×256 WebP badge photo, cached at pull time so it shows offline. Null = no photo. */
     val photo: ByteArray? = null,
+    /** The `photoUrl` the bytes above came from (it carries a version), so an unchanged photo is not re-downloaded. */
+    val photoUrl: String? = null,
 )

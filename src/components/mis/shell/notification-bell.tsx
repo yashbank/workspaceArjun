@@ -1,45 +1,49 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 
+import { useToast } from '@/components/ui/toast';
 import { isMisNotifyRole, notificationView, type NotificationView } from '@/lib/mis/notification-copy';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
 
 type Item = NotificationView & { id: string };
+type Store = { enabled: boolean; items: Item[]; dismiss: (ids: string[]) => void };
+
+const Ctx = createContext<Store>({ enabled: false, items: [], dismiss: () => {} });
 
 /**
- * V2 — the live bell. Rendered only for OWNER / ADMIN / STORE_GUY; every other role gets
- * `null` and no subscription. New rows arrive over Supabase Realtime (the same channel pattern
- * as the Owner's security watcher) and also on mount / tab focus, so nothing is missed offline.
- * A new arrival also flashes a toast for a few seconds.
+ * V2 — the live bell's ONE state. Mounted once in the MIS shell; the two chromes (desktop top
+ * bar, phone header) each render a `NotificationBell` button from it, so one fetch, one Realtime
+ * channel, and a dismiss on either layout is a dismiss on both.
+ *
+ * Only OWNER / ADMIN / STORE_GUY are enabled; every other role gets no fetch and no channel.
+ * Rows arrive over Supabase Realtime (the Owner's security watcher's pattern) and on mount / tab
+ * focus; a live arrival also goes through the app's shared toast.
  */
-export function NotificationBell({ userId, role }: { userId: string; role: string | null }) {
+export function NotificationProvider({ userId, role, children }: { userId: string; role: string | null; children: ReactNode }) {
   const enabled = isMisNotifyRole(role);
+  const { toast } = useToast();
   const [items, setItems] = useState<Item[]>([]);
-  const [open, setOpen] = useState(false);
-  const [toast, setToast] = useState<Item | null>(null);
   const seen = useRef(new Set<string>());
-  const toastTimer = useRef<number | null>(null);
 
-  const add = useCallback((rows: { id: string; type: string; payload: unknown }[], flash: boolean) => {
-    const fresh = rows
-      .filter((r) => !seen.current.has(r.id))
-      .map((r) => {
-        const view = notificationView(r.type, r.payload);
-        return view ? { id: r.id, ...view } : null;
-      })
-      .filter((x): x is Item => x !== null);
-    if (fresh.length === 0) return;
-    for (const f of fresh) seen.current.add(f.id);
-    setItems((prev) => [...fresh, ...prev]);
-    if (flash) {
-      setToast(fresh[0]);
-      if (toastTimer.current) window.clearTimeout(toastTimer.current);
-      toastTimer.current = window.setTimeout(() => setToast(null), 6000);
-    }
-  }, []);
+  const add = useCallback(
+    (rows: { id: string; type: string; payload: unknown }[], live: boolean) => {
+      const fresh = rows
+        .filter((r) => !seen.current.has(r.id))
+        .map((r) => {
+          const view = notificationView(r.type, r.payload);
+          return view ? { id: r.id, ...view } : null;
+        })
+        .filter((x): x is Item => x !== null);
+      if (fresh.length === 0) return;
+      for (const f of fresh) seen.current.add(f.id);
+      setItems((prev) => [...fresh, ...prev]);
+      if (live) toast(fresh[0].tone === 'risk' ? 'error' : 'info', fresh[0].title);
+    },
+    [toast],
+  );
 
   const load = useCallback(async () => {
     try {
@@ -57,8 +61,8 @@ export function NotificationBell({ userId, role }: { userId: string; role: strin
     void load();
     const onVis = () => { if (document.visibilityState === 'visible') void load(); };
     document.addEventListener('visibilitychange', onVis);
-    // Live push is a bonus on top of the load-on-focus above: without a Supabase client (no
-    // public env in a test, or a misconfigured deploy) the bell still fills on every focus.
+    // Live push is a bonus on top of load-on-focus: with no public Supabase env (a test, a
+    // misconfigured deploy) the bell still fills on every focus.
     let supabase: ReturnType<typeof createSupabaseBrowserClient> | null = null;
     try { supabase = createSupabaseBrowserClient(); } catch { supabase = null; }
     const channel = supabase
@@ -74,19 +78,24 @@ export function NotificationBell({ userId, role }: { userId: string; role: strin
     };
   }, [enabled, userId, load, add]);
 
-  const dismiss = useCallback(async (ids: string[]) => {
+  const dismiss = useCallback((ids: string[]) => {
     setItems((prev) => prev.filter((i) => !ids.includes(i.id)));
-    setToast((t) => (t && ids.includes(t.id) ? null : t));
-    try {
-      await fetch('/api/mis/notifications/mark-read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) });
-    } catch {
-      /* the row stays unread server-side and comes back on the next load */
-    }
+    void fetch('/api/mis/notifications/mark-read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) }).catch(() => {
+      // The server row is still unread; forget the ids so the next load can show them again.
+      for (const id of ids) seen.current.delete(id);
+    });
   }, []);
 
-  if (!enabled) return null;
+  return <Ctx.Provider value={{ enabled, items, dismiss }}>{children}</Ctx.Provider>;
+}
 
-  const DOT = { info: 'bg-indigo-500', risk: 'bg-amber-500', ok: 'bg-green-500' } as const;
+const DOT = { info: 'bg-indigo-500', risk: 'bg-amber-500', ok: 'bg-green-500' } as const;
+
+/** The button + dropdown. Renders nothing for a role the bell is not for. */
+export function NotificationBell() {
+  const { enabled, items, dismiss } = useContext(Ctx);
+  const [open, setOpen] = useState(false);
+  if (!enabled) return null;
 
   return (
     <div className="relative">
@@ -112,7 +121,7 @@ export function NotificationBell({ userId, role }: { userId: string; role: strin
           <div className="flex items-center justify-between px-2 py-1">
             <span className="text-sm font-semibold text-slate-900">Notifications</span>
             {items.length > 0 && (
-              <button type="button" className="min-h-11 text-xs text-slate-500 underline" onClick={() => void dismiss(items.map((i) => i.id))}>
+              <button type="button" className="min-h-11 text-xs text-slate-500 underline" onClick={() => dismiss(items.map((i) => i.id))}>
                 Clear all
               </button>
             )}
@@ -124,27 +133,15 @@ export function NotificationBell({ userId, role }: { userId: string; role: strin
               {items.map((n) => (
                 <li key={n.id} className="flex gap-2 rounded-xl px-2 py-2 hover:bg-slate-50">
                   <span className={cn('mt-1.5 h-2 w-2 shrink-0 rounded-full', DOT[n.tone])} />
-                  <Link href={n.href} onClick={() => { setOpen(false); void dismiss([n.id]); }} className="min-w-0 flex-1">
+                  <Link href={n.href} onClick={() => { setOpen(false); dismiss([n.id]); }} className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-semibold text-slate-900">{n.title}</span>
                     <span className="block text-xs text-slate-500">{n.detail}</span>
                   </Link>
-                  <button type="button" aria-label="Dismiss" className="min-h-11 min-w-11 text-slate-400" onClick={() => void dismiss([n.id])}>×</button>
+                  <button type="button" aria-label="Dismiss" className="min-h-11 min-w-11 text-slate-400" onClick={() => dismiss([n.id])}>×</button>
                 </li>
               ))}
             </ul>
           )}
-        </div>
-      )}
-
-      {toast && (
-        <div role="status" className="fixed inset-x-4 top-16 z-50 mx-auto max-w-md rounded-2xl border border-slate-200 bg-white p-3 shadow-lg lg:inset-x-auto lg:right-6 lg:top-16">
-          <Link href={toast.href} onClick={() => void dismiss([toast.id])} className="flex gap-2">
-            <span className={cn('mt-1.5 h-2 w-2 shrink-0 rounded-full', DOT[toast.tone])} />
-            <span className="min-w-0">
-              <span className="block truncate text-sm font-semibold text-slate-900">{toast.title}</span>
-              <span className="block text-xs text-slate-500">{toast.detail}</span>
-            </span>
-          </Link>
         </div>
       )}
     </div>
