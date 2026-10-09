@@ -50,6 +50,8 @@ const REVIEWED_UNGATED: Record<string, Reviewed> = {
   'order-allocation.ts#allocateFromReceipt': { reason: 'internal tx helper; callers (grn.ts, store.ts) are gated' },
   'order-allocation.ts#allocationFigures': { reason: 'internal tx helper; callers are gated' },
   'order-allocation.ts#allocationShortfalls': { reason: 'internal tx helper; called inside commitIssue after its gate' },
+  // V2 Epic 4: a writer, not a reader — called by confirmGRN after its gate; best-effort like logAuditEvent.
+  'grn-alerts.ts#notifyGrnConfirmed': { reason: 'internal; called only by confirmGRN after its grn.write gate' },
   'kiosk-device.ts#pullForDevice': { reason: 'device-token door', alsoContains: 'authenticateDevice', door: true },
   'attendance-punch.ts#ingestDevicePunch': { reason: 'device-token door', alsoContains: 'authenticateDevice', door: true },
   'attendance-punch.ts#submitPunch': { reason: 'session door: user resolved first, permission checked in the transaction', alsoContains: "requirePermission('attendance.write')", door: true },

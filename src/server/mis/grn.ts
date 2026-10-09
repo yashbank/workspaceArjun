@@ -5,6 +5,7 @@ import { db } from '@/server/db';
 import { MisForbiddenError, requirePermission } from './auth';
 import { logAuditEvent } from './audit';
 import { allocateFromReceipt } from './order-allocation';
+import { notifyGrnConfirmed } from './grn-alerts';
 
 /** V2 Epic 1 — the delivery's paperwork. `supplierInvoiceAmount` is money: Owner-only to write and to read. */
 export type GrnHeaderInput = {
@@ -226,6 +227,7 @@ export async function confirmGRN(grnId: string) {
   });
 
   await logAuditEvent({ actorId: actor.userId, action: 'grn.confirm', entity: 'MisGrn', entityId: grnId });
+  await notifyGrnConfirmed(grnId); // V2 Epic 4 — the office hears about it now
   return db.misGrn.findUnique({ where: { id: grnId } });
 }
 
