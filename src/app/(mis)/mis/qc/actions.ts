@@ -1,5 +1,7 @@
 'use server';
 import { addQcCheck, recordAqlSample, type AqlDefectLine } from '@/server/mis/qc';
+import { recordChecklistCheck } from '@/server/mis/qc-template';
+import type { ChecklistStatus } from '@/lib/mis/qc-template';
 import { revalidatePath } from 'next/cache';
 
 export async function addQcCheckAction(data: {
@@ -27,4 +29,12 @@ export async function recordAqlSampleAction(data: {
   revalidatePath('/mis/qc');
   revalidatePath(`/mis/qc/${data.orderId}`);
   return result;
+}
+
+/** V2 Epic 5 — one tap on a checklist cell. */
+export async function recordChecklistCheckAction(input: { orderId: string; templateId: string; parameterName: string; slotTime: string; status: ChecklistStatus }) {
+  await recordChecklistCheck(input);
+  revalidatePath(`/mis/qc/${input.orderId}`);
+  revalidatePath('/mis/qc');
+  revalidatePath('/mis/qc/grid');
 }

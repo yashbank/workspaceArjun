@@ -25,6 +25,9 @@ export async function addQcCheck(data: {
   defectType?: string;
   defectQty?: number;
   notes?: string;
+  /** V2 Epic 5 — set when the check is a checklist tap (qc-template.ts). */
+  templateId?: string;
+  slotTime?: string;
 }) {
   const actor = await requirePermission('qc.write');
   const rec = await db.misQcCheck.create({

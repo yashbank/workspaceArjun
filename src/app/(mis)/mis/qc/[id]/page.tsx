@@ -4,6 +4,7 @@ import { getMisRole } from '@/server/mis/roles';
 import { can } from '@/lib/mis/permissions';
 import { getQcForOrder, getQcSummary } from '@/server/mis/qc';
 import { listDefectTypes } from '@/server/mis/defect-type';
+import { listQcTemplates } from '@/server/mis/qc-template';
 import { db } from '@/server/db';
 import { notFound } from 'next/navigation';
 import { QcDetailScreen } from '@/components/mis/qc/qc-detail-screen';
@@ -21,10 +22,11 @@ export default async function QcDetailPage({ params }: { params: Promise<{ id: s
   });
   if (!order) notFound();
 
-  const [checks, summary, defectTypes] = await Promise.all([
+  const [checks, summary, defectTypes, templates] = await Promise.all([
     getQcForOrder(id),
     getQcSummary(id),
     listDefectTypes(),
+    listQcTemplates().catch(() => []),
   ]);
 
   return (
@@ -34,6 +36,7 @@ export default async function QcDetailPage({ params }: { params: Promise<{ id: s
       summary={summary}
       canWrite={canWrite}
       defectTypes={defectTypes.map((dt) => ({ id: dt.id, code: dt.code, name: dt.name, severity: dt.severity }))}
+      templates={templates}
     />
   );
 }

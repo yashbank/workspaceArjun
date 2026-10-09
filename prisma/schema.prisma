@@ -1000,8 +1000,14 @@ model MisQcCheck {
   acknowledgedAt      DateTime? @map("acknowledged_at")
   acknowledgedById    String?   @map("acknowledged_by_id") @db.Uuid
   acknowledgementNote String?   @map("acknowledgement_note")
+  /// V2 Epic 5 — a check taken from a checklist template, in a named hourly slot ("09:15").
+  /// The paper form's four buttons map onto `result`/`defectType` (lib/mis/qc-template.ts), so
+  /// the hourly grid and the CoA need no new result value.
+  templateId    String?      @map("template_id") @db.Uuid
+  slotTime      String?      @map("slot_time")
   order         MisOrder     @relation(fields: [orderId], references: [id])
   bomStage      MisBomStage? @relation(fields: [bomStageId], references: [id], onDelete: SetNull)
+  template      MisQcTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
   @@map("mis_qc_checks")
 }
 
@@ -1717,4 +1723,24 @@ model MisSupplierInvoice {
   supplier      MisSupplier?     @relation(fields: [supplierId], references: [id])
   @@unique([poId, invoiceNo])
   @@map("mis_supplier_invoices")
+}
+
+/// V2 Epic 5 — a paper QC checklist, digitised: one row per process form (Printing 6-Colours,
+/// Lamination, Lamif Flute, Die Cutting, …), its parameters down the side and hourly slots across
+/// the top (`slotStart` then on the hour through `slotEnd`). Owner/Admin edit; QC taps.
+model MisQcTemplate {
+  id          String       @id @default(uuid()) @db.Uuid
+  name        String       @unique
+  processName String?      @map("process_name")
+  slotStart   String       @default("09:15") @map("slot_start")
+  slotEnd     String       @default("18:00") @map("slot_end")
+  /// The checklist rows, in order. A JSON array of strings.
+  parameters  Json         @db.JsonB
+  isActive    Boolean      @default(true) @map("is_active")
+  sortOrder   Int          @default(0) @map("sort_order")
+  deletedAt   DateTime?    @map("deleted_at")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  checks      MisQcCheck[]
+  @@map("mis_qc_templates")
 }

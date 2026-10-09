@@ -10,6 +10,8 @@ import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { AqlBreakdown } from '@/components/mis/qc/aql-breakdown';
 import { addQcCheckAction, recordAqlSampleAction } from '@/app/(mis)/mis/qc/actions';
 import type { AqlResult } from '@/lib/mis/aql';
+import type { QcTemplateRow } from '@/server/mis/qc-template';
+import { QcChecklist } from '@/components/mis/qc/qc-checklist';
 
 type Check = {
   id: string;
@@ -21,6 +23,8 @@ type Check = {
   notes?: string | null;
   stage?: { stageName: string } | null;
   checkBy?: { name: string } | null;
+  templateId?: string | null;
+  slotTime?: string | null;
 };
 
 type Summary = { total: number; pass: number; fail: number; totalDefectQty: number };
@@ -34,6 +38,8 @@ interface Props {
   summary: Summary;
   canWrite: boolean;
   defectTypes: DefectTypeOption[];
+  /** V2 Epic 5 — the paper forms; empty until the templates migration is applied. */
+  templates?: QcTemplateRow[];
 }
 
 const resultOptions: SelectOption[] = [
@@ -61,7 +67,7 @@ const defectTypeOptions = (types: DefectTypeOption[]): SelectOption[] =>
 // defect that is not yet classified must still be recordable, as free text (F-19/D14).
 const OTHER_DEFECT = '';
 
-export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes }: Props) {
+export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes, templates = [] }: Props) {
   const [open, setOpen] = useState(false);
   const [result, setResult] = useState<'PASS' | 'FAIL' | 'NA'>('PASS');
   const [parameterName, setParameterName] = useState('');
@@ -186,6 +192,15 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes }
           <div className="bg-red-400 h-full" style={{ width: `${summary.total > 0 ? (summary.fail / summary.total) * 100 : 0}%` }} />
         </div>
       </div>
+
+      {templates.length > 0 && (
+        <QcChecklist
+          orderId={order.id}
+          templates={templates}
+          canWrite={canWrite}
+          checks={checks.map((c) => ({ parameterName: c.parameterName ?? null, slotTime: c.slotTime ?? null, result: c.result, defectType: c.defectType ?? null, checkTime: new Date(c.checkTime), templateId: c.templateId ?? null }))}
+        />
+      )}
 
       {/* Checks table */}
       <div className="bg-white rounded-xl border border-gray-200">
