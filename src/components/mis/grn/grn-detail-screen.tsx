@@ -4,10 +4,10 @@ import Link from 'next/link';
 import { Button } from '@/components/mis/kit/button';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { Card, CardRow } from '@/components/mis/kit/card';
-import { NumberInput } from '@/components/mis/kit/input';
+import { DateInput, NumberInput } from '@/components/mis/kit/input';
 import { Select } from '@/components/mis/kit/select';
 import { Input } from '@/components/mis/kit/input';
-import { addGrnItemAction, confirmGrnAction } from '@/app/(mis)/mis/grn/actions';
+import { addGrnItemAction, confirmGrnAction, updateGrnHeaderAction } from '@/app/(mis)/mis/grn/actions';
 
 type GrnItem = {
   id: string;
@@ -15,6 +15,9 @@ type GrnItem = {
   type: string;
   forOrderRef: string | null;
   batchNo: string | null;
+  dcQuantity?: number | null;
+  damageQuantity?: number;
+  shortQuantity?: number | null;
   poItem: { id: string; description: string; quantity: { toNumber(): number } | number; item: { id: string; name: string } | null };
 };
 type PoItem = {
@@ -28,19 +31,58 @@ type Grn = {
   grnNumber: string;
   status: string;
   notes: string | null;
+  supplierInvoiceNo?: string | null;
+  invoiceDate?: Date | string | null;
+  /** Money: present only for the Owner (the server strips it for everyone else). */
+  supplierInvoiceAmount?: number | null;
+  lrNumber?: string | null;
+  vehicleNumber?: string | null;
+  transporterName?: string | null;
+  dcNumber?: string | null;
   po: { id: string; poNumber: string; supplier: { id: string; name: string } | null; items: PoItem[] } | null;
   items: GrnItem[];
 };
-type Props = { grn: Grn; canWrite: boolean };
+type Props = { grn: Grn; canWrite: boolean; canSeeMoney?: boolean };
+
+const isoDate = (d: Date | string | null | undefined) => (d ? new Date(d).toISOString().slice(0, 10) : '');
 
 function toNum(v: { toNumber(): number } | number): number {
   return typeof v === 'number' ? v : v.toNumber();
 }
 
-export function GrnDetailScreen({ grn, canWrite }: Props) {
+export function GrnDetailScreen({ grn, canWrite, canSeeMoney = false }: Props) {
   const [isPending, startTransition] = useTransition();
   const [selectedPoItemId, setSelectedPoItemId] = useState('');
   const [qty, setQty] = useState('');
+  const [dcQty, setDcQty] = useState('');
+  const [damageQty, setDamageQty] = useState('');
+  const [itemError, setItemError] = useState<string | null>(null);
+  const [header, setHeader] = useState({
+    supplierInvoiceNo: grn.supplierInvoiceNo ?? '',
+    invoiceDate: isoDate(grn.invoiceDate),
+    supplierInvoiceAmount: grn.supplierInvoiceAmount != null ? String(grn.supplierInvoiceAmount) : '',
+    lrNumber: grn.lrNumber ?? '',
+    vehicleNumber: grn.vehicleNumber ?? '',
+    transporterName: grn.transporterName ?? '',
+    dcNumber: grn.dcNumber ?? '',
+  });
+  const [headerSaved, setHeaderSaved] = useState(false);
+  const setH = (k: keyof typeof header) => (e: React.ChangeEvent<HTMLInputElement>) => { setHeaderSaved(false); setHeader({ ...header, [k]: e.target.value }); };
+
+  const handleSaveHeader = () => {
+    startTransition(async () => {
+      await updateGrnHeaderAction(grn.id, {
+        supplierInvoiceNo: header.supplierInvoiceNo || null,
+        invoiceDate: header.invoiceDate || null,
+        ...(canSeeMoney ? { supplierInvoiceAmount: header.supplierInvoiceAmount ? parseFloat(header.supplierInvoiceAmount) : null } : {}),
+        lrNumber: header.lrNumber || null,
+        vehicleNumber: header.vehicleNumber || null,
+        transporterName: header.transporterName || null,
+        dcNumber: header.dcNumber || null,
+      });
+      setHeaderSaved(true);
+    });
+  };
   const [type, setType] = useState('GENERAL');
   const [orderRef, setOrderRef] = useState('');
   const [batchNo, setBatchNo] = useState('');
@@ -51,15 +93,22 @@ export function GrnDetailScreen({ grn, canWrite }: Props) {
 
   const handleAddItem = () => {
     if (!selectedPoItemId || !qty) return;
+    setItemError(null);
     startTransition(async () => {
-      await addGrnItemAction(grn.id, {
-        poItemId: selectedPoItemId,
-        receivedQty: parseFloat(qty),
-        type: type as 'GENERAL' | 'FOR_ORDER',
-        forOrderRef: orderRef || null,
-        batchNo: batchNo || null,
-      });
-      setSelectedPoItemId(''); setQty(''); setOrderRef(''); setBatchNo('');
+      try {
+        await addGrnItemAction(grn.id, {
+          poItemId: selectedPoItemId,
+          receivedQty: parseFloat(qty),
+          type: type as 'GENERAL' | 'FOR_ORDER',
+          forOrderRef: orderRef || null,
+          batchNo: batchNo || null,
+          dcQuantity: dcQty ? parseFloat(dcQty) : null,
+          damageQuantity: damageQty ? parseFloat(damageQty) : 0,
+        });
+        setSelectedPoItemId(''); setQty(''); setOrderRef(''); setBatchNo(''); setDcQty(''); setDamageQty('');
+      } catch (e) {
+        setItemError(e instanceof Error ? e.message : 'That did not save.');
+      }
     });
   };
 
@@ -88,7 +137,36 @@ export function GrnDetailScreen({ grn, canWrite }: Props) {
         {grn.po && <CardRow label="PO #" value={<Link href={`/mis/po/${grn.po.id}`} className="text-blue-600 hover:underline">{grn.po.poNumber}</Link>} />}
         {grn.po?.supplier && <CardRow label="Supplier" value={grn.po.supplier.name} />}
         {grn.notes && <CardRow label="Notes" value={grn.notes} />}
+        {!isDraft && (
+          <>
+            {grn.supplierInvoiceNo && <CardRow label="Supplier Invoice" value={`${grn.supplierInvoiceNo}${grn.invoiceDate ? ` · ${new Date(grn.invoiceDate).toLocaleDateString('en-IN')}` : ''}`} />}
+            {canSeeMoney && grn.supplierInvoiceAmount != null && <CardRow label="Invoice Amount" value={`₹${grn.supplierInvoiceAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`} />}
+            {grn.dcNumber && <CardRow label="DC No" value={grn.dcNumber} />}
+            {grn.lrNumber && <CardRow label="LR No" value={grn.lrNumber} />}
+            {grn.vehicleNumber && <CardRow label="Vehicle" value={grn.vehicleNumber} />}
+            {grn.transporterName && <CardRow label="Transporter" value={grn.transporterName} />}
+          </>
+        )}
       </Card>
+
+      {isDraft && canWrite && (
+        <div className="flex flex-col gap-3 rounded-lg border border-slate-200 p-4">
+          <h2 className="font-semibold text-slate-800">Delivery paperwork</h2>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Input label="Supplier Invoice No" value={header.supplierInvoiceNo} onChange={setH('supplierInvoiceNo')} />
+            <DateInput label="Invoice Date" value={header.invoiceDate} onChange={setH('invoiceDate')} />
+            {canSeeMoney && <NumberInput label="Supplier Invoice Amount (₹)" value={header.supplierInvoiceAmount} onChange={setH('supplierInvoiceAmount')} />}
+            <Input label="DC Number" value={header.dcNumber} onChange={setH('dcNumber')} />
+            <Input label="LR Number" value={header.lrNumber} onChange={setH('lrNumber')} />
+            <Input label="Vehicle Number" value={header.vehicleNumber} onChange={setH('vehicleNumber')} />
+            <Input label="Transporter" value={header.transporterName} onChange={setH('transporterName')} />
+          </div>
+          <div className="flex items-center gap-3">
+            <Button variant="secondary" onClick={handleSaveHeader} disabled={isPending}>{isPending ? 'Saving…' : 'Save paperwork'}</Button>
+            {headerSaved && <span className="text-sm text-green-700">Saved</span>}
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-col gap-3">
         <h2 className="font-semibold text-slate-800">Items Received</h2>
@@ -105,6 +183,9 @@ export function GrnDetailScreen({ grn, canWrite }: Props) {
             <div className="flex gap-6 text-sm text-slate-600">
               <span>Received: <strong>{toNum(item.receivedQty)}</strong></span>
               <span>PO Qty: {toNum(item.poItem.quantity)}</span>
+              {item.dcQuantity != null && <span>DC: {item.dcQuantity}</span>}
+              {!!item.damageQuantity && <span className="text-amber-700">Damaged: {item.damageQuantity}</span>}
+              {item.shortQuantity != null && item.shortQuantity > 0 && <span className="text-red-700">Short: {item.shortQuantity}</span>}
               {item.batchNo && <span>Batch: {item.batchNo}</span>}
               {item.forOrderRef && <span>Order Ref: {item.forOrderRef}</span>}
             </div>
@@ -121,7 +202,13 @@ export function GrnDetailScreen({ grn, canWrite }: Props) {
             onChange={setSelectedPoItemId}
             options={[{ value: '', label: '— Select item —' }, ...availablePoItems.map(i => ({ value: i.id, label: `${i.description} (Ordered: ${toNum(i.quantity)})` }))]}
           />
-          <NumberInput label="Received Qty" value={qty} onChange={e => setQty(e.target.value)} />
+          <NumberInput label="Received Qty (good)" value={qty} onChange={e => setQty(e.target.value)} />
+          <div className="grid grid-cols-2 gap-3">
+            <NumberInput label="DC Qty (challan)" value={dcQty} onChange={e => setDcQty(e.target.value)} />
+            <NumberInput label="Damaged Qty" value={damageQty} onChange={e => setDamageQty(e.target.value)} />
+          </div>
+          {dcQty && <p className="text-xs text-slate-500">Short = {dcQty} − ({qty || 0} + {damageQty || 0}) = <strong>{Math.round(((parseFloat(dcQty) || 0) - (parseFloat(qty) || 0) - (parseFloat(damageQty) || 0)) * 100) / 100}</strong></p>}
+          {itemError && <p className="text-sm text-red-600">{itemError}</p>}
           <Select
             label="Type"
             value={type}

@@ -1,6 +1,6 @@
 'use server';
 import { revalidatePath } from 'next/cache';
-import { createGRN, addGRNItem, updateGRNItem, confirmGRN } from '@/server/mis/grn';
+import { createGRN, addGRNItem, updateGRNItem, updateGRNHeader, confirmGRN, type GrnHeaderInput, type GrnItemInput } from '@/server/mis/grn';
 
 export async function createGrnAction(poId: string, notes?: string | null) {
   const grn = await createGRN({ poId, notes });
@@ -8,12 +8,17 @@ export async function createGrnAction(poId: string, notes?: string | null) {
   return grn.id;
 }
 
-export async function addGrnItemAction(grnId: string, input: { poItemId: string; receivedQty: number; type?: 'GENERAL' | 'FOR_ORDER'; forOrderRef?: string | null; batchNo?: string | null; notes?: string | null }) {
+export async function updateGrnHeaderAction(grnId: string, patch: GrnHeaderInput) {
+  await updateGRNHeader(grnId, patch);
+  revalidatePath(`/mis/grn/${grnId}`);
+}
+
+export async function addGrnItemAction(grnId: string, input: GrnItemInput) {
   await addGRNItem(grnId, input);
   revalidatePath(`/mis/grn/${grnId}`);
 }
 
-export async function updateGrnItemAction(id: string, grnId: string, patch: { receivedQty?: number; type?: 'GENERAL' | 'FOR_ORDER'; forOrderRef?: string | null; batchNo?: string | null }) {
+export async function updateGrnItemAction(id: string, grnId: string, patch: Partial<GrnItemInput>) {
   await updateGRNItem(id, patch);
   revalidatePath(`/mis/grn/${grnId}`);
 }

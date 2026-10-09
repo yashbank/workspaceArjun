@@ -603,6 +603,7 @@ model MisSupplier {
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
   purchaseOrders   MisPurchaseOrder[]
+  invoices         MisSupplierInvoice[]
   @@map("mis_suppliers")
 }
 
@@ -682,6 +683,7 @@ model MisPurchaseOrder {
   supplier     MisSupplier? @relation(fields: [supplierId], references: [id])
   items        MisPoItem[]
   grns         MisGrn[]
+  supplierInvoices MisSupplierInvoice[]
   @@index([purpose])
   @@map("mis_purchase_orders")
 }
@@ -726,10 +728,20 @@ model MisGrn {
   receivedAt   DateTime?        @map("received_at")
   receivedById String?          @map("received_by_id") @db.Uuid
   notes        String?
+  /// V2 Epic 1 (Focus ERP parity) — the delivery's paperwork. `supplierInvoiceAmount` is money:
+  /// Owner-only, stripped for every other reader (`grn.ts`), never audited.
+  supplierInvoiceNo     String?   @map("supplier_invoice_no")
+  invoiceDate           DateTime? @map("invoice_date") @db.Date
+  supplierInvoiceAmount Decimal?  @map("supplier_invoice_amount") @db.Decimal(14, 2)
+  lrNumber              String?   @map("lr_number")
+  vehicleNumber         String?   @map("vehicle_number")
+  transporterName       String?   @map("transporter_name")
+  dcNumber              String?   @map("dc_number")
   createdAt    DateTime         @default(now()) @map("created_at")
   updatedAt    DateTime         @updatedAt @map("updated_at")
   po           MisPurchaseOrder @relation(fields: [poId], references: [id])
   items        MisGrnItem[]
+  supplierInvoices MisSupplierInvoice[]
   @@map("mis_grns")
 }
 
@@ -742,6 +754,12 @@ model MisGrnItem {
   forOrderRef String?        @map("for_order_ref")
   batchNo     String?        @map("batch_no")
   notes       String?
+  /// V2 Epic 1 — what the delivery challan said vs what arrived. short = dc − (received + damage),
+  /// computed on the server (`lib/mis/grn-match.ts`), null when no DC qty was entered. Only
+  /// `receivedQty` (the good quantity) ever reaches the ledger.
+  dcQuantity     Decimal?      @map("dc_quantity") @db.Decimal(12,2)
+  damageQuantity Decimal       @default(0) @map("damage_quantity") @db.Decimal(12,2)
+  shortQuantity  Decimal?      @map("short_quantity") @db.Decimal(12,2)
   grn         MisGrn         @relation(fields: [grnId], references: [id])
   poItem      MisPoItem      @relation(fields: [poItemId], references: [id])
   @@map("mis_grn_items")
@@ -1678,4 +1696,25 @@ model MisOrderStockAllocation {
   item         MisItem  @relation(fields: [itemId], references: [id])
   @@index([orderId, itemId])
   @@map("mis_order_stock_allocations")
+}
+
+/// V2 Epic 1 — the third leg of the 3-way match (PO ↔ GRN ↔ invoice). Written when a GRN that
+/// names a supplier invoice is confirmed (one row per PO + invoice number). `invoiceAmount` is
+/// money: Owner-only.
+model MisSupplierInvoice {
+  id            String           @id @default(uuid()) @db.Uuid
+  poId          String           @map("po_id") @db.Uuid
+  grnId         String?          @map("grn_id") @db.Uuid
+  supplierId    String?          @map("supplier_id") @db.Uuid
+  invoiceNo     String           @map("invoice_no")
+  invoiceDate   DateTime?        @map("invoice_date") @db.Date
+  invoiceAmount Decimal?         @map("invoice_amount") @db.Decimal(14, 2)
+  notes         String?
+  createdAt     DateTime         @default(now()) @map("created_at")
+  updatedAt     DateTime         @updatedAt @map("updated_at")
+  po            MisPurchaseOrder @relation(fields: [poId], references: [id])
+  grn           MisGrn?          @relation(fields: [grnId], references: [id])
+  supplier      MisSupplier?     @relation(fields: [supplierId], references: [id])
+  @@unique([poId, invoiceNo])
+  @@map("mis_supplier_invoices")
 }

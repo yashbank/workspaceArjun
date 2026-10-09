@@ -12,6 +12,6 @@ export default async function GrnDetailPage({ params }: { params: Promise<{ id: 
   await requireMisAccess();
   const grn = await getGRN(id);
   if (!grn) notFound();
-  const canWrite = await checkPermission('grn.write');
-  return <GrnDetailScreen grn={toPlain(grn)} canWrite={canWrite} />;
+  const [canWrite, canSeeMoney] = await Promise.all([checkPermission('grn.write'), checkPermission('wages.read')]);
+  return <GrnDetailScreen grn={toPlain(grn)} canWrite={canWrite} canSeeMoney={canSeeMoney} />;
 }

@@ -10,6 +10,7 @@ import { StatusBadge, type BadgeTone } from '@/components/mis/kit/status-badge';
 import { Card, CardRow } from '@/components/mis/kit/card';
 import { addPoItemAction, removePoItemAction, submitPoAction, approvePoAction, cancelPoAction } from '@/app/(mis)/mis/po/actions';
 import { poPurpose, poPurposeLabel } from '@/lib/mis/po-purpose';
+import type { PoReconciliation } from '@/server/mis/supplier-invoice';
 
 type CatalogItem = { id: string; name: string; unit: string };
 type FormattedPoItem = {
@@ -22,7 +23,7 @@ type Po = {
   supplier: { id: string; name: string; phone: string | null } | null;
   grns: { id: string; grnNumber: string; status: string; createdAt: Date }[];
 };
-type Props = { po: Po; formattedItems: FormattedPoItem[]; total: string | null; catalogItems: CatalogItem[]; canWrite: boolean; canApprove: boolean };
+type Props = { po: Po; formattedItems: FormattedPoItem[]; total: string | null; catalogItems: CatalogItem[]; canWrite: boolean; canApprove: boolean; /** V2 Epic 1 — PO ↔ GRN ↔ invoice; null until a GRN exists. */ reconciliation?: PoReconciliation | null };
 
 function statusTone(status: string): BadgeTone {
   switch (status) {
@@ -36,7 +37,7 @@ function statusTone(status: string): BadgeTone {
   }
 }
 
-export function PoDetailScreen({ po, formattedItems, total, catalogItems, canWrite, canApprove }: Props) {
+export function PoDetailScreen({ po, formattedItems, total, catalogItems, canWrite, canApprove, reconciliation = null }: Props) {
   const [addOpen, setAddOpen] = useState(false);
   const [itemId, setItemId] = useState('');
   const [description, setDescription] = useState('');
@@ -134,6 +135,54 @@ export function PoDetailScreen({ po, formattedItems, total, catalogItems, canWri
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {reconciliation && (
+        <div className="flex flex-col gap-3">
+          <h2 className="font-semibold text-slate-800">3-way match · PO ↔ GRN ↔ Invoice</h2>
+          <div className="overflow-x-auto rounded-lg border border-slate-200">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                <tr><th className="px-3 py-2">Line</th><th className="px-3 py-2 text-right">Ordered</th><th className="px-3 py-2 text-right">Received</th><th className="px-3 py-2 text-right">Damaged</th><th className="px-3 py-2 text-right">Short</th><th className="px-3 py-2 text-right">Outstanding</th></tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {reconciliation.lines.map((l) => (
+                  <tr key={l.poItemId}>
+                    <td className="px-3 py-2">{l.description}</td>
+                    <td className="px-3 py-2 text-right">{l.ordered}</td>
+                    <td className="px-3 py-2 text-right">{l.received}</td>
+                    <td className={`px-3 py-2 text-right ${l.damaged > 0 ? 'text-amber-700' : ''}`}>{l.damaged}</td>
+                    <td className={`px-3 py-2 text-right ${l.short > 0 ? 'text-red-700' : ''}`}>{l.short}</td>
+                    <td className={`px-3 py-2 text-right ${l.outstanding > 0 ? 'text-amber-700' : 'text-slate-500'}`}>{l.outstanding}</td>
+                  </tr>
+                ))}
+                <tr className="bg-slate-50 font-semibold">
+                  <td className="px-3 py-2">Total</td>
+                  <td className="px-3 py-2 text-right">{reconciliation.totals.ordered}</td>
+                  <td className="px-3 py-2 text-right">{reconciliation.totals.received}</td>
+                  <td className="px-3 py-2 text-right">{reconciliation.totals.damaged}</td>
+                  <td className="px-3 py-2 text-right">{reconciliation.totals.short}</td>
+                  <td className="px-3 py-2 text-right">{reconciliation.totals.outstanding}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div className="text-sm text-slate-600">
+            {reconciliation.invoices.length === 0
+              ? 'No supplier invoice recorded yet — enter it on the GRN before confirming.'
+              : <>Invoices: {reconciliation.invoices.map((i) => `${i.invoiceNo}${i.grnNumber ? ` (${i.grnNumber})` : ''}`).join(', ')}</>}
+          </div>
+          {reconciliation.money && (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {([['PO value', reconciliation.money.poValue], ['Received value', reconciliation.money.receivedValue], ['Invoiced', reconciliation.money.invoiced], ['Variance', reconciliation.money.variance]] as const).map(([label, value]) => (
+                <div key={label} className={`rounded-lg border p-3 ${label === 'Variance' && reconciliation.money!.varianceRaw !== 0 ? 'border-amber-300 bg-amber-50' : 'border-slate-200'}`}>
+                  <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
+                  <div className="mt-1 font-semibold text-slate-900">{value}</div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

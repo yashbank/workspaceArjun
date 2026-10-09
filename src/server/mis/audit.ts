@@ -11,6 +11,9 @@ const REDACTED_KEYS = new Set<string>([
   // Material prices (D24, F-06): a BOM/PO line's rate and a stock item's price. The audit page is
   // readable by Admin (`settings.read`), so a price written here is a price sent to them.
   ...MONEY_FIELDS,
+  // V2 Epic 1: a supplier invoice's amount (grn.ts, supplier-invoice.ts).
+  'supplierInvoiceAmount',
+  'invoiceAmount',
   'wage',
   'wageAmount',
   'dailyWage',
