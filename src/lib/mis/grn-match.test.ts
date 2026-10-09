@@ -39,4 +39,13 @@ describe('threeWayMatch', () => {
     const stripped = threeWayMatch(po.map(({ ratePerUnit: _r, ...p }) => p), grn, []);
     expect(stripped.money).toBeUndefined();
   });
+  it('an invoice recorded without an amount never reads as ₹0 — money is withheld and the gap is counted', () => {
+    const m = threeWayMatch(po, grn, [{ invoiceNo: 'INV-1', invoiceAmount: null }]);
+    expect(m.money).toBeUndefined();
+    expect(m.unpricedInvoices).toBe(1);
+  });
+  it('an over-receipt shows outstanding 0, never negative', () => {
+    const m = threeWayMatch(po, [{ poItemId: 'p2', receivedQty: 7, damageQuantity: 0, shortQuantity: 0, confirmed: true }], []);
+    expect(m.lines[1].outstanding).toBe(0);
+  });
 });

@@ -56,7 +56,7 @@ describe('setEmployeePhoto', () => {
     const out = await setEmployeePhoto(E1, jpeg, 'image/jpeg');
     expect(resize).toHaveBeenCalledWith(PHOTO_SIZE, PHOTO_SIZE, expect.objectContaining({ fit: 'cover' }));
     expect(state.puts).toEqual([{ key: `mis/employees/${E1}/photo.webp`, size: 10, contentType: 'image/webp' }]);
-    expect(out.photoUrl).toBe(`/api/mis/employees/${E1}/photo`);
+    expect(out.photoUrl).toMatch(new RegExp(`^/api/mis/employees/${E1}/photo\\?v=\\d+$`));
     expect(state.updates).toEqual([{ photoUrl: out.photoUrl }]);
   });
   it('refuses a non-image, an empty file, an oversize file, and a reader without employees.write', async () => {

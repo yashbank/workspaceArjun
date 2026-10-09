@@ -1,4 +1,6 @@
 import { shortQuantity, withoutInvoiceMoney } from '@/lib/mis/grn-match';
+import { orderNumberFromRef } from '@/lib/mis/order-allocation';
+import type { MisRoleName } from '@/lib/mis/roles';
 import { can } from '@/lib/mis/permissions';
 import { withoutMoneyFields } from '@/lib/mis/money-fields';
 import { db } from '@/server/db';
@@ -34,15 +36,23 @@ export type GrnItemInput = {
 const text = (v: string | null | undefined) => v?.trim() || null;
 
 /** The header columns from an input. Throws for a non-Owner who sends an amount: money is not theirs to write. */
-function headerData(role: string, input: GrnHeaderInput, mode: 'create' | 'patch') {
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+function parseInvoiceDate(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (!ISO_DATE.test(value) || Number.isNaN(date.getTime())) throw new Error('Invoice date must be a valid date (YYYY-MM-DD).');
+  return date;
+}
+
+function headerData(role: MisRoleName, input: GrnHeaderInput, mode: 'create' | 'patch') {
   const has = (k: keyof GrnHeaderInput) => mode === 'create' || input[k] !== undefined;
-  if (input.supplierInvoiceAmount !== undefined && input.supplierInvoiceAmount !== null && !can(role as never, 'wages.read')) {
+  if (input.supplierInvoiceAmount !== undefined && input.supplierInvoiceAmount !== null && !can(role, 'wages.read')) {
     throw new MisForbiddenError('wages.read', 'supplier invoice amount');
   }
   return {
     ...(has('supplierInvoiceNo') ? { supplierInvoiceNo: text(input.supplierInvoiceNo) } : {}),
-    ...(has('invoiceDate') ? { invoiceDate: input.invoiceDate ? new Date(input.invoiceDate) : null } : {}),
-    ...(has('supplierInvoiceAmount') && can(role as never, 'wages.read') ? { supplierInvoiceAmount: input.supplierInvoiceAmount ?? null } : {}),
+    ...(has('invoiceDate') ? { invoiceDate: parseInvoiceDate(input.invoiceDate) } : {}),
+    ...(has('supplierInvoiceAmount') && can(role, 'wages.read') ? { supplierInvoiceAmount: input.supplierInvoiceAmount ?? null } : {}),
     ...(has('lrNumber') ? { lrNumber: text(input.lrNumber) } : {}),
     ...(has('vehicleNumber') ? { vehicleNumber: text(input.vehicleNumber) } : {}),
     ...(has('transporterName') ? { transporterName: text(input.transporterName) } : {}),
@@ -57,8 +67,8 @@ function auditSafeHeader<T extends { supplierInvoiceAmount?: unknown }>(row: T):
 }
 
 /** A GRN row (or list) as `role` may read it: invoice money and PO line rates only for `wages.read`. */
-function forReader<T>(role: string, value: T): T {
-  return can(role as never, 'wages.read') ? value : (withoutInvoiceMoney(withoutMoneyFields(value)) as T);
+function forReader<T>(role: MisRoleName, value: T): T {
+  return can(role, 'wages.read') ? value : (withoutInvoiceMoney(withoutMoneyFields(value)) as T);
 }
 
 export function nextGrnNumber(): string {
@@ -181,11 +191,15 @@ export async function confirmGRN(grnId: string) {
 
     // V2 Epic 1: the invoice named on the header becomes the third leg of the 3-way match.
     if (grn.supplierInvoiceNo) {
-      const invoice = { grnId, supplierId: grn.po.supplierId, invoiceDate: grn.invoiceDate, invoiceAmount: grn.supplierInvoiceAmount };
+      // A later GRN naming the same invoice without a date/amount must not blank the Owner's figures.
+      const known = {
+        ...(grn.invoiceDate ? { invoiceDate: grn.invoiceDate } : {}),
+        ...(grn.supplierInvoiceAmount !== null ? { invoiceAmount: grn.supplierInvoiceAmount } : {}),
+      };
       await tx.misSupplierInvoice.upsert({
         where: { poId_invoiceNo: { poId: grn.poId, invoiceNo: grn.supplierInvoiceNo } },
-        create: { poId: grn.poId, invoiceNo: grn.supplierInvoiceNo, ...invoice },
-        update: invoice,
+        create: { poId: grn.poId, invoiceNo: grn.supplierInvoiceNo, grnId, supplierId: grn.po.supplierId, ...known },
+        update: { grnId, supplierId: grn.po.supplierId, ...known },
       });
     }
 
@@ -215,7 +229,7 @@ export async function confirmGRN(grnId: string) {
 
       // V2 Epic 2: a PO raised against an order (BOM ref = order number) earmarks every line, exactly as
       // the store cart does; a FOR_ORDER line may name a different order with its own ref.
-      const ref = grnItem.type === 'FOR_ORDER' ? (grnItem.forOrderRef ?? grn.po.bomRef) : grn.po.bomRef;
+      const ref = grnItem.type === 'FOR_ORDER' && orderNumberFromRef(grnItem.forOrderRef) ? grnItem.forOrderRef : grn.po.bomRef;
       await allocateFromReceipt(tx, { ref, itemId, qty: grnItem.receivedQty.toNumber(), sourceId: grnId });
 
       // Update received quantity on PO item

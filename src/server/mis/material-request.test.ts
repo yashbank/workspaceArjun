@@ -26,6 +26,8 @@ vi.mock('@/server/db', () => ({
       },
     },
     misMaterialRequestLine: { update: async (args: Row) => { state.lineUpdates.push(args); return args; } },
+    misOrder: { findUnique: async ({ where }: { where: { id: string } }) => (where.id === 'o1' ? { id: 'o1' } : null) },
+    misDepartment: { findUnique: async ({ where }: { where: { id: string } }) => (where.id === 'd1' ? { id: 'd1' } : null) },
   },
 }));
 const commitIssue = vi.fn();
@@ -66,6 +68,10 @@ describe('create', () => {
   it('equipment cannot be booked to an order, but can be requested as overhead', async () => {
     await expect(createMaterialRequest([{ itemId: 'i-die', qty: 1 }], { orderId: 'o1' })).rejects.toThrow(/Die/);
     await expect(createMaterialRequest([{ itemId: 'i-die', qty: 1 }], { departmentId: 'd1' })).resolves.toBeTruthy();
+  });
+
+  it('a stale order id is a message, not a foreign-key error', async () => {
+    await expect(createMaterialRequest([{ itemId: 'i-kraft', qty: 1 }], { orderId: 'gone' })).rejects.toThrow(/no longer exists/);
   });
 
   it('a QC role is refused', async () => {

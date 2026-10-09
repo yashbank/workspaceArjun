@@ -46,7 +46,8 @@ export type SupplierOption = { id: string; name: string };
 
 type Props = {
   items: PickerItem[];
-  mode: 'RECEIVE' | 'ISSUE';
+  /** REQUEST (V2 Epic 3) is an ask, not a ledger move: the balance is shown but never enforced. */
+  mode: 'RECEIVE' | 'ISSUE' | 'REQUEST';
   onCommit: (lines: CartLine[]) => Promise<void>;
   /** RECEIVE: who delivered. Rendered as a chip row when passed. */
   suppliers?: SupplierOption[];
@@ -84,6 +85,7 @@ export function ItemCart({
 
   const byId = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
   const isReceive = mode === 'RECEIVE';
+  const guardsStock = mode === 'ISSUE';
 
   /** Code first, then name — a storekeeper reading off a delivery note types the code. */
   const matches = useMemo(() => {
@@ -154,7 +156,7 @@ export function ItemCart({
 
   /** ISSUE cannot promise stock the factory does not have. Checked again server-side. */
   const shortLines = lines.filter((line) => {
-    if (isReceive) return false;
+    if (!guardsStock) return false;
     const item = byId.get(line.itemId);
     return item ? (Number(line.qty) || 0) > item.balance : false;
   });
@@ -285,7 +287,7 @@ export function ItemCart({
           const item = byId.get(line.itemId);
           if (!item) return null;
           const qty = Number(line.qty) || 0;
-          const short = !isReceive && qty > item.balance;
+          const short = guardsStock && qty > item.balance;
           return (
             <InfoCard key={line.itemId} className={cn(short && 'border-red-200 bg-red-50')}>
               <div className="flex items-start justify-between gap-2">
@@ -384,7 +386,7 @@ export function ItemCart({
             canConfirm ? 'bg-indigo-600 hover:bg-indigo-700' : 'cursor-not-allowed bg-slate-300',
           )}
         >
-          {busy ? 'Saving…' : isReceive ? 'Confirm receipt' : 'Confirm issue'}
+          {busy ? 'Saving…' : isReceive ? 'Confirm receipt' : mode === 'REQUEST' ? 'Send request' : 'Confirm issue'}
         </button>
       </div>
     </>

@@ -61,7 +61,7 @@ export const DEFAULT_QC_TEMPLATES: readonly TemplateDef[] = [
 /** `parameters` as stored (JSON) → a clean string list. */
 export function parseParameters(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
-  return value.map((v) => String(v).trim()).filter(Boolean);
+  return [...new Set(value.map((v) => String(v).trim()).filter(Boolean))];
 }
 
 export type ChecklistCheck = { parameterName: string | null; slotTime: string | null; result: string; defectType: string | null; checkTime: Date };

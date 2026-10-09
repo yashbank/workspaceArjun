@@ -87,6 +87,12 @@ describe('confirm', () => {
     expect(state.invoices[0].where).toEqual({ poId_invoiceNo: { poId: 'po1', invoiceNo: 'INV-7' } });
     expect(state.invoices[0].create).toMatchObject({ grnId: 'g1', supplierId: 's1' });
   });
+  it("a later GRN naming the same invoice WITHOUT an amount keeps the Owner's figure (update carries only known fields)", async () => {
+    state.grn.supplierInvoiceAmount = null;
+    state.grn.invoiceDate = null;
+    await confirmGRN('g1');
+    expect(state.invoices[0].update).toEqual({ grnId: 'g1', supplierId: 's1' });
+  });
   it('writes no invoice when the header names none', async () => {
     state.grn.supplierInvoiceNo = null;
     await confirmGRN('g1');

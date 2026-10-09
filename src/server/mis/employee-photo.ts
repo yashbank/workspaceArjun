@@ -20,7 +20,8 @@ export const PHOTO_SIZE = 256;
 export const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
 
 const photoKey = (employeeId: string) => `mis/employees/${employeeId}/photo.webp`;
-const photoUrlFor = (employeeId: string) => `/api/mis/employees/${employeeId}/photo`;
+/** `v=` changes on every retake so a browser or tablet that cached the old face fetches the new one. */
+const photoUrlFor = (employeeId: string) => `/api/mis/employees/${employeeId}/photo?v=${Date.now()}`;
 
 /** Resize + convert. Exported for the test; never called without a gate in front of it. */
 export async function normalisePhoto(bytes: Uint8Array): Promise<Buffer> {

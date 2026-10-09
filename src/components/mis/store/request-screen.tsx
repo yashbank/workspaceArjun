@@ -49,7 +49,7 @@ export function RequestScreen({ header, items, orders, departments }: Props) {
         </OkCard>
       )}
 
-      <ItemCart items={items} mode="ISSUE" onCommit={commit}>
+      <ItemCart items={items} mode="REQUEST" onCommit={commit}>
         {departments.length > 0 && (
           <InfoCard>
             <SectionLabel>For which department</SectionLabel>

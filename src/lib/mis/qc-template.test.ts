@@ -31,7 +31,7 @@ describe('defaults and parsing', () => {
     for (const t of DEFAULT_QC_TEMPLATES) expect(t.parameters.length).toBeGreaterThan(3);
   });
   it('parseParameters tolerates junk', () => {
-    expect(parseParameters(['a', ' b ', '', 3])).toEqual(['a', 'b', '3']);
+    expect(parseParameters(['a', ' b ', '', 3, 'a'])).toEqual(['a', 'b', '3']);
     expect(parseParameters('nope')).toEqual([]);
   });
 });

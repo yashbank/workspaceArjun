@@ -3,6 +3,7 @@ import { db } from '@/server/db';
 
 import { logAuditEvent } from './audit';
 import { requirePermission } from './auth';
+import { isUniqueConstraintError } from './orders';
 import { commitIssue, type CartLineInput } from './store';
 
 /**
@@ -25,7 +26,6 @@ function nextRequestNumber(attempt = 0): string {
   return `MRN-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}-${ms}`;
 }
 
-const isUniqueConstraintError = (err: unknown) => Boolean(err && typeof err === 'object' && (err as { code?: unknown }).code === 'P2002');
 
 export async function createMaterialRequest(lines: MaterialRequestLineInput[], meta: MaterialRequestMeta = {}) {
   const actor = await requirePermission('store.read');
@@ -40,6 +40,12 @@ export async function createMaterialRequest(lines: MaterialRequestLineInput[], m
   if (items.length !== new Set(lines.map((l) => l.itemId)).size) {
     throw new Error('One of the items is no longer active.');
   }
+  const [order, department] = await Promise.all([
+    meta.orderId ? db.misOrder.findUnique({ where: { id: meta.orderId }, select: { id: true } }) : Promise.resolve(null),
+    meta.departmentId ? db.misDepartment.findUnique({ where: { id: meta.departmentId }, select: { id: true } }) : Promise.resolve(null),
+  ]);
+  if (meta.orderId && !order) throw new Error('That order no longer exists — reload and pick again.');
+  if (meta.departmentId && !department) throw new Error('That department no longer exists — reload and pick again.');
   const refused = linesRefusedForOrder(items, meta.orderId);
   if (refused.length > 0) {
     throw new Error(`Equipment and other items are department overhead and cannot be booked to an order: ${refused.join(', ')}`);

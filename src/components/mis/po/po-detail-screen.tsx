@@ -173,6 +173,9 @@ export function PoDetailScreen({ po, formattedItems, total, catalogItems, canWri
               ? 'No supplier invoice recorded yet — enter it on the GRN before confirming.'
               : <>Invoices: {reconciliation.invoices.map((i) => `${i.invoiceNo}${i.grnNumber ? ` (${i.grnNumber})` : ''}`).join(', ')}</>}
           </div>
+          {reconciliation.money === undefined && reconciliation.unpricedInvoices > 0 && reconciliation.invoices.length === reconciliation.unpricedInvoices && (
+            <p className="text-sm text-amber-700">Invoice amount not entered yet — the Owner adds it on the GRN to see the rupee match.</p>
+          )}
           {reconciliation.money && (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {([['PO value', reconciliation.money.poValue], ['Received value', reconciliation.money.receivedValue], ['Invoiced', reconciliation.money.invoiced], ['Variance', reconciliation.money.variance]] as const).map(([label, value]) => (

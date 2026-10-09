@@ -1,12 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { useTransition } from 'react';
+import { useState, useTransition } from 'react';
 import { Button } from '@/components/mis/kit/button';
 import type { MisPayComponent } from '@/generated/prisma/enums';
 import { setPayComponentAction } from '@/app/(mis)/mis/employees/[id]/actions';
 import { uploadEmployeePhotoAction } from '@/app/(mis)/mis/employees/actions';
-import { useState } from 'react';
 import { PhotoPicker } from './photo-picker';
 
 interface Employee {

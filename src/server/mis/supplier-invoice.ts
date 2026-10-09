@@ -39,6 +39,7 @@ export async function reconcilePO(poId: string): Promise<PoReconciliation> {
       shortQuantity: g.shortQuantity?.toNumber() ?? null,
       confirmed: g.grn.status === 'CONFIRMED',
     })),
+    // A non-Owner's invoices are all 'unpriced' here on purpose: no rate, no amount, no money block.
     invoices.map((i) => ({ invoiceNo: i.invoiceNo, invoiceAmount: seesMoney ? i.invoiceAmount?.toNumber() ?? null : null })),
   );
   const { money, ...rest } = match;

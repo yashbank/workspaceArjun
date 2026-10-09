@@ -46,7 +46,9 @@ export type ThreeWayMatch = {
   lines: MatchLine[];
   totals: { ordered: number; received: number; damaged: number; short: number; outstanding: number };
   invoiceCount: number;
-  /** Present only when every PO line carried a rate (the Owner's read). Raw numbers; the server formats. */
+  /** Invoices recorded with a number but no amount — the Owner cannot reconcile money until these are priced. */
+  unpricedInvoices: number;
+  /** Present only when every PO line carried a rate AND every invoice an amount (the Owner's read). Raw numbers; the server formats. */
   money?: { poValue: number; receivedValue: number; invoiced: number; variance: number };
 };
 
@@ -57,12 +59,13 @@ export function threeWayMatch(poLines: MatchPoLine[], grnLines: MatchGrnLine[], 
     const received = round2(mine.reduce((s, g) => s + g.receivedQty, 0));
     const damaged = round2(mine.reduce((s, g) => s + g.damageQuantity, 0));
     const short = round2(mine.reduce((s, g) => s + (g.shortQuantity ?? 0), 0));
-    return { poItemId: po.id, description: po.description, ordered: po.quantity, received, damaged, short, outstanding: round2(po.quantity - received) };
+    return { poItemId: po.id, description: po.description, ordered: po.quantity, received, damaged, short, outstanding: Math.max(0, round2(po.quantity - received)) };
   });
   const sum = (k: keyof MatchLine) => round2(lines.reduce((s, l) => s + (l[k] as number), 0));
   const totals = { ordered: sum('ordered'), received: sum('received'), damaged: sum('damaged'), short: sum('short'), outstanding: sum('outstanding') };
 
-  const priced = poLines.every((p) => typeof p.ratePerUnit === 'number');
+  const unpricedInvoices = invoices.filter((i) => typeof i.invoiceAmount !== 'number').length;
+  const priced = poLines.every((p) => typeof p.ratePerUnit === 'number') && unpricedInvoices === 0;
   const money = priced
     ? (() => {
         const poValue = round2(poLines.reduce((s, p) => s + p.quantity * (p.ratePerUnit as number), 0));
@@ -74,5 +77,5 @@ export function threeWayMatch(poLines: MatchPoLine[], grnLines: MatchGrnLine[], 
       })()
     : undefined;
 
-  return { lines, totals, invoiceCount: invoices.length, ...(money ? { money } : {}) };
+  return { lines, totals, invoiceCount: invoices.length, unpricedInvoices, ...(money ? { money } : {}) };
 }

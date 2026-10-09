@@ -102,11 +102,18 @@ export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes
           // that sets them, so they stay `undefined` (unchanged) on an Admin's save.
           ...(isOwner ? { wageTypeCode, payType, sundayPaid } : {}),
         });
-        // V2 Epic 7: the photo rides on the saved row's id, so it goes up after the save.
+        // V2 Epic 7: the photo rides on the saved row's id, so it goes up after the save. If the
+        // upload fails the row already exists — switch to edit mode so a retry never creates a twin.
         if (photo) {
           const form = new FormData();
           form.append('photo', photo);
-          await uploadEmployeePhotoAction(saved.id, form);
+          try {
+            await uploadEmployeePhotoAction(saved.id, form);
+          } catch (photoError) {
+            setEditing((current) => current ?? { id: saved.id, employeeCode: code, name, nameHi: nameHi || null, role, isActive: true, deletedAt: null, managerId, userProfile: null, wageTypeCode, payType, sundayPaid });
+            setSaveError(`Saved, but the photo did not upload: ${photoError instanceof Error ? photoError.message : 'try again'}`);
+            return;
+          }
         }
         setOpen(false);
       } catch (error) {
