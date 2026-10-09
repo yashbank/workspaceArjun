@@ -82,6 +82,12 @@ export function StoreDashboardScreen({ stats, isOwner }: Props) {
           >
             Stock Report
           </Link>
+          <Link
+            href="/mis/store/requests"
+            className="inline-flex min-h-11 items-center justify-center px-3 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-700"
+          >
+            Requests
+          </Link>
         </div>
       </div>
 

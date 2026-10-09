@@ -535,6 +535,7 @@ model MisDepartment {
   machines  MisMachine[]
   processes MisProcess[]
   employees MisEmployee[]
+  materialRequests MisMaterialRequest[]
   @@map("mis_departments")
 }
 
@@ -628,6 +629,7 @@ model MisItem {
   storeTxns      MisStoreTransaction[]
   physicalCounts MisPhysicalCount[]
   bomMaterials   MisBomMaterial[]
+  materialRequestLines MisMaterialRequestLine[]
   @@map("mis_items")
 }
 
@@ -806,6 +808,7 @@ model MisOrder {
   machineAllocations MisMachineAllocation[]
   lineClearances MisLineClearance[]
   jobPhases    MisJobPhase[]
+  materialRequests MisMaterialRequest[]
   @@map("mis_orders")
 }
 
@@ -1610,4 +1613,48 @@ model MisPayrollSnapshotLine {
   @@unique([periodId, employeeId])
   @@index([employeeId])
   @@map("mis_payroll_snapshot_lines")
+}
+
+/// V2 Epic 3 — a Material Issue Note. A Supervisor ASKS (`requestedQty`); the Store APPROVES and
+/// may issue less (`actualIssuedQty <= requestedQty`). Stock leaves the ledger only on approval,
+/// through `commitIssue`, so a pending note never moves a balance.
+enum MisMaterialRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  @@map("mis_material_request_status")
+}
+
+model MisMaterialRequest {
+  id            String                   @id @default(uuid()) @db.Uuid
+  requestNumber String                   @unique @map("request_number")
+  status        MisMaterialRequestStatus @default(PENDING)
+  /// RAW_MATERIAL / CONSUMABLE lines may be booked to an order; EQUIPMENT / OTHER never are.
+  orderId       String?                  @map("order_id") @db.Uuid
+  departmentId  String?                  @map("department_id") @db.Uuid
+  notes         String?
+  requestedById String?                  @map("requested_by_id") @db.Uuid
+  decidedById   String?                  @map("decided_by_id") @db.Uuid
+  decidedAt     DateTime?                @map("decided_at")
+  decisionNote  String?                  @map("decision_note")
+  createdAt     DateTime                 @default(now()) @map("created_at")
+  updatedAt     DateTime                 @updatedAt @map("updated_at")
+  order         MisOrder?                @relation(fields: [orderId], references: [id])
+  department    MisDepartment?           @relation(fields: [departmentId], references: [id])
+  lines         MisMaterialRequestLine[]
+  @@index([status])
+  @@map("mis_material_requests")
+}
+
+model MisMaterialRequestLine {
+  id              String             @id @default(uuid()) @db.Uuid
+  requestId       String             @map("request_id") @db.Uuid
+  itemId          String             @map("item_id") @db.Uuid
+  requestedQty    Decimal            @map("requested_qty") @db.Decimal(12, 2)
+  /// Null until decided. On approval, 0..requestedQty; 0 means "not issued".
+  actualIssuedQty Decimal?           @map("actual_issued_qty") @db.Decimal(12, 2)
+  request         MisMaterialRequest @relation(fields: [requestId], references: [id])
+  item            MisItem            @relation(fields: [itemId], references: [id])
+  @@index([requestId])
+  @@map("mis_material_request_lines")
 }
