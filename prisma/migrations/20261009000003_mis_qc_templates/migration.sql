@@ -1,4 +1,4 @@
--- NOT APPLIED. Parked in prisma/migrations-pending/ for a human to run via `pnpm db:deploy`.
+-- Applied via `pnpm db:deploy` (moved from migrations-pending, 2026-10-09).
 -- V2 Epic 5 — QC checklist templates (paper → digital). Additive only, plus the four seeded forms
 -- (same list as lib/mis/qc-template.ts DEFAULT_QC_TEMPLATES; re-running is a no-op).
 

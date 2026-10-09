@@ -1,4 +1,4 @@
--- NOT APPLIED. Parked in prisma/migrations-pending/ for a human to run via `pnpm db:deploy`.
+-- Applied via `pnpm db:deploy` (moved from migrations-pending, 2026-10-09).
 -- V2 Epic 3 — categorised Material Issue Notes. Additive only: two new tables, one enum.
 
 CREATE TYPE mis_material_request_status AS ENUM ('PENDING', 'APPROVED', 'REJECTED');
