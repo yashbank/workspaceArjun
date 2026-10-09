@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 
 /**
  * V2 Epic 7 — take or choose the badge photo. `capture="user"` opens the front camera on a phone;
@@ -7,13 +7,8 @@ import { useEffect, useState } from 'react';
  * is only the raw pick.
  */
 export function PhotoPicker({ file, onChange, currentUrl }: { file: File | null; onChange: (f: File | null) => void; currentUrl: string | null }) {
-  const [preview, setPreview] = useState<string | null>(null);
-  useEffect(() => {
-    if (!file) { setPreview(null); return; }
-    const url = URL.createObjectURL(file);
-    setPreview(url);
-    return () => URL.revokeObjectURL(url);
-  }, [file]);
+  const preview = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
+  useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
   const shown = preview ?? currentUrl;
   return (
     <div className="flex items-center gap-3">

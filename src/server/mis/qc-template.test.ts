@@ -4,6 +4,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- loose rows for an in-memory fake, like the other store tests
 type Row = Record<string, any>;
 const state: { templates: Row[]; checks: Row[] } = { templates: [], checks: [] };
 const T = { id: 't1', name: 'Printing 6-Colours', processName: 'Printing', slotStart: '09:15', slotEnd: '18:00', parameters: ['Shade', 'Registration'], isActive: true, sortOrder: 0, deletedAt: null };

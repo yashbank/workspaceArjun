@@ -4,6 +4,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- loose rows for an in-memory fake, like the other store tests
 type Row = Record<string, any>;
 const state: { employee: Row | null; puts: Row[]; updates: Row[] } = { employee: null, puts: [], updates: [] };
 const resize = vi.fn();
