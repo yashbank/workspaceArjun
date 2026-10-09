@@ -54,5 +54,7 @@ export type OrderDesktopData = {
   };
   documents: { id: string; name: string; meta: string }[];
   bom: { statusLabel: string; items: { id: string; description: string; quantity: string; unit: string }[] } | null;
+  /** V2 Epic 2 — stock earmarked for this order and what is left to issue. Empty when nothing was tagged. */
+  allocations?: { itemId: string; name: string; code: string; unit: string; allocated: number; issued: number; remaining: number }[];
 };
 

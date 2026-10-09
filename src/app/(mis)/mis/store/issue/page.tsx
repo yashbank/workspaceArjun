@@ -3,6 +3,7 @@ import { format } from 'date-fns';
 import { IssueScreen } from '@/components/mis/store/issue-screen';
 import { requireMisAccess } from '@/server/mis/guard';
 import { listIssueTargets, listPickerItems } from '@/server/mis/store';
+import { listOpenOrderAllocations } from '@/server/mis/order-allocation';
 
 /**
  * Goods out — the same cart, the other direction.
@@ -12,9 +13,10 @@ import { listIssueTargets, listPickerItems } from '@/server/mis/store';
  */
 export default async function StoreIssuePage() {
   const user = await requireMisAccess();
-  const [items, targets] = await Promise.all([
+  const [items, targets, allocations] = await Promise.all([
     listPickerItems(),
     listIssueTargets(),
+    listOpenOrderAllocations().catch(() => ({})),
   ]);
 
   const meta = `${format(new Date(), 'EEE d MMM · HH:mm')} · ${user.name ?? user.email}`;
@@ -25,6 +27,7 @@ export default async function StoreIssuePage() {
       items={items}
       orders={targets.orders}
       departments={targets.departments}
+      allocations={allocations}
     />
   );
 }

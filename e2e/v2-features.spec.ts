@@ -177,3 +177,60 @@ test.describe('Epic 4 — role homes still render after the alert cards were add
     });
   }
 });
+
+test.describe('V2 round 2 — live bell for Owner / Admin / Store Guy only', () => {
+  for (const role of ROLES) {
+    const onBell = (['OWNER', 'ADMIN', 'STORE_GUY'] as MisRoleName[]).includes(role);
+    test(`${role} ${onBell ? 'sees' : 'does not see'} the bell`, async ({ browser }) => {
+      const ctx = await browser.newContext({ storageState: storageStatePath(role) });
+      const page = await ctx.newPage();
+      await page.goto('/mis');
+      await expect(page.getByRole('button', { name: /^Notifications/ }).first()).toHaveCount(onBell ? 1 : 0);
+      if (onBell) {
+        await page.getByRole('button', { name: /^Notifications/ }).first().click();
+        await expect(page.getByRole('dialog', { name: 'Notifications' })).toBeVisible();
+      }
+      const res = await ctx.request.get('/api/mis/notifications');
+      // grn.read holders get 200 (an empty list for a Supervisor); the rest are refused, never 500.
+      expect([200, 403]).toContain(res.status());
+      await ctx.close();
+    });
+  }
+});
+
+test.describe('V2 round 2 — home shortcuts and allocation hints', () => {
+  test('STORE_GUY home has the Requests tile', async ({ browser }) => {
+    const ctx = await browser.newContext({ storageState: storageStatePath('STORE_GUY') });
+    const page = await ctx.newPage();
+    await page.goto('/mis');
+    await expect(page.locator('a[href="/mis/store/requests"]').first()).toBeVisible();
+    await ctx.close();
+  });
+  test('SUPERVISOR home offers "Request material from the store"', async ({ browser }) => {
+    const ctx = await browser.newContext({ storageState: storageStatePath('SUPERVISOR') });
+    const page = await ctx.newPage();
+    await page.goto('/mis');
+    await expect(page.locator('a[href="/mis/store/requests/new"]').first()).toBeVisible();
+    await ctx.close();
+  });
+  test('the issue screen loads with its order chips (allocation hint appears only for an earmarked order)', async ({ browser }) => {
+    const ctx = await browser.newContext({ storageState: storageStatePath('STORE_GUY') });
+    const page = await ctx.newPage();
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto('/mis/store/issue');
+    await expect(page.getByText('Something went wrong')).toHaveCount(0);
+    expect(errors).toEqual([]);
+    await ctx.close();
+  });
+  test('ADMIN desktop order detail renders (allocation card only when stock is earmarked)', async ({ browser }) => {
+    const ctx = await browser.newContext({ storageState: storageStatePath('ADMIN'), viewport: { width: 1280, height: 800 } });
+    const page = await ctx.newPage();
+    await page.goto('/mis/orders');
+    const first = page.locator('a[href^="/mis/orders/"]:visible').first();
+    if ((await first.count()) === 0) test.skip(true, 'no order exists');
+    await first.click();
+    await expect(page.getByText('Something went wrong')).toHaveCount(0);
+    await ctx.close();
+  });
+});

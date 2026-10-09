@@ -5,7 +5,7 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-@Database(entities = [EmployeeEntity::class, PunchStateEntity::class], version = 2, exportSchema = false)
+@Database(entities = [EmployeeEntity::class, PunchStateEntity::class], version = 3, exportSchema = false)
 abstract class RosterDatabase : RoomDatabase() {
     abstract fun employeeDao(): EmployeeDao
     abstract fun punchStateDao(): PunchStateDao

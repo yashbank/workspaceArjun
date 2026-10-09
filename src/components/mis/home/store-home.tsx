@@ -17,6 +17,8 @@ import {
 } from './cards';
 
 export type StoreHomeProps = {
+  /** V2 Epic 3 — material requests waiting for the Store's decision. */
+  pendingRequests?: number;
   header: { title: string; meta: string };
   stock: { lowStockCount: number; outOfStockCount: number; totalItems: number };
   movement: { todayIn: number; todayOut: number };
@@ -26,7 +28,7 @@ export type StoreHomeProps = {
   };
 };
 
-export function StoreHome({ header, stock, movement, openGrns }: StoreHomeProps) {
+export function StoreHome({ header, stock, movement, openGrns, pendingRequests = 0 }: StoreHomeProps) {
   return (
     <HomeStack>
       <HeaderCard title={header.title} meta={header.meta} />
@@ -90,10 +92,11 @@ export function StoreHome({ header, stock, movement, openGrns }: StoreHomeProps)
         </div>
       </InfoCard>
 
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-2 gap-2">
         <ShortcutTile href="/mis/store/receive" label="Receive (GRN)" icon={<DownIcon />} />
         <ShortcutTile href="/mis/store/issue" label="Issue" icon={<UpIcon />} />
         <ShortcutTile href="/mis/store/count" label="Count" icon={<CountIcon />} />
+        <ShortcutTile href="/mis/store/requests" label={pendingRequests > 0 ? `Requests (${pendingRequests})` : 'Requests'} icon={<CountIcon />} />
       </div>
     </HomeStack>
   );

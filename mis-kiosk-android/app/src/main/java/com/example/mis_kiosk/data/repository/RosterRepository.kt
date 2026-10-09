@@ -39,7 +39,11 @@ class RosterRepository(
 
         return when (val result = api.pull(device.token, health)) {
             is ApiResult.Success -> {
-                val entities = result.body.employees.map { it.toEntity() }
+                // MIS V2: faces are cached with the roster so the confirm card works offline.
+                // A photo that cannot be fetched is simply absent — the card falls back to the initial.
+                val entities = result.body.employees.map { dto ->
+                    dto.toEntity(photo = dto.photoUrl?.let { api.fetchPhoto(device.token, it) })
+                }
                 database.withTransaction {
                     employeeDao.deleteAll()
                     employeeDao.insertAll(entities)
@@ -69,7 +73,7 @@ class RosterRepository(
         error?.message ?: "Could not sync the roster (HTTP $httpStatus)."
 }
 
-private fun EmployeeDto.toEntity() = EmployeeEntity(
+private fun EmployeeDto.toEntity(photo: ByteArray?) = EmployeeEntity(
     id = id,
     name = name,
     badgeCode = badgeCode,
@@ -77,4 +81,5 @@ private fun EmployeeDto.toEntity() = EmployeeEntity(
     shiftName = shift?.name,
     shiftStartTime = shift?.startTime,
     shiftEndTime = shift?.endTime,
+    photo = photo,
 )

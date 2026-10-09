@@ -32,13 +32,18 @@ data class ShiftDto(
     val endTime: String,
 )
 
-/** `PULL_EMPLOYEE_KEYS` on the server: exactly id, name, badgeCode, shift — nothing else, ever. */
+/**
+ * `PULL_EMPLOYEE_KEYS` on the server: id, name, badgeCode, shift and (MIS V2) `photoUrl` — a
+ * portal path (`/api/mis/employees/<id>/photo?v=…`) the tablet fetches with its own bearer
+ * token so a scan can flash the face the badge belongs to. Null when no photo was taken.
+ */
 @Serializable
 data class EmployeeDto(
     val id: String,
     val name: String,
     val badgeCode: String,
     val shift: ShiftDto? = null,
+    val photoUrl: String? = null,
 )
 
 @Serializable

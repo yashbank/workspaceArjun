@@ -35,6 +35,7 @@ import { listDocuments } from './documents';
 import { getPhasesForOrder, getSignOffSummary, type SignOffBlocker } from './job-phases';
 import { getOrderSchedule } from './machines-board';
 import { getOrder } from './orders';
+import { getOrderAllocations } from './order-allocation';
 import { getProductionForOrder } from './production';
 import { getQcForOrder } from './qc';
 import { getFactoryShiftWindow } from './shift-view';
@@ -60,7 +61,7 @@ export async function getOrderDesktopView(orderId: string, now: Date = new Date(
   const order = await getOrder(orderId);
   if (!order) return null;
 
-  const [phases, bom, qcChecks, docs, logs, schedule, shift, timeZone] = await Promise.all([
+  const [phases, bom, qcChecks, docs, logs, schedule, shift, timeZone, allocations] = await Promise.all([
     getPhasesForOrder(orderId),
     getBom(orderId),
     getQcForOrder(orderId),
@@ -69,6 +70,7 @@ export async function getOrderDesktopView(orderId: string, now: Date = new Date(
     getOrderSchedule(orderId),
     getFactoryShiftWindow(now),
     getFactoryTimezone(),
+    getOrderAllocations(orderId).catch(() => []),
   ]);
 
   const inputs = phases.map((p) => ({ id: p.id, sequence: p.sequence, status: p.status as PhaseStatus }));
@@ -146,6 +148,7 @@ export async function getOrderDesktopView(orderId: string, now: Date = new Date(
       passed: quality.passed,
       openDefect: quality.openDefect ? { parameter: quality.openDefect.parameter, defectType: quality.openDefect.defectType } : null,
     },
+    allocations,
     documents: docs.map((d) => ({
       id: d.id,
       name: d.name,

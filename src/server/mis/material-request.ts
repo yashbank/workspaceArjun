@@ -3,6 +3,8 @@ import { db } from '@/server/db';
 
 import { logAuditEvent } from './audit';
 import { requirePermission } from './auth';
+import { NOTIFICATION_TYPES } from '@/lib/mis/notification-copy';
+import { notifyRoles, notifyUser } from './notifications';
 import { isUniqueConstraintError } from './orders';
 import { commitIssue, type CartLineInput } from './store';
 
@@ -75,6 +77,18 @@ export async function createMaterialRequest(lines: MaterialRequestLineInput[], m
     entityId: created.id,
     after: { requestNumber: created.requestNumber, orderId: created.orderId, departmentId: created.departmentId, lineCount: lines.length },
   });
+  // V2 — the Store hears about it now. Best-effort, after the write.
+  const [orderRow, deptRow] = await Promise.all([
+    created.orderId ? db.misOrder.findUnique({ where: { id: created.orderId }, select: { orderNumber: true } }) : null,
+    created.departmentId ? db.misDepartment.findUnique({ where: { id: created.departmentId }, select: { name: true } }) : null,
+  ]);
+  await notifyRoles(['STORE_GUY'], NOTIFICATION_TYPES.requestRaised, {
+    requestId: created.id,
+    requestNumber: created.requestNumber,
+    lineCount: lines.length,
+    orderNumber: orderRow?.orderNumber ?? null,
+    departmentName: deptRow?.name ?? null,
+  });
   return created;
 }
 
@@ -91,6 +105,12 @@ export async function listMaterialRequests() {
     orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
     take: 200,
   });
+}
+
+/** For the Store home: how many notes are waiting for a decision. */
+export async function countPendingMaterialRequests(): Promise<number> {
+  await requirePermission('store.read');
+  return db.misMaterialRequest.count({ where: { status: 'PENDING' } });
 }
 
 export async function getMaterialRequest(id: string) {
@@ -154,6 +174,9 @@ export async function approveMaterialRequest(id: string, decisions: ApproveLineI
     before: { status: 'PENDING' },
     after: { status: 'APPROVED', reference: result.reference, lineCount: result.lineCount, totalQty: String(result.totalQty) },
   });
+  if (req.requestedById) {
+    await notifyUser(req.requestedById, NOTIFICATION_TYPES.requestDecided, { requestId: id, requestNumber: req.requestNumber, status: 'APPROVED', lineCount: result.lineCount });
+  }
   return result;
 }
 
@@ -173,4 +196,8 @@ export async function rejectMaterialRequest(id: string, reason: string) {
     before: { status: 'PENDING' },
     after: { status: 'REJECTED', reason: reason.trim() },
   });
+  const req = await db.misMaterialRequest.findUnique({ where: { id }, select: { requestNumber: true, requestedById: true } });
+  if (req?.requestedById) {
+    await notifyUser(req.requestedById, NOTIFICATION_TYPES.requestDecided, { requestId: id, requestNumber: req.requestNumber, status: 'REJECTED', reason: reason.trim() });
+  }
 }

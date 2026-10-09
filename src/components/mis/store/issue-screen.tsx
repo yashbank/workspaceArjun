@@ -22,9 +22,11 @@ type Props = {
   items: PickerItem[];
   orders: { id: string; orderNumber: string; customerName: string | null }[];
   departments: { id: string; name: string }[];
+  /** V2 Epic 2 — per open order, what is earmarked and what is left; the server enforces the same cap on Confirm. */
+  allocations?: Record<string, { itemId: string; name: string; code: string; unit: string; allocated: number; issued: number; remaining: number }[]>;
 };
 
-export function IssueScreen({ header, items, orders, departments }: Props) {
+export function IssueScreen({ header, items, orders, departments, allocations = {} }: Props) {
   const [orderId, setOrderId] = useState<string | null>(null);
   const [departmentId, setDepartmentId] = useState<string | null>(null);
   const [done, setDone] = useState<{ reference: string; lineCount: number; totalQty: number } | null>(
@@ -95,6 +97,20 @@ export function IssueScreen({ header, items, orders, departments }: Props) {
                 />
               ))}
             </div>
+            {orderId && (allocations[orderId]?.length ?? 0) > 0 && (
+              <div className="mt-3 rounded-xl border border-indigo-100 bg-indigo-50/60 p-3">
+                <SectionLabel>Allocated to this order</SectionLabel>
+                <ul className="mt-1 text-sm text-slate-700">
+                  {allocations[orderId].map((a) => (
+                    <li key={a.itemId} className="flex justify-between gap-2">
+                      <span className="truncate">{a.name} <span className="font-mono text-xs text-slate-500">{a.code}</span></span>
+                      <span className={a.remaining <= 0 ? 'font-semibold text-red-700' : 'font-semibold'}>{a.remaining} {a.unit} left</span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-1 text-xs text-slate-500">Issues against this order cannot exceed what is left. Other items issue from general stock.</p>
+              </div>
+            )}
           </InfoCard>
         )}
       </ItemCart>

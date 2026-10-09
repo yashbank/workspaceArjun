@@ -11,6 +11,7 @@ import { DesktopShell } from '../desktop/desktop-shell';
 import { RoleBadge } from '../roles/role-badge';
 import { BottomNav as RoleBottomNav } from '../home/bottom-nav';
 import { LangToggle } from './lang-toggle';
+import { NotificationBell } from './notification-bell';
 import { ServiceWorkerRegistration } from './service-worker-registration';
 import { SyncIndicator } from './sync-indicator';
 import { MisLocaleProvider } from './locale-provider';
@@ -67,6 +68,7 @@ export function MisShell({
         navBadges={navBadges}
         topBarRight={
           <>
+            <NotificationBell userId={userId} role={role} />
             <SyncIndicator />
             <LangToggle onPersist={onLocaleChange} />
           </>
@@ -76,7 +78,7 @@ export function MisShell({
       </DesktopShell>
 
       <div className="flex min-h-dvh flex-col bg-slate-50 lg:hidden">
-        <Header userName={userName} role={role} onLocaleChange={onLocaleChange} />
+        <Header userId={userId} userName={userName} role={role} onLocaleChange={onLocaleChange} />
 
         {/* pb-20 clears the fixed bottom bar; without it the last row of any
             list sits underneath it and cannot be tapped. */}
@@ -99,10 +101,12 @@ export function MisShell({
  * it, and not a second A|अ toggle on the one screen (home) whose own card already has one.
  */
 function Header({
+  userId,
   userName,
   role,
   onLocaleChange,
 }: {
+  userId: string;
   userName: string;
   role: MisRoleName | null;
   onLocaleChange: (locale: Locale) => Promise<void>;
@@ -115,6 +119,8 @@ function Header({
       <RoleBadge role={role} />
       <p className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900">{userName}</p>
       <div className="flex shrink-0 items-center gap-2">
+        {/* V2: live bell for Owner / Admin / Store Guy; renders nothing for anyone else. */}
+        <NotificationBell userId={userId} role={role} />
         {/* Always visible, never a surprise (08-Empty-error-offline.png). */}
         <SyncIndicator />
         {/* Home's greeting card carries its own A|अ (cards.tsx LangPill) — a second one here

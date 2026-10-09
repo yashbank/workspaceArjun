@@ -52,6 +52,8 @@ const REVIEWED_UNGATED: Record<string, Reviewed> = {
   'order-allocation.ts#allocationShortfalls': { reason: 'internal tx helper; called inside commitIssue after its gate' },
   // V2 Epic 4: a writer, not a reader — called by confirmGRN after its gate; best-effort like logAuditEvent.
   'grn-alerts.ts#notifyGrnConfirmed': { reason: 'internal; called only by confirmGRN after its grn.write gate' },
+  'notifications.ts#notifyRoles': { reason: 'writer, not a reader; called by gated mutations after their own write (V2 bell)' },
+  'notifications.ts#notifyUser': { reason: 'writer, not a reader; called by gated mutations after their own write (V2 bell)' },
   'kiosk-device.ts#pullForDevice': { reason: 'device-token door', alsoContains: 'authenticateDevice', door: true },
   'attendance-punch.ts#ingestDevicePunch': { reason: 'device-token door', alsoContains: 'authenticateDevice', door: true },
   // V2 Epic 7: the tablet fetches a face with its token, like it pulls the roster.

@@ -14,7 +14,7 @@ import { formatMoney } from './po';
  * screen. Read back on the role home, cleared when the GRN is opened.
  */
 
-export const GRN_ALERT_TYPE = 'mis.grn_confirmed';
+export const GRN_ALERT_TYPE = 'mis.grn_confirmed'; // = NOTIFICATION_TYPES.grnConfirmed (lib/mis/notification-copy.ts)
 
 /** Called by `confirmGRN` after its transaction. Best-effort: an alert that cannot be written must not undo a receipt. */
 export async function notifyGrnConfirmed(grnId: string): Promise<void> {

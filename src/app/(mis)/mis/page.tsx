@@ -16,6 +16,7 @@ import {
 } from '@/server/mis/attendance';
 import { listOpenGRNs } from '@/server/mis/grn';
 import { listGrnAlerts } from '@/server/mis/grn-alerts';
+import { countPendingMaterialRequests } from '@/server/mis/material-request';
 import { grnAlertHeadline } from '@/lib/mis/grn-alert';
 import { listParkedWrites } from '@/server/mis/idempotency';
 import { listPhasesAwaitingMySignOff } from '@/server/mis/job-phases';
@@ -407,7 +408,7 @@ async function StoreScreen({
   header: { title: string; meta: string };
   ago: (d: Date) => string;
 }) {
-  const [store, grns] = await Promise.all([getStoreDashboard(), listOpenGRNs(4)]);
+  const [store, grns, pendingRequests] = await Promise.all([getStoreDashboard(), listOpenGRNs(4), countPendingMaterialRequests().catch(() => 0)]);
 
   return (
     <StoreHome
@@ -418,6 +419,7 @@ async function StoreScreen({
         totalItems: store.totalItems,
       }}
       movement={{ todayIn: store.todayIn, todayOut: store.todayOut }}
+      pendingRequests={pendingRequests}
       openGrns={{
         total: grns.total,
         rows: grns.rows.map((g) => ({

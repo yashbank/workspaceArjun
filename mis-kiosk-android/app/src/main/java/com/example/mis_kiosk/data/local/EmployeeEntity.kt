@@ -18,4 +18,6 @@ data class EmployeeEntity(
     val shiftName: String?,
     val shiftStartTime: String?,
     val shiftEndTime: String?,
+    /** MIS V2 — the 256×256 WebP badge photo, cached at pull time so it shows offline. Null = no photo. */
+    val photo: ByteArray? = null,
 )

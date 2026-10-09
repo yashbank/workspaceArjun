@@ -76,6 +76,29 @@ export type OrderAllocationRow = {
   remaining: number;
 };
 
+/** For the issue screen: every open order's earmarks, keyed by order id, so the cart can show what is left before Confirm. */
+export async function listOpenOrderAllocations(): Promise<Record<string, OrderAllocationRow[]>> {
+  await requirePermission('store.read');
+  const rows = await db.misOrderStockAllocation.findMany({
+    where: { order: { status: { in: ['CONFIRMED', 'IN_PRODUCTION'] } } },
+    select: { orderId: true, itemId: true, item: { select: { code: true, name: true, unit: true } } },
+    distinct: ['orderId', 'itemId'],
+  });
+  const out: Record<string, OrderAllocationRow[]> = {};
+  const byOrder = new Map<string, typeof rows>();
+  for (const r of rows) byOrder.set(r.orderId, [...(byOrder.get(r.orderId) ?? []), r]);
+  for (const [orderId, items] of byOrder) {
+    const figures = await allocationFigures(db, orderId, items.map((i) => i.itemId));
+    out[orderId] = items
+      .map((i) => {
+        const f = figures.get(i.itemId) ?? { allocated: 0, issued: 0 };
+        return { itemId: i.itemId, ...i.item, allocated: f.allocated, issued: f.issued, remaining: remainingAllocation(f) };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+  return out;
+}
+
 /** What the order screen shows: every item earmarked for the order, with what is left to issue. */
 export async function getOrderAllocations(orderId: string): Promise<OrderAllocationRow[]> {
   await requirePermission('orders.read');
