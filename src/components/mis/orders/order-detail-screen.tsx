@@ -42,6 +42,8 @@ type Props = {
   qcSummary: { total: number; pass: number; fail: number };
   /** Includes the customer's PO once attached — a document, not a field (E5-09, S6-Documents.png). */
   documents: OrderDocument[];
+  /** V2 Epic 2 — stock earmarked for this order by FOR_ORDER deliveries, and what is left to issue. */
+  allocations?: { itemId: string; code: string; name: string; unit: string; allocated: number; issued: number; remaining: number }[];
   canWrite: boolean;
   canSeeWages: boolean;
   canProduction: boolean;
@@ -70,7 +72,7 @@ function statusTone(s: string): BadgeTone {
 }
 
 export function OrderDetailScreen({
-  order, phases, bom, productionLogs, productionSummary, qcLogs, qcSummary, documents,
+  order, phases, bom, productionLogs, productionSummary, qcLogs, qcSummary, documents, allocations = [],
   canWrite, canSeeWages: _canSeeWages, canProduction, canQc,
 }: Props) {
   const [tab, setTab] = useState<Tab>('overview');
@@ -296,6 +298,25 @@ export function OrderDetailScreen({
               <Link href={`/mis/bom/${order.id}`} className="inline-flex min-h-11 items-center text-sm font-medium text-indigo-700 hover:underline">
                 Create BOM →
               </Link>
+            </div>
+          )}
+          {allocations.length > 0 && (
+            <div className="mt-6">
+              <h3 className="text-sm font-medium text-slate-700 mb-2">Stock allocated to this order</h3>
+              <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200">
+                {allocations.map((a) => (
+                  <li key={a.itemId} className="flex items-center justify-between gap-3 px-3 py-2.5 text-sm">
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium text-slate-800">{a.name}</span>
+                      <span className="block text-xs text-slate-500">{a.code}</span>
+                    </span>
+                    <span className="shrink-0 text-right text-slate-600">
+                      <span className="block"><strong className={a.remaining <= 0 ? 'text-red-600' : 'text-slate-900'}>{a.remaining}</strong> {a.unit} left</span>
+                      <span className="block text-xs">{a.issued} issued of {a.allocated}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
         </div>

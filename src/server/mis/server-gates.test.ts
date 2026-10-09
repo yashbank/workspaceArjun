@@ -46,6 +46,10 @@ const REVIEWED_UNGATED: Record<string, Reviewed> = {
   'kiosk-device.ts#claimEnrolment': { reason: 'pairing-code + poll-secret credential (D18)', alsoContains: 'pollSecret', door: true },
   'kiosk-device.ts#authenticateDevice': { reason: 'this IS the device-token check (D18)', door: true },
   'kiosk-device.ts#recordDeviceSync': { reason: 'internal; called only after authenticateDevice succeeded (D18)' },
+  // V2 Epic 2: run on the caller's `tx`, inside commitReceipt / confirmGRN / commitIssue, after their gate.
+  'order-allocation.ts#allocateFromReceipt': { reason: 'internal tx helper; callers (grn.ts, store.ts) are gated' },
+  'order-allocation.ts#allocationFigures': { reason: 'internal tx helper; callers are gated' },
+  'order-allocation.ts#allocationShortfalls': { reason: 'internal tx helper; called inside commitIssue after its gate' },
   'kiosk-device.ts#pullForDevice': { reason: 'device-token door', alsoContains: 'authenticateDevice', door: true },
   'attendance-punch.ts#ingestDevicePunch': { reason: 'device-token door', alsoContains: 'authenticateDevice', door: true },
   'attendance-punch.ts#submitPunch': { reason: 'session door: user resolved first, permission checked in the transaction', alsoContains: "requirePermission('attendance.write')", door: true },

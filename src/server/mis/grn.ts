@@ -3,6 +3,7 @@ import { withoutMoneyFields } from '@/lib/mis/money-fields';
 import { db } from '@/server/db';
 import { requirePermission } from './auth';
 import { logAuditEvent } from './audit';
+import { allocateFromReceipt } from './order-allocation';
 
 export type GrnInput = { poId: string; notes?: string | null };
 export type GrnItemInput = {
@@ -99,7 +100,7 @@ export async function updateGRNItem(id: string, patch: Partial<GrnItemInput>) {
 
 export async function confirmGRN(grnId: string) {
   const actor = await requirePermission('grn.write');
-  const grn = await db.misGrn.findUnique({ where: { id: grnId }, include: { items: { include: { poItem: { include: { item: true } } } } } });
+  const grn = await db.misGrn.findUnique({ where: { id: grnId }, include: { po: { select: { bomRef: true } }, items: { include: { poItem: { include: { item: true } } } } } });
   if (!grn) throw new Error(`GRN ${grnId} not found`);
   if (grn.status === 'CONFIRMED') throw new Error('GRN already confirmed');
 
@@ -133,6 +134,11 @@ export async function confirmGRN(grnId: string) {
           notes: `GRN ${grn.grnNumber}`,
         },
       });
+
+      // V2 Epic 2: a FOR_ORDER line earmarks its quantity for the order its ref (or the PO's) names.
+      if (grnItem.type === 'FOR_ORDER') {
+        await allocateFromReceipt(tx, { ref: grnItem.forOrderRef ?? grn.po.bomRef, itemId, qty: grnItem.receivedQty.toNumber(), sourceId: grnId });
+      }
 
       // Update received quantity on PO item
       await tx.misPoItem.update({

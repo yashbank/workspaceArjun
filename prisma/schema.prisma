@@ -630,6 +630,7 @@ model MisItem {
   physicalCounts MisPhysicalCount[]
   bomMaterials   MisBomMaterial[]
   materialRequestLines MisMaterialRequestLine[]
+  orderAllocations MisOrderStockAllocation[]
   @@map("mis_items")
 }
 
@@ -809,6 +810,7 @@ model MisOrder {
   lineClearances MisLineClearance[]
   jobPhases    MisJobPhase[]
   materialRequests MisMaterialRequest[]
+  stockAllocations MisOrderStockAllocation[]
   @@map("mis_orders")
 }
 
@@ -1657,4 +1659,23 @@ model MisMaterialRequestLine {
   item            MisItem            @relation(fields: [itemId], references: [id])
   @@index([requestId])
   @@map("mis_material_request_lines")
+}
+
+/// V2 Epic 2 — stock received FOR an order is earmarked for it. One append-only row per
+/// receipt line (a GRN line typed FOR_ORDER, or any line of a PO whose BOM ref is the order
+/// number); the allocation is the SUM. Issues against the order are capped at that sum, which
+/// `commitIssue` checks inside its transaction.
+model MisOrderStockAllocation {
+  id           String   @id @default(uuid()) @db.Uuid
+  orderId      String   @map("order_id") @db.Uuid
+  itemId       String   @map("item_id") @db.Uuid
+  allocatedQty Decimal  @map("allocated_qty") @db.Decimal(12, 2)
+  /// 'GRN' and the GRN id, so a line can be traced back to the delivery that earmarked it.
+  source       String
+  sourceId     String?  @map("source_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+  order        MisOrder @relation(fields: [orderId], references: [id])
+  item         MisItem  @relation(fields: [itemId], references: [id])
+  @@index([orderId, itemId])
+  @@map("mis_order_stock_allocations")
 }
