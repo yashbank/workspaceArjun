@@ -208,7 +208,8 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes, 
         {checks.length === 0 ? (
           <div className="py-12 text-center text-gray-400 text-sm">No QC checks yet.</div>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-sm">
             <thead>
               <tr className="border-b border-gray-100 text-xs text-gray-500">
                 <th className="px-5 py-3 text-left font-medium">Time</th>
@@ -235,6 +236,7 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes, 
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 
