@@ -74,3 +74,24 @@ COMMIT;
 --        (SELECT count(*) FROM mis_qc_templates WHERE name LIKE 'E2E-template-%') AS templates,
 --        (SELECT count(*) FROM mis_leave_requests WHERE reason LIKE 'E2E-%') AS leaves,
 --        (SELECT count(*) FROM mis_material_requests WHERE decision_note LIKE 'E2E%' OR notes LIKE 'E2E%') AS requests;
+
+-- v2-flows run MV2IB6MT (2026-10-10T14:45:49.781Z → 2026-10-10T14:47:35.635Z):
+--   ORD-202610-53687 · PO-202610-56395 · GRN-202610-63302 · E2E-INV-MV2IB6MT · MRN-202610-23655 · MRN-202610-51845 · item ITEM-001
+BEGIN;
+DELETE FROM notifications WHERE payload->>'grnNumber' = 'GRN-202610-63302' OR payload->>'requestNumber' IN ('MRN-202610-23655','MRN-202610-51845');
+DELETE FROM mis_material_request_lines WHERE request_id IN (SELECT id FROM mis_material_requests WHERE request_number IN ('MRN-202610-23655','MRN-202610-51845'));
+DELETE FROM mis_material_requests WHERE request_number IN ('MRN-202610-23655','MRN-202610-51845');
+DELETE FROM mis_store_transactions WHERE reference_no = 'ORD-202610-53687' OR reason LIKE 'MRN-202610-23655%' OR reason LIKE 'MRN-202610-51845%';
+DELETE FROM mis_inventory_ledger
+ WHERE source_id IN (SELECT id::text FROM mis_orders WHERE order_number = 'ORD-202610-53687')
+    OR source_id IN (SELECT id::text FROM mis_grns WHERE grn_number = 'GRN-202610-63302')
+    OR (source = 'STORE_ISSUE' AND source_id IS NULL AND created_at BETWEEN '2026-10-10T14:45:49.781Z' AND '2026-10-10T14:47:35.635Z'
+        AND item_id IN (SELECT id FROM mis_items WHERE code = 'ITEM-001'));
+DELETE FROM mis_order_stock_allocations WHERE source_id IN (SELECT id::text FROM mis_grns WHERE grn_number = 'GRN-202610-63302');
+DELETE FROM mis_supplier_invoices WHERE invoice_no = 'E2E-INV-MV2IB6MT';
+DELETE FROM mis_grn_items WHERE grn_id IN (SELECT id FROM mis_grns WHERE grn_number = 'GRN-202610-63302');
+DELETE FROM mis_grns WHERE grn_number = 'GRN-202610-63302';
+DELETE FROM mis_po_items WHERE po_id IN (SELECT id FROM mis_purchase_orders WHERE po_number = 'PO-202610-56395');
+DELETE FROM mis_purchase_orders WHERE po_number = 'PO-202610-56395';
+DELETE FROM mis_orders WHERE order_number = 'ORD-202610-53687';
+COMMIT;

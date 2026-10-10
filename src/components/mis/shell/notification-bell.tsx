@@ -68,14 +68,30 @@ export function NotificationProvider({ userId, role, children }: { userId: strin
     // misconfigured deploy) the bell still fills on every focus.
     let supabase: ReturnType<typeof createSupabaseBrowserClient> | null = null;
     try { supabase = createSupabaseBrowserClient(); } catch { supabase = null; }
-    const channel = supabase
-      ?.channel(`mis-notifications-${userId}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, (payload) => {
-        const row = payload.new as { id?: string; type?: string; payload?: unknown };
-        if (row?.id && typeof row.type === 'string' && row.type.startsWith('mis.')) addLive({ id: row.id, type: row.type, payload: row.payload });
-      })
-      .subscribe();
+    let channel: ReturnType<NonNullable<typeof supabase>['channel']> | null = null;
+    let cancelled = false;
+    void (async () => {
+      if (!supabase) return;
+      // The notifications table is behind RLS (user_id = auth.uid()). Realtime only delivers rows the
+      // socket's OWN token may read, and the socket opens before the cookie session is loaded —
+      // so hand it the session JWT first, or every INSERT is silently filtered out.
+      try {
+        const { data } = await supabase.auth.getSession();
+        if (data.session?.access_token) await supabase.realtime.setAuth(data.session.access_token);
+      } catch {
+        /* no session: the focus reload still works */
+      }
+      if (cancelled) return;
+      channel = supabase
+        .channel(`mis-notifications-${userId}`)
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, (payload) => {
+          const row = payload.new as { id?: string; type?: string; payload?: unknown };
+          if (row?.id && typeof row.type === 'string' && row.type.startsWith('mis.')) addLive({ id: row.id, type: row.type, payload: row.payload });
+        })
+        .subscribe();
+    })();
     return () => {
+      cancelled = true;
       document.removeEventListener('visibilitychange', onVis);
       if (supabase && channel) void supabase.removeChannel(channel);
     };
