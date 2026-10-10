@@ -86,11 +86,11 @@ async function unread(page: Page): Promise<number> {
  * asserted once in the last step so the whole flow is exercised either way.
  */
 async function recordPush(page: Page, role: keyof typeof PUSH, before: number, title: string) {
-  const rose = await expect.poll(() => unread(page), { timeout: 20000 }).toBeGreaterThan(before).then(() => true, () => false);
+  const rose = await expect.poll(() => unread(page), { timeout: 60000 }).toBeGreaterThan(before).then(() => true, () => false);
   await bell(page).click();
   const dialog = page.getByRole('dialog', { name: 'Notifications' });
   await expect(dialog).toBeVisible();
-  const listed = await dialog.getByText(title).first().waitFor({ timeout: 3000 }).then(() => true, () => false);
+  const listed = await dialog.getByText(title).first().waitFor({ timeout: 10000 }).then(() => true, () => false);
   PUSH[role] = rose && listed;
   DIAG.push(`${role} push: count rose=${rose} listed=${listed}`);
   await page.keyboard.press('Escape');

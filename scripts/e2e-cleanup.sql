@@ -95,3 +95,24 @@ DELETE FROM mis_po_items WHERE po_id IN (SELECT id FROM mis_purchase_orders WHER
 DELETE FROM mis_purchase_orders WHERE po_number = 'PO-202610-56395';
 DELETE FROM mis_orders WHERE order_number = 'ORD-202610-53687';
 COMMIT;
+
+-- v2-flows run MV2IJA5Z (2026-10-10T14:52:07.607Z → 2026-10-10T14:53:38.796Z):
+--   ORD-202610-31806 · PO-202610-34633 · GRN-202610-41471 · E2E-INV-MV2IJA5Z · MRN-202610-07004 · MRN-202610-15068 · item ITEM-001
+BEGIN;
+DELETE FROM notifications WHERE payload->>'grnNumber' = 'GRN-202610-41471' OR payload->>'requestNumber' IN ('MRN-202610-07004','MRN-202610-15068');
+DELETE FROM mis_material_request_lines WHERE request_id IN (SELECT id FROM mis_material_requests WHERE request_number IN ('MRN-202610-07004','MRN-202610-15068'));
+DELETE FROM mis_material_requests WHERE request_number IN ('MRN-202610-07004','MRN-202610-15068');
+DELETE FROM mis_store_transactions WHERE reference_no = 'ORD-202610-31806' OR reason LIKE 'MRN-202610-07004%' OR reason LIKE 'MRN-202610-15068%';
+DELETE FROM mis_inventory_ledger
+ WHERE source_id IN (SELECT id::text FROM mis_orders WHERE order_number = 'ORD-202610-31806')
+    OR source_id IN (SELECT id::text FROM mis_grns WHERE grn_number = 'GRN-202610-41471')
+    OR (source = 'STORE_ISSUE' AND source_id IS NULL AND created_at BETWEEN '2026-10-10T14:52:07.607Z' AND '2026-10-10T14:53:38.796Z'
+        AND item_id IN (SELECT id FROM mis_items WHERE code = 'ITEM-001'));
+DELETE FROM mis_order_stock_allocations WHERE source_id IN (SELECT id::text FROM mis_grns WHERE grn_number = 'GRN-202610-41471');
+DELETE FROM mis_supplier_invoices WHERE invoice_no = 'E2E-INV-MV2IJA5Z';
+DELETE FROM mis_grn_items WHERE grn_id IN (SELECT id FROM mis_grns WHERE grn_number = 'GRN-202610-41471');
+DELETE FROM mis_grns WHERE grn_number = 'GRN-202610-41471';
+DELETE FROM mis_po_items WHERE po_id IN (SELECT id FROM mis_purchase_orders WHERE po_number = 'PO-202610-34633');
+DELETE FROM mis_purchase_orders WHERE po_number = 'PO-202610-34633';
+DELETE FROM mis_orders WHERE order_number = 'ORD-202610-31806';
+COMMIT;
