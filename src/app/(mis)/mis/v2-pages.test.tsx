@@ -24,6 +24,7 @@ vi.mock('@/server/mis/store', () => ({ listPickerItems: async () => [{ id: 'i', 
 const template = { id: ID, name: 'Printing 6-Colours', processName: 'Printing', slotStart: '09:15', slotEnd: '18:00', parameters: ['Shade'], slots: ['09:15', '10:00'], isActive: true, sortOrder: 0 };
 vi.mock('@/server/mis/qc-template', () => ({ listQcTemplates: async () => [template] }));
 vi.mock('@/server/mis/orders', () => ({ getOrder: async () => ({ id: ID, orderNumber: 'ORD-1', customer: { name: 'C' } }) }));
+vi.mock('@/server/mis/business-rules', () => ({ getFactoryTimezone: async () => 'Asia/Kolkata' }));
 vi.mock('@/server/mis/qc', () => ({ getQcForOrder: async () => [{ id: 'c', parameterName: 'Shade', slotTime: '09:15', templateId: ID, result: 'PASS', defectType: null, checkTime: new Date(), defectQty: d(0) }] }));
 
 vi.mock('@/components/mis/store/request-list-screen', () => ({ RequestListScreen: () => null, STATUS_TONE: {} }));
@@ -81,6 +82,14 @@ describe('V2 pages render and pass only plain data to the client', () => {
     expect(html).toContain('09:15');
     expect(html).toContain('Shade');
     expect(html).toContain('✓');
+  });
+  it("QC checklist A4 print is one factory day: another day's sheet is blank and shows its own date", async () => {
+    const { default: Page } = await import('./print/qc-checklist/[id]/page');
+    const { renderToStaticMarkup } = await import('react-dom/server');
+    const tree = await Page({ params, searchParams: Promise.resolve({ template: ID, date: '2020-01-02' }) });
+    const html = renderToStaticMarkup(tree as React.ReactElement);
+    expect(html).not.toContain('>✓<'); // the legend also has a tick; a filled cell is `>✓<`
+    expect(html).toContain('02/01/2020');
   });
   it('a bad id on the request detail is a 404, not a query', async () => {
     const { default: Page } = await import('./store/requests/[id]/page');

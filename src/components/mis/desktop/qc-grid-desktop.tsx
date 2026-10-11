@@ -31,7 +31,7 @@ const CELL: Record<SlotState, string> = {
   makeready: 'border border-slate-300 bg-slate-200 text-slate-600',
   // Dashed = nothing recorded (an absence of data), distinct from grey = a recorded make-ready.
   never: 'border-2 border-dashed border-slate-400 bg-transparent text-slate-400',
-  upcoming: 'border border-slate-200 bg-slate-50 text-slate-300',
+  upcoming: 'border border-slate-200 bg-slate-50 text-slate-500',
   // The line was not on a machine this hour: nothing was due, so nothing is drawn as missing.
   off: 'bg-transparent text-slate-300',
 };
