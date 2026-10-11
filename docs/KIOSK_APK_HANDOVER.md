@@ -107,13 +107,17 @@ Response `200`:
 {
   "device": { "id": "uuid", "name": "Gate-01" },
   "pulledAt": "2026-...Z",
+  "shifts": [ { "id": "uuid", "name": "Day", "startTime": "08:00", "endTime": "17:00" } ],
   "employees": [
     { "id": "uuid", "name": "Amod Sah", "badgeCode": "EMP0061",
-      "shift": { "id": "uuid", "name": "Day", "startTime": "08:00", "endTime": "17:00" } | null }
+      "shift": { "id": "uuid", "name": "Day", "startTime": "08:00", "endTime": "17:00" } | null,
+      "photoUrl": "/api/mis/employees/<id>/photo?v=..." | null,
+      "operatorRole": "OPERATOR" | "SUPER_OPERATOR" | null }
   ]
 }
 ```
 This is factory-wide (every active employee), not filtered — match by `badgeCode` on scan.
+`shifts` lists every active shift (clock only) so an operator can pick the shift being run even when nobody is allocated today; `operatorRole` is non-null only for attendance-operator employees (exact strings, case-sensitive) and is how the tablet refuses a sign-in by anyone else.
 
 ### 4.4 `POST /api/mis/kiosk/punch` — submit one punch (`Authorization: Bearer <token>`)
 Request body (the queued-write envelope, `src/lib/mis/offline/idempotency.ts`):
