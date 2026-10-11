@@ -31,3 +31,28 @@ export function cappedIssueQty(requested: number, actual: number): number {
   }
   return actual;
 }
+
+/** EQUIPMENT and OTHER are department overhead: they go to a department, never to a customer order. */
+export function isOverheadCategory(category: string | null | undefined): boolean {
+  return category === 'EQUIPMENT' || category === 'OTHER';
+}
+
+/**
+ * The category rule for an issue or request, whichever door it comes through: overhead lines may
+ * not be booked to an order, and with no order they need a department to carry them. Returns the
+ * refusal sentence, or null when every line is allowed.
+ */
+export function categoryRefusal(
+  lines: readonly { name: string; category: string | null | undefined }[],
+  target: { orderId?: string | null; departmentId?: string | null },
+): string | null {
+  const overhead = lines.filter((l) => isOverheadCategory(l.category)).map((l) => l.name);
+  if (overhead.length === 0) return null;
+  if (target.orderId) {
+    return `Equipment and other items are department overhead and cannot be booked to an order: ${overhead.join(', ')}`;
+  }
+  if (!target.departmentId) {
+    return `Equipment and other items must be issued to a department: ${overhead.join(', ')}`;
+  }
+  return null;
+}

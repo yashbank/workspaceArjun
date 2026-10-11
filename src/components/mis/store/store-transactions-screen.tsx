@@ -226,7 +226,7 @@ export function StoreTransactionsScreen({ txns, items, canWrite }: Props) {
           {r.referenceNo && <span>{r.referenceNo}</span>}
           {r.referenceNo && r.reason && <span className="mx-1">·</span>}
           {r.reason && <span>{r.reason}</span>}
-          {!r.referenceNo && !r.reason && <span className="text-slate-300">—</span>}
+          {!r.referenceNo && !r.reason && <span className="text-slate-500">—</span>}
         </div>
       ),
     },

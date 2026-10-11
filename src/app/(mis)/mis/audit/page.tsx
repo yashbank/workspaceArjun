@@ -3,6 +3,7 @@ import { getMisRole } from '@/server/mis/roles';
 import { can } from '@/lib/mis/permissions';
 import { db } from '@/server/db';
 import { MisForbiddenError, requirePermission } from '@/server/mis/auth';
+import { auditChangesForRole } from '@/lib/mis/audit-redaction';
 import { AuditScreen } from '@/components/mis/audit/audit-screen';
 
 type Props = {
@@ -41,6 +42,9 @@ export default async function AuditPage({ searchParams }: Props) {
   return (
     <AuditScreen
       logs={logs.map((l) => ({
+        // before/after never leave the server raw: `auditChangesForRole` redacts money for every
+        // role without wages.read (Admin can open this screen) and sends only the changed fields.
+        ...auditChangesForRole(role, l.before, l.after),
         id: l.id,
         action: l.action,
         entity: l.entity,

@@ -96,6 +96,106 @@
   --shadow-float: 0 12px 40px oklch(0 0 0 / 0.35), 0 4px 12px oklch(0 0 0 / 0.2);
 }
 
+
+/*
+ * MIS is a light-only product (docs/MIS_UI_SPEC.md has no dark mode). Its screens hard-code
+ * white cards, so a phone/OS in dark mode must not turn the inherited text near-white. The
+ * MisShell renders <div class="mis-light">; these two rules re-declare the light tokens for
+ * that subtree (.mis-light) and for <html> itself while an MIS screen is mounted
+ * (html:has(...)), which also covers portalled dialogs/menus and the page background.
+ * Two rules, not one list: a browser without :has() must not drop the whole declaration.
+ * The legacy (dashboard)/(auth) UI never renders .mis-light and keeps its dark mode.
+ */
+.mis-light {
+  color-scheme: light;
+  /* BPP / Stitch — Tactile Executive (light) */
+  --bpp-background: #faf9f9;
+  --bpp-ivory: #f4f3f3;
+  --bpp-surface: #ffffff;
+  --bpp-surface-container: #efeded;
+  --bpp-graphite: #1b1c1c;
+  --bpp-muted: #5e5e5b;
+  --bpp-outline: #c4c7c7;
+  --radius: 0.75rem;
+  --background: var(--bpp-background);
+  --foreground: var(--bpp-graphite);
+  --card: var(--bpp-surface);
+  --card-foreground: var(--bpp-graphite);
+  --popover: var(--bpp-surface);
+  --popover-foreground: var(--bpp-graphite);
+  --primary: #4f46e5;
+  --primary-foreground: #ffffff;
+  --secondary: var(--bpp-ivory);
+  --secondary-foreground: var(--bpp-graphite);
+  --muted: var(--bpp-ivory);
+  --muted-foreground: var(--bpp-muted);
+  --accent: var(--bpp-surface-container);
+  --accent-foreground: var(--bpp-graphite);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.577 0.245 27.325);
+  --border: color-mix(in oklab, var(--bpp-outline) 55%, transparent);
+  --input: var(--bpp-outline);
+  --ring: #6366f1;
+  --shadow-card: 0 1px 2px rgb(27 28 28 / 0.04), 0 1px 3px rgb(27 28 28 / 0.03);
+  --shadow-elevated: 0 4px 16px rgb(27 28 28 / 0.06), 0 1px 3px rgb(27 28 28 / 0.04);
+  --shadow-float: 0 12px 40px rgb(27 28 28 / 0.1), 0 4px 12px rgb(27 28 28 / 0.05);
+  background-color: var(--background);
+  color: var(--color-slate-900, #0f172a);
+}
+html:has(.mis-light) {
+  color-scheme: light;
+  /* BPP / Stitch — Tactile Executive (light) */
+  --bpp-background: #faf9f9;
+  --bpp-ivory: #f4f3f3;
+  --bpp-surface: #ffffff;
+  --bpp-surface-container: #efeded;
+  --bpp-graphite: #1b1c1c;
+  --bpp-muted: #5e5e5b;
+  --bpp-outline: #c4c7c7;
+  --radius: 0.75rem;
+  --background: var(--bpp-background);
+  --foreground: var(--bpp-graphite);
+  --card: var(--bpp-surface);
+  --card-foreground: var(--bpp-graphite);
+  --popover: var(--bpp-surface);
+  --popover-foreground: var(--bpp-graphite);
+  --primary: #4f46e5;
+  --primary-foreground: #ffffff;
+  --secondary: var(--bpp-ivory);
+  --secondary-foreground: var(--bpp-graphite);
+  --muted: var(--bpp-ivory);
+  --muted-foreground: var(--bpp-muted);
+  --accent: var(--bpp-surface-container);
+  --accent-foreground: var(--bpp-graphite);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.577 0.245 27.325);
+  --border: color-mix(in oklab, var(--bpp-outline) 55%, transparent);
+  --input: var(--bpp-outline);
+  --ring: #6366f1;
+  --shadow-card: 0 1px 2px rgb(27 28 28 / 0.04), 0 1px 3px rgb(27 28 28 / 0.03);
+  --shadow-elevated: 0 4px 16px rgb(27 28 28 / 0.06), 0 1px 3px rgb(27 28 28 / 0.04);
+  --shadow-float: 0 12px 40px rgb(27 28 28 / 0.1), 0 4px 12px rgb(27 28 28 / 0.05);
+}
+html.dark:has(.mis-light) .bg-shimmer {
+  background: linear-gradient(90deg, var(--muted) 0%, oklch(0.975 0 0) 40%, oklch(0.975 0 0) 60%, var(--muted) 100%);
+}
+html.dark:has(.mis-light) .glass {
+  background: oklch(1 0 0 / 0.7);
+}
+
+/*
+ * WCAG AA: text-slate-400 / gray-400 / gray-300 are ~2.5:1 on white. On MIS screens read them
+ * as slate-500 (4.76:1). Only the text colour utilities are touched (not border-*, bg-*, or
+ * placeholder:/hover: variants). Light-on-dark surfaces (the #171310 panels, dark buttons) keep
+ * the original light grey.
+ */
+html:has(.mis-light) :is(.text-slate-400, .text-gray-400, .text-gray-300):not(
+    :is([class*="bg-[#171310]"], [class*="bg-slate-900"], [class*="bg-slate-800"], [class*="bg-gray-900"]),
+    :is([class*="bg-[#171310]"], [class*="bg-slate-900"], [class*="bg-slate-800"], [class*="bg-gray-900"]) *
+  ) {
+  color: var(--color-slate-500, #64748b);
+}
+
 @layer base {
   * {
     @apply border-border;

@@ -1,4 +1,6 @@
-import { cappedIssueQty, linesRefusedForOrder } from '@/lib/mis/material-request';
+import { cappedIssueQty, categoryRefusal } from '@/lib/mis/material-request';
+import { isOrderClosed } from '@/lib/mis/order-status';
+import { positiveQty, roundQty } from '@/lib/mis/quantity';
 import { db } from '@/server/db';
 
 import { logAuditEvent } from './audit';
@@ -32,9 +34,8 @@ function nextRequestNumber(attempt = 0): string {
 export async function createMaterialRequest(lines: MaterialRequestLineInput[], meta: MaterialRequestMeta = {}) {
   const actor = await requirePermission('store.read');
   if (lines.length === 0) throw new Error('Add at least one item.');
-  for (const l of lines) {
-    if (!Number.isFinite(l.qty) || l.qty <= 0) throw new Error('Every line needs a quantity greater than zero.');
-  }
+  // Round to the stored 2 dp BEFORE validating, so 0.004 is refused instead of saved as 0.00.
+  lines = lines.map((l) => ({ itemId: l.itemId, qty: positiveQty(l.qty) }));
   const items = await db.misItem.findMany({
     where: { id: { in: lines.map((l) => l.itemId) }, isActive: true, deletedAt: null },
     select: { id: true, name: true, category: true },
@@ -43,15 +44,17 @@ export async function createMaterialRequest(lines: MaterialRequestLineInput[], m
     throw new Error('One of the items is no longer active.');
   }
   const [order, department] = await Promise.all([
-    meta.orderId ? db.misOrder.findUnique({ where: { id: meta.orderId }, select: { id: true, orderNumber: true } }) : Promise.resolve(null),
+    meta.orderId ? db.misOrder.findUnique({ where: { id: meta.orderId }, select: { id: true, orderNumber: true, status: true } }) : Promise.resolve(null),
     meta.departmentId ? db.misDepartment.findUnique({ where: { id: meta.departmentId }, select: { id: true, name: true } }) : Promise.resolve(null),
   ]);
   if (meta.orderId && !order) throw new Error('That order no longer exists — reload and pick again.');
   if (meta.departmentId && !department) throw new Error('That department no longer exists — reload and pick again.');
-  const refused = linesRefusedForOrder(items, meta.orderId);
-  if (refused.length > 0) {
-    throw new Error(`Equipment and other items are department overhead and cannot be booked to an order: ${refused.join(', ')}`);
+  if (order?.status && isOrderClosed(order.status)) {
+    throw new Error(`${order.orderNumber} is ${order.status.toLowerCase().replace(/_/g, ' ')} — material cannot be requested against a closed order.`);
   }
+  // Same rule commitIssue enforces at approval: overhead never goes to an order, and needs a department otherwise.
+  const refusal = categoryRefusal(items, { orderId: meta.orderId, departmentId: meta.departmentId });
+  if (refusal) throw new Error(refusal);
   let created;
   for (let attempt = 0; ; attempt++) {
     try {
@@ -129,7 +132,7 @@ export async function approveMaterialRequest(id: string, decisions: ApproveLineI
 
   const byLine = new Map(decisions.map((d) => [d.lineId, d.actualIssuedQty]));
   const issued = req.lines.map((line) => {
-    const actual = cappedIssueQty(line.requestedQty.toNumber(), byLine.get(line.id) ?? 0);
+    const actual = cappedIssueQty(line.requestedQty.toNumber(), roundQty(Number(byLine.get(line.id) ?? 0)));
     return { lineId: line.id, itemId: line.itemId, qty: actual };
   });
   const cart: CartLineInput[] = issued.filter((l) => l.qty > 0).map((l) => ({ itemId: l.itemId, qty: l.qty }));
@@ -143,24 +146,26 @@ export async function approveMaterialRequest(id: string, decisions: ApproveLineI
 
   let result;
   try {
+    // The per-line quantities are written on the issue's own transaction: the stock movement and
+    // the note's record of it commit together or not at all (a crash can no longer leave an
+    // APPROVED note with no issued quantities).
     result = await commitIssue(cart, {
       orderId: req.orderId,
       departmentId: req.departmentId,
       notes: `${req.requestNumber}${note?.trim() ? ` · ${note.trim()}` : ''}`,
+      inTransaction: async (tx) => {
+        for (const l of issued) {
+          await tx.misMaterialRequestLine.update({ where: { id: l.lineId }, data: { actualIssuedQty: l.qty } });
+        }
+      },
     });
   } catch (error) {
-    // Only an issue that did NOT move stock re-opens the note. Once commitIssue has returned,
-    // the ledger has changed and the note must stay APPROVED whatever happens below.
+    // The whole issue rolled back (ledger and line quantities alike), so the note re-opens.
     await db.misMaterialRequest.updateMany({
       where: { id, status: 'APPROVED' },
       data: { status: 'PENDING', decidedById: null, decidedAt: null, decisionNote: null },
     });
     throw error;
-  }
-  // shortcut: line quantities are written after the ledger commit, not inside it; upgrade to one
-  // transaction if commitIssue ever exposes a tx client.
-  for (const l of issued) {
-    await db.misMaterialRequestLine.update({ where: { id: l.lineId }, data: { actualIssuedQty: l.qty } });
   }
   await logAuditEvent({
     actorId: actor.userId,

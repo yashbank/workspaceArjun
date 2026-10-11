@@ -8,6 +8,8 @@
  * Pure: no Prisma, no React.
  */
 
+import { factoryDateKey } from './factory-time';
+
 export const CHECKLIST_STATUSES = ['PASS', 'FAIL', 'MAKE_READY', 'PLATE_ERR'] as const;
 export type ChecklistStatus = (typeof CHECKLIST_STATUSES)[number];
 
@@ -50,13 +52,39 @@ export function slotTimes(start: string, end: string): string[] {
 
 export type TemplateDef = { name: string; processName: string; slotStart: string; slotEnd: string; parameters: string[] };
 
-/** The four paper forms, as handed over. Seeded by the migration and restorable from Settings. */
+/** The four paper forms, in the spec's exact wording (V2 Epic 5). Restorable from Settings. */
 export const DEFAULT_QC_TEMPLATES: readonly TemplateDef[] = [
-  { name: 'Printing 6-Colours', processName: 'Printing', slotStart: '09:15', slotEnd: '18:00', parameters: ['Colour shade vs approved sample', 'Registration', 'Ink density', 'Set-off / smudging', 'Scumming / hickeys', 'Sheet count'] },
-  { name: 'Lamination', processName: 'Lamination', slotStart: '09:15', slotEnd: '18:00', parameters: ['Film type & GSM', 'Bond strength (peel)', 'Bubbles / wrinkles', 'Trim alignment', 'Curl'] },
-  { name: 'Lamif Flute', processName: 'Fluting', slotStart: '09:15', slotEnd: '18:00', parameters: ['Flute profile', 'Glue bond', 'Warp', 'Board thickness', 'Surface damage'] },
-  { name: 'Die Cutting', processName: 'Die Cutting', slotStart: '09:15', slotEnd: '18:00', parameters: ['Die position / registration', 'Creasing depth', 'Cut cleanliness (no burr)', 'Stripping', 'Sheet count'] },
+  { name: 'Printing Checklist', processName: 'Printing', slotStart: '09:15', slotEnd: '18:00', parameters: ['Shade Matching with Shade Card', 'Unwanted Marks/Blanket Punch', 'Front Lay & Side Lay', 'Scumming', 'Registration Out', 'Set-Off/Powdering'] },
+  { name: 'Lamination Checklist', processName: 'Lamination', slotStart: '09:15', slotEnd: '18:00', parameters: ['Type of Lamination (Gloss/Matt)', 'Bubbles', 'Wrinkles', 'Powder/White Patches', 'Scratches on Film'] },
+  { name: 'Lamif Flute Lamination', processName: 'Fluting', slotStart: '09:15', slotEnd: '18:00', parameters: ['Gripper and Side Lay', 'Moisture', 'Bubbles', 'Fiber Tear Test', 'Sheets Sticking to Each Other'] },
+  { name: 'Die Cutting Checklist', processName: 'Die Cutting', slotStart: '09:15', slotEnd: '18:00', parameters: ['Box Dimensions (±0.5mm)', 'Cracking', 'Burrs/Rough Edges', 'Clean and Easy Stripping', 'Punching Out & Embossing Out'] },
 ];
+
+/** The names these forms were first seeded under, keyed by today's name: a not-yet-renamed row still counts as present. */
+export const LEGACY_QC_TEMPLATE_NAMES: Record<string, string> = {
+  'Printing Checklist': 'Printing 6-Colours',
+  'Lamination Checklist': 'Lamination',
+  'Lamif Flute Lamination': 'Lamif Flute',
+  'Die Cutting Checklist': 'Die Cutting',
+};
+
+/** Swap the item at `index` with its neighbour. Out of range (or off either end) returns the list unchanged. */
+export function moveItem<T>(list: readonly T[], index: number, direction: 'up' | 'down'): T[] {
+  const out = [...list];
+  const to = direction === 'up' ? index - 1 : index + 1;
+  if (index < 0 || index >= out.length || to < 0 || to >= out.length) return out;
+  [out[index], out[to]] = [out[to], out[index]];
+  return out;
+}
+
+/**
+ * Only the checks taken on one FACTORY day. A check belongs to the day its `checkTime` falls on in
+ * the factory's zone, so a 23:50 and a 00:10 punch on a night shift land on different sheets, and
+ * yesterday's 10:00 tap never fills today's 10:00 cell.
+ */
+export function filterChecksToFactoryDay<T extends { checkTime: Date }>(checks: readonly T[], dateKey: string, timeZone: string): T[] {
+  return checks.filter((c) => factoryDateKey(c.checkTime, timeZone) === dateKey);
+}
 
 /** `parameters` as stored (JSON) → a clean string list. */
 export function parseParameters(value: unknown): string[] {

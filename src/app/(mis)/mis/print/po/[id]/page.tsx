@@ -80,7 +80,8 @@ export default async function PoPrintPage({ params }: { params: Promise<{ id: st
         {po.notes && <div className="mt-1"><span className="font-medium">Notes:</span> {po.notes}</div>}
       </div>
 
-      <table className="w-full mb-6 text-sm">
+      <div className="overflow-x-auto print:overflow-visible mb-6">
+      <table className="w-full text-sm">
         <thead>
           <tr className="border-b-2 border-gray-200">
             <th className="py-2 text-left font-semibold text-gray-600 w-8">#</th>
@@ -119,6 +120,7 @@ export default async function PoPrintPage({ params }: { params: Promise<{ id: st
           </tr>
         </tfoot>
       </table>
+      </div>
 
       <div className="grid grid-cols-2 gap-8 mt-12 pt-6 border-t border-gray-200 text-xs text-gray-500">
         <div>

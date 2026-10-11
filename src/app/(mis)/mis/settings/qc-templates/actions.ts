@@ -3,7 +3,7 @@ import { revalidatePath } from 'next/cache';
 
 import { asResult } from '@/lib/mis/action-result';
 
-import { createQcTemplate, seedQcTemplates, setQcTemplateActive, updateQcTemplate, type QcTemplateInput } from '@/server/mis/qc-template';
+import { createQcTemplate, moveQcParameter, moveQcTemplate, seedQcTemplates, setQcTemplateActive, updateQcTemplate, type QcTemplateInput } from '@/server/mis/qc-template';
 
 const PATH = '/mis/settings/qc-templates';
 
@@ -27,4 +27,16 @@ export async function seedQcTemplatesAction() {
   const r = await seedQcTemplates();
   revalidatePath(PATH);
   return r;
+}
+export async function moveQcTemplateAction(id: string, direction: 'up' | 'down') {
+  return asResult(async () => {
+    await moveQcTemplate(id, direction);
+    revalidatePath(PATH);
+  });
+}
+export async function moveQcParameterAction(id: string, parameter: string, direction: 'up' | 'down') {
+  return asResult(async () => {
+    await moveQcParameter(id, parameter, direction);
+    revalidatePath(PATH);
+  });
 }

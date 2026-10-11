@@ -32,3 +32,17 @@ export const KIOSK_DEVICE_ROUTES = [
 export function isKioskDeviceRoute(pathname: string): boolean {
   return (KIOSK_DEVICE_ROUTES as readonly string[]).includes(pathname);
 }
+
+/**
+ * The one parameterised door: a tablet fetching a badge photo. The path is matched by
+ * pattern (the id is a UUID), never by prefix, and ONLY a request that presents an
+ * `Authorization: Bearer` header skips the login redirect — a browser with no session
+ * and no bearer is still sent to /login. The route itself verifies the device token
+ * (`getEmployeePhotoForDevice`) and answers 401/403 JSON on a bad one.
+ */
+const KIOSK_PHOTO_PATH = /^\/api\/mis\/employees\/[0-9a-fA-F-]{36}\/photo$/;
+
+export function isKioskDeviceRequest(pathname: string, authorization: string | null | undefined): boolean {
+  if (isKioskDeviceRoute(pathname)) return true;
+  return KIOSK_PHOTO_PATH.test(pathname) && typeof authorization === 'string' && /^Bearer\s+\S/.test(authorization);
+}

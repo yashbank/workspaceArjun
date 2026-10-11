@@ -27,7 +27,7 @@ describe('the four buttons map onto the result QC already reads', () => {
 
 describe('defaults and parsing', () => {
   it('ships the four paper forms, each with slots 09:15–18:00 and some parameters', () => {
-    expect(DEFAULT_QC_TEMPLATES.map((t) => t.name)).toEqual(['Printing 6-Colours', 'Lamination', 'Lamif Flute', 'Die Cutting']);
+    expect(DEFAULT_QC_TEMPLATES.map((t) => t.name)).toEqual(['Printing Checklist', 'Lamination Checklist', 'Lamif Flute Lamination', 'Die Cutting Checklist']);
     for (const t of DEFAULT_QC_TEMPLATES) expect(t.parameters.length).toBeGreaterThan(3);
   });
   it('parseParameters tolerates junk', () => {
