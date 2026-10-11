@@ -592,11 +592,22 @@ export async function recordDeviceSync(
  * this array and fails if it grows or if any key looks like money.
  */
 // V2 Epic 7: `photoUrl` (a portal path, fetched with the device token) so a scan can flash the face.
-export const PULL_EMPLOYEE_KEYS = ['id', 'name', 'badgeCode', 'shift', 'photoUrl'] as const;
+// V2 (kiosk alignment 2026-10-12): `operatorRole` lets the tablet refuse a sign-in by anyone who is not an
+// attendance operator. It is a coarse label derived from the MIS role, never the raw role, and never money.
+export const PULL_EMPLOYEE_KEYS = ['id', 'name', 'badgeCode', 'shift', 'photoUrl', 'operatorRole'] as const;
 /** A shift definition — the clock, not a person. Nested in `shift`. */
 export const PULL_SHIFT_KEYS = ['id', 'name', 'startTime', 'endTime'] as const;
 
 export type PullShift = { id: string; name: string; startTime: string; endTime: string };
+/** Who may run the gate tablet. Exactly these two strings or null — the Android app matches them case-sensitively. */
+export type PullOperatorRole = 'OPERATOR' | 'SUPER_OPERATOR';
+
+export function operatorRoleOf(role: string | null | undefined): PullOperatorRole | null {
+  if (role === 'ATTENDANCE_OPERATOR') return 'OPERATOR';
+  if (role === 'SUPER_ATTENDANCE_OPERATOR') return 'SUPER_OPERATOR';
+  return null;
+}
+
 export type PullEmployee = {
   id: string;
   name: string;
@@ -606,10 +617,12 @@ export type PullEmployee = {
   shift: PullShift | null;
   /** V2 Epic 7 — `/api/mis/employees/<id>/photo`, or null when no photo was taken. */
   photoUrl: string | null;
+  /** "OPERATOR" | "SUPER_OPERATOR" for an attendance operator, null for everyone else. */
+  operatorRole: PullOperatorRole | null;
 };
 
 export function toPullEmployee(
-  employee: { id: string; name: string; employeeCode: string; photoUrl?: string | null },
+  employee: { id: string; name: string; employeeCode: string; photoUrl?: string | null; role?: string | null },
   shift: { id: string; name: string; startTime: string; endTime: string } | null,
 ): PullEmployee {
   return {
@@ -620,12 +633,15 @@ export function toPullEmployee(
       ? { id: shift.id, name: shift.name, startTime: shift.startTime, endTime: shift.endTime }
       : null,
     photoUrl: employee.photoUrl ?? null,
+    operatorRole: operatorRoleOf(employee.role),
   };
 }
 
 export type PullPayload = {
   device: { id: string; name: string };
   pulledAt: string;
+  /** Every active shift (the clock only), so an operator can pick the shift being run even when nobody is allocated yet. */
+  shifts: PullShift[];
   employees: PullEmployee[];
 };
 
@@ -643,7 +659,7 @@ async function buildPullPayload(device: AuthenticatedDevice, now: Date): Promise
   const [employees, shifts, allocations, attendance] = await Promise.all([
     db.misEmployee.findMany({
       where: { isActive: true, deletedAt: null },
-      select: { id: true, employeeCode: true, name: true, photoUrl: true },
+      select: { id: true, employeeCode: true, name: true, photoUrl: true, role: true },
       orderBy: { name: 'asc' },
     }),
     db.misShift.findMany({
@@ -669,6 +685,9 @@ async function buildPullPayload(device: AuthenticatedDevice, now: Date): Promise
   return {
     device: { id: device.id, name: device.name },
     pulledAt: now.toISOString(),
+    shifts: [...shifts]
+      .sort((a, b) => a.startTime.localeCompare(b.startTime))
+      .map((s) => ({ id: s.id, name: s.name, startTime: s.startTime, endTime: s.endTime })),
     employees: employees.map((e) => toPullEmployee(e, shiftById.get(shiftOf.get(e.id) ?? '') ?? null)),
   };
 }
