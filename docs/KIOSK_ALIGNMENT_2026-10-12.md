@@ -4,6 +4,50 @@
 selection, and the photo confirm-card fallback, built in response to the 2026-10-12 next-steps
 request.
 
+## 0. Round 2 update (same day, after merging `main`)
+
+The server shipped real `operatorRole` values and a new top-level `shifts` array on `/pull`
+(docs/KIOSK_APK_HANDOVER.md §4.3) — merged `origin/main` into `phase-a` clean (commit `d2e956f`
+→ merge → `cfad545`, no conflicts). Two more changes landed on top of round 1, both now
+**live-tested against production with real data, not the fallback paths**:
+
+- Commit `cfad545` — "Use server's active-shifts list for the picker; route manual entry through
+  photo confirm". Shift picker now sources from the new top-level `shifts` array (persisted in a
+  new `ActiveShiftEntity`/`ActiveShiftDao`, `RosterDatabase` v4→v5), falling back to the old
+  roster-rollup only if that array is also ever empty. Manual code entry now routes through the
+  same photo confirm card QR scanning uses, instead of submitting on the first tap.
+- **§4's test table below is now superseded for tests #1, #3, #4** — re-run live against real
+  server data (not 0/82 fallback mode anymore): confirmed 82 employees, **79 `operatorRole=null`,
+  1 `OPERATOR`, 2 `SUPER_OPERATOR`**; 3 real active shifts. Rejection of a non-operator is now
+  genuinely enforced and was observed on screen ("Not an attendance operator"), not just
+  logic-reviewed. See the new §4a table.
+- Not pushed to `main` — `phase-a` is now 2 commits ahead of `origin/phase-a` (`cfad545` and the
+  round-1 `ed618b6`, plus the merge commit pulling `main` in).
+
+## 4a. Round 2 test results (live production data, not fallback)
+
+| # | Test | Result |
+|---|---|---|
+| 1 | Employee WITH a real role (OPERATOR/SUPER_OPERATOR) signs in | **PASS** — EMP0068 (SUPER_OPERATOR) signed in, advanced to shift-select |
+| 2 | Employee WITHOUT a role (operatorRole=null) is rejected | **PASS** — EMP0061 (null) rejected, "Not an attendance operator" shown — this closes the §4 row-1 N/A from round 1 |
+| 3 | Shift picker shows real server shifts | **PASS** — 3 entries (Shift 1, Shift 2, Night Shift) matching the `active_shifts` table 1:1, no stale roster-rollup leftovers |
+| 4 | Manual entry shows confirm card, then submits on explicit confirm | **PASS** — matched employee → confirm card (placeholder, no cached photo) → Clock In → `SEND`/`DONE result=Applied` in 716ms, count incremented |
+| 5 | No crashes | **PASS** |
+
+Round-1 §6's "Operational risk" note (both gates running in fallback mode, nothing really being
+tested) **no longer applies** — real role/shift data is live and both gates are now confirmed
+enforcing for real. Round-1 §6's "manual entry bypasses the photo card" gap is **fixed**, not
+just flagged.
+
+**Still open:** photo render itself (confirm card actually showing a decoded image, not just the
+placeholder) is still code-verified only — this emulator has no camera/no cached-photo test
+subject was shown in this round either (the manual-entry test employee had no cached photo).
+Needs a real device, or an emulator run against an employee confirmed to have `photo` bytes
+cached, to close out fully. Two pre-existing permanently-`REJECTED` queue rows ("Yash Bankar",
+"Abdul Basit", `shiftId="test-shift-1"`, queued 2026-10-11) were noticed incidentally — predate
+this round, not caused by it, left alone (out of scope, operator-facing "Needs attention" list
+already surfaces them for manual dismissal).
+
 ## 1. Git
 
 - Repo: `github.com/yashbank/workspaceArjun`, branch `phase-a`.
