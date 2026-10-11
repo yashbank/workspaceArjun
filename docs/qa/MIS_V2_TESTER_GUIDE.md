@@ -131,8 +131,14 @@ Re-run only these rows; the earlier sections are unchanged.
 | 10.16 | OWNER | Audit log → open any row | Shows only the fields that changed, old → new. A material price change shows the real old and new price |
 | 10.17 | ADMIN | Audit log → open the same rows | No ₹ amounts or rates anywhere (they are hidden for every role except Owner) |
 
-Not in this release (still being built): the supplier-invoice reconciliation board and its
-match statuses. Do not test it yet.
+| 10.18 | OWNER / ADMIN | Menu → **Supplier invoices** | Board lists invoices with a status: green MATCHED, amber quantity discrepancy, red price discrepancy, grey pending review. Owner sees amounts; Admin sees quantities and variance only |
+| 10.19 | STORE_GUY | Menu → Supplier invoices | Sees invoices and their status only, no rupee amounts |
+| 10.20 | STORE_GUY → OWNER | Receive against a PO, type the supplier invoice no. and amount, **Confirm** the GRN | An invoice appears on the board. Amount equal to received qty × PO rate (within ₹1 or 0.5%) → MATCHED; clearly different amount → price discrepancy; DC qty ≠ received qty → quantity discrepancy |
+| 10.21 | OWNER / ADMIN | On the board press **Re-check match** on a pending invoice | Status updates; nothing else changes |
+| 10.22 | SUPERVISOR / QC / ATTENDANCE | Open `/mis/supplier-invoices` by URL | "You do not have access" |
+
+Note: invoices created through the Store cart receipt stay **pending review** until someone
+presses Re-check match (known, intentional for now).
 
 ## §9. Report
 Use the Bug template from `EXTERNAL_TESTER_GUIDE.md` §8: what you did, what you expected, what
