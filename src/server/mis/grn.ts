@@ -1,5 +1,6 @@
 import { shortQuantity, withoutInvoiceMoney } from '@/lib/mis/grn-match';
 import { orderNumberFromRef } from '@/lib/mis/order-allocation';
+import { roundQty } from '@/lib/mis/quantity';
 import type { MisRoleName } from '@/lib/mis/roles';
 import { can } from '@/lib/mis/permissions';
 import { withoutMoneyFields } from '@/lib/mis/money-fields';
@@ -8,6 +9,8 @@ import { MisForbiddenError, requirePermission } from './auth';
 import { logAuditEvent } from './audit';
 import { allocateFromReceipt } from './order-allocation';
 import { notifyGrnConfirmed } from './grn-alerts';
+import { itemLockKey, poItemLockKey } from '@/lib/mis/stock-lock-keys';
+import { lockStockKeys } from './stock-lock';
 
 /** V2 Epic 1 — the delivery's paperwork. `supplierInvoiceAmount` is money: Owner-only to write and to read. */
 export type GrnHeaderInput = {
@@ -69,6 +72,66 @@ function auditSafeHeader<T extends { supplierInvoiceAmount?: unknown }>(row: T):
 /** A GRN row (or list) as `role` may read it: invoice money and PO line rates only for `wages.read`. */
 function forReader<T>(role: MisRoleName, value: T): T {
   return can(role, 'wages.read') ? value : (withoutInvoiceMoney(withoutMoneyFields(value)) as T);
+}
+
+/** A GRN refused because of what state it is in (already confirmed, empty, not a draft). */
+export class GrnStateError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'GrnStateError';
+  }
+}
+
+type Decimalish = { toNumber(): number } | number | null | undefined;
+const num = (v: Decimalish): number => (v == null ? 0 : typeof v === 'number' ? v : v.toNumber());
+
+/** A line's three quantities, rounded to the stored 2 dp BEFORE any rule looks at them. */
+function lineQuantities(received: number, dc: number | null | undefined, damage: number | null | undefined) {
+  for (const v of [received, dc ?? 0, damage ?? 0]) {
+    if (!Number.isFinite(v)) throw new Error('Enter a valid quantity.');
+  }
+  const out = { received: roundQty(received), dc: dc == null ? null : roundQty(dc), damage: roundQty(damage ?? 0) };
+  if (out.received < 0 || out.damage < 0 || (out.dc ?? 0) < 0) throw new Error('Quantities cannot be negative.');
+  if (out.received + out.damage <= 0) throw new Error('A line needs a received or damaged quantity above zero.');
+  return out;
+}
+
+/** The PO line may take `received` more: ordered minus what confirmed GRNs already booked, minus the rest of this GRN. */
+function assertWithinOutstanding(poLine: { quantity: Decimalish; receivedQuantity: Decimalish }, received: number, alongside: number) {
+  const ordered = num(poLine.quantity);
+  const outstanding = roundQty(ordered - num(poLine.receivedQuantity));
+  const room = Math.max(0, roundQty(outstanding - alongside));
+  if (roundQty(received + alongside) > outstanding) {
+    throw new Error(`Cannot receive ${received}: only ${room} of the ${ordered} ordered is still outstanding on this PO line.`);
+  }
+}
+
+type EditableGrn = {
+  id: string;
+  status: string;
+  po: { items: { id: string; quantity: Decimalish; receivedQuantity: Decimalish }[] };
+  items: { id: string; poItemId: string; receivedQty: Decimalish }[];
+};
+
+/** The GRN a line is being added to or changed on: must exist and still be a DRAFT. */
+async function loadDraftGrn(grnId: string): Promise<EditableGrn> {
+  const grn = (await db.misGrn.findUnique({
+    where: { id: grnId },
+    include: {
+      po: { select: { items: { select: { id: true, quantity: true, receivedQuantity: true } } } },
+      items: { select: { id: true, poItemId: true, receivedQty: true } },
+    },
+  })) as EditableGrn | null;
+  if (!grn) throw new Error(`GRN ${grnId} not found`);
+  if (grn.status !== 'DRAFT') throw new GrnStateError('A confirmed GRN cannot be edited.');
+  return grn;
+}
+
+/** The PO line must be one of THIS GRN's purchase order. */
+function poLineOf(grn: EditableGrn, poItemId: string) {
+  const line = grn.po.items.find((p) => p.id === poItemId);
+  if (!line) throw new Error("That line is not on this GRN's purchase order.");
+  return line;
 }
 
 export function nextGrnNumber(): string {
@@ -137,18 +200,23 @@ export async function updateGRNHeader(id: string, patch: GrnHeaderInput) {
 
 export async function addGRNItem(grnId: string, input: GrnItemInput) {
   const actor = await requirePermission('grn.write');
+  const q = lineQuantities(input.receivedQty, input.dcQuantity, input.damageQuantity);
+  const grn = await loadDraftGrn(grnId);
+  const poLine = poLineOf(grn, input.poItemId);
+  const alongside = roundQty(grn.items.filter((i) => i.poItemId === input.poItemId).reduce((sum, i) => sum + num(i.receivedQty), 0));
+  assertWithinOutstanding(poLine, q.received, alongside);
   const created = await db.misGrnItem.create({
     data: {
       grnId,
       poItemId: input.poItemId,
-      receivedQty: input.receivedQty,
+      receivedQty: q.received,
       type: input.type || 'GENERAL',
       forOrderRef: input.forOrderRef?.trim() || null,
       batchNo: input.batchNo?.trim() || null,
       notes: input.notes?.trim() || null,
-      dcQuantity: input.dcQuantity ?? null,
-      damageQuantity: input.damageQuantity ?? 0,
-      shortQuantity: shortQuantity(input.dcQuantity, input.receivedQty, input.damageQuantity ?? 0),
+      dcQuantity: q.dc,
+      damageQuantity: q.damage,
+      shortQuantity: shortQuantity(q.dc, q.received, q.damage),
     },
   });
   await logAuditEvent({ actorId: actor.userId, action: 'grn_item.create', entity: 'MisGrnItem', entityId: created.id, after: created });
@@ -159,14 +227,22 @@ export async function updateGRNItem(id: string, patch: Partial<GrnItemInput>) {
   const actor = await requirePermission('grn.write');
   const before = await db.misGrnItem.findUnique({ where: { id } });
   if (!before) throw new Error(`GRN Item ${id} not found`);
-  const received = patch.receivedQty ?? before.receivedQty.toNumber();
-  const dc = patch.dcQuantity !== undefined ? patch.dcQuantity : before.dcQuantity?.toNumber() ?? null;
-  const damage = patch.damageQuantity !== undefined ? patch.damageQuantity ?? 0 : before.damageQuantity.toNumber();
+  const grn = await loadDraftGrn(before.grnId);
+  const poItemId = patch.poItemId ?? before.poItemId;
+  const poLine = poLineOf(grn, poItemId);
+  const q = lineQuantities(
+    patch.receivedQty !== undefined ? patch.receivedQty : before.receivedQty.toNumber(),
+    patch.dcQuantity !== undefined ? patch.dcQuantity : before.dcQuantity?.toNumber() ?? null,
+    patch.damageQuantity !== undefined ? patch.damageQuantity : before.damageQuantity.toNumber(),
+  );
+  const alongside = roundQty(grn.items.filter((i) => i.poItemId === poItemId && i.id !== id).reduce((sum, i) => sum + num(i.receivedQty), 0));
+  assertWithinOutstanding(poLine, q.received, alongside);
   const after = await db.misGrnItem.update({ where: { id }, data: {
-    ...(patch.receivedQty !== undefined ? { receivedQty: patch.receivedQty } : {}),
-    ...(patch.dcQuantity !== undefined ? { dcQuantity: dc } : {}),
-    ...(patch.damageQuantity !== undefined ? { damageQuantity: damage } : {}),
-    shortQuantity: shortQuantity(dc, received, damage),
+    ...(patch.poItemId !== undefined ? { poItemId: patch.poItemId } : {}),
+    ...(patch.receivedQty !== undefined ? { receivedQty: q.received } : {}),
+    ...(patch.dcQuantity !== undefined ? { dcQuantity: q.dc } : {}),
+    ...(patch.damageQuantity !== undefined ? { damageQuantity: q.damage } : {}),
+    shortQuantity: shortQuantity(q.dc, q.received, q.damage),
     ...(patch.type !== undefined ? { type: patch.type } : {}),
     ...(patch.forOrderRef !== undefined ? { forOrderRef: patch.forOrderRef?.trim() || null } : {}),
     ...(patch.batchNo !== undefined ? { batchNo: patch.batchNo?.trim() || null } : {}),
@@ -180,14 +256,38 @@ export async function confirmGRN(grnId: string) {
   const actor = await requirePermission('grn.write');
   const grn = await db.misGrn.findUnique({ where: { id: grnId }, include: { po: { select: { bomRef: true, supplierId: true } }, items: { include: { poItem: { include: { item: true } } } } } });
   if (!grn) throw new Error(`GRN ${grnId} not found`);
-  if (grn.status === 'CONFIRMED') throw new Error('GRN already confirmed');
+  if (grn.status === 'CONFIRMED') throw new GrnStateError('GRN already confirmed');
+  // A delivery with nothing on it is not a delivery: at least one line must carry a quantity.
+  if (!grn.items.some((i) => i.receivedQty.toNumber() + num(i.damageQuantity) > 0)) {
+    throw new GrnStateError('Add at least one item with a received or damaged quantity before confirming.');
+  }
 
   // Confirm GRN and update inventory in one transaction
   await db.$transaction(async (tx) => {
-    await tx.misGrn.update({
-      where: { id: grnId },
+    // Serialise with every other writer of these items' ledgers and these PO lines' counters, so
+    // the cap below is checked on figures nobody else can change until we commit.
+    await lockStockKeys(tx, [
+      ...grn.items.flatMap((i) => (i.poItem.itemId ? [itemLockKey(i.poItem.itemId)] : [])),
+      ...grn.items.map((i) => poItemLockKey(i.poItemId)),
+    ]);
+
+    // The DRAFT -> CONFIRMED flip is the claim. Checked in the same statement that writes it, so of
+    // two concurrent confirms exactly one gets count 1; the loser writes nothing.
+    const claimed = await tx.misGrn.updateMany({
+      where: { id: grnId, status: 'DRAFT' },
       data: { status: 'CONFIRMED', receivedAt: new Date(), receivedById: actor.userId },
     });
+    if (claimed.count !== 1) throw new GrnStateError('GRN already confirmed');
+
+    // Another GRN may have been confirmed since these lines were typed: re-check the cap on fresh figures.
+    const poLines = await tx.misPoItem.findMany({
+      where: { id: { in: grn.items.map((i) => i.poItemId) } },
+      select: { id: true, quantity: true, receivedQuantity: true },
+    });
+    for (const poLine of poLines) {
+      const here = roundQty(grn.items.filter((i) => i.poItemId === poLine.id).reduce((sum, i) => sum + i.receivedQty.toNumber(), 0));
+      assertWithinOutstanding(poLine, here, 0);
+    }
 
     // V2 Epic 1: the invoice named on the header becomes the third leg of the 3-way match.
     if (grn.supplierInvoiceNo) {
@@ -204,6 +304,7 @@ export async function confirmGRN(grnId: string) {
     }
 
     for (const grnItem of grn.items) {
+      if (grnItem.receivedQty.toNumber() <= 0) continue; // damage-only line: nothing good arrived
       if (!grnItem.poItem.itemId) continue;
       const itemId = grnItem.poItem.itemId;
 

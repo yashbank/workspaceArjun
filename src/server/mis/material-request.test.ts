@@ -56,7 +56,11 @@ beforeEach(() => {
   Object.assign(state, { request: pending(), lineUpdates: [], headerUpdates: [], created: null });
   getCurrentUser.mockResolvedValue({ id: 'u1' });
   getMisRole.mockResolvedValue('STORE_GUY');
-  commitIssue.mockResolvedValue({ reference: 'ORD-1', lineCount: 1, totalQty: 7 });
+  // F2 (G): commitIssue now runs the caller's `inTransaction` writes on its own transaction (here the fake db itself).
+  commitIssue.mockImplementation(async (_cart: unknown, meta: { inTransaction?: (tx: unknown) => Promise<void> }) => {
+    await meta.inTransaction?.((await import('@/server/db')).db);
+    return { reference: 'ORD-1', lineCount: 1, totalQty: 7 };
+  });
 });
 
 describe('create', () => {
@@ -108,10 +112,11 @@ describe('approve', () => {
     expect(commitIssue).not.toHaveBeenCalled();
   });
 
-  it('once stock has moved, a later failure (line write) does NOT re-open the note — no double issue', async () => {
+  // F2 (G): the line write is now INSIDE the issue transaction, so its failure rolls the stock back too and the note re-opens.
+  it('a failed line write rolls the whole issue back, so the note re-opens (stock and note stay in step)', async () => {
     const lineUpdate = vi.spyOn((await import('@/server/db')).db.misMaterialRequestLine, 'update').mockRejectedValueOnce(new Error('connection reset'));
     await expect(approveMaterialRequest('r1', [{ lineId: 'l1', actualIssuedQty: 5 }])).rejects.toThrow(/connection reset/);
-    expect(state.request?.status).toBe('APPROVED');
+    expect(state.request?.status).toBe('PENDING');
     lineUpdate.mockRestore();
   });
 

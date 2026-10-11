@@ -51,6 +51,13 @@ function toNum(v: { toNumber(): number } | number): number {
   return typeof v === 'number' ? v : v.toNumber();
 }
 
+/** A typed number, or null when it is blank or not a finite number (parseFloat would read "12abc" as 12 and "abc" as NaN). */
+function parseAmount(raw: string): number | null {
+  if (raw.trim() === '') return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
 export function GrnDetailScreen({ grn, canWrite, canSeeMoney = false, invoiceAmountFormatted = null }: Props) {
   const [isPending, startTransition] = useTransition();
   const [selectedPoItemId, setSelectedPoItemId] = useState('');
@@ -58,6 +65,7 @@ export function GrnDetailScreen({ grn, canWrite, canSeeMoney = false, invoiceAmo
   const [dcQty, setDcQty] = useState('');
   const [damageQty, setDamageQty] = useState('');
   const [itemError, setItemError] = useState<string | null>(null);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
   const [header, setHeader] = useState({
     supplierInvoiceNo: grn.supplierInvoiceNo ?? '',
     invoiceDate: isoDate(grn.invoiceDate),
@@ -73,12 +81,17 @@ export function GrnDetailScreen({ grn, canWrite, canSeeMoney = false, invoiceAmo
 
   const handleSaveHeader = () => {
     setHeaderError(null);
+    const amount = header.supplierInvoiceAmount.trim() === '' ? null : parseAmount(header.supplierInvoiceAmount);
+    if (canSeeMoney && header.supplierInvoiceAmount.trim() !== '' && amount === null) {
+      setHeaderError('Supplier invoice amount must be a number.');
+      return;
+    }
     startTransition(async () => {
       try {
       unwrap(await updateGrnHeaderAction(grn.id, {
         supplierInvoiceNo: header.supplierInvoiceNo || null,
         invoiceDate: header.invoiceDate || null,
-        ...(canSeeMoney ? { supplierInvoiceAmount: header.supplierInvoiceAmount ? parseFloat(header.supplierInvoiceAmount) : null } : {}),
+        ...(canSeeMoney ? { supplierInvoiceAmount: amount } : {}),
         lrNumber: header.lrNumber || null,
         vehicleNumber: header.vehicleNumber || null,
         transporterName: header.transporterName || null,
@@ -101,16 +114,23 @@ export function GrnDetailScreen({ grn, canWrite, canSeeMoney = false, invoiceAmo
   const handleAddItem = () => {
     if (!selectedPoItemId || !qty) return;
     setItemError(null);
+    const received = parseAmount(qty);
+    const dc = parseAmount(dcQty);
+    const damage = parseAmount(damageQty);
+    if (received === null || (dcQty.trim() !== '' && dc === null) || (damageQty.trim() !== '' && damage === null)) {
+      setItemError('Quantities must be numbers.');
+      return;
+    }
     startTransition(async () => {
       try {
         unwrap(await addGrnItemAction(grn.id, {
           poItemId: selectedPoItemId,
-          receivedQty: parseFloat(qty),
+          receivedQty: received,
           type: type as 'GENERAL' | 'FOR_ORDER',
           forOrderRef: orderRef || null,
           batchNo: batchNo || null,
-          dcQuantity: dcQty ? parseFloat(dcQty) : null,
-          damageQuantity: damageQty ? parseFloat(damageQty) : 0,
+          dcQuantity: dc,
+          damageQuantity: damage ?? 0,
         }));
         setSelectedPoItemId(''); setQty(''); setOrderRef(''); setBatchNo(''); setDcQty(''); setDamageQty('');
       } catch (e) {
@@ -121,7 +141,14 @@ export function GrnDetailScreen({ grn, canWrite, canSeeMoney = false, invoiceAmo
 
   const handleConfirm = () => {
     if (!confirm('Confirming this GRN will update inventory and cannot be undone. Proceed?')) return;
-    startTransition(async () => { await confirmGrnAction(grn.id); });
+    setConfirmError(null);
+    startTransition(async () => {
+      try {
+        unwrap(await confirmGrnAction(grn.id));
+      } catch (e) {
+        setConfirmError(e instanceof Error ? e.message : 'That did not save.');
+      }
+    });
   };
 
   return (
@@ -139,6 +166,7 @@ export function GrnDetailScreen({ grn, canWrite, canSeeMoney = false, invoiceAmo
           <Button onClick={handleConfirm} disabled={isPending}>Confirm GRN</Button>
         )}
       </div>
+      {confirmError && <p role="alert" className="text-sm text-red-600">{confirmError}</p>}
 
       <Card>
         {grn.po && <CardRow label="PO #" value={<Link href={`/mis/po/${grn.po.id}`} className="text-blue-600 hover:underline">{grn.po.poNumber}</Link>} />}
