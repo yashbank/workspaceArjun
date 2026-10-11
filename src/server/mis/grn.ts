@@ -1,4 +1,5 @@
 import { shortQuantity, withoutInvoiceMoney } from '@/lib/mis/grn-match';
+import { matchSupplierInvoice } from '@/lib/mis/invoice-match';
 import { orderNumberFromRef } from '@/lib/mis/order-allocation';
 import { roundQty } from '@/lib/mis/quantity';
 import type { MisRoleName } from '@/lib/mis/roles';
@@ -292,13 +293,17 @@ export async function confirmGRN(grnId: string) {
     // V2 Epic 1: the invoice named on the header becomes the third leg of the 3-way match.
     if (grn.supplierInvoiceNo) {
       // A later GRN naming the same invoice without a date/amount must not blank the Owner's figures.
+      const { status } = matchSupplierInvoice(
+        grn.items.map((i) => ({ receivedQty: i.receivedQty.toNumber(), ratePerUnit: i.poItem.ratePerUnit.toNumber(), dcQuantity: i.dcQuantity?.toNumber() ?? null })),
+        grn.supplierInvoiceAmount?.toNumber() ?? null,
+      );
       const known = {
         ...(grn.invoiceDate ? { invoiceDate: grn.invoiceDate } : {}),
-        ...(grn.supplierInvoiceAmount !== null ? { invoiceAmount: grn.supplierInvoiceAmount } : {}),
+        ...(grn.supplierInvoiceAmount !== null ? { invoiceAmount: grn.supplierInvoiceAmount, status } : {}),
       };
       await tx.misSupplierInvoice.upsert({
         where: { poId_invoiceNo: { poId: grn.poId, invoiceNo: grn.supplierInvoiceNo } },
-        create: { poId: grn.poId, invoiceNo: grn.supplierInvoiceNo, grnId, supplierId: grn.po.supplierId, ...known },
+        create: { poId: grn.poId, invoiceNo: grn.supplierInvoiceNo, grnId, supplierId: grn.po.supplierId, status, ...known },
         update: { grnId, supplierId: grn.po.supplierId, ...known },
       });
     }

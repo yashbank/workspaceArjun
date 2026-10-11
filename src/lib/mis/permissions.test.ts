@@ -67,7 +67,7 @@ const ADMIN_GRANTS: Action[] = [
   'masters.read', 'masters.write', 'employees.read', 'employees.write', 'orders.read', 'orders.write',
   'production.read', 'production.write', 'qc.read', 'qc.write', 'attendance.read', 'attendance.write',
   'reports.read', 'settings.read', 'settings.write', 'inventory.read', 'inventory.write', 'po.read', 'po.write',
-  'grn.read', 'grn.write', 'store.read', 'store.write', 'store.count', 'clearance.read', 'clearance.write',
+  'grn.read', 'grn.write', 'supplier_invoice.read', 'supplier_invoice.write', 'store.read', 'store.write', 'store.count', 'clearance.read', 'clearance.write',
   'phase.read', 'phase.write', 'kiosk.manage', 'queue.review', 'approvals.read',
 ];
 
@@ -83,13 +83,13 @@ const EXPECTED: Record<Role, Action[]> = {
   ATTENDANCE_OPERATOR: ['employees.read', 'attendance.read', 'attendance.write'],
   SUPER_ATTENDANCE_OPERATOR: ['employees.read', 'attendance.read', 'attendance.write', 'reports.read', 'queue.review'],
   WORKER: [],
-  STORE_GUY: ['inventory.read', 'grn.read', 'grn.write', 'po.read', 'store.read', 'store.write', 'store.count'],
+  STORE_GUY: ['inventory.read', 'grn.read', 'grn.write', 'supplier_invoice.read', 'po.read', 'store.read', 'store.write', 'store.count'],
 };
 
 describe('the full matrix — every role × every action, against a hand-written copy', () => {
   it('the copy names every action and every role exactly once (a new action cannot slip past unlisted)', () => {
     expect(Object.keys(EXPECTED).sort()).toEqual([...MIS_ROLES].sort());
-    expect(MIS_ACTIONS.length).toBe(35);
+    expect(MIS_ACTIONS.length).toBe(37);
     expect(new Set(MIS_ACTIONS).size).toBe(MIS_ACTIONS.length);
     for (const role of MIS_ROLES) {
       for (const a of EXPECTED[role]) expect(MIS_ACTIONS, `${role} lists unknown action ${a}`).toContain(a);
