@@ -187,7 +187,7 @@ function ParkedWriteCard({
         <p className="mb-3 text-xs">
           <span className="font-medium text-slate-700">Then: </span>
           <span className="text-slate-500">{row.parkDetail}</span>
-          <span className="mx-2 text-slate-300">·</span>
+          <span className="mx-2 text-slate-500">·</span>
           <span className="font-medium text-slate-700">Now: </span>
           <span className={clearedNow ? 'text-emerald-700' : 'text-red-700'}>{clearedNow ? 'Cleared' : 'Not cleared'}</span>
         </p>

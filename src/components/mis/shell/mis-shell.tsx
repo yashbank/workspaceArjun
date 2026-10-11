@@ -54,6 +54,10 @@ export function MisShell({
 }: MisShellProps) {
   return (
     <MisLocaleProvider initialLocale={locale}>
+      {/* MIS is light-only: `.mis-light` (globals.css) re-declares the light colour tokens so a
+          phone in dark mode never turns inherited text near-white on the white cards. `contents`
+          keeps it out of layout. */}
+      <div className="mis-light contents" data-mis-light="">
       <NotificationProvider userId={userId} role={role}>
       <ServiceWorkerRegistration userId={userId} />
 
@@ -88,6 +92,7 @@ export function MisShell({
         <RoleBottomNav role={role} badges={navBadges} more={navMore} />
       </div>
       </NotificationProvider>
+      </div>
     </MisLocaleProvider>
   );
 }
