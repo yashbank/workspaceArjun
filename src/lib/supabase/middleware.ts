@@ -1,7 +1,7 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { isKioskDeviceRoute } from '@/lib/mis/kiosk-routes';
+import { isKioskDeviceRequest } from '@/lib/mis/kiosk-routes';
 
 const PUBLIC_ROUTES = [
   '/login',
@@ -22,7 +22,7 @@ export async function updateSession(request: NextRequest) {
   // src/lib/mis/kiosk-routes.ts — skip this login redirect and authenticate by
   // device credential inside the route (D18). Nothing else is exempt, and the
   // session is not even read for these: a device request never carries one.
-  if (isKioskDeviceRoute(request.nextUrl.pathname)) {
+  if (isKioskDeviceRequest(request.nextUrl.pathname, request.headers.get('authorization'))) {
     return NextResponse.next({ request });
   }
 
