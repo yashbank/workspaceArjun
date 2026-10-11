@@ -16,6 +16,7 @@ vi.mock('@/server/db', () => ({
       findUnique: async () => state.grn,
       findMany: async () => [state.grn],
       update: async ({ data }: Row) => { Object.assign(state.grn, data); return state.grn; },
+      updateMany: async ({ where, data }: Row) => { const hit = state.grn.status === where.status; if (hit) Object.assign(state.grn, data); return { count: hit ? 1 : 0 }; },
       create: async ({ data }: Row) => { state.grn = { id: 'g1', status: 'DRAFT', ...data }; return state.grn; },
     },
     misGrnItem: {
@@ -25,7 +26,7 @@ vi.mock('@/server/db', () => ({
     },
     misSupplierInvoice: { upsert: async (args: Row) => { state.invoices.push(args); return args.create; } },
     misInventoryLedger: { findFirst: async () => null, create: async () => null },
-    misPoItem: { update: async () => null },
+    misPoItem: { update: async () => null, findMany: async () => [{ id: 'pi1', quantity: D(1000), receivedQuantity: D(0) }] },
     misAuditLog: { create: async ({ data }: Row) => { state.audits.push(JSON.parse(JSON.stringify(data))); return data; } },
     $transaction: async (cb: (tx: unknown) => Promise<unknown>) => cb((await import('@/server/db')).db),
   },
@@ -39,7 +40,7 @@ const { addGRNItem, confirmGRN, createGRN, getGRN, updateGRNHeader, updateGRNIte
 
 beforeEach(() => {
   vi.clearAllMocks();
-  state.grn = { id: 'g1', grnNumber: 'GRN-1', poId: 'po1', status: 'DRAFT', supplierInvoiceNo: 'INV-7', invoiceDate: null, supplierInvoiceAmount: D(AMOUNT), po: { bomRef: null, supplierId: 's1', items: [] }, items: [] };
+  state.grn = { id: 'g1', grnNumber: 'GRN-1', poId: 'po1', status: 'DRAFT', supplierInvoiceNo: 'INV-7', invoiceDate: null, supplierInvoiceAmount: D(AMOUNT), po: { bomRef: null, supplierId: 's1', items: [{ id: 'pi1', quantity: D(1000), receivedQuantity: D(0) }] }, items: [{ id: 'fixture-line', poItemId: 'pi1', receivedQty: D(10), damageQuantity: D(0), poItem: { itemId: 'i1', item: {} } }] };
   state.grnItems = []; state.invoices = []; state.audits = [];
   getCurrentUser.mockResolvedValue({ id: 'u1' });
   getMisRole.mockResolvedValue('OWNER');

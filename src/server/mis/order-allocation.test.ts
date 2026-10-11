@@ -35,8 +35,11 @@ const db: Row = {
     create: async ({ data }: Row) => { state.txns.push(data); return data; },
     findFirst: async () => null,
   },
-  misGrn: { findUnique: async () => state.grn, update: async () => null },
-  misPoItem: { update: async ({ data }: Row) => { state.poItemIncrements.push(data.receivedQuantity.increment); } },
+  misGrn: { findUnique: async () => state.grn, update: async () => null, updateMany: async () => ({ count: 1 }) },
+  misPoItem: {
+    update: async ({ data }: Row) => { state.poItemIncrements.push(data.receivedQuantity.increment); },
+    findMany: async ({ where }: Row) => where.id.in.map((id: string) => ({ id, quantity: D(1_000_000), receivedQuantity: D(0) })),
+  },
   $transaction: async (cb: (tx: Row) => Promise<unknown>) => cb(db),
 };
 vi.mock('@/server/db', () => ({ db }));

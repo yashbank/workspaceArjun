@@ -6,6 +6,12 @@ import { nextGrnNumber } from './grn';
 import { allocateFromReceipt, allocationShortfalls } from './order-allocation';
 import { notifyGrnConfirmed } from './grn-alerts';
 import { poPurpose, type PoPurpose } from '@/lib/mis/po-purpose';
+import { categoryRefusal } from '@/lib/mis/material-request';
+import { OrderStockQuotaExceededError } from '@/lib/mis/order-allocation';
+import { isOrderClosed } from '@/lib/mis/order-status';
+import { roundQty } from '@/lib/mis/quantity';
+import { itemLockKey } from '@/lib/mis/stock-lock-keys';
+import { lockStockKeys } from './stock-lock';
 
 // ---------------------------------------------------------------------------
 // Types (runtime only — no generated Prisma types imported)
@@ -732,6 +738,12 @@ export type IssueMeta = {
   orderId?: string | null;
   departmentId?: string | null;
   notes?: string | null;
+  /**
+   * Runs inside the issue's own transaction, after the ledger rows are written. If it throws, the
+   * whole issue rolls back — so a caller's bookkeeping (a request's per-line quantities) commits
+   * or fails together with the stock movement, never half of each.
+   */
+  inTransaction?: (tx: Prisma.TransactionClient) => Promise<void>;
 };
 
 export type CartCommitResult = {
@@ -743,7 +755,7 @@ export type CartCommitResult = {
 
 /** Money and weights are 2dp in the schema; keep float drift out of the ledger. */
 function round2(value: number): number {
-  return Math.round(value * 100) / 100;
+  return roundQty(value);
 }
 
 /**
@@ -757,7 +769,8 @@ function round2(value: number): number {
 function mergeCartLines(lines: CartLineInput[]): CartLineInput[] {
   const merged = new Map<string, CartLineInput>();
   for (const line of lines) {
-    const qty = Number(line.qty);
+    // Round to the stored 2 dp BEFORE validating: 0.004 must not pass `> 0` and be stored as 0.00.
+    const qty = round2(Number(line.qty));
     if (!Number.isFinite(qty) || qty <= 0) {
       throw new Error('Every line needs a quantity greater than zero.');
     }
@@ -776,12 +789,12 @@ function mergeCartLines(lines: CartLineInput[]): CartLineInput[] {
   return [...merged.values()];
 }
 
-type CartItem = { id: string; name: string; code: string; unit: string };
+type CartItem = { id: string; name: string; code: string; unit: string; category: string };
 
 async function loadCartItems(lines: CartLineInput[]): Promise<Map<string, CartItem>> {
   const items = await db.misItem.findMany({
     where: { id: { in: lines.map((l) => l.itemId) }, isActive: true, deletedAt: null },
-    select: { id: true, name: true, code: true, unit: true },
+    select: { id: true, name: true, code: true, unit: true, category: true },
   });
   const byId = new Map(items.map((item) => [item.id, item as CartItem]));
   for (const line of lines) {
@@ -854,6 +867,7 @@ export async function commitReceipt(
   const notes = meta.notes?.trim() || null;
 
   const result = await db.$transaction(async (tx) => {
+    await lockStockKeys(tx, cart.map((l) => itemLockKey(l.itemId))); // serialise the balance read-modify-write per item
     let grnId: string | null = null;
     let grnNumber: string | null = null;
 
@@ -1024,12 +1038,25 @@ export async function commitIssue(
 
   const [order, department] = await Promise.all([
     meta.orderId
-      ? db.misOrder.findUnique({ where: { id: meta.orderId }, select: { orderNumber: true } })
+      ? db.misOrder.findUnique({ where: { id: meta.orderId }, select: { orderNumber: true, status: true } })
       : Promise.resolve(null),
     meta.departmentId
       ? db.misDepartment.findUnique({ where: { id: meta.departmentId }, select: { name: true } })
       : Promise.resolve(null),
   ]);
+  if (meta.orderId && !order) throw new Error('That order no longer exists — reload and pick again.');
+  if (meta.departmentId && !department) throw new Error('That department no longer exists — reload and pick again.');
+  // A closed order takes no more stock (CANCELLED / DELIVERED / COMPLETED — the one shared list).
+  if (order && order.status && isOrderClosed(order.status)) {
+    throw new Error(`${order.orderNumber} is ${order.status.toLowerCase().replace(/_/g, ' ')} — stock cannot be issued against a closed order.`);
+  }
+  // The category rule lives here, not only in the request form: every path that moves stock out
+  // goes through this function, so equipment cannot be booked to an order by any door.
+  const refusal = categoryRefusal(
+    cart.map((l) => ({ name: items.get(l.itemId)!.name, category: items.get(l.itemId)!.category })),
+    { orderId: meta.orderId, departmentId: meta.departmentId },
+  );
+  if (refusal) throw new Error(refusal);
 
   const notes = meta.notes?.trim() || null;
   const reference =
@@ -1037,6 +1064,11 @@ export async function commitIssue(
   const reason = [department ? `To ${department.name}` : null, notes].filter(Boolean).join(' · ') || null;
 
   const result = await db.$transaction(async (tx) => {
+    // One issue at a time per item. The balance read, the order-cap read and the ledger write below
+    // are a read-modify-write; without the lock two concurrent issues both read the same balance
+    // and both pass. Transaction-scoped, so it is released by commit/rollback (pooler-safe).
+    await lockStockKeys(tx, cart.map((l) => itemLockKey(l.itemId)));
+
     // Read every balance first and refuse the whole cart if any line is short.
     const balances = new Map<string, number>();
     const shortfalls: string[] = [];
@@ -1060,7 +1092,7 @@ export async function commitIssue(
         meta.orderId,
         cart.map((l) => ({ itemId: l.itemId, qty: l.qty, label: `${items.get(l.itemId)!.name} (${items.get(l.itemId)!.code})` })),
       );
-      if (over.length > 0) throw new Error(`Cannot issue more than is allocated to this order: ${over.join(' · ')}`);
+      if (over.length > 0) throw new OrderStockQuotaExceededError(meta.orderId, over);
     }
 
     const { prefix, next } = await nextTxnSeq(tx);
@@ -1102,6 +1134,8 @@ export async function commitIssue(
       seq += 1;
       totalQty = round2(totalQty + line.qty);
     }
+
+    await meta.inTransaction?.(tx);
 
     return { reference, lineCount: cart.length, totalQty };
   });

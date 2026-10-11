@@ -63,3 +63,20 @@ export function issueRefusal(
   if (requested <= remaining) return null;
   return `${label} — asked for ${requested}, but only ${remaining} of the ${f.allocated} allocated to this order is left`;
 }
+
+/**
+ * Thrown when an issue would take more of an item than is left of what was earmarked for the order
+ * (spec Epic 2). The message is the user-facing sentence the tester guide expects ("only 40 of the
+ * 100 allocated…"); `shortfalls` carries one line per offending item.
+ */
+export class OrderStockQuotaExceededError extends Error {
+  readonly orderId: string;
+  readonly shortfalls: readonly string[];
+
+  constructor(orderId: string, shortfalls: readonly string[]) {
+    super(`Cannot issue more than is allocated to this order: ${shortfalls.join(' · ')}`);
+    this.name = 'OrderStockQuotaExceededError';
+    this.orderId = orderId;
+    this.shortfalls = shortfalls;
+  }
+}
