@@ -8,6 +8,7 @@ import com.example.mis_kiosk.data.local.RosterDatabase
 import com.example.mis_kiosk.data.local.RosterPreferences
 import com.example.mis_kiosk.data.network.ApiResult
 import com.example.mis_kiosk.data.network.KioskApi
+import com.example.mis_kiosk.data.network.decodesAsImage
 import com.example.mis_kiosk.data.network.dto.ApiErrorDto
 import com.example.mis_kiosk.data.network.dto.EmployeeDto
 import com.example.mis_kiosk.data.security.DeviceCredentialStore
@@ -53,7 +54,7 @@ class RosterRepository(
                             val url = dto.photoUrl
                             val photo = when {
                                 url == null -> null
-                                cached.containsKey(url) -> cached[url]
+                                cached[url]?.let { decodesAsImage(it) } == true -> cached[url] // poisoned (non-image) bytes are refetched
                                 else -> api.fetchPhoto(device.token, url)
                             }
                             dto.toEntity(photo = photo)

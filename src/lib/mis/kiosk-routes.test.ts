@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { isKioskDeviceRoute, KIOSK_DEVICE_ROUTES } from './kiosk-routes';
+import { isKioskDeviceRequest, isKioskDeviceRoute, KIOSK_DEVICE_ROUTES } from './kiosk-routes';
 
 /**
  * This list is the ONLY thing that skips the portal's login redirect. Widening it
@@ -43,5 +43,36 @@ describe('the kiosk auth exemption is an exact list (D18)', () => {
     ['the root', '/'],
   ])('does NOT exempt %s (%s)', (_label, path) => {
     expect(isKioskDeviceRoute(path)).toBe(false);
+  });
+});
+
+describe('the badge-photo door is bearer-only and pattern-exact', () => {
+  const ID = '123e4567-e89b-42d3-a456-426614174000';
+  const photo = `/api/mis/employees/${ID}/photo`;
+
+  it('bearer present -> passes through the login guard', () => {
+    expect(isKioskDeviceRequest(photo, 'Bearer abc.def')).toBe(true);
+  });
+
+  it.each([null, undefined, '', 'Basic abc', 'Bearer', 'Bearer '])('no usable bearer (%s) -> redirected to login', (auth) => {
+    expect(isKioskDeviceRequest(photo, auth)).toBe(false);
+  });
+
+  it.each([
+    ['employee list', '/api/mis/employees'],
+    ['employee record', `/api/mis/employees/${ID}`],
+    ['photo with trailing slash', `${photo}/`],
+    ['photo sub-path', `${photo}/extra`],
+    ['non-uuid id', '/api/mis/employees/abc/photo'],
+    ['traversal', `/api/mis/employees/${ID}/../x/photo`],
+    ['other employee sub-route', `/api/mis/employees/${ID}/salary`],
+    ['look-alike prefix', `/api/mis/employeesx/${ID}/photo`],
+  ])('other employees paths stay protected even with a bearer (%s)', (_l, path) => {
+    expect(isKioskDeviceRequest(path, 'Bearer abc')).toBe(false);
+  });
+
+  it('the exact door list is unchanged and still exempt without a header', () => {
+    expect(isKioskDeviceRequest('/api/mis/kiosk/pull', null)).toBe(true);
+    expect(isKioskDeviceRequest('/api/mis/docs/abc', 'Bearer abc')).toBe(false);
   });
 });
