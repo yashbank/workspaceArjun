@@ -47,6 +47,7 @@ const reports = await import('./reports');
 const payComponents = await import('./pay-components');
 const extraPayDays = await import('./extra-pay-days');
 const payrollPeriod = await import('./payroll-period');
+const supplierInvoice = await import('./supplier-invoice');
 
 type Entry = { module: string; name: string; requires: MisAction; call: () => Promise<unknown> };
 
@@ -121,6 +122,11 @@ const TABLE: Entry[] = [
   { module: 'reports.ts', name: 'getBufferDriftReport', requires: 'wages.read', call: () => reports.getBufferDriftReport(RANGE) },
   // E7-11 — same door as every other report in this file; no money in the payload (D24).
   { module: 'reports.ts', name: 'getMachineUtilisationReport', requires: 'reports.read', call: () => reports.getMachineUtilisationReport(RANGE) },
+
+  // F6 — the 3-way match board. Read: Owner/Admin/Store Guy; reconcile: Owner/Admin. Rupees stay Owner-only inside the payload.
+  { module: 'supplier-invoice.ts', name: 'reconcilePO', requires: 'po.read', call: () => supplierInvoice.reconcilePO('po1') },
+  { module: 'supplier-invoice.ts', name: 'listSupplierInvoices', requires: 'supplier_invoice.read', call: () => supplierInvoice.listSupplierInvoices() },
+  { module: 'supplier-invoice.ts', name: 'reconcileSupplierInvoice', requires: 'supplier_invoice.write', call: () => supplierInvoice.reconcileSupplierInvoice('i1') },
 ];
 
 /** Functions in these modules deliberately not in TABLE: ungated internals (see server-gates.test.ts). */
@@ -134,6 +140,7 @@ const NOT_A_DOOR: Record<string, string[]> = {
   'pay-components.ts': [],
   'extra-pay-days.ts': [],
   'payroll-period.ts': [],
+  'supplier-invoice.ts': [],
 };
 
 async function refused(call: () => Promise<unknown>): Promise<boolean> {

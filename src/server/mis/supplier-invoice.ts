@@ -1,7 +1,10 @@
+import type { Prisma } from '@/generated/prisma/client';
 import { threeWayMatch, type ThreeWayMatch } from '@/lib/mis/grn-match';
+import { matchSupplierInvoice, type MatchStatus } from '@/lib/mis/invoice-match';
 import { can } from '@/lib/mis/permissions';
 import { db } from '@/server/db';
 
+import { logAuditEvent } from './audit';
 import { requirePermission } from './auth';
 import { formatMoney } from './po';
 
@@ -50,4 +53,96 @@ export async function reconcilePO(poId: string): Promise<PoReconciliation> {
       ? { money: { poValue: formatMoney(money.poValue), receivedValue: formatMoney(money.receivedValue), invoiced: formatMoney(money.invoiced), variance: formatMoney(money.variance), varianceRaw: money.variance } }
       : {}),
   };
+}
+
+// ---------------------------------------------------------------------------------------------
+// F6 — the reconciliation board: every supplier invoice with its 3-way match status.
+// ---------------------------------------------------------------------------------------------
+
+export type SupplierInvoiceRow = {
+  id: string;
+  invoiceNo: string;
+  invoiceDate: Date | null;
+  poNumber: string;
+  grnNumber: string | null;
+  supplierName: string | null;
+  status: MatchStatus;
+  /** Admin and Owner (never the Store Guy): quantities and the variance as a percentage. */
+  figures?: { billedQty: number | null; receivedQty: number; qtyVariance: number | null; variancePct: number | null };
+  /** Owner only (D24): rupee values, formatted on the server. Absent for every other role. */
+  money?: { expected: string; invoiced: string | null; variance: string | null };
+};
+
+const invoiceInclude = {
+  po: { select: { poNumber: true } },
+  supplier: { select: { name: true } },
+  grn: { select: { grnNumber: true, items: { select: { receivedQty: true, dcQuantity: true, poItem: { select: { ratePerUnit: true } } } } } },
+} as const;
+
+type InvoiceWithGrn = Prisma.MisSupplierInvoiceGetPayload<{ include: typeof invoiceInclude }>;
+
+function matchFor(inv: InvoiceWithGrn) {
+  return matchSupplierInvoice(
+    (inv.grn?.items ?? []).map((i) => ({ receivedQty: i.receivedQty.toNumber(), ratePerUnit: i.poItem.ratePerUnit.toNumber(), dcQuantity: i.dcQuantity?.toNumber() ?? null })),
+    inv.invoiceAmount?.toNumber() ?? null,
+  );
+}
+
+/**
+ * The board. `supplier_invoice.read` (Owner, Admin, Store Guy). The Store Guy gets the status
+ * only; Admin adds quantities and the variance %; the Owner adds rupees (D24). Three payloads
+ * built from the role, not one payload hidden by the screen.
+ */
+export async function listSupplierInvoices(filter?: { status?: MatchStatus }): Promise<SupplierInvoiceRow[]> {
+  const actor = await requirePermission('supplier_invoice.read');
+  const seesFigures = can(actor.role, 'supplier_invoice.write');
+  const seesMoney = can(actor.role, 'wages.read');
+  const rows = await db.misSupplierInvoice.findMany({
+    where: filter?.status ? { status: filter.status } : undefined,
+    orderBy: { createdAt: 'desc' },
+    take: 500,
+    include: invoiceInclude,
+  });
+  return rows.map((inv) => {
+    const base: SupplierInvoiceRow = {
+      id: inv.id,
+      invoiceNo: inv.invoiceNo,
+      invoiceDate: inv.invoiceDate,
+      poNumber: inv.po.poNumber,
+      grnNumber: inv.grn?.grnNumber ?? null,
+      supplierName: inv.supplier?.name ?? null,
+      status: inv.status,
+    };
+    if (!seesFigures) return base;
+    const m = matchFor(inv);
+    return {
+      ...base,
+      figures: { billedQty: m.billedQty, receivedQty: m.receivedQty, qtyVariance: m.qtyVariance, variancePct: m.priceVariancePct },
+      ...(seesMoney
+        ? { money: { expected: formatMoney(m.expectedAmount), invoiced: m.invoiceAmount === null ? null : formatMoney(m.invoiceAmount), variance: m.priceVariance === null ? null : formatMoney(m.priceVariance) } }
+        : {}),
+    };
+  });
+}
+
+/**
+ * Re-run the match for one invoice and store the result (`supplier_invoice.write`: Owner, Admin).
+ * The audit entry carries the status only: no amount, no rate (D24).
+ */
+export async function reconcileSupplierInvoice(id: string): Promise<{ id: string; status: MatchStatus; changed: boolean }> {
+  const actor = await requirePermission('supplier_invoice.write');
+  const inv = await db.misSupplierInvoice.findUnique({ where: { id }, include: invoiceInclude });
+  if (!inv) throw new Error(`Supplier invoice ${id} not found`);
+  const { status } = matchFor(inv);
+  if (status === inv.status) return { id, status, changed: false };
+  await db.misSupplierInvoice.update({ where: { id }, data: { status } });
+  await logAuditEvent({
+    actorId: actor.userId,
+    action: 'supplier_invoice.reconcile',
+    entity: 'MisSupplierInvoice',
+    entityId: id,
+    before: { status: inv.status },
+    after: { status },
+  });
+  return { id, status, changed: true };
 }

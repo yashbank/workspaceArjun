@@ -29,6 +29,7 @@ const REQUIRES: Record<string, MisAction | null> = {
   employees: 'employees.read',
   po: 'po.read',
   grn: 'grn.read',
+  'supplier-invoices': 'supplier_invoice.read',
   inventory: 'inventory.read',
   customers: 'orders.read',
   suppliers: 'po.read',
