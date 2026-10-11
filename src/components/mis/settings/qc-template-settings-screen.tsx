@@ -2,9 +2,9 @@
 import Link from 'next/link';
 import { useState, useTransition } from 'react';
 
-import { createQcTemplateAction, seedQcTemplatesAction, setQcTemplateActiveAction, updateQcTemplateAction } from '@/app/(mis)/mis/settings/qc-templates/actions';
+import { createQcTemplateAction, moveQcParameterAction, moveQcTemplateAction, seedQcTemplatesAction, setQcTemplateActiveAction, updateQcTemplateAction } from '@/app/(mis)/mis/settings/qc-templates/actions';
 import { Button } from '@/components/mis/kit/button';
-import { unwrap } from '@/lib/mis/action-result';
+import { unwrap, type ActionResult } from '@/lib/mis/action-result';
 import { Input, TimeInput } from '@/components/mis/kit/input';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
 import type { QcTemplateRow } from '@/server/mis/qc-template';
@@ -13,6 +13,17 @@ type Draft = { name: string; processName: string; slotStart: string; slotEnd: st
 const EMPTY: Draft = { name: '', processName: '', slotStart: '09:15', slotEnd: '18:00', parameters: '' };
 const toDraft = (t: QcTemplateRow): Draft => ({ name: t.name, processName: t.processName ?? '', slotStart: t.slotStart, slotEnd: t.slotEnd, parameters: t.parameters.join('\n') });
 const toInput = (d: Draft) => ({ name: d.name, processName: d.processName || null, slotStart: d.slotStart, slotEnd: d.slotEnd, parameters: d.parameters.split('\n') });
+
+/** Up / down, 44px each, so a gloved thumb can reorder a row. */
+function MoveButtons({ label, first, last, disabled, onMove }: { label: string; first: boolean; last: boolean; disabled: boolean; onMove: (d: 'up' | 'down') => void }) {
+  const cls = 'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-base text-slate-700 hover:bg-slate-50 disabled:opacity-40';
+  return (
+    <div className="flex shrink-0 gap-1">
+      <button type="button" className={cls} aria-label={`Move ${label} up`} disabled={disabled || first} onClick={() => onMove('up')}>▲</button>
+      <button type="button" className={cls} aria-label={`Move ${label} down`} disabled={disabled || last} onClick={() => onMove('down')}>▼</button>
+    </div>
+  );
+}
 
 export function QcTemplateSettingsScreen({ templates }: { templates: QcTemplateRow[] }) {
   const [editing, setEditing] = useState<string | 'new' | null>(null);
@@ -27,6 +38,10 @@ export function QcTemplateSettingsScreen({ templates }: { templates: QcTemplateR
       else if (editing) unwrap(await updateQcTemplateAction(editing, toInput(draft)));
       setEditing(null);
     } catch (e) { setError(e instanceof Error ? e.message : 'That did not save.'); }
+  });
+  const move = (run: () => Promise<ActionResult>) => startTransition(async () => {
+    setError(null);
+    try { unwrap(await run()); } catch (e) { setError(e instanceof Error ? e.message : 'That did not move.'); }
   });
   const set = (k: keyof Draft) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setDraft({ ...draft, [k]: e.target.value });
 
@@ -65,10 +80,12 @@ export function QcTemplateSettingsScreen({ templates }: { templates: QcTemplateR
       )}
 
       {templates.length === 0 && <p className="py-8 text-center text-slate-400">No templates yet — restore the defaults or add one.</p>}
-      {templates.map((t) => (
+      {!editing && error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+      {templates.map((t, ti) => (
         <div key={t.id} className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4">
           <div className="flex flex-wrap items-start justify-between gap-2">
-            <div className="min-w-0">
+            <MoveButtons label={t.name} disabled={isPending} first={ti === 0} last={ti === templates.length - 1} onMove={(d) => move(() => moveQcTemplateAction(t.id, d))} />
+            <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2 font-semibold text-slate-900">{t.name} {!t.isActive && <StatusBadge tone="neutral">Inactive</StatusBadge>}</div>
               <div className="text-sm text-slate-500">{t.processName ?? '—'} · {t.slots.length} slots {t.slotStart}–{t.slotEnd} · {t.parameters.length} parameters</div>
             </div>
@@ -77,7 +94,14 @@ export function QcTemplateSettingsScreen({ templates }: { templates: QcTemplateR
               <Button variant="ghost" onClick={() => startTransition(async () => { await setQcTemplateActiveAction(t.id, !t.isActive); })} disabled={isPending}>{t.isActive ? 'Deactivate' : 'Activate'}</Button>
             </div>
           </div>
-          <ol className="list-decimal pl-5 text-sm text-slate-700">{t.parameters.map((p) => <li key={p}>{p}</li>)}</ol>
+          <ol className="flex flex-col gap-1 text-sm text-slate-700">
+            {t.parameters.map((p, pi) => (
+              <li key={p} className="flex items-center gap-2">
+                <MoveButtons label={p} disabled={isPending} first={pi === 0} last={pi === t.parameters.length - 1} onMove={(d) => move(() => moveQcParameterAction(t.id, p, d))} />
+                <span className="min-w-0 flex-1">{pi + 1}. {p}</span>
+              </li>
+            ))}
+          </ol>
         </div>
       ))}
     </div>

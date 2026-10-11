@@ -75,7 +75,7 @@ describe('seed', () => {
   it('adds only the missing paper forms, and is a no-op the second time', async () => {
     getMisRole.mockResolvedValue('OWNER');
     expect(await seedQcTemplates()).toEqual({ created: 3 });
-    expect(state.templates.map((t) => t.name)).toEqual(['Printing 6-Colours', 'Lamination', 'Lamif Flute', 'Die Cutting']);
+    expect(state.templates.map((t) => t.name)).toEqual(['Printing 6-Colours', 'Lamination Checklist', 'Lamif Flute Lamination', 'Die Cutting Checklist']);
     expect(await seedQcTemplates()).toEqual({ created: 0 });
   });
 });

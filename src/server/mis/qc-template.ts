@@ -2,7 +2,9 @@ import type { Prisma } from '@/generated/prisma/client';
 import {
   CHECKLIST_STATUSES,
   DEFAULT_QC_TEMPLATES,
+  LEGACY_QC_TEMPLATE_NAMES,
   checklistStatusToCheck,
+  moveItem,
   parseParameters,
   slotTimes,
   type ChecklistStatus,
@@ -73,22 +75,67 @@ export async function updateQcTemplate(id: string, input: QcTemplateInput): Prom
   const actor = await requirePermission('settings.write');
   const before = await db.misQcTemplate.findUnique({ where: { id } });
   if (!before) throw new Error('Template not found');
-  const after = await db.misQcTemplate.update({ where: { id }, data: validated(input) });
+  const data = validated(input);
+  // Past checks are matched to the grid and the print by `parameterName`, so a parameter that
+  // has recorded checks can be neither renamed nor removed: its history would vanish.
+  const kept = new Set(parseParameters(data.parameters));
+  const dropped = parseParameters(before.parameters).filter((p) => !kept.has(p));
+  if (dropped.length > 0) {
+    const used = await db.misQcCheck.findMany({ where: { templateId: id, parameterName: { in: dropped } }, select: { parameterName: true }, distinct: ['parameterName'] });
+    if (used.length > 0) {
+      throw new Error(`Cannot rename or remove "${used.map((u) => u.parameterName).join('", "')}": checks are already recorded against it. Keep it as is and add a new parameter instead.`);
+    }
+  }
+  const after = await db.misQcTemplate.update({ where: { id }, data });
   await logAuditEvent({ actorId: actor.userId, action: 'qc_template.update', entity: 'MisQcTemplate', entityId: id, before, after });
   return toRow(after);
 }
 
 export async function setQcTemplateActive(id: string, isActive: boolean): Promise<void> {
   const actor = await requirePermission('settings.write');
-  await db.misQcTemplate.update({ where: { id }, data: { isActive } });
-  await logAuditEvent({ actorId: actor.userId, action: isActive ? 'qc_template.activate' : 'qc_template.deactivate', entity: 'MisQcTemplate', entityId: id, after: { isActive } });
+  const before = await db.misQcTemplate.findUnique({ where: { id } });
+  if (!before || before.deletedAt) throw new Error('Template not found');
+  const wasActive = before.isActive;
+  const after = await db.misQcTemplate.update({ where: { id }, data: { isActive } });
+  await logAuditEvent({ actorId: actor.userId, action: isActive ? 'qc_template.activate' : 'qc_template.deactivate', entity: 'MisQcTemplate', entityId: id, before: { isActive: wasActive }, after: { isActive: after.isActive } });
+}
+
+/** Move a template one place up or down the list. Positions are renumbered 0..n so ties from seeding cannot stall a move. */
+export async function moveQcTemplate(id: string, direction: 'up' | 'down'): Promise<void> {
+  const actor = await requirePermission('settings.write');
+  const all = await db.misQcTemplate.findMany({ where: { deletedAt: null }, orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }] });
+  const index = all.findIndex((t) => t.id === id);
+  if (index < 0) throw new Error('Template not found');
+  const ordered = moveItem(all, index, direction);
+  const changed = ordered.map((t, i) => ({ t, i })).filter(({ t, i }) => t.sortOrder !== i);
+  if (changed.length === 0) return;
+  await db.$transaction(changed.map(({ t, i }) => db.misQcTemplate.update({ where: { id: t.id }, data: { sortOrder: i } })));
+  await logAuditEvent({
+    actorId: actor.userId, action: 'qc_template.reorder', entity: 'MisQcTemplate', entityId: id,
+    before: { order: all.map((t) => t.id) }, after: { order: ordered.map((t) => t.id), direction },
+  });
+}
+
+/** Move one parameter (a row on the form) up or down within its template. Names are untouched, so history stays attached. */
+export async function moveQcParameter(id: string, parameter: string, direction: 'up' | 'down'): Promise<QcTemplateRow> {
+  const actor = await requirePermission('settings.write');
+  const before = await db.misQcTemplate.findUnique({ where: { id } });
+  if (!before || before.deletedAt) throw new Error('Template not found');
+  const list = parseParameters(before.parameters);
+  const index = list.indexOf(parameter);
+  if (index < 0) throw new Error('That parameter is not on this template.');
+  const next = moveItem(list, index, direction);
+  if (next.join('\n') === list.join('\n')) return toRow(before);
+  const after = await db.misQcTemplate.update({ where: { id }, data: { parameters: next as unknown as Prisma.InputJsonValue } });
+  await logAuditEvent({ actorId: actor.userId, action: 'qc_template.reorder_parameters', entity: 'MisQcTemplate', entityId: id, before: { parameters: list }, after: { parameters: next } });
+  return toRow(after);
 }
 
 /** Re-create any of the four paper forms that is missing. Existing rows (edited or not) are left alone. */
 export async function seedQcTemplates(): Promise<{ created: number }> {
   const actor = await requirePermission('settings.write');
   const existing = new Set((await db.misQcTemplate.findMany({ select: { name: true } })).map((t) => t.name));
-  const missing = DEFAULT_QC_TEMPLATES.filter((t) => !existing.has(t.name));
+  const missing = DEFAULT_QC_TEMPLATES.filter((t) => !existing.has(t.name) && !existing.has(LEGACY_QC_TEMPLATE_NAMES[t.name] ?? ''));
   if (missing.length > 0) {
     await db.misQcTemplate.createMany({
       data: missing.map((t) => ({ name: t.name, processName: t.processName, slotStart: t.slotStart, slotEnd: t.slotEnd, parameters: t.parameters as unknown as Prisma.InputJsonValue, sortOrder: DEFAULT_QC_TEMPLATES.indexOf(t) })),

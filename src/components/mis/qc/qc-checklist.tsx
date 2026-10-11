@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react';
 
 import { recordChecklistCheckAction } from '@/app/(mis)/mis/qc/actions';
 import { Select } from '@/components/mis/kit/select';
-import { CHECKLIST_LABELS, CHECKLIST_STATUSES, buildChecklist, type ChecklistCheck, type ChecklistStatus } from '@/lib/mis/qc-template';
+import { CHECKLIST_LABELS, CHECKLIST_STATUSES, buildChecklist, filterChecksToFactoryDay, type ChecklistCheck, type ChecklistStatus } from '@/lib/mis/qc-template';
 import type { QcTemplateRow } from '@/server/mis/qc-template';
 import { cn } from '@/lib/utils';
 
@@ -21,7 +21,7 @@ const TONE: Record<ChecklistStatus, string> = {
 };
 const SHORT: Record<ChecklistStatus, string> = { PASS: 'P', FAIL: 'F', MAKE_READY: 'MR', PLATE_ERR: 'PE' };
 
-export function QcChecklist({ orderId, templates, checks, canWrite }: { orderId: string; templates: QcTemplateRow[]; checks: (ChecklistCheck & { templateId?: string | null })[]; canWrite: boolean }) {
+export function QcChecklist({ orderId, templates, checks, canWrite, day }: { orderId: string; templates: QcTemplateRow[]; checks: (ChecklistCheck & { templateId?: string | null })[]; canWrite: boolean; day?: { dateKey: string; timeZone: string } }) {
   const router = useRouter();
   const [templateId, setTemplateId] = useState(templates[0]?.id ?? '');
   const [active, setActive] = useState<{ parameter: string; slot: string } | null>(null);
@@ -30,7 +30,8 @@ export function QcChecklist({ orderId, templates, checks, canWrite }: { orderId:
   const template = templates.find((t) => t.id === templateId);
   if (!template) return null;
 
-  const rows = buildChecklist(template.parameters, template.slots, checks.filter((c) => c.templateId === template.id));
+  const todays = day ? filterChecksToFactoryDay(checks, day.dateKey, day.timeZone) : checks;
+  const rows = buildChecklist(template.parameters, template.slots, todays.filter((c) => c.templateId === template.id));
 
   const tap = (status: ChecklistStatus) => {
     if (!active) return;
@@ -47,7 +48,7 @@ export function QcChecklist({ orderId, templates, checks, canWrite }: { orderId:
   return (
     <div className="min-w-0 max-w-full rounded-xl border border-gray-200 bg-white">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-5 py-3">
-        <div className="font-medium text-gray-700">Checklist</div>
+        <div className="font-medium text-gray-700">Checklist{day && <span className="ml-2 text-sm font-normal text-gray-500">{day.dateKey.slice(8, 10)}/{day.dateKey.slice(5, 7)}/{day.dateKey.slice(0, 4)}</span>}</div>
         <div className="flex items-center gap-2">
           <div className="w-56"><Select label="Form" value={templateId} onChange={setTemplateId} options={templates.map((t) => ({ value: t.id, label: t.name }))} /></div>
           <a href={`/mis/print/qc-checklist/${orderId}?template=${template.id}`} target="_blank" className="inline-flex min-h-11 items-center text-sm text-blue-600 hover:underline">🖨 A4</a>
