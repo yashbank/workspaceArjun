@@ -41,7 +41,7 @@ const REQUIRES: Record<string, MisAction | null> = {
   audit: 'settings.read',
   payroll: 'wages.read',
   store: 'store.read',
-  crew: 'attendance.read',
+  crew: 'production.read', // the worker board's data is production.read (coverage sweep, 2026-10)
   leave: 'attendance.read',
   'settings-users': 'settings.read',
   'settings-rules': 'wages.read',

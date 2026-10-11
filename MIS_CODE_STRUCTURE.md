@@ -86,6 +86,7 @@ Checked before writing this — both would have caused rework:
 - **One ticket = one folder = one PR.** If your diff touches four unrelated folders, it is four PRs.
 - **Editing an existing file is an event.** Only `schema.prisma`, `next.config.ts` and nav registration are expected. Any other edit outside a `mis` folder needs a line in the PR saying why.
 - **The 271 existing tests stay green.** They are the contract with the live app. A red suite is never "fixed" by changing the test.
+- **Inbox rows are best-effort.** `logAuditEvent`, `notifyRoles`, `notifyGrnConfirmed` catch and log: an alert that cannot be written must never undo the mutation it reports. Everything else throws.
 - **Money never leaves the server.** Computed in `server/mis/`, sent down as a formatted string. No rupee value is ever derived in a component.
 - **No new colour, spacing or type values.** Everything comes from the tokens on `01-Foundations`.
 

@@ -15,6 +15,9 @@ import {
   getDayAttendanceSummary,
 } from '@/server/mis/attendance';
 import { listOpenGRNs } from '@/server/mis/grn';
+import { listGrnAlerts } from '@/server/mis/grn-alerts';
+import { countPendingMaterialRequests } from '@/server/mis/material-request';
+import { grnAlertHeadline } from '@/lib/mis/grn-alert';
 import { listParkedWrites } from '@/server/mis/idempotency';
 import { listPhasesAwaitingMySignOff } from '@/server/mis/job-phases';
 import { requireMisAccess } from '@/server/mis/guard';
@@ -90,7 +93,7 @@ async function OwnerScreen({
   yesterday: Date;
   ago: (d: Date) => string;
 }) {
-  const [approvals, machines, failures, lateOrders, dayBefore, wages, parkedWrites] = await Promise.all([
+  const [approvals, machines, failures, lateOrders, dayBefore, wages, parkedWrites, grnAlerts] = await Promise.all([
     getPendingApprovals(),
     getMachineStatusCounts(),
     listRecentQcFailures(3),
@@ -98,6 +101,7 @@ async function OwnerScreen({
     getDayProductionSummary(yesterday),
     getMonthWageBill(now.getFullYear(), now.getMonth() + 1),
     listParkedWrites(),
+    listGrnAlerts(3),
   ]);
 
   const approvalRows = [
@@ -138,6 +142,14 @@ async function OwnerScreen({
           },
         ]
       : []),
+    // V2 Epic 4 — a confirmed delivery: PO vs received, short/damaged, and (Owner) the invoice variance.
+    ...grnAlerts.map((g) => ({
+      id: `grn-${g.id}`,
+      tone: g.attention ? ('risk' as const) : ('info' as const),
+      title: `${g.grnNumber} received · ${g.poNumber}${g.supplierName ? ` · ${g.supplierName}` : ''}`,
+      detail: `${grnAlertHeadline(g)}${g.money ? ` · invoice ${g.money.invoiced} vs ${g.money.receivedValue} received (${g.money.variance})` : ''}`,
+      href: `/mis/grn/${g.grnId}`,
+    })),
     ...machines.downMachines.map((m) => ({
       id: `machine-${m.id}`,
       tone: 'stopped' as const,
@@ -193,11 +205,12 @@ async function AdminScreen({
 }: {
   header: { title: string; meta: string };
 }) {
-  const [orders, attendance, hindiGap, parkedWrites] = await Promise.all([
+  const [orders, attendance, hindiGap, parkedWrites, grnAlerts] = await Promise.all([
     listOrdersNeedingAction(4),
     getDayAttendanceSummary(),
     countMastersMissingHindiName(),
     listParkedWrites(),
+    listGrnAlerts(4),
   ]);
 
   return (
@@ -217,6 +230,13 @@ async function AdminScreen({
       }}
       hindiGap={{ total: hindiGap.total }}
       queue={{ total: parkedWrites.length }}
+      grnAlerts={grnAlerts.map((g) => ({
+        id: g.id,
+        grnId: g.grnId,
+        title: `${g.grnNumber} · ${g.poNumber}${g.supplierName ? ` · ${g.supplierName}` : ''}`,
+        detail: grnAlertHeadline(g),
+        attention: g.attention,
+      }))}
     />
   );
 }
@@ -388,7 +408,7 @@ async function StoreScreen({
   header: { title: string; meta: string };
   ago: (d: Date) => string;
 }) {
-  const [store, grns] = await Promise.all([getStoreDashboard(), listOpenGRNs(4)]);
+  const [store, grns, pendingRequests] = await Promise.all([getStoreDashboard(), listOpenGRNs(4), countPendingMaterialRequests()]);
 
   return (
     <StoreHome
@@ -399,6 +419,7 @@ async function StoreScreen({
         totalItems: store.totalItems,
       }}
       movement={{ todayIn: store.todayIn, todayOut: store.todayOut }}
+      pendingRequests={pendingRequests}
       openGrns={{
         total: grns.total,
         rows: grns.rows.map((g) => ({

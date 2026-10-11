@@ -1,6 +1,10 @@
 package com.example.mis_kiosk.ui.punch
 
 import android.Manifest
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -508,15 +512,29 @@ private fun ConfirmCardContent(
         Surface(color = KioskColors.Surface, shape = MaterialTheme.shapes.large, modifier = Modifier.widthIn(max = 560.dp)) {
             Column(modifier = Modifier.padding(28.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    // MIS V2: the badge photo, big enough for the operator to compare with the face in
+                    // front of them (a borrowed badge is the whole point); the initial when there is none.
+                    val bitmap = remember(employee.id, employee.photo) {
+                        employee.photo?.let { bytes -> BitmapFactory.decodeByteArray(bytes, 0, bytes.size) }
+                    }
                     Box(
-                        modifier = Modifier.size(56.dp).background(KioskColors.SurfaceVariant, RoundedCornerShape(14.dp)),
+                        modifier = Modifier.size(96.dp).background(KioskColors.SurfaceVariant, RoundedCornerShape(14.dp)),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text(
-                            employee.name.firstOrNull()?.uppercase() ?: "?",
-                            style = MaterialTheme.typography.titleLarge,
-                            color = KioskColors.TextSecondary,
-                        )
+                        if (bitmap != null) {
+                            Image(
+                                bitmap = bitmap.asImageBitmap(),
+                                contentDescription = "Badge photo of ${employee.name}",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        } else {
+                            Text(
+                                employee.name.firstOrNull()?.uppercase() ?: "?",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = KioskColors.TextSecondary,
+                            )
+                        }
                     }
                     Spacer(Modifier.width(16.dp))
                     Column {

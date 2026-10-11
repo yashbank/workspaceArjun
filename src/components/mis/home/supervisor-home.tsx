@@ -77,6 +77,8 @@ export function SupervisorHome({ header, clearanceBlocker, blocker, machines, si
       <HeaderCard title={header.title} meta={header.meta} />
 
       <PrimaryButton href="/mis/production">+ Record production</PrimaryButton>
+      {/* V2 Epic 3 — a material ask goes to the Store for approval; nothing moves until then. */}
+      <SecondaryButton href="/mis/store/requests/new">Request material from the store</SecondaryButton>
 
       {/* What is still on this device — the count belongs here, at the button that
           made the entry, as well as in the header (MIS-155). Empty renders nothing. */}

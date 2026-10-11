@@ -58,6 +58,8 @@ vi.mock('./production', () => ({ getProductionForOrder: async () => { calls.push
 vi.mock('./machines-board', () => ({ getOrderSchedule: async () => { calls.push('getOrderSchedule'); return fixture.schedule; } }));
 vi.mock('./shift-view', () => ({ getFactoryShiftWindow: async () => { calls.push('getFactoryShiftWindow'); return fixture.shift; } }));
 vi.mock('./business-rules', () => ({ getFactoryTimezone: async () => IST }));
+// V2 Epic 2 — the allocation card is one more server-function source, mocked like the rest.
+vi.mock('./order-allocation', () => ({ getOrderAllocations: async () => { calls.push('getOrderAllocations'); return []; } }));
 
 const { getOrderDesktopView } = await import('./order-desktop');
 void spy;

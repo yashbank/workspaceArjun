@@ -364,6 +364,9 @@ model MisEmployee {
   /// `sundayPaid` and actually present (25.3).
   payType       MisPayType @default(DAILY) @map("pay_type")
   sundayPaid    Boolean  @default(false) @map("sunday_paid")
+  /// V2 Epic 7 — the portal URL of a 256×256 WebP taken at onboarding (`employee-photo.ts`).
+  /// Sent to the gate tablet on pull so a scan flashes the face the badge belongs to.
+  photoUrl      String?  @map("photo_url")
 
   userProfile   UserProfile?      @relation(fields: [userProfileId], references: [id], onDelete: SetNull)
   manager       MisEmployee?      @relation("MisReports", fields: [managerId], references: [id], onDelete: SetNull)
@@ -535,6 +538,7 @@ model MisDepartment {
   machines  MisMachine[]
   processes MisProcess[]
   employees MisEmployee[]
+  materialRequests MisMaterialRequest[]
   @@map("mis_departments")
 }
 
@@ -602,6 +606,7 @@ model MisSupplier {
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
   purchaseOrders   MisPurchaseOrder[]
+  invoices         MisSupplierInvoice[]
   @@map("mis_suppliers")
 }
 
@@ -628,6 +633,8 @@ model MisItem {
   storeTxns      MisStoreTransaction[]
   physicalCounts MisPhysicalCount[]
   bomMaterials   MisBomMaterial[]
+  materialRequestLines MisMaterialRequestLine[]
+  orderAllocations MisOrderStockAllocation[]
   @@map("mis_items")
 }
 
@@ -679,6 +686,7 @@ model MisPurchaseOrder {
   supplier     MisSupplier? @relation(fields: [supplierId], references: [id])
   items        MisPoItem[]
   grns         MisGrn[]
+  supplierInvoices MisSupplierInvoice[]
   @@index([purpose])
   @@map("mis_purchase_orders")
 }
@@ -723,10 +731,20 @@ model MisGrn {
   receivedAt   DateTime?        @map("received_at")
   receivedById String?          @map("received_by_id") @db.Uuid
   notes        String?
+  /// V2 Epic 1 (Focus ERP parity) — the delivery's paperwork. `supplierInvoiceAmount` is money:
+  /// Owner-only, stripped for every other reader (`grn.ts`), never audited.
+  supplierInvoiceNo     String?   @map("supplier_invoice_no")
+  invoiceDate           DateTime? @map("invoice_date") @db.Date
+  supplierInvoiceAmount Decimal?  @map("supplier_invoice_amount") @db.Decimal(14, 2)
+  lrNumber              String?   @map("lr_number")
+  vehicleNumber         String?   @map("vehicle_number")
+  transporterName       String?   @map("transporter_name")
+  dcNumber              String?   @map("dc_number")
   createdAt    DateTime         @default(now()) @map("created_at")
   updatedAt    DateTime         @updatedAt @map("updated_at")
   po           MisPurchaseOrder @relation(fields: [poId], references: [id])
   items        MisGrnItem[]
+  supplierInvoices MisSupplierInvoice[]
   @@map("mis_grns")
 }
 
@@ -739,6 +757,12 @@ model MisGrnItem {
   forOrderRef String?        @map("for_order_ref")
   batchNo     String?        @map("batch_no")
   notes       String?
+  /// V2 Epic 1 — what the delivery challan said vs what arrived. short = dc − (received + damage),
+  /// computed on the server (`lib/mis/grn-match.ts`), null when no DC qty was entered. Only
+  /// `receivedQty` (the good quantity) ever reaches the ledger.
+  dcQuantity     Decimal?      @map("dc_quantity") @db.Decimal(12,2)
+  damageQuantity Decimal       @default(0) @map("damage_quantity") @db.Decimal(12,2)
+  shortQuantity  Decimal?      @map("short_quantity") @db.Decimal(12,2)
   grn         MisGrn         @relation(fields: [grnId], references: [id])
   poItem      MisPoItem      @relation(fields: [poItemId], references: [id])
   @@map("mis_grn_items")
@@ -806,6 +830,8 @@ model MisOrder {
   machineAllocations MisMachineAllocation[]
   lineClearances MisLineClearance[]
   jobPhases    MisJobPhase[]
+  materialRequests MisMaterialRequest[]
+  stockAllocations MisOrderStockAllocation[]
   @@map("mis_orders")
 }
 
@@ -977,8 +1003,14 @@ model MisQcCheck {
   acknowledgedAt      DateTime? @map("acknowledged_at")
   acknowledgedById    String?   @map("acknowledged_by_id") @db.Uuid
   acknowledgementNote String?   @map("acknowledgement_note")
+  /// V2 Epic 5 — a check taken from a checklist template, in a named hourly slot ("09:15").
+  /// The paper form's four buttons map onto `result`/`defectType` (lib/mis/qc-template.ts), so
+  /// the hourly grid and the CoA need no new result value.
+  templateId    String?      @map("template_id") @db.Uuid
+  slotTime      String?      @map("slot_time")
   order         MisOrder     @relation(fields: [orderId], references: [id])
   bomStage      MisBomStage? @relation(fields: [bomStageId], references: [id], onDelete: SetNull)
+  template      MisQcTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
   @@map("mis_qc_checks")
 }
 
@@ -1610,4 +1642,108 @@ model MisPayrollSnapshotLine {
   @@unique([periodId, employeeId])
   @@index([employeeId])
   @@map("mis_payroll_snapshot_lines")
+}
+
+/// V2 Epic 3 — a Material Issue Note. A Supervisor ASKS (`requestedQty`); the Store APPROVES and
+/// may issue less (`actualIssuedQty <= requestedQty`). Stock leaves the ledger only on approval,
+/// through `commitIssue`, so a pending note never moves a balance.
+enum MisMaterialRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  @@map("mis_material_request_status")
+}
+
+model MisMaterialRequest {
+  id            String                   @id @default(uuid()) @db.Uuid
+  requestNumber String                   @unique @map("request_number")
+  status        MisMaterialRequestStatus @default(PENDING)
+  /// RAW_MATERIAL / CONSUMABLE lines may be booked to an order; EQUIPMENT / OTHER never are.
+  orderId       String?                  @map("order_id") @db.Uuid
+  departmentId  String?                  @map("department_id") @db.Uuid
+  notes         String?
+  requestedById String?                  @map("requested_by_id") @db.Uuid
+  decidedById   String?                  @map("decided_by_id") @db.Uuid
+  decidedAt     DateTime?                @map("decided_at")
+  decisionNote  String?                  @map("decision_note")
+  createdAt     DateTime                 @default(now()) @map("created_at")
+  updatedAt     DateTime                 @updatedAt @map("updated_at")
+  order         MisOrder?                @relation(fields: [orderId], references: [id])
+  department    MisDepartment?           @relation(fields: [departmentId], references: [id])
+  lines         MisMaterialRequestLine[]
+  @@index([status])
+  @@map("mis_material_requests")
+}
+
+model MisMaterialRequestLine {
+  id              String             @id @default(uuid()) @db.Uuid
+  requestId       String             @map("request_id") @db.Uuid
+  itemId          String             @map("item_id") @db.Uuid
+  requestedQty    Decimal            @map("requested_qty") @db.Decimal(12, 2)
+  /// Null until decided. On approval, 0..requestedQty; 0 means "not issued".
+  actualIssuedQty Decimal?           @map("actual_issued_qty") @db.Decimal(12, 2)
+  request         MisMaterialRequest @relation(fields: [requestId], references: [id])
+  item            MisItem            @relation(fields: [itemId], references: [id])
+  @@index([requestId])
+  @@map("mis_material_request_lines")
+}
+
+/// V2 Epic 2 — stock received FOR an order is earmarked for it. One append-only row per
+/// receipt line (a GRN line typed FOR_ORDER, or any line of a PO whose BOM ref is the order
+/// number); the allocation is the SUM. Issues against the order are capped at that sum, which
+/// `commitIssue` checks inside its transaction.
+model MisOrderStockAllocation {
+  id           String   @id @default(uuid()) @db.Uuid
+  orderId      String   @map("order_id") @db.Uuid
+  itemId       String   @map("item_id") @db.Uuid
+  allocatedQty Decimal  @map("allocated_qty") @db.Decimal(12, 2)
+  /// 'GRN' and the GRN id, so a line can be traced back to the delivery that earmarked it.
+  source       String
+  sourceId     String?  @map("source_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+  order        MisOrder @relation(fields: [orderId], references: [id])
+  item         MisItem  @relation(fields: [itemId], references: [id])
+  @@index([orderId, itemId])
+  @@map("mis_order_stock_allocations")
+}
+
+/// V2 Epic 1 — the third leg of the 3-way match (PO ↔ GRN ↔ invoice). Written when a GRN that
+/// names a supplier invoice is confirmed (one row per PO + invoice number). `invoiceAmount` is
+/// money: Owner-only.
+model MisSupplierInvoice {
+  id            String           @id @default(uuid()) @db.Uuid
+  poId          String           @map("po_id") @db.Uuid
+  grnId         String?          @map("grn_id") @db.Uuid
+  supplierId    String?          @map("supplier_id") @db.Uuid
+  invoiceNo     String           @map("invoice_no")
+  invoiceDate   DateTime?        @map("invoice_date") @db.Date
+  invoiceAmount Decimal?         @map("invoice_amount") @db.Decimal(14, 2)
+  notes         String?
+  createdAt     DateTime         @default(now()) @map("created_at")
+  updatedAt     DateTime         @updatedAt @map("updated_at")
+  po            MisPurchaseOrder @relation(fields: [poId], references: [id])
+  grn           MisGrn?          @relation(fields: [grnId], references: [id])
+  supplier      MisSupplier?     @relation(fields: [supplierId], references: [id])
+  @@unique([poId, invoiceNo])
+  @@map("mis_supplier_invoices")
+}
+
+/// V2 Epic 5 — a paper QC checklist, digitised: one row per process form (Printing 6-Colours,
+/// Lamination, Lamif Flute, Die Cutting, …), its parameters down the side and hourly slots across
+/// the top (`slotStart` then on the hour through `slotEnd`). Owner/Admin edit; QC taps.
+model MisQcTemplate {
+  id          String       @id @default(uuid()) @db.Uuid
+  name        String       @unique
+  processName String?      @map("process_name")
+  slotStart   String       @default("09:15") @map("slot_start")
+  slotEnd     String       @default("18:00") @map("slot_end")
+  /// The checklist rows, in order. A JSON array of strings.
+  parameters  Json         @db.JsonB
+  isActive    Boolean      @default(true) @map("is_active")
+  sortOrder   Int          @default(0) @map("sort_order")
+  deletedAt   DateTime?    @map("deleted_at")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  checks      MisQcCheck[]
+  @@map("mis_qc_templates")
 }

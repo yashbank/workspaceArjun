@@ -11,6 +11,9 @@ import com.example.mis_kiosk.data.network.KioskApi
 import com.example.mis_kiosk.data.network.dto.ApiErrorDto
 import com.example.mis_kiosk.data.network.dto.EmployeeDto
 import com.example.mis_kiosk.data.security.DeviceCredentialStore
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 
 sealed interface RosterSyncResult {
@@ -39,7 +42,24 @@ class RosterRepository(
 
         return when (val result = api.pull(device.token, health)) {
             is ApiResult.Success -> {
-                val entities = result.body.employees.map { it.toEntity() }
+                // MIS V2: faces are cached with the roster so the confirm card works offline. The
+                // URL carries a version, so an unchanged photo is reused from the cache and only new
+                // or retaken ones are fetched — in parallel. A fetch that fails leaves that face absent
+                // (the card falls back to the initial); it never fails the roster sync.
+                val cached = employeeDao.photosByUrl().associate { it.photoUrl to it.photo }
+                val entities = coroutineScope {
+                    result.body.employees.map { dto ->
+                        async {
+                            val url = dto.photoUrl
+                            val photo = when {
+                                url == null -> null
+                                cached.containsKey(url) -> cached[url]
+                                else -> api.fetchPhoto(device.token, url)
+                            }
+                            dto.toEntity(photo = photo)
+                        }
+                    }.awaitAll()
+                }
                 database.withTransaction {
                     employeeDao.deleteAll()
                     employeeDao.insertAll(entities)
@@ -69,7 +89,7 @@ class RosterRepository(
         error?.message ?: "Could not sync the roster (HTTP $httpStatus)."
 }
 
-private fun EmployeeDto.toEntity() = EmployeeEntity(
+private fun EmployeeDto.toEntity(photo: ByteArray?) = EmployeeEntity(
     id = id,
     name = name,
     badgeCode = badgeCode,
@@ -77,4 +97,6 @@ private fun EmployeeDto.toEntity() = EmployeeEntity(
     shiftName = shift?.name,
     shiftStartTime = shift?.startTime,
     shiftEndTime = shift?.endTime,
+    photo = photo,
+    photoUrl = photoUrl,
 )

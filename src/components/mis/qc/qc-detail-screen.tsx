@@ -10,6 +10,9 @@ import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { AqlBreakdown } from '@/components/mis/qc/aql-breakdown';
 import { addQcCheckAction, recordAqlSampleAction } from '@/app/(mis)/mis/qc/actions';
 import type { AqlResult } from '@/lib/mis/aql';
+import type { QcTemplateRow } from '@/server/mis/qc-template';
+import { QcChecklist } from '@/components/mis/qc/qc-checklist';
+import { fmtDate, fmtTime } from '@/lib/mis/client-dates';
 
 type Check = {
   id: string;
@@ -21,6 +24,8 @@ type Check = {
   notes?: string | null;
   stage?: { stageName: string } | null;
   checkBy?: { name: string } | null;
+  templateId?: string | null;
+  slotTime?: string | null;
 };
 
 type Summary = { total: number; pass: number; fail: number; totalDefectQty: number };
@@ -34,6 +39,8 @@ interface Props {
   summary: Summary;
   canWrite: boolean;
   defectTypes: DefectTypeOption[];
+  /** V2 Epic 5 — the paper forms; empty until the templates migration is applied. */
+  templates?: QcTemplateRow[];
 }
 
 const resultOptions: SelectOption[] = [
@@ -44,8 +51,7 @@ const resultOptions: SelectOption[] = [
 
 function fmt(dt: Date | string) {
   const d = typeof dt === 'string' ? new Date(dt) : dt;
-  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) + ' ' +
-    d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+  return fmtDate(d, { day: '2-digit', month: 'short' }) + ' ' + fmtTime(d, { hour: '2-digit', minute: '2-digit', hour12: true });
 }
 
 const resultBadge = (r: string) => {
@@ -61,7 +67,7 @@ const defectTypeOptions = (types: DefectTypeOption[]): SelectOption[] =>
 // defect that is not yet classified must still be recordable, as free text (F-19/D14).
 const OTHER_DEFECT = '';
 
-export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes }: Props) {
+export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes, templates = [] }: Props) {
   const [open, setOpen] = useState(false);
   const [result, setResult] = useState<'PASS' | 'FAIL' | 'NA'>('PASS');
   const [parameterName, setParameterName] = useState('');
@@ -131,7 +137,7 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes }
       </nav>
 
       {/* Header */}
-      <div className="flex items-start justify-between">
+      <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold text-gray-900">{order.orderNumber}</h1>
@@ -139,7 +145,7 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes }
           </div>
           <p className="text-sm text-gray-500 mt-1">{order.customer?.name ?? 'No customer'}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Link href={`/mis/qc/grid?view=capture&orderId=${order.id}`}>
             <Button variant="ghost">Hourly Grid</Button>
           </Link>
@@ -187,13 +193,23 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes }
         </div>
       </div>
 
+      {templates.length > 0 && (
+        <QcChecklist
+          orderId={order.id}
+          templates={templates}
+          canWrite={canWrite}
+          checks={checks.map((c) => ({ parameterName: c.parameterName ?? null, slotTime: c.slotTime ?? null, result: c.result, defectType: c.defectType ?? null, checkTime: new Date(c.checkTime), templateId: c.templateId ?? null }))}
+        />
+      )}
+
       {/* Checks table */}
       <div className="bg-white rounded-xl border border-gray-200">
         <div className="px-5 py-4 border-b border-gray-100 font-medium text-gray-700">QC Checks</div>
         {checks.length === 0 ? (
           <div className="py-12 text-center text-gray-400 text-sm">No QC checks yet.</div>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-sm">
             <thead>
               <tr className="border-b border-gray-100 text-xs text-gray-500">
                 <th className="px-5 py-3 text-left font-medium">Time</th>
@@ -220,6 +236,7 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes }
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

@@ -64,7 +64,9 @@ const NAV: NavDefinition[] = [
   { id: 'store', labelKey: 'nav.store', href: '/mis/store', icon: 'database', primary: false, requires: 'store.read' },
   // Phone "More" only (D32): each `requires` matches the gate on the page it opens; the two
   // Settings sub-pages are gated as their parent is, so a phone never offers what Settings would not.
-  { id: 'crew', labelKey: 'nav.crew', href: '/mis/crew', icon: 'users', primary: false, requires: 'attendance.read', phoneOnly: true },
+  // Crew is the worker board: its data (machine board, worker availability) gates on production.read, so the
+  // menu must too — attendance roles used to be offered a screen that refused them (coverage sweep, 2026-10).
+  { id: 'crew', labelKey: 'nav.crew', href: '/mis/crew', icon: 'users', primary: false, requires: 'production.read', phoneOnly: true },
   { id: 'leave', labelKey: 'nav.leave', href: '/mis/attendance/leave', icon: 'users', primary: false, requires: 'attendance.read', phoneOnly: true },
   { id: 'settings-users', labelKey: 'nav.users', href: '/mis/settings/users', icon: 'users', primary: false, requires: 'settings.read', phoneOnly: true },
   // The page 404s for anyone without wages.read (D30): Owner only.

@@ -127,6 +127,19 @@ export function SettingsScreen({
         <span aria-hidden="true" className="text-slate-400">→</span>
       </Link>
 
+      {canWrite && (
+        <Link
+          href="/mis/settings/qc-templates"
+          className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-4 hover:bg-slate-50"
+        >
+          <div>
+            <div className="font-semibold text-slate-900">QC checklist templates</div>
+            <div className="text-sm text-slate-600">The hourly paper forms (Printing, Lamination, Flute, Die Cutting) as tap-to-fill checklists.</div>
+          </div>
+          <span aria-hidden="true" className="text-slate-400">→</span>
+        </Link>
+      )}
+
       {canManageKiosk && (
         <Link
           href="/mis/settings/devices"

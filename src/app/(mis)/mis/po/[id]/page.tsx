@@ -5,6 +5,7 @@ import { requireMisAccess } from '@/server/mis/guard';
 import { checkPermission } from '@/server/mis/auth';
 import { getPO, computePoTotal, formatMoney } from '@/server/mis/po';
 import { listItems } from '@/server/mis/item';
+import { reconcilePO } from '@/server/mis/supplier-invoice';
 import { PoDetailScreen } from '@/components/mis/po/po-detail-screen';
 
 export default async function PoDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -24,6 +25,7 @@ export default async function PoDetailPage({ params }: { params: Promise<{ id: s
   // po.read-only viewer (e.g. STORE_GUY, who lacks masters.read) must never reach listItems().
   const items = canWrite ? await listItems() : [];
   const total = canSeeMoney ? await computePoTotal(id) : null;
+  const reconciliation = (po.grns?.length ?? 0) > 0 ? await reconcilePO(id) : null;
   type PoItem = (typeof po.items)[number];
   const formattedItems = po.items.map((item: PoItem) => ({
     id: item.id,
@@ -39,5 +41,5 @@ export default async function PoDetailPage({ params }: { params: Promise<{ id: s
         }
       : {}),
   }));
-  return <PoDetailScreen po={toPlain(po)} formattedItems={formattedItems} total={total} catalogItems={toPlain(items)} canWrite={canWrite} canApprove={canApprove} />;
+  return <PoDetailScreen po={toPlain(po)} formattedItems={formattedItems} total={total} catalogItems={toPlain(items)} canWrite={canWrite} canApprove={canApprove} reconciliation={reconciliation} />;
 }

@@ -22,6 +22,10 @@ interface EmployeeDao {
     @Insert
     suspend fun insertAll(employees: List<EmployeeEntity>)
 
+    /** MIS V2 — the cached faces keyed by their versioned URL, so a roster sync re-downloads only what changed. */
+    @Query("SELECT photoUrl, photo FROM employees WHERE photoUrl IS NOT NULL AND photo IS NOT NULL")
+    suspend fun photosByUrl(): List<CachedPhoto>
+
     /** Read-only roster-cache rollup for the kiosk's "View shifts" info screen — distinct
      *  shifts currently present locally, with how many cached employees sit on each. */
     @Query(
@@ -38,4 +42,10 @@ data class ShiftSummary(
     val shiftStartTime: String?,
     val shiftEndTime: String?,
     val employeeCount: Int,
+)
+
+/** One cached face: the versioned URL it came from and its bytes. */
+data class CachedPhoto(
+    val photoUrl: String,
+    val photo: ByteArray,
 )

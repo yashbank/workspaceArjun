@@ -3,6 +3,8 @@ import { db } from '@/server/db';
 import { requirePermission } from './auth';
 import { logAuditEvent } from './audit';
 import { nextGrnNumber } from './grn';
+import { allocateFromReceipt, allocationShortfalls } from './order-allocation';
+import { notifyGrnConfirmed } from './grn-alerts';
 import { poPurpose, type PoPurpose } from '@/lib/mis/po-purpose';
 
 // ---------------------------------------------------------------------------
@@ -870,10 +872,19 @@ export async function commitReceipt(
           receivedAt: new Date(),
           receivedById: actor.userId,
           notes: headerNotes || null,
+          supplierInvoiceNo: invoiceNo,
         },
       });
       grnId = grn.id;
       grnNumber = grn.grnNumber;
+      // V2 Epic 1: the cart receipt is a confirmed GRN, so its invoice is a leg of the 3-way match too.
+      if (invoiceNo) {
+        await tx.misSupplierInvoice.upsert({
+          where: { poId_invoiceNo: { poId: po.id, invoiceNo } },
+          create: { poId: po.id, invoiceNo, grnId: grn.id, supplierId: po.supplierId },
+          update: { grnId: grn.id },
+        });
+      }
     }
 
     const reference = grnNumber ?? invoiceNo ?? `Receipt ${new Date().toISOString().slice(0, 10)}`;
@@ -929,6 +940,9 @@ export async function commitReceipt(
           where: { id: poItem.id },
           data: { receivedQuantity: { increment: line.qty } },
         });
+        // V2 Epic 2: a PO raised against an order (its BOM ref IS the order number) earmarks
+        // the delivery for that order. Any other ref lands in general stock, as before.
+        await allocateFromReceipt(tx, { ref: po!.bomRef, itemId: item.id, qty: line.qty, sourceId: grnId });
       }
 
       // What the delivery actually charged, so the next reorder is not priced
@@ -962,6 +976,8 @@ export async function commitReceipt(
 
     return { reference, grnId, lineCount: cart.length, totalQty };
   });
+
+  if (result.grnId) await notifyGrnConfirmed(result.grnId); // V2 Epic 4 — same alert as the GRN screen's confirm
 
   await logAuditEvent({
     actorId: actor.userId,
@@ -1036,6 +1052,15 @@ export async function commitIssue(
     }
     if (shortfalls.length > 0) {
       throw new Error(`Cannot issue more than the stock balance: ${shortfalls.join(' · ')}`);
+    }
+    // V2 Epic 2: against an order, (issued so far + this) may not exceed what was earmarked for it.
+    if (meta.orderId) {
+      const over = await allocationShortfalls(
+        tx,
+        meta.orderId,
+        cart.map((l) => ({ itemId: l.itemId, qty: l.qty, label: `${items.get(l.itemId)!.name} (${items.get(l.itemId)!.code})` })),
+      );
+      if (over.length > 0) throw new Error(`Cannot issue more than is allocated to this order: ${over.join(' · ')}`);
     }
 
     const { prefix, next } = await nextTxnSeq(tx);

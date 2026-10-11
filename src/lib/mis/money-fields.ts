@@ -43,14 +43,19 @@ const isPlain = (v: unknown): v is Record<string, unknown> =>
  * mutated, so an Owner reading afterwards is unaffected.
  */
 export function withoutMoneyFields<T>(value: T): WithoutMoney<T> {
-  if (Array.isArray(value)) return value.map((v) => withoutMoneyFields(v)) as WithoutMoney<T>;
-  if (!isPlain(value)) return value as WithoutMoney<T>;
+  return withoutKeys(value, MONEY_FIELDS) as WithoutMoney<T>;
+}
+
+/** The same walk for any key list — V2's invoice money (`lib/mis/grn-match.ts`) reuses it. */
+export function withoutKeys<T>(value: T, keys: readonly string[]): unknown {
+  if (Array.isArray(value)) return value.map((v) => withoutKeys(v, keys));
+  if (!isPlain(value)) return value;
   const out: Record<string, unknown> = {};
   for (const [key, v] of Object.entries(value)) {
-    if ((MONEY_FIELDS as readonly string[]).includes(key)) continue;
-    out[key] = withoutMoneyFields(v);
+    if (keys.includes(key)) continue;
+    out[key] = withoutKeys(v, keys);
   }
-  return out as WithoutMoney<T>;
+  return out;
 }
 
 /**

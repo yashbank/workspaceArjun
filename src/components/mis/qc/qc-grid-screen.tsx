@@ -6,6 +6,7 @@ import { Input } from '@/components/mis/kit/input';
 import { Select, type SelectOption } from '@/components/mis/kit/select';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { addQcCheckAction } from '@/app/(mis)/mis/qc/actions';
+import { factoryHour, fmtDate } from '@/lib/mis/client-dates';
 
 type Check = { id: string; checkTime: Date; result: string; parameterName: string | null; orderId: string; order: { orderNumber: string } | null };
 type Order = { id: string; orderNumber: string };
@@ -38,14 +39,14 @@ export function QcGridScreen({ orders, todayChecks, canWrite, defectTypes }: { o
   // Group today's checks by order × hour
   const checksByHour: Record<string, Record<number, Check[]>> = {};
   for (const check of todayChecks) {
-    const h = new Date(check.checkTime).getHours();
+    const h = factoryHour(check.checkTime);
     const key = check.orderId;
     if (!checksByHour[key]) checksByHour[key] = {};
     if (!checksByHour[key][h]) checksByHour[key][h] = [];
     checksByHour[key][h].push(check);
   }
 
-  const currentHour = new Date().getHours();
+  const currentHour = factoryHour(new Date());
   const orderChecks = selectedOrderId ? (checksByHour[selectedOrderId] ?? {}) : {};
 
   const handleAdd = () => {
@@ -75,7 +76,7 @@ export function QcGridScreen({ orders, todayChecks, canWrite, defectTypes }: { o
         <h1 className="text-2xl font-semibold text-slate-900">QC Hourly Grid</h1>
         {/* From 1024px up the whole-floor grid (D9) is the reading view of the shift; this screen is where a check is recorded. */}
         <Link href="/mis/qc/grid" className="hidden lg:inline-flex min-h-11 items-center text-sm font-medium text-indigo-700 hover:underline">Whole-floor grid</Link>
-        <span className="text-slate-500 text-sm">{new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}</span>
+        <span className="text-slate-500 text-sm" suppressHydrationWarning>{fmtDate(new Date(), { weekday: 'long', day: 'numeric', month: 'long' })}</span>
       </div>
 
       {orders.length === 0 ? (

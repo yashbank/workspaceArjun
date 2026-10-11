@@ -25,7 +25,7 @@ function nextOrderNumber(attempt = 0): string {
   return `ORD-${y}${m}-${ms}`;
 }
 
-function isUniqueConstraintError(err: unknown): boolean {
+export function isUniqueConstraintError(err: unknown): boolean {
   return Boolean(err && typeof err === 'object' && (err as { code?: unknown }).code === 'P2002');
 }
 

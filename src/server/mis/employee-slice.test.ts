@@ -130,10 +130,13 @@ describe('the employee model holds no money — so no employee function can retu
     // just not caught by this regex; the server gate does not depend on this list).
     expect(found.sort()).toEqual([
       'MisBomMaterial.ratePerUnit',
+      // V2 Epic 1: supplier invoice money — Owner-only to write and read (grn.ts, supplier-invoice.ts).
+      'MisGrn.supplierInvoiceAmount',
       'MisItem.pricePerUnit',
       'MisPayrollSnapshotLine.basicWage',
       'MisPayrollSnapshotLine.grossPay',
       'MisPoItem.ratePerUnit',
+      'MisSupplierInvoice.invoiceAmount',
       'MisWageType.allowanceAmount',
       'MisWageType.amount',
       'MisWageType.bonusAmount',

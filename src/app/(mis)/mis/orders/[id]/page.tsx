@@ -11,6 +11,7 @@ import { can } from '@/lib/mis/permissions';
 import { OrderDetailDesktop } from '@/components/mis/desktop/order-detail-desktop';
 import { OrderDetailScreen } from '@/components/mis/orders/order-detail-screen';
 import { getOrderDesktopView } from '@/server/mis/order-desktop';
+import { getOrderAllocations } from '@/server/mis/order-allocation';
 import { notFound } from 'next/navigation';
 
 export default async function OrderDetailPage({
@@ -29,7 +30,7 @@ export default async function OrderDetailPage({
   const order = await getOrder(id);
   if (!order) notFound();
 
-  const [bom, productionLogs, productionSummary, qcLogs, qcSummary, phases, documents] = await Promise.all([
+  const [bom, productionLogs, productionSummary, qcLogs, qcSummary, phases, documents, allocations] = await Promise.all([
     getBom(id).catch(() => null),
     getProductionForOrder(id).catch(() => []),
     getProductionSummary(id).catch(() => ({ totalProduced: 0, totalWaste: 0, entries: 0 })),
@@ -42,6 +43,7 @@ export default async function OrderDetailPage({
     // being true, this should break loudly rather than lie.
     getPhasesForOrder(id),
     listDocuments(id).catch(() => []),
+    getOrderAllocations(id).catch(() => []),
   ]);
 
   const canWrite = can(role, 'orders.write');
@@ -74,6 +76,7 @@ export default async function OrderDetailPage({
       qcLogs={qcLogs}
       qcSummary={qcSummary}
       documents={documents}
+      allocations={allocations}
       canWrite={canWrite}
       canSeeWages={canSeeWages}
       canProduction={canProduction}

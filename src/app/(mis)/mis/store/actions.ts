@@ -1,5 +1,7 @@
 'use server';
 import { revalidatePath } from 'next/cache';
+
+import { asResult, type ActionResult } from '@/lib/mis/action-result';
 import {
   commitIssue,
   commitReceipt,
@@ -85,18 +87,23 @@ function revalidateStock(): void {
 export async function commitReceiptAction(
   lines: CartLineInput[],
   meta: ReceiptMeta,
-): Promise<CartCommitResult> {
-  const result = await commitReceipt(lines, meta);
-  revalidateStock();
-  return result;
+): Promise<ActionResult<CartCommitResult>> {
+  return asResult(async () => {
+    const result = await commitReceipt(lines, meta);
+    revalidateStock();
+    return result;
+  });
 }
 
 /** Issue to production: STORE_GUY, ADMIN, OWNER — gated on `store.write` inside commitIssue. */
 export async function commitIssueAction(
   lines: CartLineInput[],
   meta: IssueMeta,
-): Promise<CartCommitResult> {
-  const result = await commitIssue(lines, meta);
-  revalidateStock();
-  return result;
+): Promise<ActionResult<CartCommitResult>> {
+  // The stock-balance and order-allocation refusals are the message the storekeeper needs to read.
+  return asResult(async () => {
+    const result = await commitIssue(lines, meta);
+    revalidateStock();
+    return result;
+  });
 }

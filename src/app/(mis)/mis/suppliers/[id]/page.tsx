@@ -15,7 +15,8 @@ export default async function SupplierDetailPage({ params }: { params: Promise<{
   const role = await getMisRole(user.id);
   const canWrite = can(role, 'masters.write');
 
-  await requirePermission('masters.read');
+  // The list and `getSupplier` gate on po.read (Store Guy holds it); the detail must not demand more.
+  await requirePermission('po.read');
   const supplier = await db.misSupplier.findUnique({
     where: { id },
     include: {

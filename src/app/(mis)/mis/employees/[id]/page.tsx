@@ -42,6 +42,7 @@ export default async function EmployeeProfilePage({ params }: { params: Promise<
         role: employee.role,
         isActive: employee.isActive,
         createdAt: employee.createdAt,
+        photoUrl: employee.photoUrl,
       }}
       monthStats={{ present, absent, leave, totalOT }}
       canWrite={canWrite}

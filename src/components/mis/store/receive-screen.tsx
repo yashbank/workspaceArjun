@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 
 import { commitReceiptAction } from '@/app/(mis)/mis/store/actions';
+import { unwrap } from '@/lib/mis/action-result';
 import { Input } from '@/components/mis/kit/input';
 import type { PoPurpose } from '@/lib/mis/po-purpose';
 import { cn } from '@/lib/utils';
@@ -65,11 +66,11 @@ export function ReceiveScreen({ header, items, suppliers, openPos }: Props) {
   }
 
   async function commit(lines: CartLine[]) {
-    const result = await commitReceiptAction(lines, {
+    const result = unwrap(await commitReceiptAction(lines, {
       supplierId,
       poId,
       invoiceNo: invoiceNo.trim() || null,
-    });
+    }));
     setDone(result);
     setInvoiceNo('');
     setPoId(null);

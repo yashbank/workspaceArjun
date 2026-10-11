@@ -46,8 +46,18 @@ const REVIEWED_UNGATED: Record<string, Reviewed> = {
   'kiosk-device.ts#claimEnrolment': { reason: 'pairing-code + poll-secret credential (D18)', alsoContains: 'pollSecret', door: true },
   'kiosk-device.ts#authenticateDevice': { reason: 'this IS the device-token check (D18)', door: true },
   'kiosk-device.ts#recordDeviceSync': { reason: 'internal; called only after authenticateDevice succeeded (D18)' },
+  // V2 Epic 2: run on the caller's `tx`, inside commitReceipt / confirmGRN / commitIssue, after their gate.
+  'order-allocation.ts#allocateFromReceipt': { reason: 'internal tx helper; callers (grn.ts, store.ts) are gated' },
+  'order-allocation.ts#allocationFigures': { reason: 'internal tx helper; callers are gated' },
+  'order-allocation.ts#allocationShortfalls': { reason: 'internal tx helper; called inside commitIssue after its gate' },
+  // V2 Epic 4: a writer, not a reader — called by confirmGRN after its gate; best-effort like logAuditEvent.
+  'grn-alerts.ts#notifyGrnConfirmed': { reason: 'internal; called only by confirmGRN after its grn.write gate' },
+  'notifications.ts#notifyRoles': { reason: 'writer, not a reader; called by gated mutations after their own write (V2 bell)' },
   'kiosk-device.ts#pullForDevice': { reason: 'device-token door', alsoContains: 'authenticateDevice', door: true },
   'attendance-punch.ts#ingestDevicePunch': { reason: 'device-token door', alsoContains: 'authenticateDevice', door: true },
+  // V2 Epic 7: the tablet fetches a face with its token, like it pulls the roster.
+  'employee-photo.ts#getEmployeePhotoForDevice': { reason: 'device-token door', alsoContains: 'authenticateDevice', door: true },
+  'employee-photo.ts#normalisePhoto': { reason: 'pure image transform (sharp); only setEmployeePhoto calls it, after its employees.write gate' },
   'attendance-punch.ts#submitPunch': { reason: 'session door: user resolved first, permission checked in the transaction', alsoContains: "requirePermission('attendance.write')", door: true },
   'production.ts#submitProductionLog': { reason: 'session door: user resolved first, permission checked in the transaction', alsoContains: 'requirePermission', door: true },
 

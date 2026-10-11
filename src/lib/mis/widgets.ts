@@ -65,7 +65,9 @@ export const WIDGETS: readonly WidgetDefinition[] = [
   { key: 'machines.board', group: 'PRODUCTION', titleKey: 'widget.machines.board', descriptionKey: 'widget.machines.board.about', w: 4, h: 2, requires: 'production.read' },
   { key: 'orders.onTime', group: 'PRODUCTION', titleKey: 'widget.orders.onTime', descriptionKey: 'widget.orders.onTime.about', w: 1, h: 1, requires: 'orders.read' },
   { key: 'orders.inFlight', group: 'PRODUCTION', titleKey: 'widget.orders.inFlight', descriptionKey: 'widget.orders.inFlight.about', w: 2, h: 2, requires: 'orders.read' },
-  { key: 'orders.waitingOnYou', group: 'PRODUCTION', titleKey: 'widget.orders.waitingOnYou', descriptionKey: 'widget.orders.waitingOnYou.about', w: 1, h: 2, requires: 'orders.read' },
+  // Reads the approvals inbox (getPendingApprovals gates on approvals.read, F-13): a QC/Supervisor default layout
+  // that carried it refused the whole dashboard. The widget needs what its data needs.
+  { key: 'orders.waitingOnYou', group: 'PRODUCTION', titleKey: 'widget.orders.waitingOnYou', descriptionKey: 'widget.orders.waitingOnYou.about', w: 1, h: 2, requires: 'approvals.read' },
 
   // --- Quality ---
   { key: 'qc.aqlThisMonth', group: 'QUALITY', titleKey: 'widget.qc.aqlThisMonth', descriptionKey: 'widget.qc.aqlThisMonth.about', w: 2, h: 1, requires: 'qc.read' },

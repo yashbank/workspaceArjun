@@ -66,6 +66,25 @@ class KioskApi(
             json.decodeFromString(PunchResponse.serializer(), it)
         }
 
+    /**
+     * MIS V2 — GET a badge photo with the device token. `path` is what the pull returned
+     * (`/api/mis/employees/<id>/photo?v=…`). Null on any failure: a missing face is never an error
+     * worth failing a roster sync for.
+     */
+    suspend fun fetchPhoto(token: String, path: String): ByteArray? =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val request = Request.Builder()
+                    .url("$baseUrl${path.trimStart('/')}")
+                    .header("Authorization", "Bearer $token")
+                    .get()
+                    .build()
+                client.newCall(request).execute().use { response ->
+                    if (response.isSuccessful) response.body?.bytes() else null
+                }
+            }.getOrNull()
+        }
+
     private suspend fun <T> post(
         path: String,
         jsonBody: String,

@@ -29,6 +29,8 @@ export type AdminHomeProps = {
   hindiGap: { total: number };
   /** Phase 23 — Appendix B §B.7's inbox: writes nobody has resolved yet. */
   queue: { total: number };
+  /** V2 Epic 4 — deliveries confirmed since the office last looked. No money here, ever (D24). */
+  grnAlerts?: { id: string; grnId: string; title: string; detail: string; attention: boolean }[];
 };
 
 /**
@@ -38,7 +40,7 @@ export type AdminHomeProps = {
  * the orders that are waiting on an office decision, each one already carrying
  * the next step in words.
  */
-export function AdminHome({ header, orders, attendance, hindiGap, queue }: AdminHomeProps) {
+export function AdminHome({ header, orders, attendance, hindiGap, queue, grnAlerts = [] }: AdminHomeProps) {
   return (
     <HomeStack>
       <HeaderCard title={header.title} meta={header.meta} />
@@ -73,6 +75,23 @@ export function AdminHome({ header, orders, attendance, hindiGap, queue }: Admin
           )}
         </div>
       </InfoCard>
+
+      {grnAlerts.length > 0 && (
+        <InfoCard>
+          <SectionLabel>Deliveries received</SectionLabel>
+          <div className="mt-1">
+            {grnAlerts.map((g) => (
+              <RowLink
+                key={g.id}
+                href={`/mis/grn/${g.grnId}`}
+                title={<Mono>{g.title}</Mono>}
+                detail={g.detail}
+                right={g.attention ? <Chip tone="risk">Check</Chip> : <Chip tone="action">OK</Chip>}
+              />
+            ))}
+          </div>
+        </InfoCard>
+      )}
 
       <InfoCard>
         <SectionLabel>Attendance today</SectionLabel>

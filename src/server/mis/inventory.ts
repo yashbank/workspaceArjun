@@ -1,4 +1,5 @@
 import { db } from '@/server/db';
+import { logAuditEvent } from './audit';
 import { requirePermission } from './auth';
 
 export async function getInventoryBalance(itemId: string) {
@@ -44,7 +45,7 @@ export async function getInventorySummary() {
 }
 
 export async function adjustInventory(itemId: string, changeQty: number, notes?: string) {
-  await requirePermission('inventory.write');
+  const actor = await requirePermission('inventory.write');
   // Get current balance
   const last = await db.misInventoryLedger.findFirst({
     where: { itemId },
@@ -54,7 +55,7 @@ export async function adjustInventory(itemId: string, changeQty: number, notes?:
   const current = last?.balanceQty.toNumber() ?? 0;
   const newBalance = current + changeQty;
   if (newBalance < 0) throw new Error('Adjustment would result in negative balance');
-  await db.misInventoryLedger.create({
+  const row = await db.misInventoryLedger.create({
     data: {
       itemId,
       changeQty,
@@ -62,6 +63,15 @@ export async function adjustInventory(itemId: string, changeQty: number, notes?:
       source: 'MANUAL_ADJUSTMENT',
       notes: notes?.trim() || null,
     },
+  });
+  // V2 Epic 6: a hand adjustment to stock was the one ledger write with no audit row.
+  await logAuditEvent({
+    actorId: actor.userId,
+    action: 'inventory.adjust',
+    entity: 'MisInventoryLedger',
+    entityId: row.id,
+    before: { itemId, balanceQty: String(current) },
+    after: { itemId, balanceQty: String(newBalance), changeQty: String(changeQty), notes: notes?.trim() || null },
   });
   return newBalance;
 }

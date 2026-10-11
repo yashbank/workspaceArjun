@@ -162,6 +162,24 @@ export function OrderDetailDesktop({ data }: { data: OrderDesktopData }) {
               <p className="text-sm text-slate-500">{t('d4.noBom')}</p>
             )}
           </Card>
+
+          {(data.allocations?.length ?? 0) > 0 ? (
+            <Card>
+              <CardTitle right={`${data.allocations!.length} ${t('d4.items')}`}>{t('d4.allocated')}</CardTitle>
+              <ul className="grid grid-cols-2 gap-4">
+                {data.allocations!.map((a) => (
+                  <li key={a.itemId} className="min-w-0">
+                    <p className="truncate text-xs text-slate-500">{a.name} · {a.code}</p>
+                    <p className="font-mono text-lg font-semibold text-slate-900">
+                      <span className={a.remaining <= 0 ? 'text-red-600' : undefined}>{a.remaining}</span>{' '}
+                      <span className="text-sm font-normal text-slate-400">{a.unit} {t('d4.left')}</span>
+                    </p>
+                    <p className="text-xs text-slate-500">{a.issued} / {a.allocated} {t('d4.issued')}</p>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          ) : null}
         </div>
 
         <div className="flex min-w-0 flex-col gap-5">

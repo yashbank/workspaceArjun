@@ -591,7 +591,8 @@ export async function recordDeviceSync(
  * accident. Wages are Owner-only everywhere (D6); the test for this file names
  * this array and fails if it grows or if any key looks like money.
  */
-export const PULL_EMPLOYEE_KEYS = ['id', 'name', 'badgeCode', 'shift'] as const;
+// V2 Epic 7: `photoUrl` (a portal path, fetched with the device token) so a scan can flash the face.
+export const PULL_EMPLOYEE_KEYS = ['id', 'name', 'badgeCode', 'shift', 'photoUrl'] as const;
 /** A shift definition — the clock, not a person. Nested in `shift`. */
 export const PULL_SHIFT_KEYS = ['id', 'name', 'startTime', 'endTime'] as const;
 
@@ -603,10 +604,12 @@ export type PullEmployee = {
   badgeCode: string;
   /** Today's shift, or null — the tablet then uses the shift on the clock now (D19). */
   shift: PullShift | null;
+  /** V2 Epic 7 — `/api/mis/employees/<id>/photo`, or null when no photo was taken. */
+  photoUrl: string | null;
 };
 
 export function toPullEmployee(
-  employee: { id: string; name: string; employeeCode: string },
+  employee: { id: string; name: string; employeeCode: string; photoUrl?: string | null },
   shift: { id: string; name: string; startTime: string; endTime: string } | null,
 ): PullEmployee {
   return {
@@ -616,6 +619,7 @@ export function toPullEmployee(
     shift: shift
       ? { id: shift.id, name: shift.name, startTime: shift.startTime, endTime: shift.endTime }
       : null,
+    photoUrl: employee.photoUrl ?? null,
   };
 }
 
@@ -628,8 +632,8 @@ export type PullPayload = {
 /**
  * The roll a tablet works from. Factory-wide, not narrowed by pool (D5): a gate
  * scanner must resolve any badge, exactly as `listEmployeeRoster` does for the
- * web kiosk. Every column is chosen explicitly; nothing beyond id, code and name
- * is read from the employee row at all.
+ * web kiosk. Every column is chosen explicitly; nothing beyond id, code, name and
+ * the photo URL (V2 Epic 7) is read from the employee row at all.
  */
 async function buildPullPayload(device: AuthenticatedDevice, now: Date): Promise<PullPayload> {
   // "Today" is the factory's today (D22), as a UTC-midnight `@db.Date` value. The server's
@@ -639,7 +643,7 @@ async function buildPullPayload(device: AuthenticatedDevice, now: Date): Promise
   const [employees, shifts, allocations, attendance] = await Promise.all([
     db.misEmployee.findMany({
       where: { isActive: true, deletedAt: null },
-      select: { id: true, employeeCode: true, name: true },
+      select: { id: true, employeeCode: true, name: true, photoUrl: true },
       orderBy: { name: 'asc' },
     }),
     db.misShift.findMany({
