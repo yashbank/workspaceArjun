@@ -1,53 +1,23 @@
 import type { Prisma } from '@/generated/prisma/client';
-import { MONEY_FIELDS } from '@/lib/mis/money-fields';
+import { redactForStorage } from '@/lib/mis/audit-redaction';
 import { db } from '@/server/db';
-
-/**
- * Fields that must never reach the audit table for an entity a non-owner can
- * read back (S9). Wages are the factory's most sensitive number; an audit diff
- * is the easiest place to leak one by accident.
- */
-const REDACTED_KEYS = new Set<string>([
-  // Material prices (D24, F-06): a BOM/PO line's rate and a stock item's price. The audit page is
-  // readable by Admin (`settings.read`), so a price written here is a price sent to them.
-  ...MONEY_FIELDS,
-  // V2 Epic 1: a supplier invoice's amount (grn.ts, supplier-invoice.ts).
-  'supplierInvoiceAmount',
-  'invoiceAmount',
-  'wage',
-  'wageAmount',
-  'dailyWage',
-  'rate',
-  'salary',
-  'amount',
-  'netPay',
-  // Phase 25 (D24): the payroll rework's own money fields. Every writer that touches one of these
-  // (wage-type.ts, extra-pay-days.ts, payroll-period.ts) already keeps it OUT of its audit payload
-  // on purpose (see each module's own auditSafe()/comment) — this is defence in depth, not the
-  // only guard, exactly like the material-price keys above.
-  'otRatePerHour',
-  'hraAmount',
-  'allowanceAmount',
-  'bonusAmount',
-  'basicWage',
-  'otPay',
-  'bonus',
-  'extraPay',
-  'latePenalty',
-  'grossPay',
-]);
 
 type Diff = Record<string, unknown> | null | undefined;
 
-/** Replace sensitive values with a marker, keeping the shape of the diff. */
+/**
+ * Legacy top-level-only masking, kept because wage-leak.test.ts pins its shallow behaviour (its F-05
+ * nested case is still `it.fails`). `logAuditEvent` does NOT use it: it stores through
+ * `redactForStorage`, which masks at any depth. See `lib/mis/audit-redaction.ts` for the write/read split.
+ */
 export function redact(input: Diff): Record<string, unknown> | null {
   if (!input) return null;
+  const masked = redactForStorage(input) ?? {};
   const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(input)) {
-    out[key] = REDACTED_KEYS.has(key) ? '[redacted]' : value;
-  }
+  for (const [k, v] of Object.entries(input)) out[k] = masked[k] === '[redacted]' ? '[redacted]' : v;
   return out;
 }
+
+const forStorage = redactForStorage;
 
 export type AuditEntry = {
   actorId: string | null;
@@ -57,7 +27,22 @@ export type AuditEntry = {
   before?: Diff;
   after?: Diff;
   ip?: string | null;
+  /** There is no severity column (no schema change): a WARNING is carried in `after.severity`. */
+  severity?: 'INFO' | 'WARNING';
 };
+
+/** Spec Epic 1: a GRN with a discrepancy gets a WARNING entry. grn.ts calls this after the GRN is saved. */
+export function logGrnDiscrepancy(args: { actorId: string | null; grnId: string; discrepancies: Record<string, unknown>; ip?: string | null }): Promise<void> {
+  return logAuditEvent({
+    actorId: args.actorId,
+    action: 'grn.discrepancy',
+    entity: 'grn',
+    entityId: args.grnId,
+    after: { discrepancies: args.discrepancies },
+    severity: 'WARNING',
+    ip: args.ip,
+  });
+}
 
 /**
  * Write an audit row.
@@ -78,8 +63,8 @@ export async function logAuditEvent(entry: AuditEntry): Promise<void> {
         // Record<string, unknown> does not satisfy structurally. The value is
         // JSON by construction — redact() only ever returns primitives and
         // values that came out of a JSON-shaped diff.
-        before: (redact(entry.before) ?? undefined) as Prisma.InputJsonValue | undefined,
-        after: (redact(entry.after) ?? undefined) as Prisma.InputJsonValue | undefined,
+        before: (forStorage(entry.before) ?? undefined) as Prisma.InputJsonValue | undefined,
+        after: (forStorage(entry.severity ? { ...(entry.after ?? {}), severity: entry.severity } : entry.after) ?? undefined) as Prisma.InputJsonValue | undefined,
         ip: entry.ip ?? null,
       },
     });
