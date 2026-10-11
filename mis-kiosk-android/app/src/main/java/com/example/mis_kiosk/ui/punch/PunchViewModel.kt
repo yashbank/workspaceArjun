@@ -19,6 +19,7 @@ import com.example.mis_kiosk.data.work.PunchFlushScheduler
 import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -37,9 +38,12 @@ private class PendingAttempt(
     val kind: String,
     val key: String,
     val clientRecordedAtIso: String,
+    /** Operator captured when the punch began; reused verbatim on retry, never re-read. */
+    val operatorId: String?,
 )
 
 private const val ROSTER_SYNC_INTERVAL_MS = 60_000L
+private val OPERATOR_ROLES = setOf("OPERATOR", "SUPER_OPERATOR")
 
 /**
  * Shift-picker option (K9.1), unified across two sources: the new top-level `shifts` cache
@@ -71,11 +75,12 @@ class PunchViewModel @JvmOverloads constructor(
     private val credentialStore = DeviceCredentialStore(application)
     private val database = RosterDatabase.getInstance(application)
     private val employeeDao = database.employeeDao()
+    private val rosterPreferences = RosterPreferences(application)
     private val rosterRepository = RosterRepository(
         context = application,
         api = api,
         database = database,
-        rosterPreferences = RosterPreferences(application),
+        rosterPreferences = rosterPreferences,
         credentialStore = credentialStore,
     )
     private val punchQueueDao = PunchQueueDatabase.getInstance(application).punchQueueDao()
@@ -172,7 +177,7 @@ class PunchViewModel @JvmOverloads constructor(
      *  the roster rollup (same query as the read-only Shifts info screen,
      *  [com.example.mis_kiosk.ui.shifts.ShiftsViewModel]) only when that cache is empty, i.e.
      *  an older server that doesn't send the new `shifts` key at all. */
-    val shifts: StateFlow<List<PunchShiftOption>> = combine(
+    private val shiftOptions: Flow<List<PunchShiftOption>> = combine(
         rosterRepository.activeShifts,
         employeeDao.observeShiftSummaries(),
     ) { activeShifts, rollup ->
@@ -181,7 +186,24 @@ class PunchViewModel @JvmOverloads constructor(
         } else {
             rollup.map { PunchShiftOption(it.shiftId, it.shiftName, it.shiftStartTime, it.shiftEndTime) }
         }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }
+
+    val shifts: StateFlow<List<PunchShiftOption>> =
+        shiftOptions.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    init {
+        // After a re-sync the picked shift may no longer exist; clear it so the operator must
+        // re-pick rather than punches carrying a dead shiftId. Collects the raw DB-backed flow
+        // (not the stateIn above) so its initial emptyList() can never clear a valid pick.
+        viewModelScope.launch {
+            shiftOptions.collect { options ->
+                val selected = _selectedShift.value
+                if (selected != null && options.none { it.id == selected.id }) {
+                    _selectedShift.value = null
+                }
+            }
+        }
+    }
 
     fun selectShift(shift: PunchShiftOption) {
         _selectedShift.value = shift
@@ -212,8 +234,10 @@ class PunchViewModel @JvmOverloads constructor(
         val operator = _operatorMatch.value ?: return
         viewModelScope.launch {
             val accepted = when {
-                operator.operatorRole != null -> true
-                employeeDao.countWithOperatorRole() == 0 -> {
+                operator.operatorRole in OPERATOR_ROLES -> true
+                // Legacy fallback only for a server that predates the shifts/operator contract
+                // (last /pull had no `shifts` key). Otherwise strict, even with zero operators.
+                rosterPreferences.serverPredatesShiftContract && employeeDao.countWithOperatorRole() == 0 -> {
                     android.util.Log.w(
                         "PunchViewModel",
                         "No cached employee has operatorRole set; treating server as pre-rollout and accepting any matched badge",
@@ -399,6 +423,7 @@ class PunchViewModel @JvmOverloads constructor(
             kind = kind,
             key = UUID.randomUUID().toString(),
             clientRecordedAtIso = Instant.now().toString(),
+            operatorId = _currentOperator.value?.id,
         )
         pending = attempt
         viewModelScope.launch {
@@ -410,7 +435,7 @@ class PunchViewModel @JvmOverloads constructor(
                 kind = attempt.kind,
                 key = attempt.key,
                 clientRecordedAtIso = attempt.clientRecordedAtIso,
-                operatorId = _currentOperator.value?.id,
+                operatorId = attempt.operatorId,
             )
             applyResult(attempt, result)
         }
@@ -428,7 +453,7 @@ class PunchViewModel @JvmOverloads constructor(
                 kind = attempt.kind,
                 key = attempt.key,
                 clientRecordedAtIso = attempt.clientRecordedAtIso,
-                operatorId = _currentOperator.value?.id,
+                operatorId = attempt.operatorId,
             )
             applyResult(attempt, result)
         }
