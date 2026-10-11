@@ -11,6 +11,8 @@ type AuditRow = {
   entityId: string | null;
   actorName: string;
   createdAt: Date | string;
+  changes: { path: string; from: string; to: string }[];
+  severity: string | null;
 };
 
 interface Props {
@@ -121,19 +123,39 @@ export function AuditScreen({ logs, initialFrom, initialTo }: Props) {
           <div className="py-12 text-center text-gray-400 text-sm">No audit events found.</div>
         ) : (
           filtered.map((log) => (
-            <div key={log.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-5 py-3 hover:bg-gray-50">
-              <div className="text-xs text-gray-400 whitespace-nowrap sm:w-36 shrink-0">{fmtTime(log.createdAt)}</div>
-              <span className={`text-xs px-2 py-0.5 rounded font-medium shrink-0 ${entityColors[log.entity] ?? 'bg-gray-100 text-gray-600'}`}>
-                {log.entity}
-              </span>
-              <div className="min-w-0 flex-1 basis-40 break-words">
-                <span className="text-sm font-medium text-gray-800">{log.action.replace(/_/g, ' ').replace(/\./g, ' › ')}</span>
-                {log.entityId && (
-                  <span className="ml-2 break-all text-xs text-gray-400 font-mono">{log.entityId.slice(0, 8)}…</span>
+            <details key={log.id} className="group hover:bg-gray-50">
+              <summary className="flex min-h-11 cursor-pointer list-none flex-wrap items-center gap-x-4 gap-y-1 px-5 py-3 [&::-webkit-details-marker]:hidden">
+                <div className="text-xs text-gray-400 whitespace-nowrap sm:w-36 shrink-0">{fmtTime(log.createdAt)}</div>
+                <span className={`text-xs px-2 py-0.5 rounded font-medium shrink-0 ${entityColors[log.entity] ?? 'bg-gray-100 text-gray-600'}`}>
+                  {log.entity}
+                </span>
+                {log.severity === 'WARNING' && (
+                  <span className="text-xs px-2 py-0.5 rounded font-medium shrink-0 bg-amber-100 text-amber-800">Warning</span>
                 )}
-              </div>
-              <div className="text-sm text-gray-500 shrink-0">{log.actorName}</div>
-            </div>
+                <div className="min-w-0 flex-1 basis-40 break-words">
+                  <span className="text-sm font-medium text-gray-800">{log.action.replace(/_/g, ' ').replace(/\./g, ' › ')}</span>
+                  {log.entityId && (
+                    <span className="ml-2 break-all text-xs text-gray-400 font-mono">{log.entityId.slice(0, 8)}…</span>
+                  )}
+                </div>
+                <div className="text-sm text-gray-500 shrink-0">{log.actorName}</div>
+                <span className="text-xs text-gray-400 shrink-0">{log.changes.length > 0 ? `${log.changes.length} change${log.changes.length === 1 ? '' : 's'}` : 'no detail'}</span>
+              </summary>
+              {log.changes.length > 0 && (
+                <ul className="space-y-2 bg-gray-50 px-5 py-3 text-sm">
+                  {log.changes.map((c) => (
+                    <li key={c.path} className="min-w-0 break-words">
+                      <span className="font-mono text-xs text-gray-500">{c.path}</span>
+                      <div className="flex flex-wrap items-baseline gap-x-2">
+                        <span className="break-all text-red-700 line-through decoration-red-300">{c.from}</span>
+                        <span aria-hidden className="text-gray-400">→</span>
+                        <span className="break-all font-medium text-green-700">{c.to}</span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </details>
           ))
         )}
       </div>

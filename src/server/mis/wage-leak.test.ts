@@ -511,3 +511,33 @@ describe('F-06 · material rates and stock prices — Owner-only (D24)', () => {
     });
   });
 });
+
+// ===========================================================================
+// 5. Audit read-time redaction (F4) — extends, never replaces, section 3
+//    Non-wage money (item price, invoice amount) may now be STORED so the Owner sees the change;
+//    every other role must never receive it, nor any wage, at any depth.
+// ===========================================================================
+describe('F4 · audit rows are redacted at READ time for every non-Owner role', () => {
+  const build = async () => {
+    const m = await import('@/lib/mis/audit-redaction');
+    const stored = m.redactForStorage({
+      pricePerUnit: 731.19,
+      supplierInvoiceAmount: 907.31,
+      nested: { lines: [{ ratePerUnit: 411.77, grossPay: 523.11, hra: 611.13, allowance: 713.17 }] },
+    });
+    return { m, stored };
+  };
+
+  it('a wage is not even stored; the Owner still sees the item price and invoice amount', async () => {
+    const { m, stored } = await build();
+    const owner = JSON.stringify(m.redactAuditForRole('OWNER', stored));
+    expect(owner).toContain('731.19');
+    expect(owner).toContain('907.31');
+    expect(owner).not.toMatch(/523\.11|611\.13|713\.17/);
+  });
+
+  it.each(MIS_ROLES.filter((r) => r !== 'OWNER'))('%s receives no money figure at any depth', async (role) => {
+    const { m, stored } = await build();
+    expect(JSON.stringify(m.redactAuditForRole(role as MisRoleName, stored))).not.toMatch(/731\.19|907\.31|411\.77|523\.11|611\.13|713\.17/);
+  });
+});
