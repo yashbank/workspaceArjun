@@ -302,7 +302,7 @@ all at once, against final reality — not provisionally now, not piecemeal.
 
 
 ## V2 completion pass (2026-10-11/12) — seven V2 epics audited, fixed, verified
-**Status:** DONE except the held supplier-invoice board (F6) and owner-run SQL.
+**Status:** DONE and live (b3530b8 fixes, d859313 supplier-invoice board). QC-template SQL and supplier-invoice SQL were run by the owner and verified.
 V2 (docs/15_BPP_MIS_V2_SPEC_AND_HANDOVER.md) was already built by an earlier session. This pass
 audited all seven epics against the spec (5 read-only audits), then fixed (PRs into `phase-a`):
 F1 #60 kiosk photo route + Android image validation; F2 #65 GRN double-confirm / DRAFT-only edits /
@@ -314,9 +314,7 @@ Verified on the combined branch: tsc silent, 4658 tests pass, build ok, lint onl
 test-mock `any` errors, real-browser sweep as 7 roles (nav-visibility + permission-boundaries 41/41),
 light = dark on MIS screens.
 **Owner actions pending:** (1) run `scripts/qc-templates-spec-wording.sql` after deploy (renames the 4
-live QC templates in place, history kept); (2) F6 PR #64 is a HELD DRAFT: run
-`prisma/migrations-pending/20261012000000_mis_supplier_invoice_status/apply-in-sql-editor.sql`
-FIRST, verify, then merge #64 (schema.prisma must never precede the SQL); (3) rebuild + reinstall the
+live QC templates in place, history kept); (2) DONE: F6 #64 merged after the owner ran its SQL (column, enum and ledger row verified live); (3) rebuild + reinstall the
 kiosk APK and upload employee photos (only 1 of 82 had one).
 **Open decisions:** GRN over-receipt tolerance (strict now); supplier-invoice match tolerance
 (max(Rs1, 0.5%), GST ignored); 36 old STORE_ISSUE rows book EQUIPMENT/OTHERS to orders (untouched).
