@@ -40,11 +40,20 @@ function StatCard({
     blue: 'bg-blue-50 border-blue-200 text-blue-800',
   };
 
+  // Real colours for the secondary lines (opacity over a tint is not guaranteed readable).
+  const subMap = {
+    slate: 'text-slate-600',
+    amber: 'text-amber-800',
+    red: 'text-red-800',
+    green: 'text-green-800',
+    blue: 'text-blue-800',
+  };
+
   const inner = (
     <div className={`rounded-xl border p-4 flex flex-col gap-1 ${colorMap[color]} ${href ? 'hover:shadow-sm transition-shadow cursor-pointer' : ''}`}>
-      <div className="text-xs font-medium text-current opacity-60 uppercase tracking-wide">{label}</div>
+      <div className={`text-xs font-medium uppercase tracking-wide ${subMap[color]}`}>{label}</div>
       <div className="text-2xl font-bold tabular-nums">{value}</div>
-      {sub && <div className="text-xs opacity-50 mt-0.5">{sub}</div>}
+      {sub && <div className={`text-xs mt-0.5 ${subMap[color]}`}>{sub}</div>}
     </div>
   );
 

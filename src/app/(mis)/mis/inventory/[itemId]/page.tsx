@@ -74,7 +74,7 @@ export default async function InventoryItemPage({ params }: { params: Promise<{ 
         {ledger.length === 0 ? (
           <div className="text-slate-400 text-sm text-center py-8">No transactions yet.</div>
         ) : (
-          <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+          <div className="rounded-xl border border-slate-200 bg-white overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-xs text-slate-500">
