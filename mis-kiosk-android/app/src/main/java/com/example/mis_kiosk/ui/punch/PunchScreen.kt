@@ -65,6 +65,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.mis_kiosk.data.local.EmployeeEntity
 import com.example.mis_kiosk.data.local.PunchQueueEntity
 import com.example.mis_kiosk.data.local.PunchQueueStatus
+import com.example.mis_kiosk.data.local.ShiftSummary
 import com.example.mis_kiosk.ui.common.BilingualText
 import com.example.mis_kiosk.ui.common.KioskStatusBar
 import com.example.mis_kiosk.ui.health.DeviceHealthScreen
@@ -149,17 +150,35 @@ fun PunchScreen(
     if (currentOperator == null && uiState is PunchUiState.Ready) {
         val operatorInput by viewModel.operatorInput.collectAsStateWithLifecycle()
         val operatorMatch by viewModel.operatorMatch.collectAsStateWithLifecycle()
+        val operatorError by viewModel.operatorError.collectAsStateWithLifecycle()
         OperatorSignInScreen(
             operatorInput = operatorInput,
             match = operatorMatch,
+            error = operatorError,
             onInputChange = viewModel::onOperatorInputChange,
             onConfirm = viewModel::confirmOperatorSignIn,
         )
         return
     }
 
+    val selectedShift by viewModel.selectedShift.collectAsStateWithLifecycle()
+    val shifts by viewModel.shifts.collectAsStateWithLifecycle()
+    // Same graceful-fallback pattern as the operatorRole gate above: today's roster can
+    // genuinely have zero shift allocations (nobody scheduled yet) — gating on a pick list
+    // with nothing in it would permanently strand every operator at sign-in with no way
+    // through. Skip the gate when there's nothing to choose, same as "don't lock out" for
+    // a pre-rollout server.
+    if (currentOperator != null && selectedShift == null && shifts.isNotEmpty() && uiState is PunchUiState.Ready) {
+        ShiftSelectionScreen(
+            shifts = shifts,
+            onSelect = viewModel::selectShift,
+        )
+        return
+    }
+
     PunchScreenContent(
         deviceName = viewModel.deviceName,
+        selectedShiftName = selectedShift?.shiftName,
         uiState = uiState,
         mode = mode,
         badgeInput = badgeInput,
@@ -187,6 +206,7 @@ fun PunchScreen(
 @Composable
 private fun PunchScreenContent(
     deviceName: String,
+    selectedShiftName: String?,
     uiState: PunchUiState,
     mode: PunchMode,
     badgeInput: String,
@@ -214,7 +234,8 @@ private fun PunchScreenContent(
             val syncing = (uiState as? PunchUiState.Ready)?.syncing == true
             KioskStatusBar(
                 statusColor = if (syncing) KioskColors.StatusOffline else KioskColors.StatusOnline,
-                statusText = "$deviceName · synced ${(uiState as? PunchUiState.Ready)?.let { formatAge(it.lastSyncedAtMillis) } ?: "never"}",
+                statusText = "$deviceName · synced ${(uiState as? PunchUiState.Ready)?.let { formatAge(it.lastSyncedAtMillis) } ?: "never"}" +
+                    (selectedShiftName?.let { " · $it" } ?: ""),
                 rightText = liveClock(),
                 onHold = onHoldStatusBar,
             )
@@ -499,6 +520,24 @@ private fun ScanningContent(
     }
 }
 
+/** Generic head-and-shoulders glyph for a missing/undecodable badge photo — deliberately not
+ *  a name-derived initial, so an empty photo never looks like a confirmed identity at a glance. */
+@Composable
+private fun NeutralAvatarPlaceholder() {
+    Canvas(modifier = Modifier.size(48.dp)) {
+        val color = KioskColors.TextMuted
+        drawCircle(color = color, radius = size.minDimension * 0.22f, center = Offset(size.width / 2f, size.height * 0.32f))
+        drawArc(
+            color = color,
+            startAngle = 180f,
+            sweepAngle = 180f,
+            useCenter = true,
+            topLeft = Offset(size.width * 0.08f, size.height * 0.48f),
+            size = androidx.compose.ui.geometry.Size(size.width * 0.84f, size.height * 0.68f),
+        )
+    }
+}
+
 // ---- Confirm card (K1) -----------------------------------------------------------------
 
 @Composable
@@ -529,11 +568,9 @@ private fun ConfirmCardContent(
                                 modifier = Modifier.fillMaxSize(),
                             )
                         } else {
-                            Text(
-                                employee.name.firstOrNull()?.uppercase() ?: "?",
-                                style = MaterialTheme.typography.titleLarge,
-                                color = KioskColors.TextSecondary,
-                            )
+                            // Neutral placeholder, not a coloured initial — a missing photo
+                            // shouldn't read as "identity confirmed" at a glance (D22).
+                            NeutralAvatarPlaceholder()
                         }
                     }
                     Spacer(Modifier.width(16.dp))
@@ -590,6 +627,7 @@ private fun ConfirmCardContent(
 private fun OperatorSignInScreen(
     operatorInput: String,
     match: EmployeeEntity?,
+    error: String?,
     onInputChange: (String) -> Unit,
     onConfirm: () -> Unit,
 ) {
@@ -626,12 +664,90 @@ private fun OperatorSignInScreen(
                 Text(match.name, style = MaterialTheme.typography.titleMedium, color = KioskColors.TextPrimary)
                 Spacer(Modifier.height(16.dp))
             }
+            if (error != null) {
+                Text(error, style = MaterialTheme.typography.bodyMedium, color = KioskColors.Error, textAlign = TextAlign.Center)
+                Spacer(Modifier.height(16.dp))
+            }
             Button(
                 onClick = onConfirm,
                 enabled = match != null,
                 modifier = Modifier.fillMaxWidth().height(56.dp),
             ) {
                 Text("Start shift")
+            }
+        }
+    }
+}
+
+// ---- Shift selection (K9.1) -------------------------------------------------------------
+
+/**
+ * Second sign-in gate, right after operator sign-in and before the scan/manual-entry screen
+ * is usable: the operator picks which shift this gate is running, from the cached roster's
+ * distinct shifts (same [com.example.mis_kiosk.data.local.ShiftSummary] rollup as the
+ * read-only Shifts info screen). That choice — not the scanned employee's own roster shift —
+ * is what rides along on every punch this operator processes (payload.shiftId).
+ */
+@Composable
+private fun ShiftSelectionScreen(
+    shifts: List<ShiftSummary>,
+    onSelect: (ShiftSummary) -> Unit,
+) {
+    Surface(modifier = Modifier.fillMaxSize(), color = KioskColors.Background) {
+        Column(modifier = Modifier.fillMaxSize().padding(24.dp)) {
+            BilingualText(
+                en = "Select shift",
+                hi = "शिफ्ट चुनें",
+                style = MaterialTheme.typography.headlineSmall,
+                color = KioskColors.TextPrimary,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Choose which shift this tablet is running right now.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = KioskColors.TextSecondary,
+            )
+            Spacer(Modifier.height(24.dp))
+            if (shifts.isEmpty()) {
+                Text(
+                    "No shifts in the local cache yet.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = KioskColors.TextSecondary,
+                )
+            } else {
+                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    items(shifts, key = { it.shiftId }) { shift ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(onClick = { onSelect(shift) })
+                                .padding(vertical = 18.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column {
+                                Text(
+                                    shift.shiftName ?: shift.shiftId,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = KioskColors.TextPrimary,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    "${shift.shiftStartTime ?: "—"} – ${shift.shiftEndTime ?: "—"}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = KioskColors.TextSecondary,
+                                )
+                            }
+                            Text(
+                                "${shift.employeeCount} ${if (shift.employeeCount == 1) "person" else "people"}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = KioskColors.TextSecondary,
+                            )
+                        }
+                        HorizontalDivider(color = KioskColors.Border)
+                    }
+                }
             }
         }
     }

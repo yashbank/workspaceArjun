@@ -7,6 +7,7 @@ import com.example.mis_kiosk.data.local.EmployeeEntity
 import com.example.mis_kiosk.data.local.PunchQueueDatabase
 import com.example.mis_kiosk.data.local.RosterDatabase
 import com.example.mis_kiosk.data.local.RosterPreferences
+import com.example.mis_kiosk.data.local.ShiftSummary
 import com.example.mis_kiosk.data.network.ApiClient
 import com.example.mis_kiosk.data.network.KioskApi
 import com.example.mis_kiosk.data.repository.PunchAttemptResult
@@ -138,10 +139,32 @@ class PunchViewModel @JvmOverloads constructor(
     private val _operatorMatch = MutableStateFlow<EmployeeEntity?>(null)
     val operatorMatch: StateFlow<EmployeeEntity?> = _operatorMatch.asStateFlow()
 
+    /** Set when a matched badge is rejected for not holding an attendance-operator role
+     *  (K9 gate). Mirrors [scanHint]'s role as this screen's text-feedback slot. */
+    private val _operatorError = MutableStateFlow<String?>(null)
+    val operatorError: StateFlow<String?> = _operatorError.asStateFlow()
+
     private var operatorLookupJob: Job? = null
+
+    /** Shift the signed-in operator picked for this session (K9.1 gate) — every punch they
+     *  process sends this shift's id, not the scanned employee's own roster shift, since the
+     *  operator may be running a gate for a shift other than their own. Cleared alongside
+     *  [currentOperator] on end-of-shift so the next operator must pick again too. */
+    private val _selectedShift = MutableStateFlow<ShiftSummary?>(null)
+    val selectedShift: StateFlow<ShiftSummary?> = _selectedShift.asStateFlow()
+
+    /** Cached shifts available to pick from — reuses the same roster-cache rollup query as the
+     *  read-only Shifts info screen ([com.example.mis_kiosk.ui.shifts.ShiftsViewModel]). */
+    val shifts: StateFlow<List<ShiftSummary>> = employeeDao.observeShiftSummaries()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun selectShift(shift: ShiftSummary) {
+        _selectedShift.value = shift
+    }
 
     fun onOperatorInputChange(value: String) {
         _operatorInput.value = value.take(40)
+        _operatorError.value = null
         operatorLookupJob?.cancel()
         val code = _operatorInput.value
         if (code.isEmpty()) {
@@ -154,17 +177,42 @@ class PunchViewModel @JvmOverloads constructor(
         }
     }
 
+    /**
+     * Gates sign-in on `operatorRole` (OPERATOR/SUPER_OPERATOR) once the server sends it. If
+     * the whole cached roster has nobody with a non-null `operatorRole`, this is an older
+     * server that doesn't send the key at all yet — fall back to today's behaviour (accept any
+     * matched badge) rather than locking every kiosk out.
+     */
     fun confirmOperatorSignIn() {
         val operator = _operatorMatch.value ?: return
-        _currentOperator.value = operator
-        _operatorInput.value = ""
-        _operatorMatch.value = null
+        viewModelScope.launch {
+            val accepted = when {
+                operator.operatorRole != null -> true
+                employeeDao.countWithOperatorRole() == 0 -> {
+                    android.util.Log.w(
+                        "PunchViewModel",
+                        "No cached employee has operatorRole set; treating server as pre-rollout and accepting any matched badge",
+                    )
+                    true
+                }
+                else -> false
+            }
+            if (accepted) {
+                _currentOperator.value = operator
+                _operatorInput.value = ""
+                _operatorMatch.value = null
+                _operatorError.value = null
+            } else {
+                _operatorError.value = "Not an attendance operator"
+            }
+        }
     }
 
     /** End of shift (K11) — clears the signed-in operator, sending the screen back to the
      *  sign-in gate so the next operator identifies themselves before punching anyone. */
     fun endShift() {
         _currentOperator.value = null
+        _selectedShift.value = null
     }
 
     private var pending: PendingAttempt? = null
@@ -316,7 +364,9 @@ class PunchViewModel @JvmOverloads constructor(
             employeeId = employee.id,
             employeeName = employee.name,
             badgeCode = employee.badgeCode,
-            shiftId = employee.shiftId,
+            // The OPERATOR-selected shift for this session, not the employee's own roster
+            // shift — the gate may be running for a shift other than the employee's own.
+            shiftId = _selectedShift.value?.shiftId,
             kind = kind,
             key = UUID.randomUUID().toString(),
             clientRecordedAtIso = Instant.now().toString(),

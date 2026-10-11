@@ -100,4 +100,5 @@ private fun EmployeeDto.toEntity(photo: ByteArray?) = EmployeeEntity(
     shiftEndTime = shift?.endTime,
     photo = photo,
     photoUrl = photoUrl,
+    operatorRole = operatorRole,
 )

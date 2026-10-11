@@ -44,6 +44,8 @@ data class EmployeeDto(
     val badgeCode: String,
     val shift: ShiftDto? = null,
     val photoUrl: String? = null,
+    /** "OPERATOR" | "SUPER_OPERATOR" | null. Key may be absent entirely on an older server. */
+    val operatorRole: String? = null,
 )
 
 @Serializable
