@@ -177,3 +177,17 @@ no other values are recognized as "is an operator."
   That's intentional/safe (nothing stranded), but means neither new gate is actually doing
   anything live yet — worth confirming when real `operatorRole` + shift-allocation data starts
   flowing that both gates behave as expected on the first real case, not just in this testing.
+
+## 7. Round 3 — code-review defect fixes (branch fix/a1-kiosk-defects)
+
+- **Offline punches keep their operator:** `punch_queue` gained a nullable `operatorId` column
+  (`PunchQueueDatabase` v1 -> v2, real `ALTER TABLE ADD COLUMN` migration; queued rows survive).
+  Flush and manual retry now send the operator captured at tap time, not the current one.
+- **Roster DB upgrade no longer wipes `punch_state`:** explicit `Migration(3,4)` (`operatorRole`)
+  and `Migration(4,5)` (`active_shifts`); destructive fallback remains only for versions < 3.
+- **Operator gate:** role must be exactly `OPERATOR` or `SUPER_OPERATOR`. The "accept any badge"
+  fallback now applies only when the last successful `/pull` had no `shifts` key at all.
+- **Shift selection** is cleared if a re-sync removes the chosen shift.
+- **Empty `employees` from `/pull`** is treated as a failed sync; the cached roster is kept.
+- Verified: Kotlin compile + unit tests pass; queue migration verified on an emulator upgrade
+  (2 queued rows preserved, column added). Roster 3->5 migration and UI smoke not run on device.

@@ -47,6 +47,10 @@ class RosterRepository(
 
         return when (val result = api.pull(device.token, health)) {
             is ApiResult.Success -> {
+                // An empty roster would lock everyone out; keep the old cache instead.
+                if (result.body.employees.isEmpty()) {
+                    return RosterSyncResult.Failure("The server returned an empty roster; keeping the existing cached roster.")
+                }
                 // MIS V2: faces are cached with the roster so the confirm card works offline. The
                 // URL carries a version, so an unchanged photo is reused from the cache and only new
                 // or retaken ones are fetched — in parallel. A fetch that fails leaves that face absent
@@ -77,6 +81,7 @@ class RosterRepository(
                         activeShiftDao.insertAll(activeShifts.map { it.toEntity() })
                     }
                 }
+                rosterPreferences.serverPredatesShiftContract = activeShifts == null
                 rosterPreferences.lastSyncedAtMillis = System.currentTimeMillis()
                 RosterSyncResult.Success(entities.size)
             }
