@@ -300,6 +300,30 @@ all at once, against final reality — not provisionally now, not piecemeal.
 
 `docs/qa/EXTERNAL_TESTER_GUIDE.md` is ready to hand over as-is.
 
+
+## V2 completion pass (2026-10-11/12) — seven V2 epics audited, fixed, verified
+**Status:** DONE except the held supplier-invoice board (F6) and owner-run SQL.
+V2 (docs/15_BPP_MIS_V2_SPEC_AND_HANDOVER.md) was already built by an earlier session. This pass
+audited all seven epics against the spec (5 read-only audits), then fixed (PRs into `phase-a`):
+F1 #60 kiosk photo route + Android image validation; F2 #65 GRN double-confirm / DRAFT-only edits /
+over-receipt cap / per-item advisory lock on issue / equipment-on-order / closed-order / 2dp
+rounding / typed OrderStockQuotaExceededError; F3 #62 QC print sheet one factory day, reorder,
+rename-guard, spec template wording; F4 #61 owner audit diff + recursive read-time redaction;
+F5 #63 forced light mode on MIS + contrast; F7 #66 Decimal props at 5 page boundaries + QC header.
+Verified on the combined branch: tsc silent, 4658 tests pass, build ok, lint only the 6 known
+test-mock `any` errors, real-browser sweep as 7 roles (nav-visibility + permission-boundaries 41/41),
+light = dark on MIS screens.
+**Owner actions pending:** (1) run `scripts/qc-templates-spec-wording.sql` after deploy (renames the 4
+live QC templates in place, history kept); (2) F6 PR #64 is a HELD DRAFT: run
+`prisma/migrations-pending/20261012000000_mis_supplier_invoice_status/apply-in-sql-editor.sql`
+FIRST, verify, then merge #64 (schema.prisma must never precede the SQL); (3) rebuild + reinstall the
+kiosk APK and upload employee photos (only 1 of 82 had one).
+**Open decisions:** GRN over-receipt tolerance (strict now); supplier-invoice match tolerance
+(max(Rs1, 0.5%), GST ignored); 36 old STORE_ISSUE rows book EQUIPMENT/OTHERS to orders (untouched).
+**Known deviations kept (harmless):** MisQcTemplate JSON model instead of the spec's checklist
+tables; audit screen at /mis/audit; PO rate still masked at write (a pinned test); NA vs MAKE_READY
+share one stored value.
+
 ## Track 8 — Post-testing (next up — waiting on the tester's report)
 **Status:** TODO — gated on the external tester's completed report
 1. Fix whatever bugs the report surfaces.

@@ -6,6 +6,8 @@ import { getQcForOrder, getQcSummary } from '@/server/mis/qc';
 import { listDefectTypes } from '@/server/mis/defect-type';
 import { listQcTemplates } from '@/server/mis/qc-template';
 import { db } from '@/server/db';
+import { factoryDateKey } from '@/lib/mis/factory-time';
+import { getFactoryTimezone } from '@/server/mis/business-rules';
 import { notFound } from 'next/navigation';
 import { QcDetailScreen } from '@/components/mis/qc/qc-detail-screen';
 
@@ -22,11 +24,12 @@ export default async function QcDetailPage({ params }: { params: Promise<{ id: s
   });
   if (!order) notFound();
 
-  const [checks, summary, defectTypes, templates] = await Promise.all([
+  const [checks, summary, defectTypes, templates, timeZone] = await Promise.all([
     getQcForOrder(id),
     getQcSummary(id),
     listDefectTypes(),
     listQcTemplates(),
+    getFactoryTimezone(),
   ]);
 
   return (
@@ -37,6 +40,7 @@ export default async function QcDetailPage({ params }: { params: Promise<{ id: s
       canWrite={canWrite}
       defectTypes={defectTypes.map((dt) => ({ id: dt.id, code: dt.code, name: dt.name, severity: dt.severity }))}
       templates={templates}
+      checklistDay={{ dateKey: factoryDateKey(new Date(), timeZone), timeZone }}
     />
   );
 }

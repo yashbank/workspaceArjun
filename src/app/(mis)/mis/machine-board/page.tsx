@@ -2,6 +2,7 @@ import { MachineTimelineDesktop } from '@/components/mis/desktop/machine-timelin
 import { MachineBoardScreen } from '@/components/mis/machine-board/machine-board-screen';
 import { factoryDateKey } from '@/lib/mis/factory-time';
 import { isOrderClosed } from '@/lib/mis/order-status';
+import { toPlain } from '@/lib/mis/plain';
 import { can } from '@/lib/mis/permissions';
 import { getFactoryTimezone } from '@/server/mis/business-rules';
 import { requireMisAccess } from '@/server/mis/guard';
@@ -36,7 +37,7 @@ export default async function MachineBoardPage() {
     .filter((o) => !isOrderClosed(o.status))
     .map((o) => ({ id: o.id, orderNumber: o.orderNumber }));
 
-  const grid = <MachineBoardScreen machines={machines} canWrite={canWrite} orders={openOrders} />;
+  const grid = <MachineBoardScreen machines={toPlain(machines)} canWrite={canWrite} orders={openOrders} />;
 
   // "07/09": the shift's own day when there is one, otherwise the factory's today (D22).
   const key = timeline?.shift.dateKey ?? factoryDateKey(now, timeZone);

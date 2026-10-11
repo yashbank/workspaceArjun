@@ -8,6 +8,7 @@ import { Select } from '@/components/mis/kit/select';
 import { Input } from '@/components/mis/kit/input';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { createGrnAction } from '@/app/(mis)/mis/grn/actions';
+import { unwrap } from '@/lib/mis/action-result';
 import { useRouter } from 'next/navigation';
 
 type Grn = { id: string; grnNumber: string; status: string; createdAt: Date; po: { id: string; poNumber: string; supplier: { name: string } | null } | null };
@@ -34,13 +35,19 @@ export function GrnListScreen({ grns, approvedPos, canWrite }: Props) {
   const [poId, setPoId] = useState('');
   const [notes, setNotes] = useState('');
   const [isPending, startTransition] = useTransition();
+  const [createError, setCreateError] = useState<string | null>(null);
 
   const handleCreate = () => {
     if (!poId) return;
+    setCreateError(null);
     startTransition(async () => {
-      const id = await createGrnAction(poId, notes || null);
-      setOpen(false);
-      router.push(`/mis/grn/${id}`);
+      try {
+        const id = unwrap(await createGrnAction(poId, notes || null));
+        setOpen(false);
+        router.push(`/mis/grn/${id}`);
+      } catch (e) {
+        setCreateError(e instanceof Error ? e.message : 'That did not save.');
+      }
     });
   };
 
@@ -79,6 +86,7 @@ export function GrnListScreen({ grns, approvedPos, canWrite }: Props) {
             options={[{ value: '', label: '— Select PO —' }, ...approvedPos.map(p => ({ value: p.id, label: `${p.poNumber} — ${p.supplier?.name ?? 'No supplier'}` }))]}
           />
           <Input label="Notes" value={notes} onChange={e => setNotes(e.target.value)} />
+          {createError && <p role="alert" className="text-sm text-red-600">{createError}</p>}
           <div className="flex gap-2 pt-2">
             <Button onClick={handleCreate} disabled={isPending || !poId}>{isPending ? 'Creating…' : 'Create GRN'}</Button>
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>

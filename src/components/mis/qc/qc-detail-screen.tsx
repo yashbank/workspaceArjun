@@ -41,6 +41,8 @@ interface Props {
   defectTypes: DefectTypeOption[];
   /** V2 Epic 5 — the paper forms; empty until the templates migration is applied. */
   templates?: QcTemplateRow[];
+  /** The factory day the checklist shows (server-computed), so another day's taps never fill today's cells. */
+  checklistDay?: { dateKey: string; timeZone: string };
 }
 
 const resultOptions: SelectOption[] = [
@@ -67,7 +69,7 @@ const defectTypeOptions = (types: DefectTypeOption[]): SelectOption[] =>
 // defect that is not yet classified must still be recordable, as free text (F-19/D14).
 const OTHER_DEFECT = '';
 
-export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes, templates = [] }: Props) {
+export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes, templates = [], checklistDay }: Props) {
   const [open, setOpen] = useState(false);
   const [result, setResult] = useState<'PASS' | 'FAIL' | 'NA'>('PASS');
   const [parameterName, setParameterName] = useState('');
@@ -198,6 +200,7 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes, 
           orderId={order.id}
           templates={templates}
           canWrite={canWrite}
+          day={checklistDay}
           checks={checks.map((c) => ({ parameterName: c.parameterName ?? null, slotTime: c.slotTime ?? null, result: c.result, defectType: c.defectType ?? null, checkTime: new Date(c.checkTime), templateId: c.templateId ?? null }))}
         />
       )}

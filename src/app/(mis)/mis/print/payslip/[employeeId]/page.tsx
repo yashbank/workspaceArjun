@@ -101,6 +101,7 @@ export default async function PayslipPage({
           {/* Earnings & Deductions */}
           <div className="mb-6">
             <h2 className="text-sm font-semibold text-gray-700 mb-3 uppercase tracking-wide">Earnings & Deductions</h2>
+            <div className="overflow-x-auto print:overflow-visible">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-200">
@@ -161,6 +162,7 @@ export default async function PayslipPage({
                 </tr>
               </tbody>
             </table>
+            </div>
           </div>
         </>
       )}

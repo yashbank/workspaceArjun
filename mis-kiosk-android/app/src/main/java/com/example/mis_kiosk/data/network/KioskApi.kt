@@ -9,6 +9,7 @@ import com.example.mis_kiosk.data.network.dto.HealthReportDto
 import com.example.mis_kiosk.data.network.dto.PullResponse
 import com.example.mis_kiosk.data.network.dto.PunchRequest
 import com.example.mis_kiosk.data.network.dto.PunchResponse
+import android.graphics.BitmapFactory
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -79,8 +80,15 @@ class KioskApi(
                     .header("Authorization", "Bearer $token")
                     .get()
                     .build()
-                client.newCall(request).execute().use { response ->
-                    if (response.isSuccessful) response.body?.bytes() else null
+                // No redirects: a 307 to the login page must read as a failure, not be followed to a 200 HTML page.
+                val noRedirects = client.newBuilder().followRedirects(false).followSslRedirects(false).build()
+                noRedirects.newCall(request).execute().use { response ->
+                    val type = response.header("Content-Type").orEmpty().substringBefore(';').trim().lowercase()
+                    if (response.code == 200 && type.startsWith("image/")) {
+                        response.body?.bytes()?.takeIf { decodesAsImage(it, fully = true) }
+                    } else {
+                        null
+                    }
                 }
             }.getOrNull()
         }
@@ -117,4 +125,17 @@ class KioskApi(
     private companion object {
         val JSON_MEDIA_TYPE = "application/json".toMediaType()
     }
+}
+
+/** True only when [bytes] really are an image. [fully] decodes pixels; otherwise a header check (cheap, for the cache). */
+fun decodesAsImage(bytes: ByteArray, fully: Boolean = false): Boolean {
+    if (bytes.isEmpty()) return false
+    if (fully) {
+        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return false
+        bitmap.recycle()
+        return true
+    }
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    return bounds.outWidth > 0 && bounds.outHeight > 0
 }

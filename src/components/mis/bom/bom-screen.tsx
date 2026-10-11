@@ -33,7 +33,7 @@ export function BomScreen({ bom, orderId, canWrite, isOwner }: { bom: Bom; order
   if (!bom) {
     return (
       <div className="flex flex-col items-center gap-3 py-12">
-        <p className="text-slate-400">No BOM yet for this order.</p>
+        <p className="text-slate-500">No BOM yet for this order.</p>
         {canWrite && (
           <Button
             onClick={() => startTransition(async () => { await createBomAction(orderId); })}
@@ -68,7 +68,7 @@ export function BomScreen({ bom, orderId, canWrite, isOwner }: { bom: Bom; order
   const STATUS_TONE: Record<string, 'neutral' | 'warning' | 'good'> = { DRAFT: 'neutral', PENDING_APPROVAL: 'warning', APPROVED: 'good' };
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 text-slate-900">
       <div className="flex items-center gap-3">
         <StatusBadge tone={STATUS_TONE[bom.status] ?? 'neutral'}>{bom.status.replace(/_/g, ' ')}</StatusBadge>
         {canWrite && bom.status === 'DRAFT' && <Button onClick={() => setStageOpen(true)}>+ Stage</Button>}
@@ -81,7 +81,7 @@ export function BomScreen({ bom, orderId, canWrite, isOwner }: { bom: Bom; order
             <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 border-b border-slate-200">
               <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold">{i + 1}</span>
               <span className="font-medium text-slate-800">{stage.stageName}</span>
-              {stage.process && <span className="text-xs text-slate-400">({stage.process.name})</span>}
+              {stage.process && <span className="text-xs text-slate-500">({stage.process.name})</span>}
               <div className="ml-auto flex gap-2">
                 {canWrite && bom.status === 'DRAFT' && (
                   <>
@@ -112,11 +112,11 @@ export function BomScreen({ bom, orderId, canWrite, isOwner }: { bom: Bom; order
                   )}
                 </div>
               ))}
-              {stage.materials.length === 0 && <div className="px-4 py-3 text-xs text-slate-400">No materials yet.</div>}
+              {stage.materials.length === 0 && <div className="px-4 py-3 text-xs text-slate-500">No materials yet.</div>}
             </div>
           </div>
         ))}
-        {bom.stages.length === 0 && <div className="text-center text-slate-400 py-8">Add stages to build the BOM.</div>}
+        {bom.stages.length === 0 && <div className="text-center text-slate-500 py-8">Add stages to build the BOM.</div>}
       </div>
 
       <SlideOver open={stageOpen} onClose={() => setStageOpen(false)} title="Add Stage">

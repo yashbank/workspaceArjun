@@ -138,7 +138,7 @@ export function BomDesktop({ data }: { data: BomDesktopData }) {
           {data.canCost ? (
             <section className="rounded-2xl bg-[#171310] p-5 text-white">
               <header className="mb-3 flex items-baseline justify-between gap-3">
-                <h2 className="text-base font-semibold">{t('d6.overlay')}</h2>
+                <h2 className="text-base font-semibold text-white">{t('d6.overlay')}</h2>
                 <span className="text-xs text-slate-300">{t('d6.ownerOnly')}</span>
               </header>
               <p className="text-sm leading-relaxed text-slate-200">{t('d6.overlayBody')}</p>
@@ -146,11 +146,11 @@ export function BomDesktop({ data }: { data: BomDesktopData }) {
                 <dl className="mt-4 grid grid-cols-2 gap-4 border-t border-white/15 pt-4">
                   <div>
                     <dt className="font-mono text-[10px] uppercase tracking-wider text-slate-400">{t('d6.priced')}</dt>
-                    <dd className="font-mono text-2xl font-bold">{costing.priced}</dd>
+                    <dd className="font-mono text-2xl font-bold text-white">{costing.priced}</dd>
                   </div>
                   <div>
                     <dt className="font-mono text-[10px] uppercase tracking-wider text-slate-400">{t('d6.unpriced')}</dt>
-                    <dd className="font-mono text-2xl font-bold">{costing.unpriced}</dd>
+                    <dd className="font-mono text-2xl font-bold text-white">{costing.unpriced}</dd>
                   </div>
                 </dl>
               ) : null}
@@ -205,7 +205,7 @@ function StageRows({ stage, withCost, cols }: { stage: BomDesktopData['stages'][
           <tr key={m.id} className="border-b border-slate-100">
             <td className="border-l border-slate-200 py-2.5 pl-6 text-slate-900">{m.description}</td>
             <td className="py-2.5 text-right font-mono text-slate-700">
-              {m.quantity} <span className="text-slate-400">{m.unit}</span>
+              {m.quantity} <span className="text-slate-500">{m.unit}</span>
             </td>
             {withCost ? (
               <td className="py-2.5 pr-3 text-right font-mono font-semibold text-slate-900">

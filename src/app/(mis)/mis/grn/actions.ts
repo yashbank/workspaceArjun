@@ -5,9 +5,12 @@ import { asResult } from '@/lib/mis/action-result';
 import { createGRN, addGRNItem, updateGRNItem, updateGRNHeader, confirmGRN, type GrnHeaderInput, type GrnItemInput } from '@/server/mis/grn';
 
 export async function createGrnAction(poId: string, notes?: string | null) {
-  const grn = await createGRN({ poId, notes });
-  revalidatePath('/mis/grn');
-  return grn.id;
+  // Refusals travel as data: in production a thrown message is replaced by a generic one.
+  return asResult(async () => {
+    const grn = await createGRN({ poId, notes });
+    revalidatePath('/mis/grn');
+    return grn.id;
+  });
 }
 
 export async function updateGrnHeaderAction(grnId: string, patch: GrnHeaderInput) {
@@ -33,8 +36,11 @@ export async function updateGrnItemAction(id: string, grnId: string, patch: Part
 }
 
 export async function confirmGrnAction(grnId: string) {
-  await confirmGRN(grnId);
-  revalidatePath(`/mis/grn/${grnId}`);
-  revalidatePath('/mis/grn');
-  revalidatePath('/mis/inventory');
+  // "Already confirmed", "more than is outstanding" and "add at least one item" must reach the storekeeper as words.
+  return asResult(async () => {
+    await confirmGRN(grnId);
+    revalidatePath(`/mis/grn/${grnId}`);
+    revalidatePath('/mis/grn');
+    revalidatePath('/mis/inventory');
+  });
 }

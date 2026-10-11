@@ -106,6 +106,34 @@ Any difference you did not expect is a bug.
 | 8.7 | STORE_GUY / SUPERVISOR | `/mis/kiosk` by URL | Store Guy saw "Couldn't load — try again"; Supervisor could open it | Both get the normal "You do not have access" |
 | 8.8 | ATTENDANCE roles | Leave requests → Submit / Reject | List sometimes stale until reload | List updates immediately |
 
+## §10. Round 2 — fixes made after the audit (October 2026) — please re-test
+
+These were found by a line-by-line audit of the seven V2 features and a 7-role browser sweep.
+Re-run only these rows; the earlier sections are unchanged.
+
+| # | Role | Steps | Expected |
+|---|---|---|---|
+| 10.1 | Any (use a phone in **dark mode**) | Open Orders → an order → BOM, Store → Overview, Reports, Inventory item | Text is dark and readable on white cards; the screen looks the same as in light mode. (Before: numbers and labels looked faint grey.) |
+| 10.2 | ADMIN / OWNER | Employees → open an employee → upload a photo | Photo saves and shows on the employee |
+| 10.3 | ATTENDANCE (tablet, **rebuilt APK**) | Scan that employee's badge | Confirm card shows the photo. An employee without a photo shows the initial letter. Wifi off → photo still shows |
+| 10.4 | STORE_GUY | Open a DRAFT GRN in two browser tabs; press **Confirm** in both, one right after the other | One confirms; the other says it is already confirmed. Stock rises **once** (check Store → Transactions) |
+| 10.5 | STORE_GUY | Try to add or change a line on a GRN that is already CONFIRMED | Refused with a clear message; nothing changes |
+| 10.6 | STORE_GUY | Receive more than the PO still has outstanding (ordered minus already received) | Refused with a clear message naming the limit |
+| 10.7 | STORE_GUY | Try to confirm a GRN with no lines, or with every quantity 0 | Refused with a clear message |
+| 10.8 | STORE_GUY | Store → Issue → pick an order → add an item of category **EQUIPMENT** or **OTHERS** | Refused: equipment/others are overhead, issue them to a department with no order |
+| 10.9 | STORE_GUY | Store → Issue to an order that is **closed or cancelled** | Refused with a clear message |
+| 10.10 | STORE_GUY | Issue a quantity with three decimals (e.g. 1.234) | Handled as 1.23; no error and no wrong balance |
+| 10.11 | STORE_GUY ×2 (optional, two people) | Both issue the same item against the same order at the same moment, together more than is allocated | Only one goes through; the other is refused with the quota message. Balance never goes negative |
+| 10.12 | QC | QC → open an order → **Print checklist** | Sheet shows **one day** with its date; previous-day / next-day links work; yesterday's ticks are not on today's sheet |
+| 10.13 | OWNER / ADMIN | Settings → QC templates (use a phone too) | Header fits the phone width. Up/down arrows reorder parameters and templates and the order stays after refresh |
+| 10.14 | OWNER / ADMIN | Rename a parameter that already has recorded checks | Refused with a clear message (history is kept); adding or reordering still works |
+| 10.15 | OWNER / ADMIN | After the owner runs the template SQL: QC templates list | Four templates named *Printing Checklist*, *Lamination Checklist*, *Lamif Flute Lamination*, *Die Cutting Checklist* with the wording from the client's paper forms (e.g. Shade Matching with Shade Card, Fiber Tear Test, Box Dimensions (±0.5mm)) |
+| 10.16 | OWNER | Audit log → open any row | Shows only the fields that changed, old → new. A material price change shows the real old and new price |
+| 10.17 | ADMIN | Audit log → open the same rows | No ₹ amounts or rates anywhere (they are hidden for every role except Owner) |
+
+Not in this release (still being built): the supplier-invoice reconciliation board and its
+match statuses. Do not test it yet.
+
 ## §9. Report
 Use the Bug template from `EXTERNAL_TESTER_GUIDE.md` §8: what you did, what you expected, what
 happened, role, device/width, time.
