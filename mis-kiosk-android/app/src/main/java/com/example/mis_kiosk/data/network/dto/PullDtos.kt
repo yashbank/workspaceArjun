@@ -48,9 +48,25 @@ data class EmployeeDto(
     val operatorRole: String? = null,
 )
 
+/**
+ * Top-level `shifts` array (HANDOVER.md §4.3) — every active shift, clock only, present even
+ * when nobody is allocated to it today. Distinct from the per-employee nested [ShiftDto]: this
+ * is the full active-shift list, not just the shifts employees happen to be on.
+ */
+@Serializable
+data class ShiftListEntryDto(
+    val id: String,
+    val name: String,
+    val startTime: String,
+    val endTime: String,
+)
+
 @Serializable
 data class PullResponse(
     val device: PullDeviceDto,
     val pulledAt: String,
     val employees: List<EmployeeDto>,
+    /** Null when the key is absent entirely (older server) — distinct from an empty list, which
+     *  means the newer server genuinely has no active shifts. See [RosterRepository.sync]. */
+    val shifts: List<ShiftListEntryDto>? = null,
 )

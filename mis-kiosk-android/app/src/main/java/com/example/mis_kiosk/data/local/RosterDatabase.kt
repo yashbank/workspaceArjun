@@ -5,10 +5,15 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-@Database(entities = [EmployeeEntity::class, PunchStateEntity::class], version = 4, exportSchema = false)
+@Database(
+    entities = [EmployeeEntity::class, PunchStateEntity::class, ActiveShiftEntity::class],
+    version = 5,
+    exportSchema = false,
+)
 abstract class RosterDatabase : RoomDatabase() {
     abstract fun employeeDao(): EmployeeDao
     abstract fun punchStateDao(): PunchStateDao
+    abstract fun activeShiftDao(): ActiveShiftDao
 
     companion object {
         @Volatile private var instance: RosterDatabase? = null

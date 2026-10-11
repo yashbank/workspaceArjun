@@ -65,7 +65,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.mis_kiosk.data.local.EmployeeEntity
 import com.example.mis_kiosk.data.local.PunchQueueEntity
 import com.example.mis_kiosk.data.local.PunchQueueStatus
-import com.example.mis_kiosk.data.local.ShiftSummary
 import com.example.mis_kiosk.ui.common.BilingualText
 import com.example.mis_kiosk.ui.common.KioskStatusBar
 import com.example.mis_kiosk.ui.health.DeviceHealthScreen
@@ -164,10 +163,12 @@ fun PunchScreen(
     val selectedShift by viewModel.selectedShift.collectAsStateWithLifecycle()
     val shifts by viewModel.shifts.collectAsStateWithLifecycle()
     // Same graceful-fallback pattern as the operatorRole gate above: today's roster can
-    // genuinely have zero shift allocations (nobody scheduled yet) — gating on a pick list
-    // with nothing in it would permanently strand every operator at sign-in with no way
-    // through. Skip the gate when there's nothing to choose, same as "don't lock out" for
-    // a pre-rollout server.
+    // genuinely have zero active shifts (nobody scheduled yet, and — on an older server
+    // falling back to the roster rollup — nobody allocated) — gating on a pick list with
+    // nothing in it would permanently strand every operator at sign-in with no way through.
+    // Skip the gate only when BOTH the new active-shifts cache and the roster-rollup
+    // fallback are empty (viewModel.shifts already merges the two), same as "don't lock
+    // out" for a pre-rollout server.
     if (currentOperator != null && selectedShift == null && shifts.isNotEmpty() && uiState is PunchUiState.Ready) {
         ShiftSelectionScreen(
             shifts = shifts,
@@ -178,7 +179,7 @@ fun PunchScreen(
 
     PunchScreenContent(
         deviceName = viewModel.deviceName,
-        selectedShiftName = selectedShift?.shiftName,
+        selectedShiftName = selectedShift?.name,
         uiState = uiState,
         mode = mode,
         badgeInput = badgeInput,
@@ -683,15 +684,15 @@ private fun OperatorSignInScreen(
 
 /**
  * Second sign-in gate, right after operator sign-in and before the scan/manual-entry screen
- * is usable: the operator picks which shift this gate is running, from the cached roster's
- * distinct shifts (same [com.example.mis_kiosk.data.local.ShiftSummary] rollup as the
- * read-only Shifts info screen). That choice — not the scanned employee's own roster shift —
- * is what rides along on every punch this operator processes (payload.shiftId).
+ * is usable: the operator picks which shift this gate is running, from [PunchShiftOption] —
+ * the cached active-shifts list (every active shift, clock only) falling back to the roster
+ * rollup on an older server. That choice — not the scanned employee's own roster shift — is
+ * what rides along on every punch this operator processes (payload.shiftId).
  */
 @Composable
 private fun ShiftSelectionScreen(
-    shifts: List<ShiftSummary>,
-    onSelect: (ShiftSummary) -> Unit,
+    shifts: List<PunchShiftOption>,
+    onSelect: (PunchShiftOption) -> Unit,
 ) {
     Surface(modifier = Modifier.fillMaxSize(), color = KioskColors.Background) {
         Column(modifier = Modifier.fillMaxSize().padding(24.dp)) {
@@ -716,7 +717,7 @@ private fun ShiftSelectionScreen(
                 )
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(shifts, key = { it.shiftId }) { shift ->
+                    items(shifts, key = { it.id }) { shift ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -727,23 +728,18 @@ private fun ShiftSelectionScreen(
                         ) {
                             Column {
                                 Text(
-                                    shift.shiftName ?: shift.shiftId,
+                                    shift.name ?: shift.id,
                                     style = MaterialTheme.typography.titleMedium,
                                     color = KioskColors.TextPrimary,
                                     fontWeight = FontWeight.Bold,
                                 )
                                 Spacer(Modifier.height(4.dp))
                                 Text(
-                                    "${shift.shiftStartTime ?: "—"} – ${shift.shiftEndTime ?: "—"}",
+                                    "${shift.startTime ?: "—"} – ${shift.endTime ?: "—"}",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = KioskColors.TextSecondary,
                                 )
                             }
-                            Text(
-                                "${shift.employeeCount} ${if (shift.employeeCount == 1) "person" else "people"}",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = KioskColors.TextSecondary,
-                            )
                         }
                         HorizontalDivider(color = KioskColors.Border)
                     }

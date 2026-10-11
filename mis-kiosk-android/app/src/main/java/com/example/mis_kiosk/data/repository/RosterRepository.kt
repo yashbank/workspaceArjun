@@ -3,6 +3,7 @@ package com.example.mis_kiosk.data.repository
 import android.content.Context
 import androidx.room.withTransaction
 import com.example.mis_kiosk.data.health.collectHealthReport
+import com.example.mis_kiosk.data.local.ActiveShiftEntity
 import com.example.mis_kiosk.data.local.EmployeeEntity
 import com.example.mis_kiosk.data.local.RosterDatabase
 import com.example.mis_kiosk.data.local.RosterPreferences
@@ -11,6 +12,7 @@ import com.example.mis_kiosk.data.network.KioskApi
 import com.example.mis_kiosk.data.network.decodesAsImage
 import com.example.mis_kiosk.data.network.dto.ApiErrorDto
 import com.example.mis_kiosk.data.network.dto.EmployeeDto
+import com.example.mis_kiosk.data.network.dto.ShiftListEntryDto
 import com.example.mis_kiosk.data.security.DeviceCredentialStore
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -33,8 +35,10 @@ class RosterRepository(
     private val credentialStore: DeviceCredentialStore,
 ) {
     private val employeeDao = database.employeeDao()
+    private val activeShiftDao = database.activeShiftDao()
 
     val employees: Flow<List<EmployeeEntity>> = employeeDao.observeAll()
+    val activeShifts: Flow<List<ActiveShiftEntity>> = activeShiftDao.observeAll()
     val lastSyncedAtMillis: Long? get() = rosterPreferences.lastSyncedAtMillis
 
     suspend fun sync(queuedPunches: Int = 0): RosterSyncResult {
@@ -61,9 +65,17 @@ class RosterRepository(
                         }
                     }.awaitAll()
                 }
+                // Only replace the active-shifts cache when the server actually sent the key.
+                // An older server omits it entirely (field absent, not an empty array) — leave
+                // whatever's cached from a previous sync untouched rather than clearing it.
+                val activeShifts = result.body.shifts
                 database.withTransaction {
                     employeeDao.deleteAll()
                     employeeDao.insertAll(entities)
+                    if (activeShifts != null) {
+                        activeShiftDao.deleteAll()
+                        activeShiftDao.insertAll(activeShifts.map { it.toEntity() })
+                    }
                 }
                 rosterPreferences.lastSyncedAtMillis = System.currentTimeMillis()
                 RosterSyncResult.Success(entities.size)
@@ -89,6 +101,13 @@ class RosterRepository(
     private fun httpErrorMessage(httpStatus: Int, error: ApiErrorDto?): String =
         error?.message ?: "Could not sync the roster (HTTP $httpStatus)."
 }
+
+private fun ShiftListEntryDto.toEntity() = ActiveShiftEntity(
+    id = id,
+    name = name,
+    startTime = startTime,
+    endTime = endTime,
+)
 
 private fun EmployeeDto.toEntity(photo: ByteArray?) = EmployeeEntity(
     id = id,

@@ -41,6 +41,20 @@ private class PendingAttempt(
 
 private const val ROSTER_SYNC_INTERVAL_MS = 60_000L
 
+/**
+ * Shift-picker option (K9.1), unified across two sources: the new top-level `shifts` cache
+ * (every active shift, clock only — present even with nobody allocated today) and, as a
+ * fallback for an older server that doesn't send that key, the roster rollup's [ShiftSummary]
+ * (which only ever lists shifts with at least one cached employee, and carries an
+ * `employeeCount` this type deliberately omits since the primary source has no such count).
+ */
+data class PunchShiftOption(
+    val id: String,
+    val name: String?,
+    val startTime: String?,
+    val endTime: String?,
+)
+
 private data class RosterSnapshot(
     val employees: List<EmployeeEntity>,
     val syncing: Boolean,
@@ -150,15 +164,26 @@ class PunchViewModel @JvmOverloads constructor(
      *  process sends this shift's id, not the scanned employee's own roster shift, since the
      *  operator may be running a gate for a shift other than their own. Cleared alongside
      *  [currentOperator] on end-of-shift so the next operator must pick again too. */
-    private val _selectedShift = MutableStateFlow<ShiftSummary?>(null)
-    val selectedShift: StateFlow<ShiftSummary?> = _selectedShift.asStateFlow()
+    private val _selectedShift = MutableStateFlow<PunchShiftOption?>(null)
+    val selectedShift: StateFlow<PunchShiftOption?> = _selectedShift.asStateFlow()
 
-    /** Cached shifts available to pick from — reuses the same roster-cache rollup query as the
-     *  read-only Shifts info screen ([com.example.mis_kiosk.ui.shifts.ShiftsViewModel]). */
-    val shifts: StateFlow<List<ShiftSummary>> = employeeDao.observeShiftSummaries()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    /** Cached shifts available to pick from — prefers the new top-level active-shifts cache
+     *  (every active shift, clock only, even with nobody allocated today) and falls back to
+     *  the roster rollup (same query as the read-only Shifts info screen,
+     *  [com.example.mis_kiosk.ui.shifts.ShiftsViewModel]) only when that cache is empty, i.e.
+     *  an older server that doesn't send the new `shifts` key at all. */
+    val shifts: StateFlow<List<PunchShiftOption>> = combine(
+        rosterRepository.activeShifts,
+        employeeDao.observeShiftSummaries(),
+    ) { activeShifts, rollup ->
+        if (activeShifts.isNotEmpty()) {
+            activeShifts.map { PunchShiftOption(it.id, it.name, it.startTime, it.endTime) }
+        } else {
+            rollup.map { PunchShiftOption(it.shiftId, it.shiftName, it.shiftStartTime, it.shiftEndTime) }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    fun selectShift(shift: ShiftSummary) {
+    fun selectShift(shift: PunchShiftOption) {
         _selectedShift.value = shift
     }
 
@@ -340,11 +365,15 @@ class PunchViewModel @JvmOverloads constructor(
         }
     }
 
+    /** Routes through the same photo confirm card the QR path already shows (PunchMode.Confirming
+     *  is entry-path-agnostic — [confirmScannedPunch] submits whatever employee/kind is in it
+     *  regardless of how the screen got there) rather than submitting straight away, so manual
+     *  entry gets the same buddy-punching check QR scanning always had. */
     fun confirmManualEntry() {
         val employee = _manualMatch.value ?: return
         viewModelScope.launch {
             val kind = punchRepository.nextKindFor(employee.id)
-            beginAttempt(employee, kind)
+            _mode.value = PunchMode.Confirming(employee, kind)
         }
     }
 
@@ -366,7 +395,7 @@ class PunchViewModel @JvmOverloads constructor(
             badgeCode = employee.badgeCode,
             // The OPERATOR-selected shift for this session, not the employee's own roster
             // shift — the gate may be running for a shift other than the employee's own.
-            shiftId = _selectedShift.value?.shiftId,
+            shiftId = _selectedShift.value?.id,
             kind = kind,
             key = UUID.randomUUID().toString(),
             clientRecordedAtIso = Instant.now().toString(),
