@@ -40,7 +40,7 @@ const { addGRNItem, confirmGRN, createGRN, getGRN, updateGRNHeader, updateGRNIte
 
 beforeEach(() => {
   vi.clearAllMocks();
-  state.grn = { id: 'g1', grnNumber: 'GRN-1', poId: 'po1', status: 'DRAFT', supplierInvoiceNo: 'INV-7', invoiceDate: null, supplierInvoiceAmount: D(AMOUNT), po: { bomRef: null, supplierId: 's1', items: [{ id: 'pi1', quantity: D(1000), receivedQuantity: D(0) }] }, items: [{ id: 'fixture-line', poItemId: 'pi1', receivedQty: D(10), damageQuantity: D(0), poItem: { itemId: 'i1', item: {} } }] };
+  state.grn = { id: 'g1', grnNumber: 'GRN-1', poId: 'po1', status: 'DRAFT', supplierInvoiceNo: 'INV-7', invoiceDate: null, supplierInvoiceAmount: D(AMOUNT), po: { bomRef: null, supplierId: 's1', items: [{ id: 'pi1', quantity: D(1000), receivedQuantity: D(0) }] }, items: [{ id: 'fixture-line', poItemId: 'pi1', receivedQty: D(10), damageQuantity: D(0), poItem: { itemId: 'i1', item: {}, ratePerUnit: D(100) } }] };
   state.grnItems = []; state.invoices = []; state.audits = [];
   getCurrentUser.mockResolvedValue({ id: 'u1' });
   getMisRole.mockResolvedValue('OWNER');
