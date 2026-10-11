@@ -1,4 +1,5 @@
 import { requireMisAccess } from '@/server/mis/guard';
+import { toPlain } from '@/lib/mis/plain';
 import { listOrders } from '@/server/mis/orders';
 import { getMisRole } from '@/server/mis/roles';
 import { can } from '@/lib/mis/permissions';
@@ -39,7 +40,7 @@ export default async function QcGridPage({ searchParams }: { searchParams: Promi
   const phone = (
     <QcGridScreen
       orders={orders}
-      todayChecks={todayChecks}
+      todayChecks={toPlain(todayChecks)}
       canWrite={canWrite}
       defectTypes={defectTypes.map((dt) => ({ id: dt.id, code: dt.code, name: dt.name, severity: dt.severity }))}
     />

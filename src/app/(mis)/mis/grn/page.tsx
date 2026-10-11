@@ -1,4 +1,5 @@
 import { requireMisAccess } from '@/server/mis/guard';
+import { toPlain } from '@/lib/mis/plain';
 import { checkPermission } from '@/server/mis/auth';
 import { listGRNs } from '@/server/mis/grn';
 import { listPOs } from '@/server/mis/po';
@@ -14,5 +15,5 @@ export default async function GrnPage() {
   const [grns, pos] = await Promise.all([listGRNs(), canPickPo ? listPOs() : Promise.resolve([])]);
   type Po = (typeof pos)[number];
   const approvedPos = pos.filter((p: Po) => ['APPROVED', 'RECEIVING', 'PARTIAL'].includes(p.status));
-  return <GrnListScreen grns={grns} approvedPos={approvedPos} canWrite={canWrite} />;
+  return <GrnListScreen grns={toPlain(grns)} approvedPos={approvedPos} canWrite={canWrite} />;
 }

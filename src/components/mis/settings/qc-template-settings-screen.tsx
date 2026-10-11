@@ -83,13 +83,13 @@ export function QcTemplateSettingsScreen({ templates }: { templates: QcTemplateR
       {!editing && error && <p role="alert" className="text-sm text-red-600">{error}</p>}
       {templates.map((t, ti) => (
         <div key={t.id} className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4">
-          <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="flex flex-wrap items-start justify-between gap-2 sm:flex-nowrap">
             <MoveButtons label={t.name} disabled={isPending} first={ti === 0} last={ti === templates.length - 1} onMove={(d) => move(() => moveQcTemplateAction(t.id, d))} />
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2 font-semibold text-slate-900">{t.name} {!t.isActive && <StatusBadge tone="neutral">Inactive</StatusBadge>}</div>
-              <div className="text-sm text-slate-500">{t.processName ?? '—'} · {t.slots.length} slots {t.slotStart}–{t.slotEnd} · {t.parameters.length} parameters</div>
+            <div className="order-first w-full min-w-0 sm:order-none sm:w-auto sm:flex-1">
+              <div className="flex flex-wrap items-center gap-2 break-words font-semibold text-slate-900">{t.name} {!t.isActive && <StatusBadge tone="neutral">Inactive</StatusBadge>}</div>
+              <div className="text-sm text-slate-600">{t.processName ?? '—'} · {t.slots.length} slots {t.slotStart}–{t.slotEnd} · {t.parameters.length} parameters</div>
             </div>
-            <div className="flex gap-1">
+            <div className="flex min-w-0 flex-wrap gap-1 sm:shrink-0 sm:flex-nowrap">
               <Button variant="ghost" onClick={() => open(t)} disabled={isPending}>Edit</Button>
               <Button variant="ghost" onClick={() => startTransition(async () => { await setQcTemplateActiveAction(t.id, !t.isActive); })} disabled={isPending}>{t.isActive ? 'Deactivate' : 'Activate'}</Button>
             </div>

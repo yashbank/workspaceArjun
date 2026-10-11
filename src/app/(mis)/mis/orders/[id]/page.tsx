@@ -1,4 +1,5 @@
 import { isUuid } from '@/lib/mis/ids';
+import { toPlain } from '@/lib/mis/plain';
 import { requireMisAccess } from '@/server/mis/guard';
 import { getOrder } from '@/server/mis/orders';
 import { getBom } from '@/server/mis/bom';
@@ -66,7 +67,7 @@ export default async function OrderDetailPage({
         inChargeName: p.inCharge?.name ?? null,
         downstreamFlagged: p.downstreamFlagged,
       }))}
-      bom={bom}
+      bom={toPlain(bom)}
       productionLogs={productionLogs.map((l) => ({
         ...l,
         qtyProduced: Number(l.qtyProduced),
