@@ -96,6 +96,7 @@ class PunchRepository(
                 clientRecordedAt = clientRecordedAtIso,
                 queuedAtMillis = System.currentTimeMillis(),
                 status = PunchQueueStatus.PENDING,
+                operatorId = operatorId,
             ),
         )
         return attempt(key, employeeId, badgeCode, shiftId, kind, clientRecordedAtIso, operatorId)
@@ -129,7 +130,7 @@ class PunchRepository(
         val pending = punchQueueDao.pendingOrdered()
         android.util.Log.i(PUNCH_LOG_TAG, "FLUSH start, ${pending.size} pending")
         for (entry in pending) {
-            val result = attempt(entry.key, entry.employeeId, entry.badgeCode, entry.shiftId, entry.kind, entry.clientRecordedAt)
+            val result = attempt(entry.key, entry.employeeId, entry.badgeCode, entry.shiftId, entry.kind, entry.clientRecordedAt, entry.operatorId)
             if (result is PunchAttemptResult.RetryNeeded) {
                 android.util.Log.i(PUNCH_LOG_TAG, "FLUSH stopped early: ${entry.key.takeLast(8)} still needs retry")
                 break

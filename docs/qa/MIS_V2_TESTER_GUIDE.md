@@ -86,13 +86,30 @@ Any difference you did not expect is a bug.
 | 6.4 | ATTENDANCE_OPERATOR | Web kiosk (`/mis/kiosk`) → punch that employee | The green/amber result line shows the face |
 | 6.5 | ATTENDANCE_OPERATOR | Employee profile | No photo picker (read-only role) |
 
-## §7. Android kiosk (needs the rebuilt APK)
+## §7. Android kiosk (needs the NEW APK, October 2026 build)
+
+**Before you start:** ask the project owner for (a) the APK file, (b) the badge code of one real
+attendance operator (an employee whose role is Attendance Operator or Super Attendance Operator),
+(c) the badge code of an ordinary worker, and (d) one worker who has a photo and one who has none.
+Install over the old app (the pairing is kept; a fresh install needs re-pairing from Settings → Gate
+tablets). If the tablet was already installed with an older build, open it once with wifi on and let it sync.
+
 | # | Steps | Expected |
 |---|---|---|
-| 7.1 | Sync the roster (health screen → sync, or reopen the app) | Sync succeeds; no crash |
-| 7.2 | Scan / enter the badge of an employee with a photo | Confirm card shows the photo (large square) beside the name |
-| 7.3 | Employee without a photo | Confirm card shows the initial letter as before |
-| 7.4 | Turn wifi off → scan again | Photo still shows (cached with the roster) |
+| 7.1 | Health screen (hold the top bar 3 s) → sync | Sync succeeds; no crash; roster count matches Employees on the web |
+| 7.2 | Sign in as operator using an **ordinary worker's** badge code | Refused: "Not an attendance operator" |
+| 7.3 | Sign in using the **operator's** badge code | Signed in |
+| 7.4 | Right after sign-in | You must pick a **shift** (the real shifts of the factory are listed) before scanning or typing a code is possible |
+| 7.5 | Pick a shift | Shift name shows in the top bar; scanning/manual entry now works |
+| 7.6 | Scan the badge (QR) of a worker **with** a photo | Confirm card shows the photo large, with name |
+| 7.7 | Scan a worker **without** a photo | Confirm card shows a neutral empty-person picture (not a coloured letter) |
+| 7.8 | Type the worker's code manually instead of scanning | The same confirm card (photo or placeholder) appears **before** the punch is recorded |
+| 7.9 | Punch several workers in, then out | Each appears on the web Attendance within seconds, with the operator's name under "Punches" and the correct shift |
+| 7.10 | Wifi off → punch 2–3 workers → wifi on | Punches are queued (counter visible), then send by themselves; no duplicates on the web |
+| 7.11 | Wifi off → scan a worker with a photo | The photo still shows (cached) |
+| 7.12 | Health screen → **End shift** | Operator and shift are cleared; the next person must sign in and pick a shift again |
+| 7.13 | Close and reopen the app while signed in | Still signed in with the same shift (or asked to sign in again), never stuck on a blank screen |
+| 7.14 | Web: Settings → Gate tablets → revoke this tablet | Tablet wipes its login and returns to pairing; it cannot punch anyone |
 
 ## §8. Also fixed in this release (found by the automated 7-role sweep) — please re-check
 | # | Role | Where | Was | Now |

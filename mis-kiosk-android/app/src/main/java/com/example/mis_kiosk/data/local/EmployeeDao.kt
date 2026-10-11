@@ -16,6 +16,12 @@ interface EmployeeDao {
     @Query("SELECT COUNT(*) FROM employees")
     suspend fun count(): Int
 
+    /** Cheap check for whether this server sends `operatorRole` at all — zero here means an
+     *  older server (the key is simply absent), so operator sign-in should fall back to
+     *  accepting any matched badge rather than rejecting everyone. */
+    @Query("SELECT COUNT(*) FROM employees WHERE operatorRole IN ('OPERATOR', 'SUPER_OPERATOR')")
+    suspend fun countWithOperatorRole(): Int
+
     @Query("DELETE FROM employees")
     suspend fun deleteAll()
 

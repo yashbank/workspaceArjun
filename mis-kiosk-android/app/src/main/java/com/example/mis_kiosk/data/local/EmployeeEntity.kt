@@ -22,4 +22,6 @@ data class EmployeeEntity(
     val photo: ByteArray? = null,
     /** The `photoUrl` the bytes above came from (it carries a version), so an unchanged photo is not re-downloaded. */
     val photoUrl: String? = null,
+    /** "OPERATOR" | "SUPER_OPERATOR" | null. Null on an older server that doesn't send this key yet. */
+    val operatorRole: String? = null,
 )

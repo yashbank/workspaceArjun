@@ -7,6 +7,7 @@ import com.example.mis_kiosk.data.local.EmployeeEntity
 import com.example.mis_kiosk.data.local.PunchQueueDatabase
 import com.example.mis_kiosk.data.local.RosterDatabase
 import com.example.mis_kiosk.data.local.RosterPreferences
+import com.example.mis_kiosk.data.local.ShiftSummary
 import com.example.mis_kiosk.data.network.ApiClient
 import com.example.mis_kiosk.data.network.KioskApi
 import com.example.mis_kiosk.data.repository.PunchAttemptResult
@@ -18,6 +19,7 @@ import com.example.mis_kiosk.data.work.PunchFlushScheduler
 import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -36,9 +38,26 @@ private class PendingAttempt(
     val kind: String,
     val key: String,
     val clientRecordedAtIso: String,
+    /** Operator captured when the punch began; reused verbatim on retry, never re-read. */
+    val operatorId: String?,
 )
 
 private const val ROSTER_SYNC_INTERVAL_MS = 60_000L
+private val OPERATOR_ROLES = setOf("OPERATOR", "SUPER_OPERATOR")
+
+/**
+ * Shift-picker option (K9.1), unified across two sources: the new top-level `shifts` cache
+ * (every active shift, clock only — present even with nobody allocated today) and, as a
+ * fallback for an older server that doesn't send that key, the roster rollup's [ShiftSummary]
+ * (which only ever lists shifts with at least one cached employee, and carries an
+ * `employeeCount` this type deliberately omits since the primary source has no such count).
+ */
+data class PunchShiftOption(
+    val id: String,
+    val name: String?,
+    val startTime: String?,
+    val endTime: String?,
+)
 
 private data class RosterSnapshot(
     val employees: List<EmployeeEntity>,
@@ -56,11 +75,12 @@ class PunchViewModel @JvmOverloads constructor(
     private val credentialStore = DeviceCredentialStore(application)
     private val database = RosterDatabase.getInstance(application)
     private val employeeDao = database.employeeDao()
+    private val rosterPreferences = RosterPreferences(application)
     private val rosterRepository = RosterRepository(
         context = application,
         api = api,
         database = database,
-        rosterPreferences = RosterPreferences(application),
+        rosterPreferences = rosterPreferences,
         credentialStore = credentialStore,
     )
     private val punchQueueDao = PunchQueueDatabase.getInstance(application).punchQueueDao()
@@ -138,10 +158,60 @@ class PunchViewModel @JvmOverloads constructor(
     private val _operatorMatch = MutableStateFlow<EmployeeEntity?>(null)
     val operatorMatch: StateFlow<EmployeeEntity?> = _operatorMatch.asStateFlow()
 
+    /** Set when a matched badge is rejected for not holding an attendance-operator role
+     *  (K9 gate). Mirrors [scanHint]'s role as this screen's text-feedback slot. */
+    private val _operatorError = MutableStateFlow<String?>(null)
+    val operatorError: StateFlow<String?> = _operatorError.asStateFlow()
+
     private var operatorLookupJob: Job? = null
+
+    /** Shift the signed-in operator picked for this session (K9.1 gate) — every punch they
+     *  process sends this shift's id, not the scanned employee's own roster shift, since the
+     *  operator may be running a gate for a shift other than their own. Cleared alongside
+     *  [currentOperator] on end-of-shift so the next operator must pick again too. */
+    private val _selectedShift = MutableStateFlow<PunchShiftOption?>(null)
+    val selectedShift: StateFlow<PunchShiftOption?> = _selectedShift.asStateFlow()
+
+    /** Cached shifts available to pick from — prefers the new top-level active-shifts cache
+     *  (every active shift, clock only, even with nobody allocated today) and falls back to
+     *  the roster rollup (same query as the read-only Shifts info screen,
+     *  [com.example.mis_kiosk.ui.shifts.ShiftsViewModel]) only when that cache is empty, i.e.
+     *  an older server that doesn't send the new `shifts` key at all. */
+    private val shiftOptions: Flow<List<PunchShiftOption>> = combine(
+        rosterRepository.activeShifts,
+        employeeDao.observeShiftSummaries(),
+    ) { activeShifts, rollup ->
+        if (activeShifts.isNotEmpty()) {
+            activeShifts.map { PunchShiftOption(it.id, it.name, it.startTime, it.endTime) }
+        } else {
+            rollup.map { PunchShiftOption(it.shiftId, it.shiftName, it.shiftStartTime, it.shiftEndTime) }
+        }
+    }
+
+    val shifts: StateFlow<List<PunchShiftOption>> =
+        shiftOptions.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    init {
+        // After a re-sync the picked shift may no longer exist; clear it so the operator must
+        // re-pick rather than punches carrying a dead shiftId. Collects the raw DB-backed flow
+        // (not the stateIn above) so its initial emptyList() can never clear a valid pick.
+        viewModelScope.launch {
+            shiftOptions.collect { options ->
+                val selected = _selectedShift.value
+                if (selected != null && options.none { it.id == selected.id }) {
+                    _selectedShift.value = null
+                }
+            }
+        }
+    }
+
+    fun selectShift(shift: PunchShiftOption) {
+        _selectedShift.value = shift
+    }
 
     fun onOperatorInputChange(value: String) {
         _operatorInput.value = value.take(40)
+        _operatorError.value = null
         operatorLookupJob?.cancel()
         val code = _operatorInput.value
         if (code.isEmpty()) {
@@ -154,17 +224,44 @@ class PunchViewModel @JvmOverloads constructor(
         }
     }
 
+    /**
+     * Gates sign-in on `operatorRole` (OPERATOR/SUPER_OPERATOR) once the server sends it. If
+     * the whole cached roster has nobody with a non-null `operatorRole`, this is an older
+     * server that doesn't send the key at all yet — fall back to today's behaviour (accept any
+     * matched badge) rather than locking every kiosk out.
+     */
     fun confirmOperatorSignIn() {
         val operator = _operatorMatch.value ?: return
-        _currentOperator.value = operator
-        _operatorInput.value = ""
-        _operatorMatch.value = null
+        viewModelScope.launch {
+            val accepted = when {
+                operator.operatorRole in OPERATOR_ROLES -> true
+                // Legacy fallback only for a server that predates the shifts/operator contract
+                // (last /pull had no `shifts` key). Otherwise strict, even with zero operators.
+                rosterPreferences.serverPredatesShiftContract && employeeDao.countWithOperatorRole() == 0 -> {
+                    android.util.Log.w(
+                        "PunchViewModel",
+                        "No cached employee has operatorRole set; treating server as pre-rollout and accepting any matched badge",
+                    )
+                    true
+                }
+                else -> false
+            }
+            if (accepted) {
+                _currentOperator.value = operator
+                _operatorInput.value = ""
+                _operatorMatch.value = null
+                _operatorError.value = null
+            } else {
+                _operatorError.value = "Not an attendance operator"
+            }
+        }
     }
 
     /** End of shift (K11) — clears the signed-in operator, sending the screen back to the
      *  sign-in gate so the next operator identifies themselves before punching anyone. */
     fun endShift() {
         _currentOperator.value = null
+        _selectedShift.value = null
     }
 
     private var pending: PendingAttempt? = null
@@ -292,11 +389,15 @@ class PunchViewModel @JvmOverloads constructor(
         }
     }
 
+    /** Routes through the same photo confirm card the QR path already shows (PunchMode.Confirming
+     *  is entry-path-agnostic — [confirmScannedPunch] submits whatever employee/kind is in it
+     *  regardless of how the screen got there) rather than submitting straight away, so manual
+     *  entry gets the same buddy-punching check QR scanning always had. */
     fun confirmManualEntry() {
         val employee = _manualMatch.value ?: return
         viewModelScope.launch {
             val kind = punchRepository.nextKindFor(employee.id)
-            beginAttempt(employee, kind)
+            _mode.value = PunchMode.Confirming(employee, kind)
         }
     }
 
@@ -316,10 +417,13 @@ class PunchViewModel @JvmOverloads constructor(
             employeeId = employee.id,
             employeeName = employee.name,
             badgeCode = employee.badgeCode,
-            shiftId = employee.shiftId,
+            // The OPERATOR-selected shift for this session, not the employee's own roster
+            // shift — the gate may be running for a shift other than the employee's own.
+            shiftId = _selectedShift.value?.id,
             kind = kind,
             key = UUID.randomUUID().toString(),
             clientRecordedAtIso = Instant.now().toString(),
+            operatorId = _currentOperator.value?.id,
         )
         pending = attempt
         viewModelScope.launch {
@@ -331,7 +435,7 @@ class PunchViewModel @JvmOverloads constructor(
                 kind = attempt.kind,
                 key = attempt.key,
                 clientRecordedAtIso = attempt.clientRecordedAtIso,
-                operatorId = _currentOperator.value?.id,
+                operatorId = attempt.operatorId,
             )
             applyResult(attempt, result)
         }
@@ -349,7 +453,7 @@ class PunchViewModel @JvmOverloads constructor(
                 kind = attempt.kind,
                 key = attempt.key,
                 clientRecordedAtIso = attempt.clientRecordedAtIso,
-                operatorId = _currentOperator.value?.id,
+                operatorId = attempt.operatorId,
             )
             applyResult(attempt, result)
         }

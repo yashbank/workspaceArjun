@@ -32,4 +32,6 @@ data class PunchQueueEntity(
     val queuedAtMillis: Long,
     val status: String,
     val detail: String? = null,
+    /** Operator who captured this punch (null = none/legacy row). Fixed at insert; sent on every flush/retry. */
+    val operatorId: String? = null,
 )
