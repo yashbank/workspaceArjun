@@ -41,6 +41,9 @@ export const MIS_ACTIONS = [
   'po.write',
   'grn.read',
   'grn.write',
+  // V2 Epic 1 — the 3-way match board. Read: Owner, Admin, Store Guy. Write (reconcile): Owner, Admin.
+  'supplier_invoice.read',
+  'supplier_invoice.write',
   // Store module (MIS-280+)
   'store.read',
   'store.write',
@@ -105,6 +108,8 @@ const MATRIX: Record<MisRoleName, readonly MisAction[]> = {
     'po.write',
     'grn.read',
     'grn.write',
+    'supplier_invoice.read',
+    'supplier_invoice.write',
     'store.read',
     'store.write',
     'store.count',
@@ -151,6 +156,7 @@ const MATRIX: Record<MisRoleName, readonly MisAction[]> = {
     'inventory.read',
     'grn.read',
     'grn.write',
+    'supplier_invoice.read',
     'po.read',
     'store.read',
     'store.write',

@@ -1710,6 +1710,14 @@ model MisOrderStockAllocation {
 /// V2 Epic 1 — the third leg of the 3-way match (PO ↔ GRN ↔ invoice). Written when a GRN that
 /// names a supplier invoice is confirmed (one row per PO + invoice number). `invoiceAmount` is
 /// money: Owner-only.
+enum MisSupplierInvoiceStatus {
+  MATCHED
+  DISCREPANCY_QTY
+  DISCREPANCY_PRICE
+  PENDING_REVIEW
+  @@map("mis_supplier_invoice_status")
+}
+
 model MisSupplierInvoice {
   id            String           @id @default(uuid()) @db.Uuid
   poId          String           @map("po_id") @db.Uuid
@@ -1719,12 +1727,15 @@ model MisSupplierInvoice {
   invoiceDate   DateTime?        @map("invoice_date") @db.Date
   invoiceAmount Decimal?         @map("invoice_amount") @db.Decimal(14, 2)
   notes         String?
+  /// 3-way match result (`lib/mis/invoice-match.ts`). Set when a GRN confirms the invoice; recomputed by `reconcileSupplierInvoice`.
+  status        MisSupplierInvoiceStatus @default(PENDING_REVIEW)
   createdAt     DateTime         @default(now()) @map("created_at")
   updatedAt     DateTime         @updatedAt @map("updated_at")
   po            MisPurchaseOrder @relation(fields: [poId], references: [id])
   grn           MisGrn?          @relation(fields: [grnId], references: [id])
   supplier      MisSupplier?     @relation(fields: [supplierId], references: [id])
   @@unique([poId, invoiceNo])
+  @@index([status])
   @@map("mis_supplier_invoices")
 }
 
