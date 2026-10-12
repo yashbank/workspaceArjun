@@ -1,5 +1,5 @@
 'use client';
-import { useState, useTransition } from 'react';
+import { useState, useTransition, type ReactNode } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/mis/kit/button';
 import { Input } from '@/components/mis/kit/input';
@@ -45,6 +45,8 @@ type Props = {
   documents: OrderDocument[];
   /** V2 Epic 2 — stock earmarked for this order by FOR_ORDER deliveries, and what is left to issue. */
   allocations?: { itemId: string; code: string; name: string; unit: string; allocated: number; issued: number; remaining: number }[];
+  /** Complete / deliver / cancel controls; the page passes them only to roles with orders.write. */
+  statusActions?: ReactNode;
   canWrite: boolean;
   canSeeWages: boolean;
   canProduction: boolean;
@@ -66,7 +68,8 @@ function statusTone(s: string): BadgeTone {
   switch (s) {
     case 'CONFIRMED': return 'info';
     case 'IN_PRODUCTION': return 'warning';
-    case 'COMPLETE': return 'good';
+    case 'COMPLETED': return 'good';
+    case 'DELIVERED': return 'good';
     case 'CANCELLED': return 'critical';
     default: return 'neutral';
   }
@@ -74,7 +77,7 @@ function statusTone(s: string): BadgeTone {
 
 export function OrderDetailScreen({
   order, phases, bom, productionLogs, productionSummary, qcLogs, qcSummary, documents, allocations = [],
-  canWrite, canSeeWages: _canSeeWages, canProduction, canQc,
+  statusActions, canWrite, canSeeWages: _canSeeWages, canProduction, canQc,
 }: Props) {
   const [tab, setTab] = useState<Tab>('overview');
   const t = useT();
@@ -161,7 +164,8 @@ export function OrderDetailScreen({
               what sends somebody to edit the database by hand. */}
           {closed && <p className="mt-1 text-sm text-amber-800">{t('order.reopen.closedNote')}</p>}
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          {statusActions}
           {closed && canWrite && (
             <button
               type="button"

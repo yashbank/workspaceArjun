@@ -1,7 +1,9 @@
 import { isUuid } from '@/lib/mis/ids';
 import { toPlain } from '@/lib/mis/plain';
 import { requireMisAccess } from '@/server/mis/guard';
-import { getOrder } from '@/server/mis/orders';
+import { getOrder, getOrderCloseGates, getOrderCloseOverride } from '@/server/mis/orders';
+import { canOverrideCloseGates } from '@/lib/mis/order-transitions';
+import { OrderStatusActions } from '@/components/mis/orders/order-status-actions';
 import { getBom } from '@/server/mis/bom';
 import { getProductionForOrder, getProductionSummary } from '@/server/mis/production';
 import { getPhasesForOrder } from '@/server/mis/job-phases';
@@ -52,6 +54,19 @@ export default async function OrderDetailPage({
   const canProduction = can(role, 'production.read');
   const canQc = can(role, 'qc.read');
 
+  // Complete / deliver / cancel: absent (not greyed) without orders.write. Gates are only needed
+  // while the order can still be completed.
+  const statusActions = canWrite ? (
+    <OrderStatusActions
+      orderId={order.id}
+      orderNumber={order.orderNumber}
+      status={order.status}
+      gates={order.status === 'IN_PRODUCTION' ? await getOrderCloseGates(id) : []}
+      canOverride={canOverrideCloseGates(role ?? '')}
+      override={order.status === 'COMPLETED' || order.status === 'DELIVERED' ? await getOrderCloseOverride(id) : null}
+    />
+  ) : undefined;
+
   // D4 from 1024px up; the existing screen below it. `?view=classic` keeps the full screen (production
   // and QC logs, reopen) reachable on a desktop, because D4 deliberately carries neither.
   const desktop = view === 'classic' ? null : await getOrderDesktopView(id);
@@ -78,6 +93,7 @@ export default async function OrderDetailPage({
       qcSummary={qcSummary}
       documents={documents}
       allocations={allocations}
+      statusActions={statusActions}
       canWrite={canWrite}
       canSeeWages={canSeeWages}
       canProduction={canProduction}
@@ -91,7 +107,7 @@ export default async function OrderDetailPage({
     <>
       <div className="lg:hidden">{phone}</div>
       <div className="hidden lg:block">
-        <OrderDetailDesktop data={desktop} />
+        <OrderDetailDesktop data={desktop} statusActions={statusActions} />
       </div>
     </>
   );
