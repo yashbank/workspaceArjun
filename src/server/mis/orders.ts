@@ -1,6 +1,6 @@
 import { CLOSED_ORDER_STATUSES, isOrderClosed, REOPENED_ORDER_STATUS } from '@/lib/mis/order-status';
 import {
-  canOverrideCloseGates, canTransitionOrder, evaluateCloseGates, isOrderStatus, MIN_REASON_LENGTH, unmetGates, type CloseGate,
+  canOverrideCloseGates, canTransitionOrder, evaluateCloseGates, isOrderStatus, MIN_REASON_LENGTH, transitionNeedsReason, unmetGates, type CloseGate,
 } from '@/lib/mis/order-transitions';
 import { db } from '@/server/db';
 import { requirePermission } from './auth';
@@ -99,7 +99,7 @@ export async function updateOrder(id: string, input: OrderInput) {
  * `OrderReopenError`, so the server action can return the message as data while a database
  * error stays an exception. `reason` is what callers branch on.
  */
-export type OrderStatusRefusal = 'UNKNOWN_STATUS' | 'ILLEGAL_TRANSITION' | 'REASON_REQUIRED' | 'GATES_UNMET' | 'OVERRIDE_NOT_ALLOWED';
+export type OrderStatusRefusal = 'UNKNOWN_STATUS' | 'ILLEGAL_TRANSITION' | 'REASON_REQUIRED' | 'STALE_STATUS' | 'GATES_UNMET' | 'OVERRIDE_NOT_ALLOWED';
 
 export class OrderStatusError extends Error {
   constructor(
@@ -173,8 +173,8 @@ export async function updateOrderStatus(id: string, status: string, options: { r
   const reason = options.reason?.trim() ?? '';
   let overriddenGates: CloseGate[] | undefined;
 
-  if (status === 'CANCELLED' && reason.length < MIN_REASON_LENGTH) {
-    throw new OrderStatusError('REASON_REQUIRED', 'Cancelling an order needs a reason.');
+  if (transitionNeedsReason(before.status, status) && reason.length < MIN_REASON_LENGTH) {
+    throw new OrderStatusError('REASON_REQUIRED', status === 'CANCELLED' ? 'Cancelling an order needs a reason.' : 'Sending a completed order back to production needs a reason.');
   }
   if (status === 'COMPLETED') {
     const unmet = unmetGates(await computeCloseGates(id));
@@ -189,7 +189,14 @@ export async function updateOrderStatus(id: string, status: string, options: { r
     }
   }
 
-  const after = await db.misOrder.update({ where: { id }, data: { status } });
+  // Compare-and-set on the status we validated against: two people acting on the same screen
+  // must not both pass the transition check and then both write. (The audit write stays outside
+  // a transaction — logAuditEvent uses the shared client and must never fail a save.)
+  const { count } = await db.misOrder.updateMany({ where: { id, status: before.status }, data: { status } });
+  if (count === 0) {
+    throw new OrderStatusError('STALE_STATUS', `${before.orderNumber} was changed by someone else. Refresh and try again.`);
+  }
+  const after = { ...before, status };
   await logAuditEvent({
     actorId: actor.userId,
     action: 'order.status_change',

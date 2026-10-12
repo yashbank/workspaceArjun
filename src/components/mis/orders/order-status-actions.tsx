@@ -29,7 +29,11 @@ type Panel = null | 'complete' | 'cancel';
  * "Mark complete" is offered on IN_PRODUCTION only: the transition table has no
  * CONFIRMED -> COMPLETED move, so a CONFIRMED order gets "Start production" instead.
  */
-export function OrderStatusActions({ orderId, orderNumber, status, gates, canOverride, override }: Props) {
+export function OrderStatusActions({ orderId, orderNumber, status, gates: initialGates, canOverride, override }: Props) {
+  // The server is the authority on the gates: a refusal carries the fresh list, which replaces
+  // what the page loaded (it may have gone stale) and reveals the override field.
+  const [freshGates, setFreshGates] = useState<CloseGate[] | null>(null);
+  const gates = freshGates ?? initialGates;
   const [panel, setPanel] = useState<Panel>(null);
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -38,11 +42,14 @@ export function OrderStatusActions({ orderId, orderNumber, status, gates, canOve
   const unmet = gates.filter((g) => !g.passed);
   const reasonOk = reason.trim().length >= MIN_REASON_LENGTH;
 
-  const close = () => { setPanel(null); setReason(''); setError(null); };
+  const close = () => { setPanel(null); setFreshGates(null); setReason(''); setError(null); };
   const run = (next: string, why?: string, done?: () => void) => start(async () => {
     setError(null);
     const result = await updateOrderStatusAction(orderId, next, why);
-    if (result.ok) { (done ?? close)(); } else { setError(result.detail); }
+    if (result.ok) { (done ?? close)(); } else {
+      setError(result.detail);
+      if (result.gates) setFreshGates(result.gates);
+    }
   });
 
   const btn = 'inline-flex min-h-11 items-center rounded-lg border bg-white px-3 text-sm font-semibold hover:bg-slate-50';

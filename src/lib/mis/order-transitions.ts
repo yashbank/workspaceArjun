@@ -36,8 +36,26 @@ export function isOrderStatus(value: string): value is OrderStatus {
   return (ORDER_STATUSES as readonly string[]).includes(value);
 }
 
+/**
+ * Spellings an order row could carry from before this table existed (the old
+ * `updateOrderStatus` wrote any string). No code or seed writes them today, but a row
+ * holding one must not be stuck with no way out, so a legacy *current* status is read as its
+ * real equivalent. They are never accepted as a target.
+ */
+const LEGACY_STATUS_ALIASES: Readonly<Record<string, OrderStatus>> = {
+  COMPLETE: 'COMPLETED',
+  IN_PROGRESS: 'IN_PRODUCTION',
+};
+
 export function canTransitionOrder(from: string, to: string): boolean {
-  return isOrderStatus(from) && isOrderStatus(to) && ORDER_TRANSITIONS[from].includes(to);
+  const current = LEGACY_STATUS_ALIASES[from] ?? from;
+  return isOrderStatus(current) && isOrderStatus(to) && ORDER_TRANSITIONS[current].includes(to);
+}
+
+/** Moves that need a reason on the record: cancelling, and sending a completed order back. */
+export function transitionNeedsReason(from: string, to: string): boolean {
+  const current = LEGACY_STATUS_ALIASES[from] ?? from;
+  return to === 'CANCELLED' || (current === 'COMPLETED' && to === 'IN_PRODUCTION');
 }
 
 /** Roles that may complete an order past unmet gates. */

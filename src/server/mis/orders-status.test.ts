@@ -12,12 +12,13 @@ vi.mock('@/server/mis/roles', () => ({ getMisRole: (...a: unknown[]) => getMisRo
 
 const orderFindUnique = vi.fn();
 const orderUpdate = vi.fn();
+const orderUpdateMany = vi.fn();
 const phaseFindMany = vi.fn();
 const qcFindMany = vi.fn();
 const auditFindMany = vi.fn();
 vi.mock('@/server/db', () => ({
   db: {
-    misOrder: { findUnique: (...a: unknown[]) => orderFindUnique(...a), update: (...a: unknown[]) => orderUpdate(...a) },
+    misOrder: { findUnique: (...a: unknown[]) => orderFindUnique(...a), update: (...a: unknown[]) => orderUpdate(...a), updateMany: (...a: unknown[]) => orderUpdateMany(...a) },
     misJobPhase: { findMany: (...a: unknown[]) => phaseFindMany(...a) },
     misQcCheck: { findMany: (...a: unknown[]) => qcFindMany(...a) },
     misAuditLog: { findMany: (...a: unknown[]) => auditFindMany(...a) },
@@ -36,6 +37,7 @@ beforeEach(() => {
   getMisRole.mockResolvedValue('ADMIN');
   phaseFindMany.mockResolvedValue([]);
   qcFindMany.mockResolvedValue([]);
+  orderUpdateMany.mockResolvedValue({ count: 1 });
   orderUpdate.mockImplementation(({ data }: { data: { status: string } }) => ({ id: 'o1', orderNumber: 'ORD-118', ...data }));
 });
 
@@ -49,7 +51,7 @@ describe('updateOrderStatus — transitions', () => {
   it('rejects an unknown status (the tester\'s "COMPLETE")', async () => {
     orderFindUnique.mockResolvedValue(order('IN_PRODUCTION'));
     expect((await refusal(updateOrderStatus('o1', 'COMPLETE'))).reason).toBe('UNKNOWN_STATUS');
-    expect(orderUpdate).not.toHaveBeenCalled();
+    expect(orderUpdateMany).not.toHaveBeenCalled();
   });
 
   it('rejects an illegal jump, naming both statuses', async () => {
@@ -57,7 +59,7 @@ describe('updateOrderStatus — transitions', () => {
     const err = await refusal(updateOrderStatus('o1', 'DELIVERED'));
     expect(err.reason).toBe('ILLEGAL_TRANSITION');
     expect(err.message).toMatch(/ORD-118.*draft.*delivered/);
-    expect(orderUpdate).not.toHaveBeenCalled();
+    expect(orderUpdateMany).not.toHaveBeenCalled();
   });
 
   it.each(['DELIVERED', 'CANCELLED'])('%s is terminal', async (from) => {
@@ -68,7 +70,7 @@ describe('updateOrderStatus — transitions', () => {
   it('a legal move writes the status and audits before and after', async () => {
     orderFindUnique.mockResolvedValue(order('DRAFT'));
     await updateOrderStatus('o1', 'CONFIRMED');
-    expect(orderUpdate).toHaveBeenCalledWith({ where: { id: 'o1' }, data: { status: 'CONFIRMED' } });
+    expect(orderUpdateMany).toHaveBeenCalledWith({ where: { id: 'o1', status: 'DRAFT' }, data: { status: 'CONFIRMED' } });
     expect(audit.mock.calls[0][0]).toMatchObject({ action: 'order.status_change', before: { status: 'DRAFT' }, after: { status: 'CONFIRMED' } });
   });
 
@@ -76,7 +78,7 @@ describe('updateOrderStatus — transitions', () => {
     getMisRole.mockResolvedValue('WORKER');
     orderFindUnique.mockResolvedValue(order('DRAFT'));
     await expect(updateOrderStatus('o1', 'CONFIRMED')).rejects.toThrow(/Not permitted/);
-    expect(orderUpdate).not.toHaveBeenCalled();
+    expect(orderUpdateMany).not.toHaveBeenCalled();
   });
 
   it('cancelling needs a reason, which is audited', async () => {
@@ -92,7 +94,7 @@ describe('updateOrderStatus — close gates for COMPLETED', () => {
 
   it('an order with no phase plan and no QC completes with no reason', async () => {
     await updateOrderStatus('o1', 'COMPLETED');
-    expect(orderUpdate).toHaveBeenCalled();
+    expect(orderUpdateMany).toHaveBeenCalled();
     expect(audit.mock.calls[0][0].after).not.toHaveProperty('gatesOverridden');
   });
 
@@ -107,7 +109,7 @@ describe('updateOrderStatus — close gates for COMPLETED', () => {
     const err = await refusal(updateOrderStatus('o1', 'COMPLETED'));
     expect(err.reason).toBe('GATES_UNMET');
     expect(err.gates?.map((g) => g.key)).toEqual(['PHASES_SIGNED_OFF']);
-    expect(orderUpdate).not.toHaveBeenCalled();
+    expect(orderUpdateMany).not.toHaveBeenCalled();
   });
 
   it('an unresolved QC failure blocks completion', async () => {
@@ -136,8 +138,29 @@ describe('updateOrderStatus — close gates for COMPLETED', () => {
     phaseFindMany.mockResolvedValue([{ status: 'PENDING' }]);
     const err = await refusal(updateOrderStatus('o1', 'COMPLETED', { reason: 'please' })).catch(() => null);
     // A role without orders.write is refused earlier by the permission gate; either way nothing is written.
-    expect(orderUpdate).not.toHaveBeenCalled();
+    expect(orderUpdateMany).not.toHaveBeenCalled();
     if (err) expect(['OVERRIDE_NOT_ALLOWED']).toContain(err.reason);
+  });
+});
+
+describe('updateOrderStatus — stale status and reopen-by-status', () => {
+  it('refuses when the status changed under us (compare-and-set matched nothing) and audits nothing', async () => {
+    orderFindUnique.mockResolvedValue(order('DRAFT'));
+    orderUpdateMany.mockResolvedValue({ count: 0 });
+    expect((await refusal(updateOrderStatus('o1', 'CONFIRMED'))).reason).toBe('STALE_STATUS');
+    expect(audit).not.toHaveBeenCalled();
+  });
+
+  it('COMPLETED -> IN_PRODUCTION needs a reason, which is audited', async () => {
+    orderFindUnique.mockResolvedValue(order('COMPLETED'));
+    expect((await refusal(updateOrderStatus('o1', 'IN_PRODUCTION'))).reason).toBe('REASON_REQUIRED');
+    await updateOrderStatus('o1', 'IN_PRODUCTION', { reason: 'rework found' });
+    expect(audit.mock.calls[0][0]).toMatchObject({ before: { status: 'COMPLETED' }, after: { status: 'IN_PRODUCTION', reason: 'rework found' } });
+  });
+
+  it('a legacy "COMPLETE" row is not stuck: it can be delivered', async () => {
+    orderFindUnique.mockResolvedValue(order('COMPLETE'));
+    await expect(updateOrderStatus('o1', 'DELIVERED')).resolves.toBeDefined();
   });
 });
 

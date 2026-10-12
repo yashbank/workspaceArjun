@@ -1,7 +1,8 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('@/app/(mis)/mis/orders/actions', () => ({ updateOrderStatusAction: vi.fn() }));
+const action = vi.fn();
+vi.mock('@/app/(mis)/mis/orders/actions', () => ({ updateOrderStatusAction: (...a: unknown[]) => action(...a) }));
 
 import { OrderStatusActions } from './order-status-actions';
 
@@ -39,5 +40,15 @@ describe('OrderStatusActions', () => {
     fireEvent.click(screen.getByText('Mark complete'));
     expect((screen.getByText('Complete anyway') as HTMLButtonElement).disabled).toBe(true);
     expect(screen.queryByLabelText(/Override reason/)).toBeNull();
+  });
+
+  it('when the server refuses with fresh unmet gates, they replace the stale list and the override field appears', async () => {
+    action.mockResolvedValue({ ok: false, detail: 'has unmet gates', gates });
+    render(<OrderStatusActions {...base} status="IN_PRODUCTION" gates={[]} />);
+    fireEvent.click(screen.getByText('Mark complete'));
+    expect(screen.queryByLabelText(/Override reason/)).toBeNull();
+    fireEvent.click(screen.getAllByText('Mark complete').at(-1) as HTMLElement);
+    await waitFor(() => expect(screen.getByLabelText(/Override reason/)).toBeTruthy());
+    expect(screen.getByText('1 of 3 phases not signed off')).toBeTruthy();
   });
 });
