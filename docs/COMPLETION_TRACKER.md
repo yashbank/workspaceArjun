@@ -322,6 +322,15 @@ kiosk APK and upload employee photos (only 1 of 82 had one).
 tables; audit screen at /mis/audit; PO rate still masked at write (a pinned test); NA vs MAKE_READY
 share one stored value.
 
+
+## Tester round 2 (2026-10-13) — 61 tester items triaged, specs written
+**Status:** SPECS READY, implementation not started. Read `docs/specs/00-README.md` first (rules, owner decisions
+D1-D9, waves, models, resume protocol), then the cluster spec. Cluster status (update as you go):
+C1 stock-grn: TODO · C2 po-bom: TODO · C4 order-lifecycle: TODO · C5 production-qc: TODO · C7 android: TODO ·
+C6a helpers: TODO · C3 money-trace (after C1): TODO · C6b wiring (after wave 1): TODO.
+Deploy plan: Phase A = C1+C2+C3+C4 -> deploy + tester re-test block (§11); then C5+C6+C7 -> deploy (§12).
+Deferred (needs owner SQL / product input): see "Deferred" in the README.
+
 ## Track 8 — Post-testing (next up — waiting on the tester's report)
 **Status:** TODO — gated on the external tester's completed report
 1. Fix whatever bugs the report surfaces.
