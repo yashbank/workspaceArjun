@@ -13,7 +13,14 @@ import {
   deleteStageAction,
   deleteMaterialAction,
   reorderStagesAction,
+  rejectBomAction,
+  deleteBomAction,
+  updateStageAction,
+  updateMaterialAction,
 } from '@/app/(mis)/mis/bom/actions';
+import { useConfirm } from '@/components/ui/confirm-dialog';
+import { useToast } from '@/components/ui/toast';
+import type { ActionResult } from '@/lib/mis/action-result';
 
 type Material = { id: string; description: string; quantity: number; unit: string; ratePerUnit: number | null; item: { name: string; unit: string } | null };
 type Stage = { id: string; stageName: string; seq: number; process: { name: string } | null; materials: Material[] };
@@ -29,6 +36,19 @@ export function BomScreen({ bom, orderId, canWrite, isOwner }: { bom: Bom; order
   const [matUnit, setMatUnit] = useState('KG');
   const [matRate, setMatRate] = useState('');
   const [isPending, startTransition] = useTransition();
+  const { confirm, confirmDialog } = useConfirm();
+  const { toast } = useToast();
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+  const [editStageId, setEditStageId] = useState<string | null>(null);
+  const [editStageName, setEditStageName] = useState('');
+  const [editMatId, setEditMatId] = useState<string | null>(null);
+  const [editMatDesc, setEditMatDesc] = useState('');
+  const [editMatQty, setEditMatQty] = useState('');
+  const [editMatUnit, setEditMatUnit] = useState('');
+  const [editMatRate, setEditMatRate] = useState('');
+  /** A refusal comes back as a value; show it instead of swallowing it. True on success. */
+  const settle = (result: ActionResult<unknown>) => { if (!result.ok) toast('error', result.detail); return result.ok; };
 
   if (!bom) {
     return (
@@ -47,13 +67,13 @@ export function BomScreen({ bom, orderId, canWrite, isOwner }: { bom: Bom; order
   }
 
   const addStage = () => startTransition(async () => {
-    await addStageAction(bom.id, { stageName, seq: bom.stages.length });
+    if (!settle(await addStageAction(bom.id, { stageName, seq: bom.stages.length }))) return;
     setStageName(''); setStageOpen(false);
   });
 
   const addMat = () => startTransition(async () => {
     const stage = bom.stages.find(s => s.id === selectedStageId);
-    await addMaterialAction(selectedStageId, { description: matDesc, quantity: parseFloat(matQty), unit: matUnit, ratePerUnit: matRate ? parseFloat(matRate) : undefined, seq: stage?.materials.length ?? 0 });
+    if (!settle(await addMaterialAction(selectedStageId, { description: matDesc, quantity: parseFloat(matQty), unit: matUnit, ratePerUnit: matRate ? parseFloat(matRate) : undefined, seq: stage?.materials.length ?? 0 }))) return;
     setMatDesc(''); setMatQty(''); setMatRate(''); setMatOpen(false);
   });
 
@@ -62,7 +82,27 @@ export function BomScreen({ bom, orderId, canWrite, isOwner }: { bom: Bom; order
     if (target < 0 || target >= bom.stages.length) return;
     const order = bom.stages.map((s) => s.id);
     [order[index], order[target]] = [order[target], order[index]];
-    startTransition(async () => { await reorderStagesAction(bom.id, order); });
+    startTransition(async () => { settle(await reorderStagesAction(bom.id, order)); });
+  };
+
+  const saveStage = () => startTransition(async () => {
+    if (editStageId && settle(await updateStageAction(editStageId, { stageName: editStageName }))) setEditStageId(null);
+  });
+  const saveMaterial = () => startTransition(async () => {
+    if (!editMatId) return;
+    // The rate is sent only when the Owner's field is on screen; the server ignores it for anyone else anyway.
+    const ok = settle(await updateMaterialAction(editMatId, {
+      description: editMatDesc, quantity: parseFloat(editMatQty), unit: editMatUnit,
+      ...(isOwner && editMatRate !== '' ? { ratePerUnit: parseFloat(editMatRate) } : {}),
+    }));
+    if (ok) setEditMatId(null);
+  });
+  const rejectBom = () => startTransition(async () => {
+    if (settle(await rejectBomAction(orderId, rejectReason))) { setRejectOpen(false); setRejectReason(''); }
+  });
+  const deleteBom = async () => {
+    if (!(await confirm({ title: 'Delete this BOM?', message: 'Its stages and materials are removed and the order shows "No BOM yet" again.', confirmLabel: 'Delete BOM', destructive: true }))) return;
+    startTransition(async () => { settle(await deleteBomAction(orderId)); });
   };
 
   const STATUS_TONE: Record<string, 'neutral' | 'warning' | 'good'> = { DRAFT: 'neutral', PENDING_APPROVAL: 'warning', APPROVED: 'good' };
@@ -72,8 +112,10 @@ export function BomScreen({ bom, orderId, canWrite, isOwner }: { bom: Bom; order
       <div className="flex items-center gap-3">
         <StatusBadge tone={STATUS_TONE[bom.status] ?? 'neutral'}>{bom.status.replace(/_/g, ' ')}</StatusBadge>
         {canWrite && bom.status === 'DRAFT' && <Button onClick={() => setStageOpen(true)}>+ Stage</Button>}
-        {canWrite && bom.status === 'DRAFT' && <Button onClick={() => startTransition(async () => { await submitBomAction(bom.id); })}>Submit for Approval</Button>}
-        {isOwner && bom.status === 'PENDING_APPROVAL' && <Button onClick={() => startTransition(async () => { await approveBomAction(bom.id); })}>Approve BOM</Button>}
+        {canWrite && bom.status === 'DRAFT' && <Button onClick={() => startTransition(async () => { settle(await submitBomAction(bom.id)); })}>Submit for Approval</Button>}
+        {canWrite && bom.status === 'DRAFT' && <Button variant="ghost" onClick={deleteBom} disabled={isPending}>Delete BOM</Button>}
+        {isOwner && bom.status === 'PENDING_APPROVAL' && <Button onClick={() => startTransition(async () => { settle(await approveBomAction(bom.id)); })}>Approve BOM</Button>}
+        {isOwner && bom.status === 'PENDING_APPROVAL' && <Button variant="ghost" onClick={() => { setRejectReason(''); setRejectOpen(true); }} disabled={isPending}>Reject</Button>}
       </div>
       <div className="flex flex-col gap-3">
         {bom.stages.map((stage, i) => (
@@ -88,7 +130,8 @@ export function BomScreen({ bom, orderId, canWrite, isOwner }: { bom: Bom; order
                     <Button variant="ghost" onClick={() => moveStage(i, -1)} disabled={isPending || i === 0}>↑</Button>
                     <Button variant="ghost" onClick={() => moveStage(i, 1)} disabled={isPending || i === bom.stages.length - 1}>↓</Button>
                     <Button variant="ghost" onClick={() => { setSelectedStageId(stage.id); setMatOpen(true); }}>+ Material</Button>
-                    <Button variant="ghost" onClick={() => startTransition(async () => { await deleteStageAction(stage.id); })}>Delete</Button>
+                    <Button variant="ghost" onClick={() => { setEditStageId(stage.id); setEditStageName(stage.stageName); }}>Edit</Button>
+                    <Button variant="ghost" onClick={() => startTransition(async () => { settle(await deleteStageAction(stage.id)); })}>Delete</Button>
                   </>
                 )}
               </div>
@@ -103,12 +146,23 @@ export function BomScreen({ bom, orderId, canWrite, isOwner }: { bom: Bom; order
                   <span className="font-mono text-sm font-semibold text-slate-900">{Number(m.quantity).toFixed(3)} {m.unit}</span>
                   {isOwner && m.ratePerUnit && <span className="font-mono text-sm text-slate-500">₹{Number(m.ratePerUnit).toFixed(2)}/unit</span>}
                   {canWrite && bom.status === 'DRAFT' && (
-                    <Button
-                      variant="ghost"
-                      onClick={() => startTransition(async () => { await deleteMaterialAction(m.id); })}
-                    >
-                      Remove
-                    </Button>
+                    <>
+                      <Button
+                        variant="ghost"
+                        onClick={() => {
+                          setEditMatId(m.id); setEditMatDesc(m.description); setEditMatQty(String(Number(m.quantity))); setEditMatUnit(m.unit);
+                          setEditMatRate(m.ratePerUnit != null ? String(Number(m.ratePerUnit)) : '');
+                        }}
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        onClick={() => startTransition(async () => { settle(await deleteMaterialAction(m.id)); })}
+                      >
+                        Remove
+                      </Button>
+                    </>
                   )}
                 </div>
               ))}
@@ -128,6 +182,41 @@ export function BomScreen({ bom, orderId, canWrite, isOwner }: { bom: Bom; order
           </div>
         </div>
       </SlideOver>
+
+      <SlideOver open={editStageId !== null} onClose={() => setEditStageId(null)} title="Edit Stage">
+        <div className="flex flex-col gap-4 p-4">
+          <Input label="Stage Name" value={editStageName} onChange={e => setEditStageName(e.target.value)} />
+          <div className="flex gap-2 pt-2">
+            <Button onClick={saveStage} disabled={isPending || !editStageName.trim()}>Save</Button>
+            <Button variant="ghost" onClick={() => setEditStageId(null)}>Cancel</Button>
+          </div>
+        </div>
+      </SlideOver>
+
+      <SlideOver open={editMatId !== null} onClose={() => setEditMatId(null)} title="Edit Material">
+        <div className="flex flex-col gap-4 p-4">
+          <Input label="Description" value={editMatDesc} onChange={e => setEditMatDesc(e.target.value)} />
+          <NumberInput label="Quantity" value={editMatQty} onChange={e => setEditMatQty(e.target.value)} />
+          <Input label="Unit" value={editMatUnit} onChange={e => setEditMatUnit(e.target.value)} />
+          {isOwner && <NumberInput label="Rate/Unit (₹)" value={editMatRate} onChange={e => setEditMatRate(e.target.value)} />}
+          <div className="flex gap-2 pt-2">
+            <Button onClick={saveMaterial} disabled={isPending || !editMatDesc.trim() || !editMatQty || !editMatUnit.trim()}>Save</Button>
+            <Button variant="ghost" onClick={() => setEditMatId(null)}>Cancel</Button>
+          </div>
+        </div>
+      </SlideOver>
+
+      <SlideOver open={rejectOpen} onClose={() => setRejectOpen(false)} title="Reject BOM">
+        <div className="flex flex-col gap-4 p-4">
+          <p className="text-sm text-slate-600">The BOM goes back to draft so it can be fixed and submitted again. Say what needs changing.</p>
+          <Input label="Reason" value={rejectReason} onChange={e => setRejectReason(e.target.value)} />
+          <div className="flex gap-2 pt-2">
+            <Button variant="danger" onClick={rejectBom} disabled={isPending || rejectReason.trim().length < 3}>Reject BOM</Button>
+            <Button variant="ghost" onClick={() => setRejectOpen(false)}>Cancel</Button>
+          </div>
+        </div>
+      </SlideOver>
+      {confirmDialog}
 
       <SlideOver open={matOpen} onClose={() => setMatOpen(false)} title="Add Material">
         <div className="flex flex-col gap-4 p-4">

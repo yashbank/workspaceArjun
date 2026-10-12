@@ -29,6 +29,11 @@ const db = {
     update: async ({ where, data }: Row) => { const row = state.boms.find((b) => b.id === where.id)!; Object.assign(row, data); return row; },
   },
   misBomStage: {
+    // Added with the DRAFT guards (tester round 2, C2): the guard reads the stage with its BOM's status.
+    findUnique: async ({ where }: Row) => {
+      const stage = state.stages.find((s) => s.id === where.id);
+      return stage ? { ...stage, bom: state.boms.find((b) => b.id === stage.bomId) ?? null } : null;
+    },
     create: async ({ data }: Row) => { const row = { id: nextId(), ...data }; state.stages.push(row); return row; },
     update: async ({ where, data }: Row) => {
       const row = state.stages.find((s) => s.id === where.id && (!where.bomId || s.bomId === where.bomId));
@@ -39,6 +44,11 @@ const db = {
     delete: async ({ where }: Row) => { const i = state.stages.findIndex((s) => s.id === where.id); const [row] = state.stages.splice(i, 1); return row; },
   },
   misBomMaterial: {
+    findUnique: async ({ where }: Row) => {
+      const mat = state.materials.find((m) => m.id === where.id);
+      const stage = mat && state.stages.find((s) => s.id === mat.stageId);
+      return mat ? { ...mat, stage: stage ? { bom: state.boms.find((b) => b.id === stage.bomId) ?? null } : null } : null;
+    },
     create: async ({ data }: Row) => { const row = { id: nextId(), ...data }; state.materials.push(row); return row; },
     delete: async ({ where }: Row) => { const i = state.materials.findIndex((m) => m.id === where.id); const [row] = state.materials.splice(i, 1); return row; },
   },

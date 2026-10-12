@@ -6,6 +6,8 @@ import { requirePermission } from './auth';
 import { logAuditEvent } from './audit';
 
 import { poPurpose, poPurposeLabel, type PoPurpose } from '@/lib/mis/po-purpose';
+import { orderNumberFromRef } from '@/lib/mis/order-allocation';
+import { BomNotApprovedError } from '@/lib/mis/po-errors';
 import { getPoApprovalThreshold } from './business-rules';
 import type { MisPoApprovalMode } from '@/generated/prisma/enums';
 
@@ -60,6 +62,12 @@ async function sumPoItems(poId: string): Promise<number> {
   return items.reduce((sum, item) => sum + item.quantity.toNumber() * item.ratePerUnit.toNumber(), 0);
 }
 
+/** True when the PO has at least one line with a quantity above zero (#6). */
+async function hasBillableLine(poId: string): Promise<boolean> {
+  const items = await db.misPoItem.findMany({ where: { poId } });
+  return items.some((item) => item.quantity.toNumber() > 0);
+}
+
 /**
  * A PO's total. It IS money (D24, F-06), so it is `wages.read` — the Owner's — and a caller without
  * it is refused, exactly like `getBomCosting`. A page that shows POs to other roles must not call it.
@@ -98,16 +106,62 @@ export async function getPO(id: string) {
   return po && !can(actor.role, 'wages.read') ? withoutMoneyFields(po) : po;
 }
 
-export async function createPO(input: PoInput) {
-  const actor = await requirePermission('po.write');
+/**
+ * The ONE purpose/bomRef rule, shared by `createPO` and `updatePO`: a buffer-stock PO answers to no
+ * BOM (any reference typed before the raiser switched paths is dropped), and a FOR_ORDER PO needs
+ * a reference that names an order whose BOM is APPROVED (D1). No FK: the value stays the
+ * order-number string.
+ */
+async function resolvePurposeAndRef(input: { purpose?: PoPurpose; bomRef?: string | null }): Promise<{ purpose: PoPurpose; bomRef: string | null }> {
   const trimmedBomRef = input.bomRef?.trim() || null;
   const purpose: PoPurpose = input.purpose ?? (trimmedBomRef ? 'FOR_ORDER' : 'BUFFER_STOCK');
   // A buffer-stock PO answers to no BOM, so any reference typed before the
   // raiser switched paths is dropped rather than left to mislead a reader.
-  const bomRef = purpose === 'BUFFER_STOCK' ? null : trimmedBomRef;
-  if (purpose === 'FOR_ORDER' && !bomRef) {
+  if (purpose === 'BUFFER_STOCK') return { purpose, bomRef: null };
+  if (!trimmedBomRef) {
     throw new Error('A PO raised from a BOM needs the BOM reference. For a stock top-up, raise it as buffer stock instead.');
   }
+  const orderNumber = orderNumberFromRef(trimmedBomRef);
+  const order = orderNumber
+    ? await db.misOrder.findUnique({ where: { orderNumber }, select: { orderNumber: true, bom: { select: { status: true } } } })
+    : null;
+  if (!order || order.bom?.status !== 'APPROVED') throw new BomNotApprovedError(orderNumber ?? trimmedBomRef);
+  return { purpose, bomRef: order.orderNumber };
+}
+
+/** Orders whose BOM is APPROVED — what the BOM Ref picker offers (D1/#8). Plain data, no money. */
+export async function listApprovedBomOrders(): Promise<{ orderNumber: string; customerName: string | null; label: string }[]> {
+  await requirePermission('po.read');
+  const boms = await db.misBom.findMany({
+    where: { status: 'APPROVED' },
+    select: { order: { select: { orderNumber: true, customer: { select: { name: true } } } } },
+    orderBy: { updatedAt: 'desc' },
+  });
+  return boms.flatMap((b) =>
+    b.order
+      ? [{ orderNumber: b.order.orderNumber, customerName: b.order.customer?.name ?? null, label: b.order.customer?.name ? `${b.order.orderNumber} · ${b.order.customer.name}` : b.order.orderNumber }]
+      : [],
+  );
+}
+
+async function loadPo(poId: string) {
+  const po = await db.misPurchaseOrder.findUnique({ where: { id: poId } });
+  if (!po) throw new Error(`PO ${poId} not found`);
+  return po;
+}
+
+const statusWords = (status: string) => status.toLowerCase().replace(/_/g, ' ');
+
+/** Lines can only change while the PO is a draft; afterwards the approved paperwork is frozen. */
+async function requireDraftPo(poId: string, what: string) {
+  const po = await loadPo(poId);
+  if (po.status !== 'DRAFT') throw new Error(`This PO is ${statusWords(po.status)}, not a draft — ${what} is only possible on a draft PO.`);
+  return po;
+}
+
+export async function createPO(input: PoInput) {
+  const actor = await requirePermission('po.write');
+  const { purpose, bomRef } = await resolvePurposeAndRef(input);
   let created;
   const MAX_ATTEMPTS = 6;
   for (let attempt = 0; ; attempt++) {
@@ -140,6 +194,7 @@ export async function createPO(input: PoInput) {
 
 export async function addPOItem(poId: string, input: PoItemInput) {
   const actor = await requirePermission('po.write');
+  await requireDraftPo(poId, 'adding a line');
   const last = await db.misPoItem.findFirst({ where: { poId }, orderBy: { sortOrder: 'desc' }, select: { sortOrder: true } });
   const created = await db.misPoItem.create({
     data: {
@@ -160,6 +215,7 @@ export async function updatePOItem(id: string, patch: Partial<PoItemInput>) {
   const actor = await requirePermission('po.write');
   const before = await db.misPoItem.findUnique({ where: { id } });
   if (!before) throw new Error(`PO Item ${id} not found`);
+  await requireDraftPo(before.poId, 'editing a line');
   const after = await db.misPoItem.update({ where: { id }, data: {
     ...(patch.description !== undefined ? { description: patch.description.trim() } : {}),
     ...(patch.quantity !== undefined ? { quantity: patch.quantity } : {}),
@@ -173,6 +229,9 @@ export async function updatePOItem(id: string, patch: Partial<PoItemInput>) {
 
 export async function removePOItem(id: string) {
   const actor = await requirePermission('po.write');
+  const existing = await db.misPoItem.findUnique({ where: { id } });
+  if (!existing) throw new Error(`PO Item ${id} not found`);
+  await requireDraftPo(existing.poId, 'removing a line');
   const deleted = await db.misPoItem.delete({ where: { id } });
   await logAuditEvent({ actorId: actor.userId, action: 'po_item.delete', entity: 'MisPoItem', entityId: id, before: deleted });
   return forRole(actor.role, deleted);
@@ -189,6 +248,8 @@ export async function submitForApproval(poId: string, opts: { forceOwnerOnly?: b
   const actor = await requirePermission('po.write');
   const before = await db.misPurchaseOrder.findUnique({ where: { id: poId } });
   if (!before) throw new Error(`PO ${poId} not found`);
+  if (before.status !== 'DRAFT') throw new Error(`This PO is ${statusWords(before.status)}, not a draft — there is nothing to submit.`);
+  if (!(await hasBillableLine(poId))) throw new Error('Add at least one line item (with a quantity) before submitting this PO.');
   let approvalMode: MisPoApprovalMode;
   if (opts.forceOwnerOnly) {
     if (actor.role !== 'OWNER') throw new Error('Only the owner can force a PO to owner-only approval.');
@@ -215,6 +276,7 @@ export async function approvePO(poId: string) {
   const before = await db.misPurchaseOrder.findUnique({ where: { id: poId } });
   if (!before) throw new Error(`PO ${poId} not found`);
   if (before.status !== 'PENDING_APPROVAL') throw new Error(`PO ${poId} is not pending approval`);
+  if (!(await hasBillableLine(poId))) throw new Error('This PO has no line items, so there is nothing to approve.');
 
   if (before.approvalMode === 'BOTH' && !before.adminApprovedAt) {
     // po.write is held only by ADMIN and OWNER, so whoever got past requirePermission above
@@ -247,7 +309,49 @@ export async function cancelPO(poId: string) {
   const actor = await requirePermission('po.write');
   const before = await db.misPurchaseOrder.findUnique({ where: { id: poId } });
   if (!before) throw new Error(`PO ${poId} not found`);
+  if (before.status === 'APPROVED') {
+    if ((await db.misGrn.count({ where: { poId } })) > 0) {
+      throw new Error('This PO already has a goods receipt (GRN), so it can no longer be cancelled.');
+    }
+  } else if (before.status !== 'DRAFT' && before.status !== 'PENDING_APPROVAL') {
+    throw new Error(`This PO is ${statusWords(before.status)} and cannot be cancelled.`);
+  }
   const after = await db.misPurchaseOrder.update({ where: { id: poId }, data: { status: 'CANCELLED' } });
   await logAuditEvent({ actorId: actor.userId, action: 'po.cancel', entity: 'MisPurchaseOrder', entityId: poId, before, after });
+  return after;
+}
+
+/** #5 — a DRAFT PO that was never submitted can be removed outright, lines and all. */
+export async function deleteDraftPO(poId: string) {
+  const actor = await requirePermission('po.write');
+  const before = await requireDraftPo(poId, 'deleting');
+  await db.$transaction([
+    db.misPoItem.deleteMany({ where: { poId } }),
+    db.misPurchaseOrder.delete({ where: { id: poId } }),
+  ]);
+  await logAuditEvent({ actorId: actor.userId, action: 'po.delete', entity: 'MisPurchaseOrder', entityId: poId, before });
+}
+
+/**
+ * #4 — header edit on a DRAFT PO: supplier, purpose, BOM ref, notes. Fields left `undefined` keep
+ * their value. The purpose/bomRef rule (including D1's approved-BOM check) is `createPO`'s, exactly.
+ */
+export async function updatePO(poId: string, input: PoInput) {
+  const actor = await requirePermission('po.write');
+  const before = await requireDraftPo(poId, 'editing the details');
+  const { purpose, bomRef } = await resolvePurposeAndRef({
+    purpose: input.purpose ?? (input.bomRef !== undefined ? undefined : poPurpose(before)),
+    bomRef: input.bomRef !== undefined ? input.bomRef : before.bomRef,
+  });
+  const after = await db.misPurchaseOrder.update({
+    where: { id: poId },
+    data: {
+      ...(input.supplierId !== undefined ? { supplierId: input.supplierId || null } : {}),
+      purpose,
+      bomRef,
+      ...(input.notes !== undefined ? { notes: input.notes?.trim() || null } : {}),
+    },
+  });
+  await logAuditEvent({ actorId: actor.userId, action: 'po.update', entity: 'MisPurchaseOrder', entityId: poId, before, after });
   return after;
 }

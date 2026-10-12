@@ -14,6 +14,8 @@ const created: Row[] = [];
 
 vi.mock('@/server/db', () => ({
   db: {
+    // D1 (tester round 2, C2): a FOR_ORDER ref must name an order with an APPROVED BOM.
+    misOrder: { findUnique: async ({ where }: Row) => ({ orderNumber: where.orderNumber, bom: { status: 'APPROVED' } }) },
     misPurchaseOrder: {
       // Mirrors the real unique constraint on `po_number` — a second row with the same number
       // throws, exactly as Postgres would, so a collision cannot pass silently.
@@ -59,9 +61,9 @@ describe('PO numbering under concurrency (MIS-111\'s finding, applied to POs)', 
   });
 
   it('sequential creation (no real concurrency) already worked — the bug was specifically about the same millisecond', async () => {
-    const a = await createPO({ bomRef: 'BOM-1' });
+    const a = await createPO({ bomRef: 'ORD-202610-00001' });
     await new Promise((r) => setTimeout(r, 2));
-    const b = await createPO({ bomRef: 'BOM-2' });
+    const b = await createPO({ bomRef: 'ORD-202610-00002' });
     expect(a.poNumber).not.toBe(b.poNumber);
   });
 });
