@@ -45,6 +45,17 @@ export async function getOrderTrace(orderId: string) {
     }).then(withUploaderNames).catch(() => []),
   ]);
 
+  // Purchasing and store legs (#35). Each needs its own permission, so a role that may not open the
+  // PO / GRN / store screens (QC, D6) is not handed their contents through the trace. Quantities only:
+  // no rate, price or invoice amount is selected at all.
+  const orderNumber = order?.orderNumber ?? null;
+  const [purchaseOrders, issuedMaterials] = await Promise.all([
+    orderNumber && can(actor.role, 'po.read')
+      ? loadPurchaseOrders(orderNumber, can(actor.role, 'grn.read'))
+      : Promise.resolve(null),
+    orderNumber && can(actor.role, 'store.read') ? loadIssuedMaterials(orderId, orderNumber) : Promise.resolve(null),
+  ]);
+
   const totalProduced = productionLogs.reduce((s, l) => s + Number(l.qtyProduced), 0);
   const totalWaste = productionLogs.reduce((s, l) => s + Number(l.qtyWaste ?? 0), 0);
   const passChecks = qcChecks.filter((q) => q.result === 'PASS').length;
@@ -53,5 +64,89 @@ export async function getOrderTrace(orderId: string) {
   // Material rates are money (D24, F-06): the trace carries the BOM structure, not what it cost.
   const visibleBom = bom && !can(actor.role, 'wages.read') ? withoutRates(bom) : bom;
 
-  return { order, bom: visibleBom, productionLogs, qcChecks, documents, totalProduced, totalWaste, passChecks, failChecks };
+  return {
+    order, bom: visibleBom, productionLogs, qcChecks, documents, totalProduced, totalWaste, passChecks, failChecks,
+    // null = this role may not see that leg; [] = it may, and there is nothing behind it.
+    purchaseOrders, issuedMaterials,
+  };
+}
+
+export type TraceGrn = {
+  grnNumber: string;
+  status: string;
+  receivedAt: Date | null;
+  lines: { itemName: string; unit: string | null; receivedQty: number }[];
+};
+export type TracePo = {
+  poNumber: string;
+  status: string;
+  supplierName: string | null;
+  /** null when the role may read POs but not GRNs. */
+  grns: TraceGrn[] | null;
+};
+export type TraceIssuedMaterial = { itemName: string; unit: string; qty: number; issuedAt: Date };
+
+/** POs raised against this order (their BOM ref IS the order number), with their GRNs. No money is selected. */
+async function loadPurchaseOrders(orderNumber: string, withGrns: boolean): Promise<TracePo[]> {
+  const pos = await db.misPurchaseOrder.findMany({
+    where: { bomRef: orderNumber },
+    orderBy: { createdAt: 'asc' },
+    select: {
+      poNumber: true,
+      status: true,
+      supplier: { select: { name: true } },
+      grns: {
+        orderBy: { createdAt: 'asc' },
+        select: {
+          grnNumber: true,
+          status: true,
+          receivedAt: true,
+          items: { select: { receivedQty: true, poItem: { select: { description: true, item: { select: { name: true, unit: true } } } } } },
+        },
+      },
+    },
+  });
+  return pos.map((po) => ({
+    poNumber: po.poNumber,
+    status: po.status,
+    supplierName: po.supplier?.name ?? null,
+    grns: withGrns
+      ? po.grns.map((g) => ({
+          grnNumber: g.grnNumber,
+          status: g.status,
+          receivedAt: g.receivedAt,
+          lines: g.items.map((i) => ({ itemName: i.poItem.item?.name ?? i.poItem.description, unit: i.poItem.item?.unit ?? null, receivedQty: Number(i.receivedQty) })),
+        }))
+      : null,
+  }));
+}
+
+/**
+ * What the store issued to this order. The inventory ledger is authoritative (`STORE_ISSUE` rows keyed by
+ * the order id); the storekeeper's book (`OUT` rows keyed by the order number) is added only for issues the
+ * ledger does not already account for, so one issue is never listed twice. Quantities only.
+ */
+async function loadIssuedMaterials(orderId: string, orderNumber: string): Promise<TraceIssuedMaterial[]> {
+  const [ledger, txns] = await Promise.all([
+    db.misInventoryLedger.findMany({
+      where: { source: 'STORE_ISSUE', sourceId: orderId },
+      orderBy: { createdAt: 'asc' },
+      select: { itemId: true, changeQty: true, createdAt: true, item: { select: { name: true, unit: true } } },
+    }),
+    db.misStoreTransaction.findMany({
+      where: { type: 'OUT', referenceNo: orderNumber },
+      orderBy: { createdAt: 'asc' },
+      select: { itemId: true, quantity: true, createdAt: true, item: { select: { name: true, unit: true } } },
+    }),
+  ]);
+  const out: TraceIssuedMaterial[] = ledger.map((l) => ({ itemName: l.item.name, unit: l.item.unit, qty: Math.abs(Number(l.changeQty)), issuedAt: l.createdAt }));
+  const claimed = new Set<number>();
+  const unmatched: TraceIssuedMaterial[] = [];
+  for (const t of txns) {
+    const qty = Math.abs(Number(t.quantity));
+    const i = ledger.findIndex((l, idx) => !claimed.has(idx) && l.itemId === t.itemId && Math.abs(Math.abs(Number(l.changeQty)) - qty) < 0.005);
+    if (i >= 0) claimed.add(i);
+    else unmatched.push({ itemName: t.item.name, unit: t.item.unit, qty, issuedAt: t.createdAt });
+  }
+  return [...out, ...unmatched].sort((a, b) => a.issuedAt.getTime() - b.issuedAt.getTime());
 }

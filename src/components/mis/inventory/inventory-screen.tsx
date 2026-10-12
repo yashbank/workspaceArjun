@@ -10,7 +10,7 @@ import { adjustInventoryAction, createItemAction } from '@/app/(mis)/mis/invento
 import { MisItemCategory, MisItemUnit } from '@/generated/prisma/enums';
 
 type InventoryRow = { itemId: string; code: string; name: string; unit: string | null; balance: number; lastUpdated: Date | null };
-type Props = { summary: InventoryRow[]; canWrite?: boolean };
+type Props = { summary: InventoryRow[]; canWrite?: boolean; /** Owner only (D5): the price field exists for no one else. */ canPrice?: boolean };
 
 const CATEGORIES = Object.values(MisItemCategory);
 const UNITS = Object.values(MisItemUnit);
@@ -29,7 +29,7 @@ function downloadInventoryCsv(rows: InventoryRow[]) {
   URL.revokeObjectURL(url);
 }
 
-export function InventoryScreen({ summary, canWrite = false }: Props) {
+export function InventoryScreen({ summary, canWrite = false, canPrice = false }: Props) {
   const [search, setSearch] = useState('');
   const [adjustItem, setAdjustItem] = useState<InventoryRow | null>(null);
   const [changeQty, setChangeQty] = useState('');
@@ -82,7 +82,7 @@ export function InventoryScreen({ summary, canWrite = false }: Props) {
     setAddError('');
     startTransition(async () => {
       try {
-        const res = await createItemAction({ name: addName, code: addCode || undefined, sku: addSku || undefined, category: addCategory, unit: addUnit, pricePerUnit: addPrice || undefined });
+        const res = await createItemAction({ name: addName, code: addCode || undefined, sku: addSku || undefined, category: addCategory, unit: addUnit, pricePerUnit: canPrice ? addPrice || undefined : undefined });
         setSuccess(`Item ${res.code} created`);
         setShowAddItem(false); setAddName(''); setAddCode(''); setAddSku(''); setAddPrice(''); setAddCategory(MisItemCategory.OTHER); setAddUnit(MisItemUnit.PIECE);
       } catch (e: unknown) { setAddError(e instanceof Error ? e.message : 'Failed to create item'); }
@@ -214,7 +214,7 @@ export function InventoryScreen({ summary, canWrite = false }: Props) {
               {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
             </Select>
           </div>
-          <NumberInput label="Price Per Unit (₹)" value={addPrice} onChange={e => setAddPrice(e.target.value)} placeholder="e.g. 250.00" />
+          {canPrice && <NumberInput label="Price Per Unit (₹)" value={addPrice} onChange={e => setAddPrice(e.target.value)} placeholder="e.g. 250.00" />}
           {addError && <p className="text-sm text-red-600">{addError}</p>}
           <div className="flex gap-2 pt-2">
             <Button onClick={handleAddItem} disabled={isPending}>{isPending ? 'Creating...' : 'Create Item'}</Button>

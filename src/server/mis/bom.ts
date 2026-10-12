@@ -164,7 +164,9 @@ export async function reorderBomStages(bomId: string, stageIdsInOrder: string[])
 export async function addBomMaterial(stageId: string, data: { description: string; itemId?: string; quantity: number; unit: string; ratePerUnit?: number; seq: number }) {
   const actor = await requirePermission('orders.write');
   await requireDraftStage(stageId);
-  const rec = await db.misBomMaterial.create({ data: { stageId, ...data } });
+  // D5: a rate is the Owner's to set; an Admin's value is dropped, not stored.
+  const { ratePerUnit, ...rest } = data;
+  const rec = await db.misBomMaterial.create({ data: { stageId, ...rest, ...(can(actor.role, 'wages.read') && ratePerUnit !== undefined ? { ratePerUnit } : {}) } });
   await logAuditEvent({ actorId: actor.userId, action: 'ADD_BOM_MATERIAL', entity: 'MisBomMaterial', entityId: rec.id, after: rec });
   return forRole(actor.role, rec);
 }

@@ -1,5 +1,6 @@
 import type { Prisma } from '@/generated/prisma/client';
 import { db } from '@/server/db';
+import { can } from '@/lib/mis/permissions';
 import { requirePermission } from './auth';
 import { logAuditEvent } from './audit';
 import { nextGrnNumber } from './grn';
@@ -747,7 +748,8 @@ export async function updateStoreItemProps(
   if (!before) throw new Error('Item not found');
 
   const data: Record<string, unknown> = {};
-  if (patch.pricePerUnit !== undefined) {
+  const mayPrice = can(actor.role, 'wages.read'); // D5: the price is the Owner's to set
+  if (mayPrice && patch.pricePerUnit !== undefined) {
     data.pricePerUnit = patch.pricePerUnit;
     data.isDemo = false; // setting a real price clears the demo flag
   }
@@ -913,7 +915,10 @@ export async function commitReceipt(
 ): Promise<CartCommitResult> {
   const actor = await requirePermission('grn.write');
 
-  const cart = mergeCartLines(lines);
+  // D5: what a delivery charged is money. Only a role holding `wages.read` may set an item's price from a
+  // receipt; for everyone else the rate is dropped here, whatever the browser sent.
+  const mayPrice = can(actor.role, 'wages.read');
+  const cart = mergeCartLines(mayPrice ? lines : lines.map((l) => ({ ...l, rate: null })));
   if (cart.length === 0) throw new Error('Add at least one item before confirming the receipt.');
   const items = await loadCartItems(cart);
 
@@ -1023,7 +1028,7 @@ export async function commitReceipt(
 
       // What the delivery actually charged, so the next reorder is not priced
       // off a guess. Never written into the audit payload.
-      if (line.rate !== null && line.rate !== undefined && line.rate > 0) {
+      if (mayPrice && line.rate !== null && line.rate !== undefined && line.rate > 0) {
         await tx.misItem.update({
           where: { id: item.id },
           data: { pricePerUnit: line.rate, isDemo: false },

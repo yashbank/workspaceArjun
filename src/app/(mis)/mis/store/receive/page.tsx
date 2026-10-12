@@ -1,6 +1,7 @@
 import { format } from 'date-fns';
 
 import { ReceiveScreen } from '@/components/mis/store/receive-screen';
+import { checkPermission } from '@/server/mis/auth';
 import { requireMisAccess } from '@/server/mis/guard';
 import { listOpenPOs, listPickerItems, listReceiveSuppliers } from '@/server/mis/store';
 
@@ -13,10 +14,11 @@ import { listOpenPOs, listPickerItems, listReceiveSuppliers } from '@/server/mis
  */
 export default async function StoreReceivePage() {
   const user = await requireMisAccess();
-  const [items, suppliers, openPos] = await Promise.all([
+  const [items, suppliers, openPos, canSetRate] = await Promise.all([
     listPickerItems(),
     listReceiveSuppliers(),
     listOpenPOs(),
+    checkPermission('wages.read'),
   ]);
 
   const meta = `${format(new Date(), 'EEE d MMM · HH:mm')} · ${user.name ?? user.email}`;
@@ -27,6 +29,7 @@ export default async function StoreReceivePage() {
       items={items}
       suppliers={suppliers.map((s) => ({ id: s.id, name: s.name }))}
       openPos={openPos}
+      canSetRate={canSetRate}
     />
   );
 }

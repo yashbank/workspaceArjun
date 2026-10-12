@@ -1,5 +1,7 @@
 'use server';
 import { adjustInventory } from '@/server/mis/inventory';
+import { withoutMoneyFields } from '@/lib/mis/money-fields';
+import { can } from '@/lib/mis/permissions';
 import { requirePermission } from '@/server/mis/auth';
 import { db } from '@/server/db';
 import { logAuditEvent } from '@/server/mis/audit';
@@ -22,7 +24,9 @@ export interface CreateItemInput {
 
 export async function createItemAction(input: CreateItemInput) {
   const actor = await requirePermission('masters.write');
-  const pricePerUnit = input.pricePerUnit && !isNaN(Number(input.pricePerUnit)) ? Number(input.pricePerUnit) : null;
+  // D5: the price is the Owner's (`wages.read`); an Admin's value is ignored, not trusted.
+  const mayPrice = can(actor.role, 'wages.read');
+  const pricePerUnit = mayPrice && input.pricePerUnit && !isNaN(Number(input.pricePerUnit)) ? Number(input.pricePerUnit) : null;
 
   let code = (input.code ?? '').trim().toUpperCase();
   if (!code) {
@@ -42,7 +46,7 @@ export async function createItemAction(input: CreateItemInput) {
     },
   });
 
-  await logAuditEvent({ actorId: actor.userId, action: 'item.create', entity: 'MisItem', entityId: created.id, after: created });
+  await logAuditEvent({ actorId: actor.userId, action: 'item.create', entity: 'MisItem', entityId: created.id, after: mayPrice ? created : withoutMoneyFields(created) });
   revalidatePath('/mis/inventory');
   return { id: created.id, code: created.code };
 }
