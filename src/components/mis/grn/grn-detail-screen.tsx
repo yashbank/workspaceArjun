@@ -7,7 +7,10 @@ import { Card, CardRow } from '@/components/mis/kit/card';
 import { DateInput, NumberInput } from '@/components/mis/kit/input';
 import { Select } from '@/components/mis/kit/select';
 import { Input } from '@/components/mis/kit/input';
-import { addGrnItemAction, confirmGrnAction, updateGrnHeaderAction } from '@/app/(mis)/mis/grn/actions';
+import { SlideOver } from '@/components/mis/kit/slide-over';
+import { useConfirm } from '@/components/ui/confirm-dialog';
+import { useRouter } from 'next/navigation';
+import { addGrnItemAction, confirmGrnAction, discardGrnAction, removeGrnItemAction, updateGrnHeaderAction, updateGrnItemAction } from '@/app/(mis)/mis/grn/actions';
 import { unwrap } from '@/lib/mis/action-result';
 
 type GrnItem = {
@@ -25,6 +28,8 @@ type PoItem = {
   id: string;
   description: string;
   quantity: { toNumber(): number } | number;
+  /** Confirmed receipts to date (a counter on the PO line). */
+  receivedQuantity?: { toNumber(): number } | number;
   item: { id: string; name: string } | null;
 };
 type Grn = {
@@ -108,8 +113,82 @@ export function GrnDetailScreen({ grn, canWrite, canSeeMoney = false, invoiceAmo
   const [batchNo, setBatchNo] = useState('');
 
   const isDraft = grn.status === 'DRAFT';
-  const addedPoItemIds = new Set(grn.items.map(i => i.poItem.id));
-  const availablePoItems = (grn.po?.items ?? []).filter(i => !addedPoItemIds.has(i.id));
+  // #12: every PO line with room left stays pickable, so one line can take several batches. Room =
+  // ordered - received on confirmed GRNs - already on this GRN; the server cap stays the authority.
+  const remainingOf = (poItem: PoItem) => {
+    const onThisGrn = grn.items.filter(i => i.poItem.id === poItem.id).reduce((sum, i) => sum + toNum(i.receivedQty), 0);
+    return Math.round((toNum(poItem.quantity) - toNum(poItem.receivedQuantity ?? 0) - onThisGrn) * 100) / 100;
+  };
+  const availablePoItems = (grn.po?.items ?? []).filter(i => remainingOf(i) > 0);
+
+  // #11: edit / remove a line on a DRAFT.
+  const { confirm: askConfirm, confirmDialog } = useConfirm();
+  const [editLine, setEditLine] = useState<GrnItem | null>(null);
+  const [editFields, setEditFields] = useState({ received: '', dc: '', damage: '', batch: '' });
+  const [editError, setEditError] = useState<string | null>(null);
+  const [lineError, setLineError] = useState<string | null>(null);
+
+  const openEdit = (item: GrnItem) => {
+    setEditLine(item);
+    setEditError(null);
+    setEditFields({
+      received: String(toNum(item.receivedQty)),
+      dc: item.dcQuantity != null ? String(item.dcQuantity) : '',
+      damage: item.damageQuantity ? String(item.damageQuantity) : '',
+      batch: item.batchNo ?? '',
+    });
+  };
+
+  const handleSaveEdit = () => {
+    if (!editLine) return;
+    const received = parseAmount(editFields.received);
+    const dc = parseAmount(editFields.dc);
+    const damage = parseAmount(editFields.damage);
+    if (received === null || (editFields.dc.trim() !== '' && dc === null) || (editFields.damage.trim() !== '' && damage === null)) {
+      setEditError('Quantities must be numbers.');
+      return;
+    }
+    setEditError(null);
+    startTransition(async () => {
+      try {
+        unwrap(await updateGrnItemAction(editLine.id, grn.id, {
+          receivedQty: received,
+          dcQuantity: dc,
+          damageQuantity: damage ?? 0,
+          batchNo: editFields.batch || null,
+        }));
+        setEditLine(null);
+      } catch (e) {
+        setEditError(e instanceof Error ? e.message : 'That did not save.');
+      }
+    });
+  };
+
+  const handleRemove = async (item: GrnItem) => {
+    if (!(await askConfirm({ title: 'Remove this line?', message: `${item.poItem.description} will be taken off this GRN.`, confirmLabel: 'Remove', destructive: true }))) return;
+    setLineError(null);
+    startTransition(async () => {
+      try {
+        unwrap(await removeGrnItemAction(item.id, grn.id));
+      } catch (e) {
+        setLineError(e instanceof Error ? e.message : 'That did not save.');
+      }
+    });
+  };
+
+  const router = useRouter();
+  const handleDiscard = async () => {
+    if (!(await askConfirm({ title: 'Discard this draft?', message: `${grn.grnNumber} and all its lines will be deleted. Nothing has been booked to stock.`, confirmLabel: 'Discard draft', destructive: true }))) return;
+    setConfirmError(null);
+    startTransition(async () => {
+      try {
+        unwrap(await discardGrnAction(grn.id));
+        router.push('/mis/grn');
+      } catch (e) {
+        setConfirmError(e instanceof Error ? e.message : 'That did not save.');
+      }
+    });
+  };
 
   const handleAddItem = () => {
     if (!selectedPoItemId || !qty) return;
@@ -162,10 +241,14 @@ export function GrnDetailScreen({ grn, canWrite, canSeeMoney = false, invoiceAmo
           <Link href="/mis/grn" className="text-sm text-slate-500 hover:underline">← Back to GRNs</Link>
           <a href={`/mis/print/grn/${grn.id}`} target="_blank" className="text-sm text-blue-600 hover:underline ml-4">🖨 Print GRN</a>
         </div>
-        {isDraft && canWrite && grn.items.length > 0 && (
-          <Button onClick={handleConfirm} disabled={isPending}>Confirm GRN</Button>
+        {isDraft && canWrite && (
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" onClick={handleDiscard} disabled={isPending}>Discard draft</Button>
+            {grn.items.length > 0 && <Button onClick={handleConfirm} disabled={isPending}>Confirm GRN</Button>}
+          </div>
         )}
       </div>
+      {confirmDialog}
       {confirmError && <p role="alert" className="text-sm text-red-600">{confirmError}</p>}
 
       <Card>
@@ -207,6 +290,7 @@ export function GrnDetailScreen({ grn, canWrite, canSeeMoney = false, invoiceAmo
       <div className="flex flex-col gap-3">
         <h2 className="font-semibold text-slate-800">Items Received</h2>
         {grn.items.length === 0 && <p className="text-sm text-slate-500">No items added yet.</p>}
+        {lineError && <p role="alert" className="text-sm text-red-600">{lineError}</p>}
         {grn.items.map((item) => (
           <div key={item.id} className="rounded-lg border border-slate-200 p-4 flex flex-col gap-2">
             <div className="flex items-start justify-between">
@@ -225,6 +309,12 @@ export function GrnDetailScreen({ grn, canWrite, canSeeMoney = false, invoiceAmo
               {item.batchNo && <span>Batch: {item.batchNo}</span>}
               {item.forOrderRef && <span>Order Ref: {item.forOrderRef}</span>}
             </div>
+            {isDraft && canWrite && (
+              <div className="flex gap-2">
+                <Button variant="secondary" onClick={() => openEdit(item)} disabled={isPending}>Edit</Button>
+                <Button variant="ghost" onClick={() => handleRemove(item)} disabled={isPending}>Remove</Button>
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -236,7 +326,7 @@ export function GrnDetailScreen({ grn, canWrite, canSeeMoney = false, invoiceAmo
             label="PO Line Item"
             value={selectedPoItemId}
             onChange={setSelectedPoItemId}
-            options={[{ value: '', label: '— Select item —' }, ...availablePoItems.map(i => ({ value: i.id, label: `${i.description} (Ordered: ${toNum(i.quantity)})` }))]}
+            options={[{ value: '', label: '— Select item —' }, ...availablePoItems.map(i => ({ value: i.id, label: `${i.description} (Ordered: ${toNum(i.quantity)} · remaining ${remainingOf(i)})` }))]}
           />
           <NumberInput label="Received Qty (good)" value={qty} onChange={e => setQty(e.target.value)} />
           <div className="grid grid-cols-2 gap-3">
@@ -260,6 +350,25 @@ export function GrnDetailScreen({ grn, canWrite, canSeeMoney = false, invoiceAmo
           </div>
         </div>
       )}
+
+      <SlideOver open={editLine !== null} onClose={() => setEditLine(null)} title="Edit line">
+        {editLine && (
+          <div className="flex flex-col gap-4 p-4">
+            <div className="font-medium text-slate-800">{editLine.poItem.description}</div>
+            <NumberInput label="Received Qty (good)" value={editFields.received} onChange={e => setEditFields({ ...editFields, received: e.target.value })} />
+            <div className="grid grid-cols-2 gap-3">
+              <NumberInput label="DC Qty (challan)" value={editFields.dc} onChange={e => setEditFields({ ...editFields, dc: e.target.value })} />
+              <NumberInput label="Damaged Qty" value={editFields.damage} onChange={e => setEditFields({ ...editFields, damage: e.target.value })} />
+            </div>
+            <Input label="Batch No" value={editFields.batch} onChange={e => setEditFields({ ...editFields, batch: e.target.value })} />
+            {editError && <p role="alert" className="text-sm text-red-600">{editError}</p>}
+            <div className="flex gap-2 pt-2">
+              <Button onClick={handleSaveEdit} disabled={isPending || !editFields.received}>{isPending ? 'Saving…' : 'Save line'}</Button>
+              <Button variant="ghost" onClick={() => setEditLine(null)}>Cancel</Button>
+            </div>
+          </div>
+        )}
+      </SlideOver>
     </div>
   );
 }

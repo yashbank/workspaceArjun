@@ -80,8 +80,9 @@ export async function createMaterialRequest(lines: MaterialRequestLineInput[], m
     entityId: created.id,
     after: { requestNumber: created.requestNumber, orderId: created.orderId, departmentId: created.departmentId, lineCount: lines.length },
   });
-  // V2 — the Store hears about it now. Best-effort (notifyRoles never throws), after the write.
-  await notifyRoles(['STORE_GUY'], NOTIFICATION_TYPES.requestRaised, {
+  // V2 — the Store hears about it now. D7: Admin and Owner hear too (both hold store.write), so a note
+  // is never stuck waiting for an absent Store Guy. Best-effort (notifyRoles never throws), after the write.
+  await notifyRoles(['STORE_GUY', 'ADMIN', 'OWNER'],NOTIFICATION_TYPES.requestRaised, {
     requestId: created.id,
     requestNumber: created.requestNumber,
     lineCount: lines.length,

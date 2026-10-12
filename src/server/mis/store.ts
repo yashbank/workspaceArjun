@@ -9,9 +9,9 @@ import { poPurpose, type PoPurpose } from '@/lib/mis/po-purpose';
 import { categoryRefusal } from '@/lib/mis/material-request';
 import { OrderStockQuotaExceededError } from '@/lib/mis/order-allocation';
 import { isOrderClosed } from '@/lib/mis/order-status';
-import { roundQty } from '@/lib/mis/quantity';
 import { itemLockKey } from '@/lib/mis/stock-lock-keys';
 import { lockStockKeys } from './stock-lock';
+import { lastLedgerBalance, lastTxnBalance, nextTxnSeq, round2, txnNumberOf } from './store-books';
 
 // ---------------------------------------------------------------------------
 // Types (runtime only — no generated Prisma types imported)
@@ -58,6 +58,8 @@ export type PhysicalCountRow = {
   systemQty: number;
   discrepancy: number;
   notes: string | null;
+  /** D3: true once the variance has been written to both books (an adjustment row names this count). */
+  reconciled: boolean;
   createdAt: Date;
 };
 
@@ -89,20 +91,6 @@ async function getStockBalances(): Promise<Map<string, number>> {
     FROM mis_store_transactions
     ORDER BY item_id, created_at DESC`;
   return new Map(rows.map((r) => [r.item_id, Number(r.balance_qty)]));
-}
-
-/** Next txn number: STXN-YYYYMMDD-NNNN (daily sequence). */
-async function nextTxnNumber(): Promise<string> {
-  const today = new Date();
-  const ymd = today.toISOString().slice(0, 10).replace(/-/g, '');
-  const prefix = `STXN-${ymd}-`;
-  const last = await db.misStoreTransaction.findFirst({
-    where: { txnNumber: { startsWith: prefix } },
-    orderBy: { txnNumber: 'desc' },
-    select: { txnNumber: true },
-  });
-  const seq = last ? parseInt(last.txnNumber.slice(prefix.length), 10) + 1 : 1;
-  return `${prefix}${String(seq).padStart(4, '0')}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -182,23 +170,39 @@ export async function createStoreIn(input: StoreInInput): Promise<StoreTxnRow> {
   });
   if (!item) throw new Error('Item not found or inactive');
 
-  const currentBalance = await getStockBalance(input.itemId);
-  const newBalance = currentBalance + input.quantity;
-  const txnNumber = await nextTxnNumber();
-
-  const txn = await db.misStoreTransaction.create({
-    data: {
-      txnNumber,
-      itemId: input.itemId,
-      type: 'IN',
-      quantity: input.quantity,
-      balanceQty: newBalance,
-      referenceNo: input.referenceNo ?? null,
-      reason: input.notes ?? null,
-      isOverIssue: false,
-      createdById: actor.userId,
-    },
+  // Both books, one transaction, under the item lock: the Inventory ledger and the storekeeper's
+  // book must agree, or a later OUT is refused against a ledger that never heard of this stock.
+  const txn = await db.$transaction(async (tx) => {
+    await lockStockKeys(tx, [itemLockKey(input.itemId)]);
+    const ledgerBalance = await lastLedgerBalance(tx, input.itemId);
+    await tx.misInventoryLedger.create({
+      data: {
+        itemId: input.itemId,
+        changeQty: input.quantity,
+        balanceQty: round2(ledgerBalance + input.quantity),
+        source: 'STORE_IN',
+        sourceId: null,
+        notes: input.referenceNo ?? input.notes ?? 'Store IN',
+      },
+    });
+    const txnBalance = await lastTxnBalance(tx, input.itemId);
+    const { prefix, next } = await nextTxnSeq(tx);
+    return tx.misStoreTransaction.create({
+      data: {
+        txnNumber: txnNumberOf(prefix, next),
+        itemId: input.itemId,
+        type: 'IN',
+        quantity: input.quantity,
+        balanceQty: round2(txnBalance + input.quantity),
+        referenceNo: input.referenceNo ?? null,
+        reason: input.notes ?? null,
+        isOverIssue: false,
+        createdById: actor.userId,
+      },
+    });
   });
+  const txnNumber = txn.txnNumber;
+  const newBalance = Number(txn.balanceQty);
 
   await logAuditEvent({
     action: 'store.in',
@@ -233,7 +237,6 @@ export type StoreOutInput = {
   itemId: string;
   quantity: number;
   referenceNo?: string;
-  reason?: string; // mandatory when over-issue
 };
 
 export async function createStoreOut(input: StoreOutInput): Promise<StoreTxnRow> {
@@ -247,28 +250,41 @@ export async function createStoreOut(input: StoreOutInput): Promise<StoreTxnRow>
   });
   if (!item) throw new Error('Item not found or inactive');
 
-  const currentBalance = await getStockBalance(input.itemId);
-  const isOverIssue = input.quantity > currentBalance;
-
-  if (isOverIssue && !input.reason?.trim()) {
-    throw new Error('Reason is required when issuing more than the current stock balance');
-  }
-
-  const newBalance = currentBalance - input.quantity;
-  const txnNumber = await nextTxnNumber();
-
-  const txn = await db.misStoreTransaction.create({
-    data: {
-      txnNumber,
-      itemId: input.itemId,
-      type: 'OUT',
-      quantity: input.quantity,
-      balanceQty: newBalance,
-      referenceNo: input.referenceNo ?? null,
-      reason: input.reason ?? null,
-      isOverIssue,
-      createdById: actor.userId,
-    },
+  // D2: stock never goes negative, so there is no over-issue. Both books are written under the item
+  // lock (as commitIssue does) so Inventory, Store stock and Traceability agree after every issue.
+  const txn = await db.$transaction(async (tx) => {
+    await lockStockKeys(tx, [itemLockKey(input.itemId)]);
+    const ledgerBalance = await lastLedgerBalance(tx, input.itemId);
+    const txnBalance = await lastTxnBalance(tx, input.itemId);
+    const available = Math.min(ledgerBalance, txnBalance);
+    if (input.quantity > available) {
+      throw new Error(`Cannot issue more than the stock balance (${round2(Math.max(0, available))} available)`);
+    }
+    const reference = input.referenceNo ?? `Issue ${new Date().toISOString().slice(0, 10)}`;
+    await tx.misInventoryLedger.create({
+      data: {
+        itemId: input.itemId,
+        changeQty: -input.quantity,
+        balanceQty: round2(ledgerBalance - input.quantity),
+        source: 'STORE_ISSUE',
+        sourceId: null,
+        notes: reference,
+      },
+    });
+    const { prefix, next } = await nextTxnSeq(tx);
+    return tx.misStoreTransaction.create({
+      data: {
+        txnNumber: txnNumberOf(prefix, next),
+        itemId: input.itemId,
+        type: 'OUT',
+        quantity: input.quantity,
+        balanceQty: round2(txnBalance - input.quantity),
+        referenceNo: input.referenceNo ?? null,
+        reason: null,
+        isOverIssue: false,
+        createdById: actor.userId,
+      },
+    });
   });
 
   await logAuditEvent({
@@ -276,7 +292,7 @@ export async function createStoreOut(input: StoreOutInput): Promise<StoreTxnRow>
     entity: 'MisStoreTransaction',
     entityId: txn.id,
     actorId: actor.userId,
-    after: { itemId: input.itemId, quantity: input.quantity, txnNumber, newBalance: String(newBalance), isOverIssue },
+    after: { itemId: input.itemId, quantity: input.quantity, txnNumber: txn.txnNumber, newBalance: String(Number(txn.balanceQty)), isOverIssue: false },
   });
 
   return {
@@ -291,7 +307,7 @@ export async function createStoreOut(input: StoreOutInput): Promise<StoreTxnRow>
     balanceQty: Number(txn.balanceQty),
     referenceNo: txn.referenceNo,
     reason: txn.reason,
-    isOverIssue,
+    isOverIssue: false,
     createdAt: txn.createdAt,
   };
 }
@@ -402,6 +418,9 @@ export async function listStockSummary(): Promise<StockSummaryRow[]> {
 // MIS-292: Physical count entry
 // ---------------------------------------------------------------------------
 
+/** The ledger `source` of a reconciliation; its `source_id` is the physical count it settled. */
+export const COUNT_ADJUSTMENT_SOURCE = 'COUNT_ADJUSTMENT';
+
 export type PhysicalCountInput = {
   itemId: string;
   physicalQty: number;
@@ -450,6 +469,7 @@ export async function recordPhysicalCount(input: PhysicalCountInput): Promise<Ph
     systemQty: Number(count.systemQty),
     discrepancy: Number(count.discrepancy),
     notes: count.notes,
+    reconciled: false,
     createdAt: count.createdAt,
   };
 }
@@ -466,6 +486,15 @@ export async function listPhysicalCounts(itemId?: string): Promise<PhysicalCount
     take: 100,
   });
 
+  // "Reconciled" needs no column: a count adjustment row in the ledger names the count it settled.
+  const adjustments = counts.length
+    ? await db.misInventoryLedger.findMany({
+        where: { source: COUNT_ADJUSTMENT_SOURCE, sourceId: { in: counts.map((c) => c.id) } },
+        select: { sourceId: true },
+      })
+    : [];
+  const reconciledIds = new Set(adjustments.map((a) => a.sourceId));
+
   return counts.map((c) => ({
     id: c.id,
     itemId: c.itemId,
@@ -475,8 +504,76 @@ export async function listPhysicalCounts(itemId?: string): Promise<PhysicalCount
     systemQty: Number(c.systemQty),
     discrepancy: Number(c.discrepancy),
     notes: c.notes,
+    reconciled: reconciledIds.has(c.id),
     createdAt: c.createdAt,
   }));
+}
+
+/**
+ * D3 — settle a physical count's variance in BOTH books, on the storekeeper's say-so (a reason is required).
+ * Recording a count never moves stock; this is the one deliberate step that does. Once per count.
+ */
+export async function reconcilePhysicalCount(countId: string, reason: string): Promise<{ adjustment: number }> {
+  const actor = await requirePermission('store.write');
+  const why = reason?.trim() ?? '';
+  if (why.length < 3) throw new Error('Give a reason (at least 3 characters) to reconcile a count.');
+
+  const count = await db.misPhysicalCount.findUnique({ where: { id: countId } });
+  if (!count) throw new Error('Physical count not found.');
+  const delta = round2(Number(count.discrepancy));
+  if (delta === 0) throw new Error('This count matches the system: there is nothing to reconcile.');
+
+  const countDay = count.countDate.toISOString().slice(0, 10);
+  const txn = await db.$transaction(async (tx) => {
+    await lockStockKeys(tx, [itemLockKey(count.itemId)]);
+    const already = await tx.misInventoryLedger.findFirst({
+      where: { source: COUNT_ADJUSTMENT_SOURCE, sourceId: count.id },
+      select: { id: true },
+    });
+    if (already) throw new Error('This count has already been reconciled.');
+
+    const ledgerBalance = await lastLedgerBalance(tx, count.itemId);
+    const txnBalance = await lastTxnBalance(tx, count.itemId);
+    if (delta < 0) {
+      const available = Math.min(ledgerBalance, txnBalance);
+      if (-delta > available) {
+        throw new Error(`Cannot reconcile: the shortfall of ${-delta} is more than the stock balance (${round2(Math.max(0, available))} available)`);
+      }
+    }
+    await tx.misInventoryLedger.create({
+      data: {
+        itemId: count.itemId,
+        changeQty: delta,
+        balanceQty: round2(ledgerBalance + delta),
+        source: COUNT_ADJUSTMENT_SOURCE,
+        sourceId: count.id,
+        notes: `Count ${countDay}: ${why}`,
+      },
+    });
+    const { prefix, next } = await nextTxnSeq(tx);
+    return tx.misStoreTransaction.create({
+      data: {
+        txnNumber: txnNumberOf(prefix, next),
+        itemId: count.itemId,
+        type: delta > 0 ? 'IN' : 'OUT',
+        quantity: Math.abs(delta),
+        balanceQty: round2(txnBalance + delta),
+        referenceNo: `Count ${countDay}`,
+        reason: why,
+        isOverIssue: false,
+        createdById: actor.userId,
+      },
+    });
+  });
+
+  await logAuditEvent({
+    action: 'store.count.reconcile',
+    entity: 'MisPhysicalCount',
+    entityId: count.id,
+    actorId: actor.userId,
+    after: { itemId: count.itemId, adjustment: String(delta), txnNumber: txn.txnNumber, reason: why },
+  });
+  return { adjustment: delta };
 }
 
 // ---------------------------------------------------------------------------
@@ -753,11 +850,6 @@ export type CartCommitResult = {
   totalQty: number;
 };
 
-/** Money and weights are 2dp in the schema; keep float drift out of the ledger. */
-function round2(value: number): number {
-  return roundQty(value);
-}
-
 /**
  * One line per item, quantities summed.
  *
@@ -803,36 +895,6 @@ async function loadCartItems(lines: CartLineInput[]): Promise<Map<string, CartIt
     }
   }
   return byId;
-}
-
-/** Daily store-transaction sequence, read inside the caller's transaction. */
-async function nextTxnSeq(tx: Prisma.TransactionClient): Promise<{ prefix: string; next: number }> {
-  const ymd = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  const prefix = `STXN-${ymd}-`;
-  const last = await tx.misStoreTransaction.findFirst({
-    where: { txnNumber: { startsWith: prefix } },
-    orderBy: { txnNumber: 'desc' },
-    select: { txnNumber: true },
-  });
-  return { prefix, next: last ? parseInt(last.txnNumber.slice(prefix.length), 10) + 1 : 1 };
-}
-
-async function lastLedgerBalance(tx: Prisma.TransactionClient, itemId: string): Promise<number> {
-  const last = await tx.misInventoryLedger.findFirst({
-    where: { itemId },
-    orderBy: { createdAt: 'desc' },
-    select: { balanceQty: true },
-  });
-  return last ? last.balanceQty.toNumber() : 0;
-}
-
-async function lastTxnBalance(tx: Prisma.TransactionClient, itemId: string): Promise<number> {
-  const last = await tx.misStoreTransaction.findFirst({
-    where: { itemId },
-    orderBy: { createdAt: 'desc' },
-    select: { balanceQty: true },
-  });
-  return last ? last.balanceQty.toNumber() : 0;
 }
 
 /**

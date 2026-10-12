@@ -69,7 +69,8 @@ describe('create', () => {
     await createMaterialRequest([{ itemId: 'i-kraft', qty: 3 }], { orderId: 'o1' });
     expect(state.created).toMatchObject({ orderId: 'o1', requestedById: 'u1' });
     expect(commitIssue).not.toHaveBeenCalled();
-    expect(notifyRoles).toHaveBeenCalledWith(['STORE_GUY'], 'mis.material_request.raised', expect.objectContaining({ requestNumber: expect.stringMatching(/^MRN-/), lineCount: 1 }), 'u1');
+    // C1/D7: the old expectation was ['STORE_GUY'] alone; Admin and Owner are now notified too.
+    expect(notifyRoles).toHaveBeenCalledWith(['STORE_GUY', 'ADMIN', 'OWNER'],'mis.material_request.raised', expect.objectContaining({ requestNumber: expect.stringMatching(/^MRN-/), lineCount: 1 }), 'u1');
   });
 
   it('equipment cannot be booked to an order, but can be requested as overhead', async () => {

@@ -7,6 +7,7 @@ import { SlideOver } from '@/components/mis/kit/slide-over';
 import { Select } from '@/components/mis/kit/select';
 import { Input, NumberInput } from '@/components/mis/kit/input';
 import { storeInAction, storeOutAction } from '@/app/(mis)/mis/store/actions';
+import { unwrap } from '@/lib/mis/action-result';
 import type { StoreTxnRow, StoreItemRow } from '@/server/mis/store';
 import { fmtDate as fmtFactoryDate, fmtTime as fmtFactoryTime } from '@/lib/mis/client-dates';
 
@@ -55,7 +56,7 @@ function downloadCsv(rows: StoreTxnRow[]) {
 }
 
 const emptyIn = { itemId: '', quantity: '', referenceNo: '', notes: '' };
-const emptyOut = { itemId: '', quantity: '', referenceNo: '', reason: '' };
+const emptyOut = { itemId: '', quantity: '', referenceNo: '' };
 
 export function StoreTransactionsScreen({ txns, items, canWrite }: Props) {
   const [search, setSearch] = useState('');
@@ -110,12 +111,11 @@ export function StoreTransactionsScreen({ txns, items, canWrite }: Props) {
     setOutError(null);
     startTransition(async () => {
       try {
-        await storeOutAction({
+        unwrap(await storeOutAction({
           itemId: outForm.itemId,
           quantity,
           referenceNo: outForm.referenceNo.trim() || undefined,
-          reason: outForm.reason.trim() || undefined,
-        });
+        }));
         setOutOpen(false);
         setOutForm(emptyOut);
       } catch (e: unknown) {
@@ -420,7 +420,7 @@ export function StoreTransactionsScreen({ txns, items, canWrite }: Props) {
             <p className="text-xs text-slate-500 -mt-2">
               Current balance: {selectedOutItem.stockBalance.toFixed(2)} {selectedOutItem.unit}
               {parseFloat(outForm.quantity || '0') > selectedOutItem.stockBalance && (
-                <span className="ml-1 text-amber-600 font-medium">— this will over-issue</span>
+                <span className="ml-1 text-red-600 font-medium">— more than the stock balance, it will be refused</span>
               )}
             </p>
           )}
@@ -436,12 +436,6 @@ export function StoreTransactionsScreen({ txns, items, canWrite }: Props) {
             value={outForm.referenceNo}
             onChange={(e) => setOutForm((f) => ({ ...f, referenceNo: e.target.value }))}
             hint="e.g. job card or department requisition"
-          />
-          <Input
-            label="Reason"
-            value={outForm.reason}
-            onChange={(e) => setOutForm((f) => ({ ...f, reason: e.target.value }))}
-            hint="Required if this issue exceeds current stock"
           />
           {outError && <p className="text-sm text-red-600">{outError}</p>}
         </div>

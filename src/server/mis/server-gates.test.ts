@@ -51,6 +51,10 @@ const REVIEWED_UNGATED: Record<string, Reviewed> = {
   'order-allocation.ts#allocationFigures': { reason: 'internal tx helper; callers are gated' },
   'order-allocation.ts#allocationShortfalls': { reason: 'internal tx helper; called inside commitIssue after its gate' },
   // F2: a transaction-scoped advisory lock taken on the caller's `tx`, inside commitIssue / commitReceipt / confirmGRN.
+  // C1: the books' balance readers, moved out of store.ts so grn.ts can share them; run on the caller's `tx`, after its gate.
+  'store-books.ts#nextTxnSeq': { reason: 'internal tx helper; callers (store.ts, grn.ts) are gated' },
+  'store-books.ts#lastLedgerBalance': { reason: 'internal tx helper; callers (store.ts, grn.ts) are gated' },
+  'store-books.ts#lastTxnBalance': { reason: 'internal tx helper; callers (store.ts, grn.ts) are gated' },
   'stock-lock.ts#lockStockKeys': { reason: 'internal tx helper; callers (store.ts, grn.ts) are gated' },
   // V2 Epic 4: a writer, not a reader — called by confirmGRN after its gate; best-effort like logAuditEvent.
   'grn-alerts.ts#notifyGrnConfirmed': { reason: 'internal; called only by confirmGRN after its grn.write gate' },

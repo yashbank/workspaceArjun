@@ -73,6 +73,8 @@ const db: Row = {
     },
     create: async ({ data }: Row) => { await tick(); state.ledger.push({ ...data, changeQty: data.changeQty.toNumber ? data.changeQty.toNumber() : data.changeQty }); return data; },
   },
+  // C1: confirming a GRN now also writes the storekeeper's book; this fake only needs to accept it.
+  misStoreTransaction: { findFirst: async () => null, create: async () => null },
   misSupplierInvoice: { upsert: async () => null },
   misOrder: { findFirst: async () => null },
   misOrderStockAllocation: { create: async () => null },

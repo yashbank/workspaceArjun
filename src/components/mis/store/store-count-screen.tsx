@@ -5,7 +5,8 @@ import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { Button } from '@/components/mis/kit/button';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import { NumberInput, Input } from '@/components/mis/kit/input';
-import { physicalCountAction } from '@/app/(mis)/mis/store/actions';
+import { physicalCountAction, reconcileCountAction } from '@/app/(mis)/mis/store/actions';
+import { unwrap } from '@/lib/mis/action-result';
 
 type ItemOption = {
   id: string;
@@ -25,6 +26,7 @@ type CountRow = {
   systemQty: number;
   discrepancy: number;
   notes: string | null;
+  reconciled: boolean;
   createdAt: Date;
 };
 
@@ -51,6 +53,29 @@ export function StoreCountScreen({ items, counts, canCount }: Props) {
   });
 
   const selectedItem = items.find((i) => i.id === selectedItemId);
+
+  // D3: a count only records; "Reconcile" is the deliberate step that writes the variance to the books.
+  const [reconcileRow, setReconcileRow] = useState<CountRow | null>(null);
+  const [reconcileReason, setReconcileReason] = useState('');
+  const [reconcileError, setReconcileError] = useState('');
+  const closeReconcile = () => { setReconcileRow(null); setReconcileReason(''); setReconcileError(''); };
+  const handleReconcile = () => {
+    if (!reconcileRow) return;
+    if (reconcileReason.trim().length < 3) {
+      setReconcileError('Give a reason (at least 3 characters).');
+      return;
+    }
+    setReconcileError('');
+    startTransition(async () => {
+      try {
+        unwrap(await reconcileCountAction(reconcileRow.id, reconcileReason.trim()));
+        setSuccess(`${reconcileRow.itemName} reconciled`);
+        closeReconcile();
+      } catch (e: unknown) {
+        setReconcileError(e instanceof Error ? e.message : 'Reconcile failed');
+      }
+    });
+  };
 
   const handleSubmit = () => {
     if (!selectedItemId || !physQty || !countDate) {
@@ -125,6 +150,20 @@ export function StoreCountScreen({ items, counts, canCount }: Props) {
       header: 'Notes',
       render: (r) => <span className="text-sm text-slate-500">{r.notes ?? '—'}</span>,
     },
+    {
+      key: 'reconcile',
+      header: '',
+      render: (r) => {
+        if (r.discrepancy === 0) return null;
+        if (r.reconciled) return <StatusBadge tone="good">Reconciled</StatusBadge>;
+        if (!canCount) return null;
+        return (
+          <Button variant="secondary" onClick={() => { setReconcileRow(r); setReconcileError(''); }}>
+            Reconcile
+          </Button>
+        );
+      },
+    },
   ];
 
   return (
@@ -165,6 +204,33 @@ export function StoreCountScreen({ items, counts, canCount }: Props) {
         emptyTitle="No physical counts"
         emptyBody="Use the + New Count button to record your first physical count."
       />
+
+      <SlideOver open={reconcileRow !== null} onClose={closeReconcile} title="Reconcile Count">
+        {reconcileRow && (
+          <div className="flex flex-col gap-4 p-4">
+            <div className="bg-slate-50 rounded-lg p-3 text-sm">
+              <div className="font-medium text-slate-900">{reconcileRow.itemName}</div>
+              <div className="text-slate-600 mt-1">
+                Counted {reconcileRow.physicalQty.toFixed(2)} against {reconcileRow.systemQty.toFixed(2)} in the system.
+                Reconciling books {reconcileRow.discrepancy >= 0 ? '+' : ''}{reconcileRow.discrepancy.toFixed(2)} to the Inventory ledger and the store book.
+              </div>
+            </div>
+            <Input
+              label="Reason (required)"
+              value={reconcileReason}
+              onChange={(e) => setReconcileReason(e.target.value)}
+              placeholder="e.g. 3 reels found damaged, written off"
+            />
+            {reconcileError && <p role="alert" className="text-sm text-red-600">{reconcileError}</p>}
+            <div className="flex gap-2 pt-2">
+              <Button onClick={handleReconcile} disabled={isPending || reconcileReason.trim().length < 3}>
+                {isPending ? 'Saving…' : 'Reconcile'}
+              </Button>
+              <Button variant="ghost" onClick={closeReconcile}>Cancel</Button>
+            </div>
+          </div>
+        )}
+      </SlideOver>
 
       <SlideOver open={open} onClose={() => setOpen(false)} title="Record Physical Count">
         <div className="flex flex-col gap-4 p-4">

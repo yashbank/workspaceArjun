@@ -8,6 +8,7 @@ import {
   createStoreIn,
   createStoreOut,
   recordPhysicalCount,
+  reconcilePhysicalCount,
   updateStoreItemProps,
   deactivateStoreItem,
 } from '@/server/mis/store';
@@ -33,19 +34,34 @@ export async function storeInAction(input: StoreInInput) {
 }
 
 export async function storeOutAction(input: StoreOutInput) {
-  const result = await createStoreOut(input);
-  revalidatePath('/mis/store');
-  revalidatePath('/mis/store/stock');
-  revalidatePath('/mis/store/dashboard');
-  revalidatePath('/mis/store/transactions');
-  revalidatePath(`/mis/store/ledger/${input.itemId}`);
-  return result;
+  // "Cannot issue more than the stock balance (X available)" must reach the storekeeper as words.
+  return asResult(async () => {
+    const result = await createStoreOut(input);
+    revalidatePath('/mis/store');
+    revalidatePath('/mis/store/stock');
+    revalidatePath('/mis/store/dashboard');
+    revalidatePath('/mis/store/transactions');
+    revalidatePath('/mis/inventory');
+    revalidatePath(`/mis/store/ledger/${input.itemId}`);
+    return result;
+  });
 }
 
 export async function physicalCountAction(input: PhysicalCountInput) {
   const result = await recordPhysicalCount(input);
   revalidatePath('/mis/store/stock');
   return result;
+}
+
+export async function reconcileCountAction(countId: string, reason: string): Promise<ActionResult<{ adjustment: number }>> {
+  return asResult(async () => {
+    const result = await reconcilePhysicalCount(countId, reason);
+    revalidatePath('/mis/store/count');
+    revalidatePath('/mis/store/stock');
+    revalidatePath('/mis/store/transactions');
+    revalidatePath('/mis/inventory');
+    return result;
+  });
 }
 
 export async function updateStoreItemAction(id: string, patch: StoreItemUpdateInput) {
