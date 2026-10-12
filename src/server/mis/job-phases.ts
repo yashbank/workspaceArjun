@@ -385,6 +385,7 @@ export async function signOffPhase(phaseId: string, input?: { notes?: string }) 
   const next = await nextApplicablePhase(phase.orderId, phase.sequence);
   const notifyUserId = next?.inCharge?.userProfileId ?? null;
 
+  let releasedAllocations: { id: string; machineId: string }[] = [];
   const rec = await db.$transaction(async (tx) => {
     const updated = await tx.misJobPhase.update({
       where: { id: phaseId },
@@ -395,6 +396,22 @@ export async function signOffPhase(phaseId: string, input?: { notes?: string }) 
         notes: input?.notes ?? phase.notes,
       },
     });
+
+    // #42/#44 — signing a phase off frees the machine it held. Same semantics as
+    // `releaseMachine` (releasedAt = now on a still-open allocation); done inside this
+    // transaction so a rolled-back sign-off never leaves a machine released. Reopening a
+    // phase deliberately does NOT re-lock: the supervisor allocates again if they need to.
+    const held = await tx.misMachineAllocation.findMany({
+      where: { jobPhaseId: phaseId, releasedAt: null },
+      select: { id: true, machineId: true },
+    });
+    if (held.length > 0) {
+      await tx.misMachineAllocation.updateMany({
+        where: { id: { in: held.map((h) => h.id) }, releasedAt: null },
+        data: { releasedAt: signedOffAt },
+      });
+      releasedAllocations = held;
+    }
 
     // Transactional on purpose: a notification that fires on a rolled-back
     // sign-off tells the next section to start work that never unblocked.
@@ -434,6 +451,15 @@ export async function signOffPhase(phaseId: string, input?: { notes?: string }) 
       notifiedPhaseId: next?.id ?? null,
     },
   });
+  for (const a of releasedAllocations) {
+    await logAuditEvent({
+      actorId: actor.userId,
+      action: 'RELEASE_MACHINE',
+      entity: 'MisMachineAllocation',
+      entityId: a.id,
+      after: { machineId: a.machineId, releasedAt: signedOffAt.toISOString(), reason: 'PHASE_SIGNED_OFF', phaseId },
+    });
+  }
   return rec;
 }
 
