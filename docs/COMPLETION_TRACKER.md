@@ -326,8 +326,8 @@ share one stored value.
 ## Tester round 2 (2026-10-13) — 61 tester items triaged, specs written
 **Status:** SPECS READY, implementation not started. Read `docs/specs/00-README.md` first (rules, owner decisions
 D1-D9, waves, models, resume protocol), then the cluster spec. Cluster status (update as you go):
-C1 stock-grn: MERGED #78 (backfill SQL run by owner) · C2 po-bom: MERGED #76 · C4 order-lifecycle: MERGED #73 · C5 production-qc: MERGED #74 · C7 android: MERGED #77 ·
-C6a helpers: MERGED #75 · Wave-1 gates GREEN (tsc silent, 4895 tests, eslint 6 known any, build ok; browser check pending) · C3 money-trace: IN_PROGRESS · C6b wiring: TODO.
+ALL CLUSTERS MERGED + DEPLOYED (single deploy, PR #81 phase-a->main, Vercel Ready, smoke ok): C1 #78 · C2 #76 · C3 #79 · C4 #73 · C5 #74 · C6a #75 · C6b #80 · C7 #77. Gates green (tsc, 4948 tests, eslint 6 known any, build). Tester re-test: guide §11 (no §12; deploy was combined).
+Owner SQL: scripts/store-txn-backfill-grn.sql (RUN).
 Deploy plan: Phase A = C1+C2+C3+C4 -> deploy + tester re-test block (§11); then C5+C6+C7 -> deploy (§12).
 Deferred (needs owner SQL / product input): see "Deferred" in the README.
 

@@ -157,6 +157,30 @@ Re-run only these rows; the earlier sections are unchanged.
 Note: invoices created through the Store cart receipt stay **pending review** until someone
 presses Re-check match (known, intentional for now).
 
+## §11. Round 3 — tester round 2 fixes (October 2026) — re-test only this
+
+| # | Role | Where | Expected |
+|---|---|---|---|
+| 11.1 | STORE_GUY | GRN with a received line that has no catalog item → **Confirm** | Refused; the message names the line ("Line N …") |
+| 11.2 | STORE_GUY | Confirm a good GRN → Store → Stock / Transactions | The receipt shows as an IN row; stock balance matches |
+| 11.3 | STORE_GUY | Store out more than the balance | Refused with "Cannot issue more than the stock balance (X available)"; no reason field |
+| 11.4 | STORE_GUY | Physical count → **Reconcile** (needs a reason) | Stock adjusts once; a second reconcile of the same count is refused |
+| 11.5 | STORE_GUY | Draft GRN: edit / remove a line; **Discard draft** | Works on DRAFT only; confirmed GRNs refuse |
+| 11.6 | STORE_GUY | Raise a material request | Store Guy, Admin and Owner all get the bell; Admin/Owner can approve |
+| 11.7 | ADMIN | Create a PO for an order whose BOM is not approved | Popup "BOM is not approved"; BOM Ref is a picker of approved orders only |
+| 11.8 | ADMIN | PO: submit with no lines; edit header; delete a draft; cancel a received PO | No-lines submit disabled; edit/delete work on DRAFT; cancel refused once receiving |
+| 11.9 | ADMIN / OWNER | BOM: reject a pending BOM with a reason; edit/delete a DRAFT stage or material | Back to DRAFT with the reason; edits only on DRAFT |
+| 11.10 | ADMIN | Order → Start production / Mark complete / Cancel | Complete lists unmet gates; override needs a reason (Owner/Admin); cancel needs a reason |
+| 11.11 | STORE_GUY / ADMIN | Receive goods and Add Item | No rate / price field (Owner only) |
+| 11.12 | QC | Open PO / GRN URLs | Denied; no PO/GRN menu |
+| 11.13 | ADMIN | Order traceability | Shows linked POs/GRNs and issued materials, no rupee amounts |
+| 11.14 | SUPERVISOR | Production log / QC check | Unit is a dropdown; optional BOM stage; operators are floor staff only; machine pre-filled |
+| 11.15 | SUPERVISOR | Sign off a phase | Its machine shows FREE on the board |
+| 11.16 | any | Create a duplicate supplier / customer / master code | Clear message ("… already exists"), no technical error |
+| 11.17 | any | Master / detail screens | Back button present; Day Timeline has a machine-name search; login shows a show-password eye |
+| 11.18 | ADMIN | Employees list | Department column; manager dropdown shows name, code and role |
+| 11.19 | KIOSK | New APK: retry sync, revoked device, stale IN after a new day | Retry shows success/failure; revoked device returns to pairing; next day defaults to IN with a toggle |
+
 ## §9. Report
 Use the Bug template from `EXTERNAL_TESTER_GUIDE.md` §8: what you did, what you expected, what
 happened, role, device/width, time.
