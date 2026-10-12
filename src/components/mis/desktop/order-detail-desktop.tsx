@@ -29,7 +29,7 @@ const BOM_PREVIEW = 6;
 
 const num = (n: number) => new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 }).format(n);
 
-export function OrderDetailDesktop({ data }: { data: OrderDesktopData }) {
+export function OrderDetailDesktop({ data, statusActions }: { data: OrderDesktopData; statusActions?: React.ReactNode }) {
   const t = useT();
   const { locale } = useMisLocale();
   const { progress } = data;
@@ -51,6 +51,7 @@ export function OrderDetailDesktop({ data }: { data: OrderDesktopData }) {
         summary={data.description ?? undefined}
         secondary={
           <>
+            {statusActions}
             <Link
               href={`/mis/orders/${data.orderId}?view=classic`}
               className="inline-flex min-h-11 items-center rounded-lg border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"

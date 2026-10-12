@@ -1,4 +1,7 @@
 import { CLOSED_ORDER_STATUSES, isOrderClosed, REOPENED_ORDER_STATUS } from '@/lib/mis/order-status';
+import {
+  canOverrideCloseGates, canTransitionOrder, evaluateCloseGates, isOrderStatus, MIN_REASON_LENGTH, unmetGates, type CloseGate,
+} from '@/lib/mis/order-transitions';
 import { db } from '@/server/db';
 import { requirePermission } from './auth';
 import { logAuditEvent } from './audit';
@@ -90,12 +93,115 @@ export async function updateOrder(id: string, input: OrderInput) {
   return after;
 }
 
-export async function updateOrderStatus(id: string, status: string) {
+/**
+ * A status change that was refused for a reason the person can act on (unknown status,
+ * illegal transition, unmet close gates, missing reason). A distinct class, like
+ * `OrderReopenError`, so the server action can return the message as data while a database
+ * error stays an exception. `reason` is what callers branch on.
+ */
+export type OrderStatusRefusal = 'UNKNOWN_STATUS' | 'ILLEGAL_TRANSITION' | 'REASON_REQUIRED' | 'GATES_UNMET' | 'OVERRIDE_NOT_ALLOWED';
+
+export class OrderStatusError extends Error {
+  constructor(
+    readonly reason: OrderStatusRefusal,
+    message: string,
+    readonly gates?: CloseGate[],
+  ) {
+    super(message);
+    this.name = 'OrderStatusError';
+  }
+}
+
+export function isOrderStatusError(error: unknown): error is OrderStatusError {
+  return error instanceof OrderStatusError || (error as Error)?.name === 'OrderStatusError';
+}
+
+/** The close gates for one order, computed from its phases and QC checks. Read-only. */
+export async function getOrderCloseGates(orderId: string): Promise<CloseGate[]> {
+  await requirePermission('orders.read');
+  return computeCloseGates(orderId);
+}
+
+async function computeCloseGates(orderId: string): Promise<CloseGate[]> {
+  const [phases, qcChecks] = await Promise.all([
+    db.misJobPhase.findMany({ where: { orderId, deletedAt: null }, select: { status: true } }),
+    db.misQcCheck.findMany({ where: { orderId }, select: { bomStageId: true, parameterName: true, result: true, checkTime: true } }),
+  ]);
+  return evaluateCloseGates({ phases, qcChecks });
+}
+
+export type CloseOverrideNote = { reason: string; at: Date };
+
+/** The most recent "completed past unmet gates" override on an order, for display. */
+export async function getOrderCloseOverride(orderId: string): Promise<CloseOverrideNote | null> {
+  await requirePermission('orders.read');
+  const rows = await db.misAuditLog.findMany({
+    where: { entity: 'MisOrder', entityId: orderId, action: 'order.status_change' },
+    orderBy: { createdAt: 'desc' },
+    take: 20,
+    select: { after: true, createdAt: true },
+  });
+  for (const row of rows) {
+    const after = row.after as { status?: string; reason?: string; gatesOverridden?: unknown } | null;
+    if (after?.status === 'COMPLETED' && after.gatesOverridden && after.reason) return { reason: after.reason, at: row.createdAt };
+  }
+  return null;
+}
+
+const humanStatus = (s: string) => s.toLowerCase().replace(/_/g, ' ');
+
+/**
+ * Move an order along ORDER_TRANSITIONS. `reason` is required to cancel, and is the override
+ * reason when completing past unmet close gates (OWNER/ADMIN only). Reopening a closed order
+ * is `reopenOrder`, not this.
+ */
+export async function updateOrderStatus(id: string, status: string, options: { reason?: string } = {}) {
   const actor = await requirePermission('orders.write');
   const before = await db.misOrder.findUnique({ where: { id } });
   if (!before) throw new Error(`Order ${id} not found`);
+
+  if (!isOrderStatus(status)) {
+    throw new OrderStatusError('UNKNOWN_STATUS', `"${status}" is not an order status.`);
+  }
+  if (!canTransitionOrder(before.status, status)) {
+    throw new OrderStatusError(
+      'ILLEGAL_TRANSITION',
+      `${before.orderNumber} is ${humanStatus(before.status)} and cannot go to ${humanStatus(status)}.`,
+    );
+  }
+
+  const reason = options.reason?.trim() ?? '';
+  let overriddenGates: CloseGate[] | undefined;
+
+  if (status === 'CANCELLED' && reason.length < MIN_REASON_LENGTH) {
+    throw new OrderStatusError('REASON_REQUIRED', 'Cancelling an order needs a reason.');
+  }
+  if (status === 'COMPLETED') {
+    const unmet = unmetGates(await computeCloseGates(id));
+    if (unmet.length > 0) {
+      if (!canOverrideCloseGates(actor.role)) {
+        throw new OrderStatusError('OVERRIDE_NOT_ALLOWED', `${before.orderNumber} cannot be completed yet: ${unmet.map((g) => g.detail).join('; ')}. An owner or admin can override.`, unmet);
+      }
+      if (reason.length < MIN_REASON_LENGTH) {
+        throw new OrderStatusError('GATES_UNMET', `${before.orderNumber} has unmet gates: ${unmet.map((g) => g.detail).join('; ')}. Give a reason to complete it anyway.`, unmet);
+      }
+      overriddenGates = unmet;
+    }
+  }
+
   const after = await db.misOrder.update({ where: { id }, data: { status } });
-  await logAuditEvent({ actorId: actor.userId, action: 'order.status_change', entity: 'MisOrder', entityId: id, before, after });
+  await logAuditEvent({
+    actorId: actor.userId,
+    action: 'order.status_change',
+    entity: 'MisOrder',
+    entityId: id,
+    before,
+    after: {
+      ...after,
+      ...(reason ? { reason } : {}),
+      ...(overriddenGates ? { gatesOverridden: overriddenGates.map((g) => ({ key: g.key, detail: g.detail })) } : {}),
+    },
+  });
   return after;
 }
 

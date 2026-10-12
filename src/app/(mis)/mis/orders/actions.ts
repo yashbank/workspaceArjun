@@ -1,7 +1,8 @@
 'use server';
 import { revalidatePath } from 'next/cache';
 import { isMisForbiddenError } from '@/server/mis/auth';
-import { createOrder, OrderReopenError, reopenOrder, updateOrder, updateOrderStatus } from '@/server/mis/orders';
+import { createOrder, isOrderStatusError, OrderReopenError, reopenOrder, updateOrder, updateOrderStatus } from '@/server/mis/orders';
+import type { CloseGate } from '@/lib/mis/order-transitions';
 import { addDocument } from '@/server/mis/documents';
 
 export async function saveOrderAction(id: string | null, values: { customerId?: string | null; description?: string | null; deliveryDate?: string | null; notes?: string | null }) {
@@ -9,9 +10,25 @@ export async function saveOrderAction(id: string | null, values: { customerId?: 
   revalidatePath('/mis/orders');
 }
 
-export async function updateOrderStatusAction(id: string, status: string) {
-  await updateOrderStatus(id, status);
+export type OrderStatusOutcome = { ok: true } | { ok: false; detail: string; gates?: CloseGate[] };
+
+/**
+ * Returns an outcome rather than throwing, for the same reason `reopenOrderAction` does: a
+ * refusal a person can act on (illegal move, unmet gates, "give a reason") must reach the
+ * screen as words, not as a generic production-build error.
+ */
+export async function updateOrderStatusAction(id: string, status: string, reason?: string): Promise<OrderStatusOutcome> {
+  try {
+    await updateOrderStatus(id, status, { reason });
+  } catch (error) {
+    if (isOrderStatusError(error)) return { ok: false, detail: error.message, gates: error.gates };
+    if (isMisForbiddenError(error)) return { ok: false, detail: 'You do not have permission to change an order\'s status.' };
+    throw error;
+  }
   revalidatePath('/mis/orders');
+  revalidatePath(`/mis/orders/${id}`);
+  revalidatePath('/mis/production');
+  return { ok: true };
 }
 
 /**
