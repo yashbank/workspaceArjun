@@ -5,6 +5,8 @@ import { can } from '@/lib/mis/permissions';
 import { db } from '@/server/db';
 import { ProductionScreen } from '@/components/mis/production/production-screen';
 import { requirePermission } from '@/server/mis/auth';
+import { listOptions } from '@/server/mis/master-option';
+import { unitOptions } from '@/lib/mis/production-form';
 
 export default async function ProductionPage() {
   const user = await requireMisAccess();
@@ -12,7 +14,7 @@ export default async function ProductionPage() {
   const canWrite = can(role, 'production.write');
 
   await requirePermission('production.read');
-  const [orders, machines] = await Promise.all([
+  const [orders, machines, unitMaster] = await Promise.all([
     db.misOrder.findMany({
       // The same closed-status list the server refuses on (D14). This used to omit
       // COMPLETED, so the screen offered an order the write would then reject.
@@ -28,12 +30,14 @@ export default async function ProductionPage() {
       select: { id: true, name: true },
       orderBy: { name: 'asc' },
     }),
+    canWrite ? listOptions('UNIT') : Promise.resolve([]),
   ]);
 
   return (
     <ProductionScreen
       orders={orders}
       machines={machines}
+      units={unitOptions(unitMaster)}
       canWrite={canWrite}
       userId={user.id}
       // Rendered now. Offline, the screen shows this back as "lists as of HH:MM"

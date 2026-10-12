@@ -56,6 +56,9 @@ const dbMock = {
     create: (...a: unknown[]) => processCreate(...a),
   },
   notification: { create: (...a: unknown[]) => notificationCreate(...a) },
+  // C5 #42: signOffPhase now releases the phase's machine allocations. This suite holds none;
+  // the release itself is covered in job-phases.release.test.ts. Mock plumbing only, no expectation changed.
+  misMachineAllocation: { findMany: async () => [], updateMany: async () => ({ count: 0 }) },
   $transaction: (fn: (tx: unknown) => unknown) => fn(dbMock),
 };
 vi.mock('@/server/db', () => ({ db: dbMock }));

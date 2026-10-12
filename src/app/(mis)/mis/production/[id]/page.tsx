@@ -2,7 +2,9 @@ import { isUuid } from '@/lib/mis/ids';
 import { requireMisAccess } from '@/server/mis/guard';
 import { getMisRole } from '@/server/mis/roles';
 import { can } from '@/lib/mis/permissions';
-import { getProductionForOrder, getProductionSummary } from '@/server/mis/production';
+import { getProductionForOrder, getProductionFormContext, getProductionSummary } from '@/server/mis/production';
+import { listOptions } from '@/server/mis/master-option';
+import { operatorOptions, stageOptions, unitOptions } from '@/lib/mis/production-form';
 import { listEmployees } from '@/server/mis/employee';
 import { listMachines } from '@/server/mis/machine';
 import { notFound } from 'next/navigation';
@@ -22,12 +24,15 @@ export default async function ProductionDetailPage({ params }: { params: Promise
   });
   if (!order) notFound();
 
-  const [logs, summary, employees, machines] = await Promise.all([
+  const [logs, summary, employees, machines, unitMaster, formContext] = await Promise.all([
     getProductionForOrder(id),
     getProductionSummary(id),
     // The pickers feed the log-entry form, which only a writer sees; a QC reader (no employees.read) was refused here.
     canWrite ? listEmployees() : Promise.resolve([]),
     canWrite ? listMachines() : Promise.resolve([]),
+    // Same gate as the pickers above: only a writer sees the form these feed.
+    canWrite ? listOptions('UNIT') : Promise.resolve([]),
+    canWrite ? getProductionFormContext(id) : Promise.resolve({ stages: [], machines: [] }),
   ]);
 
   return (
@@ -45,8 +50,11 @@ export default async function ProductionDetailPage({ params }: { params: Promise
         shift: l.shift,
       }))}
       summary={summary}
-      employees={employees.filter((e) => e.isActive).map((e) => ({ id: e.id, name: e.name }))}
+      operators={operatorOptions(employees)}
       machines={machines.filter((m) => m.isActive).map((m) => ({ id: m.id, name: m.name }))}
+      units={unitOptions(unitMaster, logs[0]?.unit)}
+      stages={stageOptions(formContext.stages)}
+      allocatedMachines={formContext.machines}
       canWrite={canWrite}
       userId={user.id}
     />

@@ -5,7 +5,7 @@ import { Button } from '@/components/mis/kit/button';
 import { NumberInput, Input } from '@/components/mis/kit/input';
 import { Select, type SelectOption } from '@/components/mis/kit/select';
 import { SlideOver } from '@/components/mis/kit/slide-over';
-import { clearLineAction, getClearanceHistoryAction } from '@/app/(mis)/mis/production/actions';
+import { clearLineAction, getClearanceHistoryAction, getProductionFormContextAction } from '@/app/(mis)/mis/production/actions';
 import { useT } from '@/components/mis/shell/locale-provider';
 import { PendingSyncNote } from '@/components/mis/shell/pending-sync-note';
 import { useOnline } from '@/components/mis/shell/use-online';
@@ -13,6 +13,13 @@ import { useToast } from '@/components/ui/toast';
 import { DEFAULT_FACTORY_TIMEZONE, formatFactoryDateTime } from '@/lib/mis/factory-time';
 import { newIdempotencyKey, type ParkReason } from '@/lib/mis/offline/idempotency';
 import { isClearanceBlock, submitProduction } from './submit-production';
+import {
+  DEFAULT_PRODUCTION_UNIT,
+  machineMismatchNote,
+  preselectMachine,
+  stageOptions,
+  type SelectChoice,
+} from '@/lib/mis/production-form';
 
 /** Older than this and the lists are called out as old, online or not (D16). */
 const STALE_AFTER_MS = 5 * 60 * 1000;
@@ -39,12 +46,15 @@ type ClearanceHistoryRow = {
 export function ProductionScreen({
   orders,
   machines,
+  units,
   canWrite,
   userId,
   loadedAt,
 }: {
   orders: Order[];
   machines: Machine[];
+  /** UNIT master group (#16). */
+  units: SelectChoice[];
   canWrite: boolean;
   userId: string;
   /** When the server rendered these lists. Shown when offline: stale data that says so is honest (D16). */
@@ -71,6 +81,10 @@ export function ProductionScreen({
   const [open, setOpen] = useState(false);
   const [orderId, setOrderId] = useState('');
   const [machineId, setMachineId] = useState('');
+  const [unit, setUnit] = useState(DEFAULT_PRODUCTION_UNIT);
+  const [stageId, setStageId] = useState<string | null>(null);
+  const [stages, setStages] = useState<SelectChoice[]>([]);
+  const [allocated, setAllocated] = useState<Machine[]>([]);
   const [qty, setQty] = useState('');
   const [waste, setWaste] = useState('');
   const [notes, setNotes] = useState('');
@@ -96,7 +110,7 @@ export function ProductionScreen({
   ];
 
   const resetForm = () => {
-    setQty(''); setWaste(''); setNotes(''); setError(null); setBlockedReason(undefined);
+    setQty(''); setWaste(''); setNotes(''); setUnit(DEFAULT_PRODUCTION_UNIT); setStageId(null); setError(null); setBlockedReason(undefined);
     keyRef.current = newIdempotencyKey();
   };
 
@@ -111,6 +125,8 @@ export function ProductionScreen({
         machineId,
         qtyProduced: parseFloat(qty),
         qtyWaste: waste ? parseFloat(waste) : 0,
+        unit,
+        bomStageId: stageId ?? undefined,
         notes: notes || undefined,
       },
       label: orders.find((o) => o.id === orderId)?.orderNumber,
@@ -139,6 +155,26 @@ export function ProductionScreen({
         break;
     }
   });
+
+  // Choosing an order loads its BOM stages and allocated machine (#18, #39/#43). Failure is
+  // harmless: the stage is optional and the machine can always be picked by hand.
+  const handleOrderChange = (id: string) => {
+    setOrderId(id);
+    setStageId(null);
+    setStages([]);
+    setAllocated([]);
+    if (!id) return;
+    void getProductionFormContextAction(id)
+      .then((ctx) => {
+        setStages(stageOptions(ctx.stages));
+        setAllocated(ctx.machines);
+        const only = preselectMachine(ctx.machines.map((m) => m.id));
+        if (only) setMachineId((current) => current || only);
+      })
+      .catch(() => undefined);
+  };
+
+  const machineNote = machineMismatchNote(machineId || null, allocated);
 
   const handleClearLine = () => startClearing(async () => {
     const result = await clearLineAction({ machineId, orderId: orderId || null });
@@ -233,13 +269,14 @@ export function ProductionScreen({
 
       <SlideOver open={open} onClose={() => { setOpen(false); setError(null); setHistoryOpen(false); }} title="Log Production">
         <div className="flex flex-col gap-4 p-4">
-          <Select label="Order" value={orderId} options={orderOptions} onChange={setOrderId} />
+          <Select label="Order" value={orderId} options={orderOptions} onChange={handleOrderChange} />
           <Select
             label="Machine"
             value={machineId}
             options={machineOptions}
             onChange={(v) => { setMachineId(v); setError(null); setHistoryOpen(false); setHistory(null); }}
           />
+          {machineNote && <p role="status" className="-mt-2 text-xs text-amber-800">{machineNote}</p>}
           {machineId && (
             <button type="button" onClick={toggleHistory} className="self-start text-xs font-semibold text-indigo-600">
               {historyOpen ? 'Hide clearance history' : 'View clearance history'}
@@ -264,8 +301,18 @@ export function ProductionScreen({
               )}
             </div>
           )}
-          <NumberInput label="Qty Produced (KG)" value={qty} onChange={(e) => setQty(e.target.value)} />
-          <NumberInput label="Qty Waste (KG)" value={waste} onChange={(e) => setWaste(e.target.value)} />
+          {stages.length > 0 && (
+            <Select
+              label="Process / BOM stage (optional)"
+              value={stageId}
+              options={stages}
+              onChange={setStageId}
+              placeholder="Select a stage…"
+            />
+          )}
+          <Select label="Unit" value={unit} options={units} onChange={setUnit} />
+          <NumberInput label="Qty Produced" value={qty} onChange={(e) => setQty(e.target.value)} />
+          <NumberInput label="Qty Waste" value={waste} onChange={(e) => setWaste(e.target.value)} />
           <Input label="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
           {error && (
             <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
