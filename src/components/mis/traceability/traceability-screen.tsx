@@ -2,6 +2,7 @@
 import { useState, useTransition } from 'react';
 import { Select } from '@/components/mis/kit/select';
 import { StatusBadge, type BadgeTone } from '@/components/mis/kit/status-badge';
+import { fmtDate } from '@/lib/mis/client-dates';
 
 type Order = { id: string; orderNumber: string; description: string | null; status: string };
 
@@ -33,7 +34,13 @@ type TraceQcCheck = {
   checkBy: { name: string } | null;
 };
 type TraceDocument = { id: string; name: string; filePath: string };
+// null = this role may not see the leg (no po.read / store.read); [] = may see it, nothing behind it.
+type TraceGrn = { grnNumber: string; status: string; receivedAt: string | null; lines: { itemName: string; unit: string | null; receivedQty: number }[] };
+type TracePo = { poNumber: string; status: string; supplierName: string | null; grns: TraceGrn[] | null };
+type TraceIssued = { itemName: string; unit: string; qty: number; issuedAt: string };
 type TraceResult = {
+  purchaseOrders: TracePo[] | null;
+  issuedMaterials: TraceIssued[] | null;
   order: TraceOrder | null;
   bom: TraceBom;
   productionLogs: TraceProductionLog[];
@@ -131,6 +138,58 @@ export function TraceabilityScreen({ orders }: { orders: Order[] }) {
               </div>
             ) : <p className="text-slate-500 text-sm">No BOM found.</p>}
           </Section>
+
+          {/* Purchase orders + goods received (absent for roles without po.read) */}
+          {trace.purchaseOrders && (
+            <Section title="Purchase Orders & GRNs" count={trace.purchaseOrders.length}>
+              {trace.purchaseOrders.length > 0 ? (
+                <div className="space-y-4">
+                  {trace.purchaseOrders.map((po) => (
+                    <div key={po.poNumber} className="text-sm">
+                      <p className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono font-semibold">{po.poNumber}</span>
+                        <StatusBadge tone="neutral">{po.status.replace(/_/g, ' ')}</StatusBadge>
+                        <span className="text-slate-500">{po.supplierName ?? 'No supplier'}</span>
+                      </p>
+                      {po.grns && (po.grns.length > 0 ? (
+                        <ul className="mt-2 space-y-2 border-l border-slate-200 pl-3">
+                          {po.grns.map((g) => (
+                            <li key={g.grnNumber}>
+                              <p className="flex flex-wrap items-center gap-2">
+                                <span className="font-mono">{g.grnNumber}</span>
+                                <StatusBadge tone={g.status === 'CONFIRMED' ? 'good' : 'neutral'}>{g.status}</StatusBadge>
+                                <span className="text-slate-500">{g.receivedAt ? fmtDate(g.receivedAt) : 'not received'}</span>
+                              </p>
+                              <ul className="mt-1 text-slate-600">
+                                {g.lines.map((l, i) => <li key={i}>{l.itemName}: {Number(l.receivedQty).toLocaleString('en-IN')} {l.unit ?? ''}</li>)}
+                              </ul>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : <p className="mt-1 text-xs text-slate-500">No goods received against this PO yet.</p>)}
+                    </div>
+                  ))}
+                </div>
+              ) : <p className="text-slate-500 text-sm">No purchase order raised against this order.</p>}
+            </Section>
+          )}
+
+          {/* Material issued to this order (absent for roles without store.read) */}
+          {trace.issuedMaterials && (
+            <Section title="Material issued" count={trace.issuedMaterials.length}>
+              {trace.issuedMaterials.length > 0 ? (
+                <div className="space-y-2">
+                  {trace.issuedMaterials.map((m, i) => (
+                    <div key={i} className="flex items-center gap-4 text-sm border-b border-slate-100 pb-2">
+                      <span className="text-slate-500 w-24 flex-shrink-0">{fmtDate(m.issuedAt)}</span>
+                      <span className="font-medium">{m.itemName}</span>
+                      <span className="text-slate-600">{Number(m.qty).toLocaleString('en-IN')} {m.unit}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : <p className="text-slate-500 text-sm">No material issued to this order.</p>}
+            </Section>
+          )}
 
           {/* Production */}
           <Section title="Production Log" count={trace.productionLogs.length}>

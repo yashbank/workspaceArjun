@@ -35,9 +35,11 @@ type Props = {
   items: PickerItem[];
   suppliers: { id: string; name: string }[];
   openPos: ReceivePo[];
+  /** Owner only (D5): may type what the delivery charged. */
+  canSetRate?: boolean;
 };
 
-export function ReceiveScreen({ header, items, suppliers, openPos }: Props) {
+export function ReceiveScreen({ header, items, suppliers, openPos, canSetRate = false }: Props) {
   const [supplierId, setSupplierId] = useState<string | null>(null);
   const [poId, setPoId] = useState<string | null>(null);
   const [invoiceNo, setInvoiceNo] = useState('');
@@ -100,6 +102,7 @@ export function ReceiveScreen({ header, items, suppliers, openPos }: Props) {
         suppliers={suppliers}
         supplierId={supplierId}
         onSupplierChange={chooseSupplier}
+        canSetRate={canSetRate}
       >
         {visiblePos.length > 0 && (
           <InfoCard>
