@@ -15,6 +15,7 @@ import com.example.mis_kiosk.data.repository.PunchRepository
 import com.example.mis_kiosk.data.repository.RosterRepository
 import com.example.mis_kiosk.data.repository.RosterSyncResult
 import com.example.mis_kiosk.data.security.DeviceCredentialStore
+import com.example.mis_kiosk.data.time.FactoryDay
 import com.example.mis_kiosk.data.work.PunchFlushScheduler
 import java.time.Instant
 import java.util.UUID
@@ -25,6 +26,9 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -109,9 +113,19 @@ class PunchViewModel @JvmOverloads constructor(
         RosterSnapshot(employees, isSyncing, error, isRevoked, queuedCount)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), RosterSnapshot(emptyList(), true, null, false, 0))
 
+    /** "IN at this gate today": only punches since the 06:00 factory-day start count, and the
+     *  boundary is re-evaluated every minute so the number resets itself at the rollover. */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private val clockedInCountFlow: Flow<Int> = flow {
+        while (true) {
+            emit(FactoryDay.startMillis())
+            kotlinx.coroutines.delay(60_000)
+        }
+    }.distinctUntilChanged().flatMapLatest { dayStart -> database.punchStateDao().observeClockedInCount(dayStart) }
+
     val uiState: StateFlow<PunchUiState> = combine(
         rosterSnapshot,
-        database.punchStateDao().observeClockedInCount(),
+        clockedInCountFlow,
     ) { snapshot, clockedIn ->
         when {
             snapshot.revoked -> PunchUiState.Revoked
@@ -291,6 +305,15 @@ class PunchViewModel @JvmOverloads constructor(
         }
     }
 
+    /** The data wipe already ran in the repository; this clears the in-memory operator + shift
+     *  session and flips the screen back to pairing. */
+    private fun onRevoked() {
+        _currentOperator.value = null
+        _selectedShift.value = null
+        pending = null
+        revoked.value = true
+    }
+
     fun refresh() {
         if (syncing.value) return
         syncing.value = true
@@ -299,7 +322,7 @@ class PunchViewModel @JvmOverloads constructor(
             when (val result = rosterRepository.sync()) {
                 is RosterSyncResult.Success -> syncError.value = null
                 is RosterSyncResult.Failure -> syncError.value = result.message
-                RosterSyncResult.Revoked -> revoked.value = true
+                RosterSyncResult.Revoked -> onRevoked()
                 RosterSyncResult.NotPaired -> syncError.value = "This tablet is not paired."
             }
             syncing.value = false
@@ -475,6 +498,10 @@ class PunchViewModel @JvmOverloads constructor(
 
     private fun applyResult(attempt: PendingAttempt, result: PunchAttemptResult) {
         _submission.value = when (result) {
+            is PunchAttemptResult.Revoked -> {
+                onRevoked()
+                null
+            }
             is PunchAttemptResult.Applied -> {
                 pending = null
                 PunchSubmission.Success(

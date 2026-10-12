@@ -89,8 +89,7 @@ class RosterRepository(
                 // A revoked tablet must wipe its token and cached roster the moment it
                 // sees this, on any call (HANDOVER.md §6) — not just on /pull.
                 if (result.error?.wipe == true) {
-                    credentialStore.wipe()
-                    database.withTransaction { employeeDao.deleteAll() }
+                    wipeAll(context, credentialStore, database, rosterPreferences)
                     RosterSyncResult.Revoked
                 } else {
                     RosterSyncResult.Failure(httpErrorMessage(result.code, result.error))

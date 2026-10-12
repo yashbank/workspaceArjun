@@ -439,7 +439,7 @@ private fun IdleContent(
         )
         Spacer(Modifier.height(16.dp))
         Text(
-            "$clockedInCount clocked in today",
+            "$clockedInCount IN at this gate today",
             style = MaterialTheme.typography.bodyLarge,
             color = KioskColors.TextSecondary,
         )

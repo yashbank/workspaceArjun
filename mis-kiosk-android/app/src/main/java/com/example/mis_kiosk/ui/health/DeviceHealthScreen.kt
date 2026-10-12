@@ -123,8 +123,20 @@ fun DeviceHealthScreen(
                 }
 
                 Spacer(Modifier.height(32.dp))
-                Button(onClick = viewModel::retrySyncNow, modifier = Modifier.fillMaxWidth().height(56.dp)) {
-                    Text("Retry sync now")
+                Button(
+                    onClick = viewModel::retrySyncNow,
+                    enabled = !state.syncing,
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                ) {
+                    Text(if (state.syncing) "Syncing…" else "Retry sync now")
+                }
+                state.syncMessage?.let { message ->
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        message,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (state.syncFailed) KioskColors.Amber else KioskColors.TextSecondary,
+                    )
                 }
 
                 Spacer(Modifier.height(16.dp))
