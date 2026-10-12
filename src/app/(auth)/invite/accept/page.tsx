@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { AlertCircle, Loader2, Lock } from 'lucide-react';
 import { AuthCard } from '@/components/auth/auth-card';
+import { PasswordInput } from '@/components/auth/password-input';
 import { PasswordChecklist } from '@/components/auth/password-checklist';
 import { validatePassword, isPasswordValid } from '@/lib/password-policy';
 
@@ -196,9 +197,8 @@ function InviteAcceptContent() {
           <label htmlFor="password" className="bpp-label-caps mb-1.5 block">
             Password
           </label>
-          <input
+          <PasswordInput
             id="password"
-            type="password"
             required
             minLength={8}
             autoComplete="new-password"
@@ -216,9 +216,8 @@ function InviteAcceptContent() {
           <label htmlFor="confirm" className="bpp-label-caps mb-1.5 block">
             Confirm password
           </label>
-          <input
+          <PasswordInput
             id="confirm"
-            type="password"
             required
             minLength={8}
             autoComplete="new-password"

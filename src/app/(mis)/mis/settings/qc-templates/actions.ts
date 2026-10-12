@@ -11,13 +11,13 @@ export async function createQcTemplateAction(input: QcTemplateInput) {
   return asResult(async () => {
     await createQcTemplate(input);
     revalidatePath(PATH);
-  });
+  }, { entity: 'QC template', fields: input });
 }
 export async function updateQcTemplateAction(id: string, input: QcTemplateInput) {
   return asResult(async () => {
     await updateQcTemplate(id, input);
     revalidatePath(PATH);
-  });
+  }, { entity: 'QC template', fields: input });
 }
 export async function setQcTemplateActiveAction(id: string, isActive: boolean) {
   await setQcTemplateActive(id, isActive);

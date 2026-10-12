@@ -11,6 +11,7 @@ import { getLocale } from '@/server/mis/preferences';
 import { requireMisAccess } from '@/server/mis/guard';
 
 import { deleteOptionAction, restoreOptionAction, saveOptionAction } from '../actions';
+import { PageBack } from '@/components/mis/common/page-back';
 
 /**
  * One screen serving all seven option masters.
@@ -38,15 +39,18 @@ export default async function OptionMasterPage({
   const t = createTranslator(locale);
 
   const phone = (
-    <OptionMasterScreen
-      group={group}
-      title={t(`masters.${group as MasterGroup}` as TranslationKey)}
-      rows={rows}
-      canWrite={canWrite}
-      onSave={saveOptionAction}
-      onDelete={deleteOptionAction}
-      onRestore={restoreOptionAction}
-    />
+    <>
+      <PageBack href="/mis/masters" label="Masters" />
+      <OptionMasterScreen
+        group={group}
+        title={t(`masters.${group as MasterGroup}` as TranslationKey)}
+        rows={rows}
+        canWrite={canWrite}
+        onSave={saveOptionAction}
+        onDelete={deleteOptionAction}
+        onRestore={restoreOptionAction}
+      />
+    </>
   );
 
   // D10 from 1024px up; the existing screen below it. ANY explicit `?view` is the existing screen at every width.

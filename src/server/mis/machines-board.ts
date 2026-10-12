@@ -1,8 +1,9 @@
-import { addDaysToDateKey, dateKeyToDbDate } from '@/lib/mis/factory-time';
+import { addDaysToDateKey, dateKeyToDbDate, friendlyWhen } from '@/lib/mis/factory-time';
 import { buildMachineTimeline, weekStartKey, type MachineTimeline } from '@/lib/mis/machine-timeline';
 import { db } from '@/server/db';
 import { requirePermission } from '@/server/mis/auth';
 import { logAuditEvent } from '@/server/mis/audit';
+import { getFactoryTimezone } from '@/server/mis/business-rules';
 import { isActiveStatus } from '@/server/mis/job-phases';
 import { getFactoryShiftWindow } from '@/server/mis/shift-view';
 
@@ -211,7 +212,10 @@ export async function allocateMachine(data: {
       endsAt: { gt: data.startsAt },
     },
   });
-  if (overlap) throw new Error(`Machine already allocated from ${overlap.startsAt.toISOString()} to ${overlap.endsAt.toISOString()}`);
+  if (overlap) {
+    const tz = await getFactoryTimezone();
+    throw new Error(`Machine already allocated from ${friendlyWhen(overlap.startsAt, tz)} to ${friendlyWhen(overlap.endsAt, tz)}`);
+  }
 
   const rec = await db.misMachineAllocation.create({
     data: {

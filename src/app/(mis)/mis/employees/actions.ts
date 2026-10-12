@@ -4,10 +4,12 @@ import { createEmployee, updateEmployee, deleteEmployee, restoreEmployee, type E
 import { setEmployeePhoto } from '@/server/mis/employee-photo';
 import { asResult } from '@/lib/mis/action-result';
 
-export async function saveEmployeeAction(id: string | null, values: EmployeeInput): Promise<{ id: string }> {
-  const saved = id ? await updateEmployee(id, values) : await createEmployee(values);
-  revalidatePath('/mis/employees');
-  return { id: saved.id };
+export async function saveEmployeeAction(id: string | null, values: EmployeeInput) {
+  return asResult(async () => {
+    const saved = id ? await updateEmployee(id, values) : await createEmployee(values);
+    revalidatePath('/mis/employees');
+    return { id: saved.id };
+  }, { entity: 'Employee', fields: values });
 }
 
 /** V2 Epic 7 — `formData` carries one `photo` file; resized to 256×256 WebP on the server. */

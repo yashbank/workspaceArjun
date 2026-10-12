@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 
+import { asResult } from '@/lib/mis/action-result';
 import type { MisPayBasis, MisWageUnit } from '@/generated/prisma/enums';
 import { addWageRate, createWageType, setWageTypeActive } from '@/server/mis/wage-type';
 
@@ -16,8 +17,10 @@ export async function createWageTypeAction(input: {
   allowanceAmount?: number | null;
   bonusAmount?: number | null;
 }) {
-  await createWageType(input);
-  revalidatePath('/mis/settings/wages');
+  return asResult(async () => {
+    await createWageType(input);
+    revalidatePath('/mis/settings/wages');
+  }, { entity: 'Wage type', fields: input });
 }
 
 export async function addWageRateAction(

@@ -13,6 +13,7 @@ import { isMisRole } from '@/lib/mis/roles';
 import { saveEmployeeAction, deleteEmployeeAction, restoreEmployeeAction, uploadEmployeePhotoAction } from '@/app/(mis)/mis/employees/actions';
 import { PhotoPicker } from './photo-picker';
 import { unwrap } from '@/lib/mis/action-result';
+import { managerOptionLabel } from '@/lib/mis/employee-labels';
 
 // Same visual weight as the kit's `Button` ghost variant, so a navigation
 // link (View, Badge) sits in the same row as an action button (Edit,
@@ -24,6 +25,7 @@ const actionLinkClass =
 type Employee = {
   id: string; employeeCode: string; name: string; nameHi: string | null; role: string; isActive: boolean;
   deletedAt: Date | null; managerId: string | null; userProfile: { email: string } | null;
+  department?: { name: string } | null;
   // Phase 25 (25.2/25.3, D28) — none of the three is money; wageTypeCode is a CODE, never an amount (D33).
   wageTypeCode: string | null; payType: 'MONTHLY' | 'DAILY'; sundayPaid: boolean;
   photoUrl?: string | null;
@@ -85,13 +87,13 @@ export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes
   // manager can only be someone the caller can already see (visibility.ts).
   const managerOptions: SelectOption[] = employees
     .filter((e) => e.id !== editing?.id && !e.deletedAt)
-    .map((e) => ({ value: e.id, label: `${e.name} (${e.employeeCode})` }));
+    .map((e) => ({ value: e.id, label: managerOptionLabel(e, roleLabel) }));
 
   const handleSave = () => {
     setSaveError(null);
     startTransition(async () => {
       try {
-        const saved = await saveEmployeeAction(editing?.id ?? null, {
+        const saved = unwrap(await saveEmployeeAction(editing?.id ?? null, {
           employeeCode: code,
           name,
           nameHi: nameHi || undefined,
@@ -102,7 +104,7 @@ export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes
           // Only an Owner's form ever holds these — an Admin's form never renders the section
           // that sets them, so they stay `undefined` (unchanged) on an Admin's save.
           ...(isOwner ? { wageTypeCode, payType, sundayPaid } : {}),
-        });
+        }));
         // V2 Epic 7: the photo rides on the saved row's id, so it goes up after the save. If the
         // upload fails the row already exists — switch to edit mode so a retry never creates a twin.
         if (photo) {
@@ -143,6 +145,7 @@ export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes
   const columns: Column<Employee>[] = [
     { key: 'code', header: 'Code', render: (r) => <span className="font-mono text-sm">{r.employeeCode}</span> },
     { key: 'name', header: 'Name', render: (r) => <div><div>{r.name}</div>{r.nameHi && <div className="text-xs text-slate-500">{r.nameHi}</div>}</div> },
+    { key: 'department', header: 'Department', hideOnMobile: true, render: (r) => r.department?.name ?? <span className="text-slate-400 text-xs">—</span> },
     { key: 'role', header: 'Role', render: (r) => <StatusBadge tone={roleTone(r.role)}>{roleLabel(r.role)}</StatusBadge> },
     {
       key: 'manager',

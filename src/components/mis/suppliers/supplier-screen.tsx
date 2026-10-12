@@ -13,6 +13,7 @@ type Props = { suppliers: Supplier[]; canWrite: boolean };
 
 export function SupplierScreen({ suppliers, canWrite }: Props) {
   const [open, setOpen] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Supplier | null>(null);
   const [vals, setVals] = useState({ code: '', name: '', phone: '', address: '', city: '', gstNo: '', paymentDays: '' });
   const [search, setSearch] = useState('');
@@ -24,12 +25,13 @@ export function SupplierScreen({ suppliers, canWrite }: Props) {
 
   const set = (k: keyof typeof vals) => (e: React.ChangeEvent<HTMLInputElement>) => setVals(v => ({ ...v, [k]: e.target.value }));
 
-  const openAdd = () => { setEditing(null); setVals({ code: '', name: '', phone: '', address: '', city: '', gstNo: '', paymentDays: '' }); setOpen(true); };
-  const openEdit = (s: Supplier) => { setEditing(s); setVals({ code: s.code, name: s.name, phone: s.phone ?? '', address: '', city: s.city ?? '', gstNo: s.gstNo ?? '', paymentDays: s.paymentTermsDays?.toString() ?? '' }); setOpen(true); };
+  const openAdd = () => { setEditing(null); setVals({ code: '', name: '', phone: '', address: '', city: '', gstNo: '', paymentDays: '' }); setSaveError(null); setOpen(true); };
+  const openEdit = (s: Supplier) => { setEditing(s); setVals({ code: s.code, name: s.name, phone: s.phone ?? '', address: '', city: s.city ?? '', gstNo: s.gstNo ?? '', paymentDays: s.paymentTermsDays?.toString() ?? '' }); setSaveError(null); setOpen(true); };
 
   const handleSave = () => {
     startTransition(async () => {
-      await saveSupplierAction(editing?.id ?? null, { code: vals.code, name: vals.name, phone: vals.phone || undefined, address: vals.address || undefined, city: vals.city || undefined, gstNo: vals.gstNo || undefined, paymentTermsDays: vals.paymentDays ? parseInt(vals.paymentDays) : undefined });
+      const r = await saveSupplierAction(editing?.id ?? null, { code: vals.code, name: vals.name, phone: vals.phone || undefined, address: vals.address || undefined, city: vals.city || undefined, gstNo: vals.gstNo || undefined, paymentTermsDays: vals.paymentDays ? parseInt(vals.paymentDays) : undefined });
+      if (!r.ok) { setSaveError(r.detail); return; }
       setOpen(false);
     });
   };
@@ -83,6 +85,7 @@ export function SupplierScreen({ suppliers, canWrite }: Props) {
           <Input label="City" value={vals.city} onChange={set('city')} />
           <Input label="GST No" value={vals.gstNo} onChange={set('gstNo')} />
           <NumberInput label="Payment Terms (days)" value={vals.paymentDays} onChange={set('paymentDays')} />
+          {saveError && <p role="alert" className="text-sm text-red-600">{saveError}</p>}
           <div className="flex gap-2 pt-2">
             <Button onClick={handleSave} disabled={isPending || !vals.name || !vals.code}>{isPending ? 'Saving…' : 'Save'}</Button>
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>

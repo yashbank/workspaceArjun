@@ -45,6 +45,13 @@ describe('saveMasterAction', () => {
     expect(saveMaster).toHaveBeenCalledWith('departments', null, { code: 'C', name: 'N' });
   });
 
+  it('a duplicate code comes back as a friendly sentence, not the raw Prisma text', async () => {
+    saveMaster.mockRejectedValue(Object.assign(new Error('Unique constraint failed'), { code: 'P2002', meta: { target: ['code'] } }));
+    const state = await saveMasterAction({ error: null }, form({ master: 'machines', code: 'M-1', name: 'X' }));
+    expect(state.error).toBe("Machine with code 'M-1' already exists");
+    expect(redirect).not.toHaveBeenCalled();
+  });
+
   it('a failure comes back as a message WITH what was typed, and does not redirect', async () => {
     saveMaster.mockRejectedValue(new Error('Name is required.'));
     const state = await saveMasterAction({ error: null }, form({ master: 'machines', id: 'm1', name: '', machineType: 'Offset' }));

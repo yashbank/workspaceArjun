@@ -15,6 +15,7 @@ const UNIT_OPTIONS: SelectOption[] = [{ value: 'KG', label: 'KG' }, { value: 'PC
 
 export function ItemScreen({ items, canWrite }: Props) {
   const [open, setOpen] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Item | null>(null);
   const [vals, setVals] = useState({ code: '', name: '', gsm: '', size: '', substrate: '', coating: '', unit: 'KG' });
   const [search, setSearch] = useState('');
@@ -26,11 +27,15 @@ export function ItemScreen({ items, canWrite }: Props) {
 
   const set = (k: keyof typeof vals) => (e: React.ChangeEvent<HTMLInputElement>) => setVals(v => ({ ...v, [k]: e.target.value }));
 
-  const openAdd = () => { setEditing(null); setVals({ code: '', name: '', gsm: '', size: '', substrate: '', coating: '', unit: 'KG' }); setOpen(true); };
-  const openEdit = (it: Item) => { setEditing(it); setVals({ code: it.code, name: it.name, gsm: it.gsm ?? '', size: it.size ?? '', substrate: it.substrate ?? '', coating: it.coating ?? '', unit: it.unit }); setOpen(true); };
+  const openAdd = () => { setEditing(null); setVals({ code: '', name: '', gsm: '', size: '', substrate: '', coating: '', unit: 'KG' }); setSaveError(null); setOpen(true); };
+  const openEdit = (it: Item) => { setEditing(it); setVals({ code: it.code, name: it.name, gsm: it.gsm ?? '', size: it.size ?? '', substrate: it.substrate ?? '', coating: it.coating ?? '', unit: it.unit }); setSaveError(null); setOpen(true); };
 
   const handleSave = () => {
-    startTransition(async () => { await saveItemAction(editing?.id ?? null, vals); setOpen(false); });
+    startTransition(async () => {
+      const r = await saveItemAction(editing?.id ?? null, vals);
+      if (!r.ok) { setSaveError(r.detail); return; }
+      setOpen(false);
+    });
   };
 
   const columns: Column<Item>[] = [
@@ -68,6 +73,7 @@ export function ItemScreen({ items, canWrite }: Props) {
           <Input label="Substrate" value={vals.substrate} onChange={set('substrate')} />
           <Input label="Coating" value={vals.coating} onChange={set('coating')} />
           <Select label="Unit" value={vals.unit} options={UNIT_OPTIONS} onChange={(v) => setVals(p => ({ ...p, unit: v }))} />
+          {saveError && <p role="alert" className="text-sm text-red-600">{saveError}</p>}
           <div className="flex gap-2 pt-2">
             <Button onClick={handleSave} disabled={isPending || !vals.name || !vals.code}>{isPending ? 'Saving…' : 'Save'}</Button>
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>

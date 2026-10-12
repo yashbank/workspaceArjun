@@ -3,6 +3,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
 
 import { SERIES_HUES, STATE_HUES } from '@/lib/mis/chart';
+import { filterByMachineName } from '@/lib/mis/machine-search';
 import { axisLabel, hourTicks, percentAcross, type MachineRow, type TimelineBar } from '@/lib/mis/machine-timeline';
 import { cn } from '@/lib/utils';
 import type { MachineDayTimeline } from '@/server/mis/machines-board';
@@ -130,6 +131,10 @@ function TimelineCard({ data, selectedId, onSelect }: { data: MachineDayTimeline
   const { window } = timeline;
   const ticks = hourTicks(window);
   const hours = (window.to - window.from) / 60;
+  const [query, setQuery] = useState('');
+  const searching = query.trim() !== '';
+  // A search looks across EVERY machine (a free one has no bar but is still worth finding); no query keeps the booked-or-down view.
+  const rows = searching ? filterByMachineName(timeline.machines, query) : timeline.shown;
 
   return (
     <Card>
@@ -142,7 +147,18 @@ function TimelineCard({ data, selectedId, onSelect }: { data: MachineDayTimeline
         </span>
       </header>
 
-      {timeline.shown.length === 0 ? (
+      <input
+        type="search"
+        aria-label={t('d5.searchMachine')}
+        placeholder={t('d5.searchMachine')}
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        className="mb-4 w-full max-w-sm min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500"
+      />
+
+      {searching && rows.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-slate-300 px-4 py-6 text-center text-sm text-slate-500">{t('d5.noMachineMatch')}</p>
+      ) : !searching && timeline.shown.length === 0 ? (
         // Nothing booked and nothing down: every machine is FREE. (Not "booked or down" — that
         // sentence belongs to the Free-now card, where it means the opposite.)
         <p className="rounded-lg border border-dashed border-slate-300 px-4 py-6 text-center text-sm text-slate-500">{t('d5.nothingBooked')}</p>
@@ -158,7 +174,7 @@ function TimelineCard({ data, selectedId, onSelect }: { data: MachineDayTimeline
             ))}
           </div>
 
-          {timeline.shown.map((machine) => (
+          {rows.map((machine) => (
             <MachineTrack key={machine.id} machine={machine} timeline={timeline} selected={machine.id === selectedId} onSelect={onSelect} />
           ))}
         </div>

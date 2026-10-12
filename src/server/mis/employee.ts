@@ -40,7 +40,7 @@ export async function listEmployees(includeDeleted = false) {
   const visible = await resolveVisibleEmployeeWhere(actor);
   return db.misEmployee.findMany({
     where: { ...visible, ...(includeDeleted ? {} : { deletedAt: null }) },
-    include: { userProfile: { select: { email: true } } },
+    include: { userProfile: { select: { email: true } }, department: { select: { name: true } } },
     orderBy: { name: 'asc' },
   });
 }

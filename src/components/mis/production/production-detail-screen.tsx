@@ -1,5 +1,6 @@
 'use client';
 
+import { PageBack } from '@/components/mis/common/page-back';
 import { useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/mis/kit/button';
@@ -146,12 +147,7 @@ export function ProductionDetailScreen({ order, logs, summary, operators, machin
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 py-6">
-      {/* Breadcrumb */}
-      <nav className="flex items-center gap-2 text-sm text-gray-500">
-        <Link href="/mis/production" className="inline-flex min-h-11 items-center hover:text-gray-700">Production</Link>
-        <span>/</span>
-        <span className="text-gray-900 font-medium">{order.orderNumber}</span>
-      </nav>
+      <PageBack href="/mis/production" label="Production" />
 
       {/* Header */}
       <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-start sm:justify-between">

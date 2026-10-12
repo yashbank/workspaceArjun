@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useCallback } from 'react';
 import { MisDefectSeverity } from '@/generated/prisma/enums';
+import { unwrap } from '@/lib/mis/action-result';
 import { saveDefectTypeAction, deleteDefectTypeAction, restoreDefectTypeAction } from '@/app/(mis)/mis/masters/defect-types/actions';
 import type { Column } from '../kit/data-table';
 import { StatusBadge } from '../kit/status-badge';
@@ -60,13 +61,13 @@ export function DefectTypeScreen({
 
   const handleSave = useCallback(
     async (values: Record<string, string>, row: DefectTypeRow | null) => {
-      await saveDefectTypeAction(row?.id ?? null, {
+      unwrap(await saveDefectTypeAction(row?.id ?? null, {
         code: values.code,
         name: values.name,
         nameHi: values.nameHi,
         severity: values.severity as MisDefectSeverity,
         sortOrder: parseInt(values.sortOrder) || 0,
-      });
+      }));
       router.refresh();
     },
     [router],

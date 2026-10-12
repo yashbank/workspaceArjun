@@ -11,7 +11,7 @@ import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const ROOT = join(process.cwd(), 'src/server/mis');
-const ALLOW_LIST = new Set(['line-clearance.ts', 'machines-board.ts']);
+const ALLOW_LIST = new Set<string>();
 
 function walk(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {

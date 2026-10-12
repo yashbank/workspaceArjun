@@ -13,6 +13,7 @@ type Props = { customers: Customer[]; canWrite: boolean };
 
 export function CustomerScreen({ customers, canWrite }: Props) {
   const [open, setOpen] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Customer | null>(null);
   const [vals, setVals] = useState({ code: '', name: '', nameHi: '', phone: '', address: '', city: '', gstNo: '' });
   const [search, setSearch] = useState('');
@@ -24,11 +25,15 @@ export function CustomerScreen({ customers, canWrite }: Props) {
 
   const set = (k: keyof typeof vals) => (e: React.ChangeEvent<HTMLInputElement>) => setVals(v => ({ ...v, [k]: e.target.value }));
 
-  const openAdd = () => { setEditing(null); setVals({ code: '', name: '', nameHi: '', phone: '', address: '', city: '', gstNo: '' }); setOpen(true); };
-  const openEdit = (c: Customer) => { setEditing(c); setVals({ code: c.code, name: c.name, nameHi: c.nameHi ?? '', phone: c.phone ?? '', address: '', city: c.city ?? '', gstNo: c.gstNo ?? '' }); setOpen(true); };
+  const openAdd = () => { setEditing(null); setVals({ code: '', name: '', nameHi: '', phone: '', address: '', city: '', gstNo: '' }); setSaveError(null); setOpen(true); };
+  const openEdit = (c: Customer) => { setEditing(c); setVals({ code: c.code, name: c.name, nameHi: c.nameHi ?? '', phone: c.phone ?? '', address: '', city: c.city ?? '', gstNo: c.gstNo ?? '' }); setSaveError(null); setOpen(true); };
 
   const handleSave = () => {
-    startTransition(async () => { await saveCustomerAction(editing?.id ?? null, vals); setOpen(false); });
+    startTransition(async () => {
+      const r = await saveCustomerAction(editing?.id ?? null, vals);
+      if (!r.ok) { setSaveError(r.detail); return; }
+      setOpen(false);
+    });
   };
 
   function downloadCsv() {
@@ -80,6 +85,7 @@ export function CustomerScreen({ customers, canWrite }: Props) {
           <Input label="Address" value={vals.address} onChange={set('address')} />
           <Input label="City" value={vals.city} onChange={set('city')} />
           <Input label="GST No" value={vals.gstNo} onChange={set('gstNo')} />
+          {saveError && <p role="alert" className="text-sm text-red-600">{saveError}</p>}
           <div className="flex gap-2 pt-2">
             <Button onClick={handleSave} disabled={isPending || !vals.name || !vals.code}>{isPending ? 'Saving…' : 'Save'}</Button>
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
