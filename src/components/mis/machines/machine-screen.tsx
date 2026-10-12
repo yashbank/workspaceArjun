@@ -14,6 +14,7 @@ type Props = { machines: Machine[]; depts: Dept[]; canWrite: boolean };
 
 export function MachineScreen({ machines, depts, canWrite }: Props) {
   const [open, setOpen] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Machine | null>(null);
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
@@ -29,12 +30,13 @@ export function MachineScreen({ machines, depts, canWrite }: Props) {
 
   const deptOptions: SelectOption[] = [{ value: '', label: '— None —' }, ...depts.map(d => ({ value: d.id, label: d.name }))];
 
-  const openAdd = () => { setEditing(null); setCode(''); setName(''); setDeptId(''); setMachineType(''); setCapacity(''); setOpen(true); };
-  const openEdit = (m: Machine) => { setEditing(m); setCode(m.code); setName(m.name); setDeptId(m.departmentId ?? ''); setMachineType(m.machineType ?? ''); setCapacity(m.capacityPerDay ? String(m.capacityPerDay) : ''); setOpen(true); };
+  const openAdd = () => { setEditing(null); setCode(''); setName(''); setDeptId(''); setMachineType(''); setCapacity(''); setSaveError(null); setOpen(true); };
+  const openEdit = (m: Machine) => { setEditing(m); setCode(m.code); setName(m.name); setDeptId(m.departmentId ?? ''); setMachineType(m.machineType ?? ''); setCapacity(m.capacityPerDay ? String(m.capacityPerDay) : ''); setSaveError(null); setOpen(true); };
 
   const handleSave = () => {
     startTransition(async () => {
-      await saveMachineAction(editing?.id ?? null, { code, name, departmentId: deptId || undefined, machineType: machineType || undefined, capacityPerDay: capacity ? parseFloat(capacity) : undefined });
+      const r = await saveMachineAction(editing?.id ?? null, { code, name, departmentId: deptId || undefined, machineType: machineType || undefined, capacityPerDay: capacity ? parseFloat(capacity) : undefined });
+      if (!r.ok) { setSaveError(r.detail); return; }
       setOpen(false);
     });
   };
@@ -72,6 +74,7 @@ export function MachineScreen({ machines, depts, canWrite }: Props) {
           <Select label="Department" value={deptId} options={deptOptions} onChange={setDeptId} />
           <Input label="Machine Type" value={machineType} onChange={(e) => setMachineType(e.target.value)} />
           <NumberInput label="Capacity/Day" value={capacity} onChange={(e) => setCapacity(e.target.value)} />
+          {saveError && <p role="alert" className="text-sm text-red-600">{saveError}</p>}
           <div className="flex gap-2 pt-2">
             <Button onClick={handleSave} disabled={isPending || !name || !code}>{isPending ? 'Saving…' : 'Save'}</Button>
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>

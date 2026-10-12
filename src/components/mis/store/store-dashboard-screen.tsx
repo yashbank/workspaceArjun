@@ -73,7 +73,25 @@ export function StoreDashboardScreen({ stats, isOwner }: Props) {
             Live stock status · {stats.totalItems} items managed
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href="/mis/store/issue"
+            className="inline-flex min-h-11 items-center justify-center rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700"
+          >
+            Issue material
+          </Link>
+          <Link
+            href="/mis/store/receive"
+            className="inline-flex min-h-11 items-center justify-center rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700"
+          >
+            Receive goods
+          </Link>
+          <Link
+            href="/mis/store/count"
+            className="inline-flex min-h-11 items-center justify-center px-3 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-700"
+          >
+            Physical count
+          </Link>
           <Link
             href="/mis/store"
             className="inline-flex min-h-11 items-center justify-center px-3 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-700"

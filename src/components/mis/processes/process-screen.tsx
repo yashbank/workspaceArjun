@@ -14,6 +14,7 @@ type Props = { processes: Process[]; depts: Dept[]; canWrite: boolean };
 
 export function ProcessScreen({ processes, depts, canWrite }: Props) {
   const [open, setOpen] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Process | null>(null);
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
@@ -24,12 +25,13 @@ export function ProcessScreen({ processes, depts, canWrite }: Props) {
 
   const deptOptions: SelectOption[] = [{ value: '', label: '— None —' }, ...depts.map(d => ({ value: d.id, label: d.name }))];
 
-  const openAdd = () => { setEditing(null); setCode(''); setName(''); setNameHi(''); setDeptId(''); setStdTime(''); setOpen(true); };
-  const openEdit = (p: Process) => { setEditing(p); setCode(p.code); setName(p.name); setNameHi(p.nameHi ?? ''); setDeptId(p.departmentId ?? ''); setStdTime(p.standardTimeMinutes?.toString() ?? ''); setOpen(true); };
+  const openAdd = () => { setEditing(null); setCode(''); setName(''); setNameHi(''); setDeptId(''); setStdTime(''); setSaveError(null); setOpen(true); };
+  const openEdit = (p: Process) => { setEditing(p); setCode(p.code); setName(p.name); setNameHi(p.nameHi ?? ''); setDeptId(p.departmentId ?? ''); setStdTime(p.standardTimeMinutes?.toString() ?? ''); setSaveError(null); setOpen(true); };
 
   const handleSave = () => {
     startTransition(async () => {
-      await saveProcessAction(editing?.id ?? null, { code, name, nameHi: nameHi || undefined, departmentId: deptId || undefined, standardTimeMinutes: stdTime ? parseInt(stdTime) : undefined });
+      const r = await saveProcessAction(editing?.id ?? null, { code, name, nameHi: nameHi || undefined, departmentId: deptId || undefined, standardTimeMinutes: stdTime ? parseInt(stdTime) : undefined });
+      if (!r.ok) { setSaveError(r.detail); return; }
       setOpen(false);
     });
   };
@@ -63,6 +65,7 @@ export function ProcessScreen({ processes, depts, canWrite }: Props) {
           <Input label="Name (Hindi)" value={nameHi} onChange={(e) => setNameHi(e.target.value)} />
           <Select label="Department" value={deptId} options={deptOptions} onChange={setDeptId} />
           <NumberInput label="Std. Time (min)" value={stdTime} onChange={(e) => setStdTime(e.target.value)} />
+          {saveError && <p role="alert" className="text-sm text-red-600">{saveError}</p>}
           <div className="flex gap-2 pt-2">
             <Button onClick={handleSave} disabled={isPending || !name || !code}>{isPending ? 'Saving…' : 'Save'}</Button>
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>

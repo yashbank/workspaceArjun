@@ -1,5 +1,6 @@
 'use client';
 
+import { PageBack } from '@/components/mis/common/page-back';
 import { useMemo, useState } from 'react';
 
 import { commitReceiptAction } from '@/app/(mis)/mis/store/actions';
@@ -80,6 +81,7 @@ export function ReceiveScreen({ header, items, suppliers, openPos, canSetRate = 
 
   return (
     <HomeStack>
+      <PageBack href="/mis/store/dashboard" label="Store overview" />
       <HeaderCard title={header.title} meta={header.meta} />
 
       {done && (

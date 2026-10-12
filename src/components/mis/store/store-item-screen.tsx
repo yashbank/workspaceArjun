@@ -1,4 +1,5 @@
 'use client';
+import { PageBack } from '@/components/mis/common/page-back';
 import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { DataTable, type Column } from '@/components/mis/kit/data-table';
@@ -312,6 +313,7 @@ export function StoreItemScreen({ items, canWrite, isOwner }: Props) {
 
   return (
     <div className="mx-auto max-w-6xl flex flex-col gap-4">
+      <PageBack href="/mis/store/dashboard" label="Store overview" />
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>

@@ -1,4 +1,5 @@
 'use client';
+import { PageBack } from '@/components/mis/common/page-back';
 import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/mis/kit/button';
@@ -238,7 +239,7 @@ export function GrnDetailScreen({ grn, canWrite, canSeeMoney = false, invoiceAmo
             <h1 className="text-xl font-semibold text-slate-900">{grn.grnNumber}</h1>
             <StatusBadge tone={grn.status === 'CONFIRMED' ? 'good' : 'neutral'}>{grn.status}</StatusBadge>
           </div>
-          <Link href="/mis/grn" className="text-sm text-slate-500 hover:underline">← Back to GRNs</Link>
+          <PageBack href="/mis/grn" label="Goods received" />
           <a href={`/mis/print/grn/${grn.id}`} target="_blank" className="text-sm text-blue-600 hover:underline ml-4">🖨 Print GRN</a>
         </div>
         {isDraft && canWrite && (

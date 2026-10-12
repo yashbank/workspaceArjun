@@ -1,4 +1,5 @@
 'use client';
+import { PageBack } from '@/components/mis/common/page-back';
 import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/mis/kit/button';
@@ -128,7 +129,7 @@ export function PoDetailScreen({ po, formattedItems, total, catalogItems, canWri
             <h1 className="text-xl font-semibold text-slate-900">{po.poNumber}</h1>
             <StatusBadge tone={statusTone(po.status)}>{po.status.replace(/_/g, ' ')}</StatusBadge>
           </div>
-          <Link href="/mis/po" className="text-sm text-slate-500 hover:underline">← Back to POs</Link>
+          <PageBack href="/mis/po" label="Purchase orders" />
           <Link href={`/mis/print/po/${po.id}`} target="_blank" className="text-sm text-blue-600 hover:underline ml-4">🖨 Print PO</Link>
         </div>
         <div className="flex gap-2 flex-shrink-0">

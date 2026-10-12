@@ -4,6 +4,7 @@ import { can } from '@/lib/mis/permissions';
 import { listLeaveRequests } from '@/server/mis/attendance';
 import { listEmployees } from '@/server/mis/employee';
 import { LeaveScreen } from '@/components/mis/attendance/leave-screen';
+import { PageBack } from '@/components/mis/common/page-back';
 
 export default async function LeavePage({ searchParams }: { searchParams: { employeeId?: string } }) {
   const user = await requireMisAccess();
@@ -19,17 +20,20 @@ export default async function LeavePage({ searchParams }: { searchParams: { empl
   const initialEmployeeId = sp.employeeId;
 
   return (
-    <LeaveScreen
-      leaves={leaves.map(l => ({
-        id: l.id,
-        date: l.date,
-        status: l.status,
-        reason: l.reason,
-        employee: l.employee,
-      }))}
-      employees={employees.filter(e => e.isActive).map(e => ({ id: e.id, name: e.name, employeeCode: e.employeeCode }))}
-      canApprove={canApprove}
-      initialEmployeeId={initialEmployeeId}
-    />
+    <>
+      <PageBack href="/mis/attendance" label="Attendance" />
+      <LeaveScreen
+        leaves={leaves.map(l => ({
+          id: l.id,
+          date: l.date,
+          status: l.status,
+          reason: l.reason,
+          employee: l.employee,
+        }))}
+        employees={employees.filter(e => e.isActive).map(e => ({ id: e.id, name: e.name, employeeCode: e.employeeCode }))}
+        canApprove={canApprove}
+        initialEmployeeId={initialEmployeeId}
+      />
+    </>
   );
 }

@@ -1,5 +1,6 @@
 'use client';
 
+import { PageBack } from '@/components/mis/common/page-back';
 import { useState } from 'react';
 
 import { commitIssueAction } from '@/app/(mis)/mis/store/actions';
@@ -41,6 +42,7 @@ export function IssueScreen({ header, items, orders, departments, allocations = 
 
   return (
     <HomeStack>
+      <PageBack href="/mis/store/dashboard" label="Store overview" />
       <HeaderCard title={header.title} meta={header.meta} />
 
       {done && (

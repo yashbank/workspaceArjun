@@ -4,6 +4,7 @@ import { assignableRoles } from '@/lib/mis/roles';
 import { getMisRole } from '@/server/mis/roles';
 import { getMisSeatSummary, listMisUsers, listPendingMisGrants } from '@/server/mis/users';
 import { UsersScreen } from '@/components/mis/settings/users-screen';
+import { PageBack } from '@/components/mis/common/page-back';
 
 export default async function MisUsersPage() {
   const user = await requireMisAccess();
@@ -17,12 +18,15 @@ export default async function MisUsersPage() {
   ]);
 
   return (
-    <UsersScreen
-      users={users}
-      seats={seats}
-      pendingGrants={pendingGrants}
-      canInvite={canInvite}
-      assignableRoles={assignableRoles(role)}
-    />
+    <>
+      <PageBack href="/mis/settings" label="Settings" />
+      <UsersScreen
+        users={users}
+        seats={seats}
+        pendingGrants={pendingGrants}
+        canInvite={canInvite}
+        assignableRoles={assignableRoles(role)}
+      />
+    </>
   );
 }

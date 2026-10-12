@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 
+import { asResult } from '@/lib/mis/action-result';
 import {
   addOptionInline,
   createOption,
@@ -23,12 +24,14 @@ export async function saveOptionAction(
   id: string | null,
   values: { label: string; labelHi?: string },
 ) {
-  if (id) {
-    await updateOption(id, { label: values.label, labelHi: values.labelHi ?? null });
-  } else {
-    await createOption({ group, label: values.label, labelHi: values.labelHi ?? null });
-  }
-  revalidatePath(`/mis/masters/${group}`);
+  return asResult(async () => {
+    if (id) {
+      await updateOption(id, { label: values.label, labelHi: values.labelHi ?? null });
+    } else {
+      await createOption({ group, label: values.label, labelHi: values.labelHi ?? null });
+    }
+    revalidatePath(`/mis/masters/${group}`);
+  }, { entity: 'Option', fields: values });
 }
 
 export async function deleteOptionAction(group: string, id: string) {
@@ -42,7 +45,9 @@ export async function restoreOptionAction(group: string, id: string) {
 }
 
 export async function addOptionInlineAction(group: string, label: string) {
-  const value = await addOptionInline(group, label);
-  revalidatePath(`/mis/masters/${group}`);
-  return value;
+  return asResult(async () => {
+    const value = await addOptionInline(group, label);
+    revalidatePath(`/mis/masters/${group}`);
+    return value;
+  }, { entity: 'Option', fields: { label } });
 }
