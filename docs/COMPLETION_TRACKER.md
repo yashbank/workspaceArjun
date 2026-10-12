@@ -326,8 +326,8 @@ share one stored value.
 ## Tester round 2 (2026-10-13) — 61 tester items triaged, specs written
 **Status:** SPECS READY, implementation not started. Read `docs/specs/00-README.md` first (rules, owner decisions
 D1-D9, waves, models, resume protocol), then the cluster spec. Cluster status (update as you go):
-C1 stock-grn: TODO · C2 po-bom: TODO · C4 order-lifecycle: TODO · C5 production-qc: TODO · C7 android: TODO ·
-C6a helpers: TODO · C3 money-trace (after C1): TODO · C6b wiring (after wave 1): TODO.
+C1 stock-grn: IN_PROGRESS · C2 po-bom: IN_PROGRESS · C4 order-lifecycle: PR #73 (review fixes in progress) · C5 production-qc: MERGED #74 · C7 android: IN_PROGRESS ·
+C6a helpers: IN_PROGRESS · C3 money-trace (after C1): TODO · C6b wiring (after wave 1): TODO.
 Deploy plan: Phase A = C1+C2+C3+C4 -> deploy + tester re-test block (§11); then C5+C6+C7 -> deploy (§12).
 Deferred (needs owner SQL / product input): see "Deferred" in the README.
 
