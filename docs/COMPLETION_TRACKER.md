@@ -326,8 +326,8 @@ share one stored value.
 ## Tester round 2 (2026-10-13) — 61 tester items triaged, specs written
 **Status:** SPECS READY, implementation not started. Read `docs/specs/00-README.md` first (rules, owner decisions
 D1-D9, waves, models, resume protocol), then the cluster spec. Cluster status (update as you go):
-C1 stock-grn: IN_PROGRESS · C2 po-bom: IN_PROGRESS · C4 order-lifecycle: PR #73 (review fixes in progress) · C5 production-qc: MERGED #74 · C7 android: IN_PROGRESS ·
-C6a helpers: IN_PROGRESS · C3 money-trace (after C1): TODO · C6b wiring (after wave 1): TODO.
+C1 stock-grn: MERGED #78 (backfill SQL run by owner) · C2 po-bom: MERGED #76 · C4 order-lifecycle: MERGED #73 · C5 production-qc: MERGED #74 · C7 android: MERGED #77 ·
+C6a helpers: MERGED #75 · Wave-1 gates GREEN (tsc silent, 4895 tests, eslint 6 known any, build ok; browser check pending) · C3 money-trace: IN_PROGRESS · C6b wiring: TODO.
 Deploy plan: Phase A = C1+C2+C3+C4 -> deploy + tester re-test block (§11); then C5+C6+C7 -> deploy (§12).
 Deferred (needs owner SQL / product input): see "Deferred" in the README.
 
