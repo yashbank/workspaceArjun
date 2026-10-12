@@ -20,6 +20,8 @@ vi.mock('@/server/db', () => ({
   },
 }));
 
+vi.mock('@/server/mis/business-rules', () => ({ getFactoryTimezone: async () => 'Asia/Kolkata' }));
+
 const mockAudit = vi.fn();
 vi.mock('@/server/mis/audit', () => ({ logAuditEvent: (...a: unknown[]) => mockAudit(...a) }));
 
@@ -52,6 +54,16 @@ describe('allocateMachine — permission and overlap (unchanged behaviour)', () 
     await expect(
       allocateMachine({ machineId: 'm1', startsAt: START, endsAt: END }),
     ).rejects.toThrow(/already allocated/);
+  });
+
+  it('words the clash in the factory zone, never as an ISO string', async () => {
+    machineAllocationFindFirst.mockResolvedValue({
+      id: 'existing',
+      startsAt: new Date('2026-09-20T00:30:00.000Z'),
+      endsAt: new Date('2026-09-20T08:30:00.000Z'),
+    });
+    const err = await allocateMachine({ machineId: 'm1', startsAt: START, endsAt: END }).catch((e: Error) => e);
+    expect((err as Error).message).toBe('Machine already allocated from 20/09/2026 6:00 am to 20/09/2026 2:00 pm');
   });
 
   it('still accepts jobRef for the screen that has no order/phase picker yet', async () => {

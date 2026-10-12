@@ -5,9 +5,10 @@ import { InventoryScreen } from '@/components/mis/inventory/inventory-screen';
 
 export default async function InventoryPage() {
   await requireMisAccess();
-  const [summary, canWrite] = await Promise.all([
+  const [summary, canWrite, canPrice] = await Promise.all([
     getInventorySummary(),
     checkPermission('masters.write'),
+    checkPermission('wages.read'),
   ]);
-  return <InventoryScreen summary={summary} canWrite={canWrite} />;
+  return <InventoryScreen summary={summary} canWrite={canWrite} canPrice={canPrice} />;
 }

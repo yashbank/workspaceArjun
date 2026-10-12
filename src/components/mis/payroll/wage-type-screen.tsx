@@ -38,6 +38,7 @@ export function WageTypeScreen({
   codes: WageTypeCode[];
 }) {
   const [addOpen, setAddOpen] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [rateOpen, setRateOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
 
@@ -79,7 +80,7 @@ export function WageTypeScreen({
     setHra('');
     setAllowance('');
     setBonus('');
-    setAddOpen(true);
+    setSaveError(null); setAddOpen(true);
   };
 
   const openRate = () => {
@@ -96,7 +97,7 @@ export function WageTypeScreen({
 
   const handleCreate = () => {
     startTransition(async () => {
-      await createWageTypeAction({
+      const r = await createWageTypeAction({
         name,
         nameHi: nameHi || undefined,
         unit: unit as WageTypeRow['unit'],
@@ -107,6 +108,7 @@ export function WageTypeScreen({
         allowanceAmount: numOrNull(allowance),
         bonusAmount: numOrNull(bonus),
       });
+      if (!r.ok) { setSaveError(r.detail); return; }
       setAddOpen(false);
     });
   };
@@ -238,6 +240,7 @@ export function WageTypeScreen({
           <NumberInput label="HRA (₹, optional)" value={hra} onChange={(e) => setHra(e.target.value)} />
           <NumberInput label="Allowance (₹, optional)" value={allowance} onChange={(e) => setAllowance(e.target.value)} />
           <NumberInput label="Bonus (₹, optional)" value={bonus} onChange={(e) => setBonus(e.target.value)} />
+          {saveError && <p role="alert" className="text-sm text-red-600">{saveError}</p>}
           <div className="flex gap-2 pt-2">
             <Button onClick={handleCreate} disabled={isPending || !name || !amount}>
               {isPending ? 'Saving…' : 'Save'}

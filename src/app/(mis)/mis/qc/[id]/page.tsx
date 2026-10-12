@@ -8,6 +8,7 @@ import { listQcTemplates } from '@/server/mis/qc-template';
 import { db } from '@/server/db';
 import { factoryDateKey } from '@/lib/mis/factory-time';
 import { getFactoryTimezone } from '@/server/mis/business-rules';
+import { stageOptions } from '@/lib/mis/production-form';
 import { notFound } from 'next/navigation';
 import { QcDetailScreen } from '@/components/mis/qc/qc-detail-screen';
 
@@ -24,18 +25,26 @@ export default async function QcDetailPage({ params }: { params: Promise<{ id: s
   });
   if (!order) notFound();
 
-  const [checks, summary, defectTypes, templates, timeZone] = await Promise.all([
+  const [checks, summary, defectTypes, templates, timeZone, stages] = await Promise.all([
     getQcForOrder(id),
     getQcSummary(id),
     listDefectTypes(),
     listQcTemplates(),
     getFactoryTimezone(),
+    // #33 — stages of this order's BOM, for the Add Check form (qc.read already passed above).
+    db.misBomStage.findMany({
+      where: { bom: { orderId: id } },
+      select: { id: true, stageName: true, seq: true },
+      orderBy: { seq: 'asc' },
+    }),
   ]);
 
   return (
     <QcDetailScreen
       order={{ id: order.id, orderNumber: order.orderNumber, status: order.status, customer: order.customer }}
-      checks={checks.map((c) => ({ ...c, defectQty: c.defectQty != null ? Number(c.defectQty) : null }))}
+      // `getQcForOrder` returns the relation as `bomStage`; the table reads `stage` (it never showed one).
+      checks={checks.map((c) => ({ ...c, stage: c.bomStage, defectQty: c.defectQty != null ? Number(c.defectQty) : null }))}
+      stages={stageOptions(stages)}
       summary={summary}
       canWrite={canWrite}
       defectTypes={defectTypes.map((dt) => ({ id: dt.id, code: dt.code, name: dt.name, severity: dt.severity }))}

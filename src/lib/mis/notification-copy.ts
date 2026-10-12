@@ -15,6 +15,7 @@ export function isMisNotifyRole(role: string | null | undefined): role is MisNot
 export const NOTIFICATION_TYPES = {
   grnConfirmed: 'mis.grn_confirmed',
   requestRaised: 'mis.material_request.raised',
+  bomRejected: 'mis.bom_rejected',
 } as const;
 
 export type NotificationView = { title: string; detail: string; href: string; tone: 'info' | 'risk' | 'ok' };
@@ -46,6 +47,13 @@ export function notificationView(type: string, payload: unknown): NotificationVi
         detail: `${num(p, 'lineCount')} ${num(p, 'lineCount') === 1 ? 'line' : 'lines'}${str(p, 'orderNumber') ? ` · for ${str(p, 'orderNumber')}` : ''}${str(p, 'departmentName') ? ` · ${str(p, 'departmentName')}` : ''} · waiting for the Store`,
         href: `/mis/store/requests/${str(p, 'requestId')}`,
         tone: 'info',
+      };
+    case NOTIFICATION_TYPES.bomRejected:
+      return {
+        title: `BOM sent back · ${str(p, 'orderNumber')}`,
+        detail: str(p, 'reason') || 'Rejected — back to draft',
+        href: `/mis/bom/${str(p, 'orderId')}`,
+        tone: 'risk',
       };
     default:
       return null;

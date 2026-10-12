@@ -12,6 +12,7 @@ type Props = { depts: Dept[]; canWrite: boolean };
 
 export function DepartmentScreen({ depts, canWrite }: Props) {
   const [open, setOpen] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Dept | null>(null);
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
@@ -24,12 +25,13 @@ export function DepartmentScreen({ depts, canWrite }: Props) {
     ? depts.filter(d => d.code.toLowerCase().includes(search.toLowerCase()) || d.name.toLowerCase().includes(search.toLowerCase()) || (d.nameHi ?? '').toLowerCase().includes(search.toLowerCase()))
     : depts;
 
-  const openAdd = () => { setEditing(null); setCode(''); setName(''); setNameHi(''); setSortOrder('0'); setOpen(true); };
-  const openEdit = (d: Dept) => { setEditing(d); setCode(d.code); setName(d.name); setNameHi(d.nameHi ?? ''); setSortOrder(String(d.sortOrder)); setOpen(true); };
+  const openAdd = () => { setEditing(null); setCode(''); setName(''); setNameHi(''); setSortOrder('0'); setSaveError(null); setOpen(true); };
+  const openEdit = (d: Dept) => { setEditing(d); setCode(d.code); setName(d.name); setNameHi(d.nameHi ?? ''); setSortOrder(String(d.sortOrder)); setSaveError(null); setOpen(true); };
 
   const handleSave = () => {
     startTransition(async () => {
-      await saveDeptAction(editing?.id ?? null, { code, name, nameHi: nameHi || undefined, sortOrder: parseInt(sortOrder) || 0 });
+      const r = await saveDeptAction(editing?.id ?? null, { code, name, nameHi: nameHi || undefined, sortOrder: parseInt(sortOrder) || 0 });
+      if (!r.ok) { setSaveError(r.detail); return; }
       setOpen(false);
     });
   };
@@ -64,6 +66,7 @@ export function DepartmentScreen({ depts, canWrite }: Props) {
           <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Press Department" required />
           <Input label="Name (Hindi)" value={nameHi} onChange={(e) => setNameHi(e.target.value)} placeholder="प्रेस विभाग" />
           <NumberInput label="Sort Order" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} />
+          {saveError && <p role="alert" className="text-sm text-red-600">{saveError}</p>}
           <div className="flex gap-2 pt-2">
             <Button onClick={handleSave} disabled={isPending || !name || !code}>{isPending ? 'Saving…' : 'Save'}</Button>
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>

@@ -100,6 +100,16 @@ async function createProductionLog(
   if (!opts.skipClearance) await assertLineCleared(data.machineId);
   const jobPhaseId = await resolveJobPhaseForProduction(data.orderId, data.jobPhaseId);
 
+  // #18 — a stage is optional, but a named one must belong to this order's BOM. Checked on the
+  // write path so a replayed entry carrying a stale or foreign id is refused, not a raw FK error.
+  if (data.bomStageId) {
+    const stage = await db.misBomStage.findFirst({
+      where: { id: data.bomStageId, bom: { orderId: data.orderId } },
+      select: { id: true },
+    });
+    if (!stage) throw rejectable('MALFORMED', "The process stage chosen is not part of this order's BOM. Pick another stage, or leave it empty.");
+  }
+
   // Named fields only. Spreading caller input into a create is how a client
   // ends up setting a column it was never meant to reach.
   const rec = await client.misProductionLog.create({
@@ -136,6 +146,8 @@ export type ProductionLogPayload = {
   qtyWaste?: number;
   unit?: string;
   employeeId?: string;
+  /** #18 — optional BOM stage ("process") the output belongs to. Validated against the order's BOM on write. */
+  bomStageId?: string;
   notes?: string;
   /**
    * `YYYY-MM-DD`, only when the person deliberately back-dates an entry — the
@@ -164,9 +176,10 @@ export type ProductionLogResult = {
 /**
  * Validate an untrusted payload into a `LogProductionInput`.
  *
- * `jobPhaseId`, `bomStageId` and `shiftId` are deliberately **not** read from the
- * payload: the phase is re-resolved at replay (Appendix A §A.8, Phase 7's stamp),
- * and nothing else here is the client's to choose. `loggedAt` is the device's
+ * `jobPhaseId` and `shiftId` are deliberately **not** read from the payload: the
+ * phase is re-resolved at replay (Appendix A §A.8, Phase 7's stamp). `bomStageId`
+ * IS read (#18, the operator picks the process) but only as a UUID, and
+ * `createProductionLog` checks it belongs to this order's BOM. `loggedAt` is the device's
  * `clientRecordedAt` — production entries are a client-recorded kind (D15).
  */
 function toLogInput(payload: unknown, clientRecordedAt: string): LogProductionInput {
@@ -189,6 +202,9 @@ function toLogInput(payload: unknown, clientRecordedAt: string): LogProductionIn
   const employeeId = text(p.employeeId);
   if (employeeId && !isUuid(employeeId)) throw rejectable('MALFORMED', 'This entry names an operator that is not valid.');
 
+  const bomStageId = text(p.bomStageId);
+  if (bomStageId && !isUuid(bomStageId)) throw rejectable('MALFORMED', 'This entry names a process stage that is not valid.');
+
   const recordedAt = new Date(clientRecordedAt);
   if (Number.isNaN(recordedAt.getTime())) throw rejectable('MALFORMED', 'The recorded time is not a valid date.');
 
@@ -203,7 +219,7 @@ function toLogInput(payload: unknown, clientRecordedAt: string): LogProductionIn
     loggedAt = day;
   }
 
-  return { orderId, machineId, qtyProduced, qtyWaste, unit: text(p.unit), employeeId, notes: text(p.notes), loggedAt };
+  return { orderId, machineId, qtyProduced, qtyWaste, unit: text(p.unit), employeeId, bomStageId, notes: text(p.notes), loggedAt };
 }
 
 function summarise(rec: {
@@ -289,6 +305,32 @@ export async function submitProductionLog(
     });
   }
   return out;
+}
+
+/**
+ * What the production forms need once an order is chosen (#18, #39/#43): the stages of that
+ * order's BOM and the machine(s) currently allocated to it. Read-only, `production.read`.
+ * "Allocated" is the same live test `currentOrderIdForMachine` uses: a window that spans `at`
+ * and has not been released.
+ */
+export async function getProductionFormContext(orderId: string, at: Date = new Date()) {
+  await requirePermission('production.read');
+  const [stages, allocations] = await Promise.all([
+    db.misBomStage.findMany({
+      where: { bom: { orderId } },
+      select: { id: true, stageName: true, seq: true },
+      orderBy: { seq: 'asc' },
+    }),
+    db.misMachineAllocation.findMany({
+      where: { orderId, startsAt: { lte: at }, endsAt: { gte: at }, releasedAt: null },
+      select: { machine: { select: { id: true, name: true } } },
+    }),
+  ]);
+  const seen = new Set<string>();
+  const machines = allocations
+    .map((a) => a.machine)
+    .filter((m) => (seen.has(m.id) ? false : (seen.add(m.id), true)));
+  return { stages, machines };
 }
 
 export async function getProductionForOrder(orderId: string) {

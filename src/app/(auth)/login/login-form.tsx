@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { checkBootstrapNeeded, bootstrapFirstUser } from './actions';
 import { Loader2 } from 'lucide-react';
 import { AuthCard } from '@/components/auth/auth-card';
+import { PasswordInput } from '@/components/auth/password-input';
 
 const inputClass =
   'w-full rounded-xl border border-border/50 bg-background px-3.5 py-2.5 text-sm outline-none transition-all focus:border-primary/30 focus:ring-2 focus:ring-primary/15';
@@ -111,9 +112,8 @@ export function LoginForm() {
           <label htmlFor="password" className="bpp-label-caps mb-1.5 block">
             Password
           </label>
-          <input
+          <PasswordInput
             id="password"
-            type="password"
             required
             minLength={8}
             autoComplete={bootstrapMode ? 'new-password' : 'current-password'}

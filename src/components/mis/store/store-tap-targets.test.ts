@@ -46,7 +46,7 @@ describe('G4-02 — store/inventory toolbar controls meet the 44px tap target', 
     { file: 'src/components/mis/inventory/inventory-screen.tsx', needle: '↓ CSV\n          </button>', label: 'Inventory CSV button' },
     { file: 'src/components/mis/inventory/inventory-screen.tsx', needle: '↓ Excel Template\n              </a>', label: 'Excel Template link' },
     { file: 'src/components/mis/inventory/inventory-screen.tsx', needle: '↑ Import CSV\n              </button>', label: 'Import CSV button' },
-    { file: 'src/components/mis/suppliers/supplier-detail-screen.tsx', needle: 'Suppliers\n        </Link>', label: 'Suppliers breadcrumb' },
+    // C6b: the suppliers breadcrumb became the shared PageBack, whose 44px tap target is asserted in page-back.test.tsx.
   ];
 
   it.each(targets.map((t) => [`${t.file} — ${t.label}`, t] as const))('%s is at least 44px tall', (_name, target) => {

@@ -1,5 +1,6 @@
 import type { MisLineClearance } from '@/generated/prisma/client';
 import type { MisLineClearanceMode } from '@/generated/prisma/enums';
+import { friendlyWhen } from '@/lib/mis/factory-time';
 import { minuteOfDay, isMinuteInShiftWindow, resolveShiftAt, shiftDurationMinutes } from '@/lib/mis/shift-window';
 import { db } from '@/server/db';
 import { requirePermission } from '@/server/mis/auth';
@@ -18,10 +19,12 @@ export class LineClearanceBlockedError extends Error {
     public readonly machineName: string,
     public readonly reason: 'NOT_CLEARED' | 'EXPIRED',
     public readonly since?: Date,
+    /** The factory zone (`getFactoryTimezone()` at the throw site) the "expired at" time is shown in. */
+    timeZone: string = 'Asia/Kolkata',
   ) {
     super(
       reason === 'EXPIRED'
-        ? `${machineName}'s line clearance expired at ${since?.toISOString() ?? 'an earlier time'}.`
+        ? `${machineName}'s line clearance expired at ${since ? friendlyWhen(since, timeZone) : 'an earlier time'}.`
         : `${machineName} needs a line clearance before production can be logged.`,
     );
     this.name = 'LineClearanceBlockedError';
@@ -69,22 +72,23 @@ export async function assertLineCleared(machineId: string): Promise<void> {
   const latest = await db.misLineClearance.findFirst({ where: { machineId }, orderBy: { clearedAt: 'desc' } });
   if (!latest) throw new LineClearanceBlockedError(machineId, machineName, 'NOT_CLEARED');
 
+  const timeZone = await getFactoryTimezone();
   const now = new Date();
   if (latest.expiresAt && latest.expiresAt <= now) {
-    throw new LineClearanceBlockedError(machineId, machineName, 'EXPIRED', latest.expiresAt);
+    throw new LineClearanceBlockedError(machineId, machineName, 'EXPIRED', latest.expiresAt, timeZone);
   }
 
   if (latest.mode === 'JOB') {
     const currentOrderId = await currentOrderIdForMachine(machineId);
     if (latest.orderId && currentOrderId && currentOrderId !== latest.orderId) {
-      throw new LineClearanceBlockedError(machineId, machineName, 'EXPIRED', latest.clearedAt);
+      throw new LineClearanceBlockedError(machineId, machineName, 'EXPIRED', latest.clearedAt, timeZone);
     }
   }
 
   if (latest.mode === 'SHIFT' && latest.shiftId) {
     const stillActive = await isGrantingShiftStillActive(latest.shiftId, latest.clearedAt);
     if (!stillActive) {
-      throw new LineClearanceBlockedError(machineId, machineName, 'EXPIRED', latest.clearedAt);
+      throw new LineClearanceBlockedError(machineId, machineName, 'EXPIRED', latest.clearedAt, timeZone);
     }
   }
 }

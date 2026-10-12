@@ -1,5 +1,6 @@
 'use client';
 
+import { PageBack } from '@/components/mis/common/page-back';
 import { useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/mis/kit/button';
@@ -14,6 +15,7 @@ import { useToast } from '@/components/ui/toast';
 import { newIdempotencyKey, type ParkReason } from '@/lib/mis/offline/idempotency';
 import { isClearanceBlock, submitProduction } from './submit-production';
 import { fmtDate, fmtTime } from '@/lib/mis/client-dates';
+import { DEFAULT_PRODUCTION_UNIT, machineMismatchNote, preselectMachine, type SelectChoice } from '@/lib/mis/production-form';
 
 type Log = {
   id: string;
@@ -35,8 +37,15 @@ interface Props {
   order: Order;
   logs: Log[];
   summary: Summary;
-  employees: Person[];
+  /** Production-floor people only, already labelled "Name (CODE · Role)" (#19). */
+  operators: SelectChoice[];
   machines: Person[];
+  /** UNIT master group (#16). */
+  units: SelectChoice[];
+  /** Stages of this order's BOM (#18); empty when it has none. */
+  stages: SelectChoice[];
+  /** Machine(s) currently allocated to this order (#39/#43). */
+  allocatedMachines: Person[];
   canWrite: boolean;
   userId: string;
 }
@@ -50,7 +59,7 @@ function fmt(dt: Date | string) {
   return fmtDate(d, { day: '2-digit', month: 'short' }) + ' ' + fmtTime(d, { hour: '2-digit', minute: '2-digit', hour12: true });
 }
 
-export function ProductionDetailScreen({ order, logs, summary, employees, machines, canWrite, userId }: Props) {
+export function ProductionDetailScreen({ order, logs, summary, operators, machines, units, stages, allocatedMachines, canWrite, userId }: Props) {
   const t = useT();
   const { toast } = useToast();
   // One key per form, made when the form starts — see production-screen.tsx.
@@ -59,24 +68,26 @@ export function ProductionDetailScreen({ order, logs, summary, employees, machin
   const [open, setOpen] = useState(false);
   const [qty, setQty] = useState('');
   const [waste, setWaste] = useState('');
-  const [unitInput, setUnitInput] = useState('KG');
+  const [unitInput, setUnitInput] = useState(DEFAULT_PRODUCTION_UNIT);
   const [logDate, setLogDate] = useState(todayIso());
   const [employeeId, setEmployeeId] = useState<string | null>(null);
-  const [machineId, setMachineId] = useState<string | null>(null);
+  const allocatedDefault = preselectMachine(allocatedMachines.map((m) => m.id));
+  const [machineId, setMachineId] = useState<string | null>(allocatedDefault);
+  const [stageId, setStageId] = useState<string | null>(null);
   const [notes, setNotes] = useState('');
   const [isPending, startTransition] = useTransition();
   const [isClearing, startClearing] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
-  const unit = logs[0]?.unit ?? 'KG';
+  const unit = logs[0]?.unit ?? DEFAULT_PRODUCTION_UNIT;
+  const machineNote = machineMismatchNote(machineId, allocatedMachines);
   const produced = summary.totalProduced;
 
-  const employeeOptions = employees.map((e) => ({ value: e.id, label: e.name }));
   const machineOptions = machines.map((m) => ({ value: m.id, label: m.name }));
 
   const resetForm = () => {
-    setQty(''); setWaste(''); setUnitInput('KG'); setLogDate(todayIso());
-    setEmployeeId(null); setMachineId(null); setNotes(''); setError(null); setBlockedReason(undefined);
+    setQty(''); setWaste(''); setUnitInput(DEFAULT_PRODUCTION_UNIT); setLogDate(todayIso());
+    setEmployeeId(null); setMachineId(allocatedDefault); setStageId(null); setNotes(''); setError(null); setBlockedReason(undefined);
     keyRef.current = newIdempotencyKey();
   };
 
@@ -93,6 +104,7 @@ export function ProductionDetailScreen({ order, logs, summary, employees, machin
         qtyProduced: parseFloat(qty),
         qtyWaste: waste ? parseFloat(waste) : 0,
         unit: unitInput || undefined,
+        bomStageId: stageId ?? undefined,
         employeeId: employeeId ?? undefined,
         notes: notes || undefined,
         // Only a deliberate back-date is sent. Left at today, the entry takes the
@@ -135,12 +147,7 @@ export function ProductionDetailScreen({ order, logs, summary, employees, machin
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 py-6">
-      {/* Breadcrumb */}
-      <nav className="flex items-center gap-2 text-sm text-gray-500">
-        <Link href="/mis/production" className="inline-flex min-h-11 items-center hover:text-gray-700">Production</Link>
-        <span>/</span>
-        <span className="text-gray-900 font-medium">{order.orderNumber}</span>
-      </nav>
+      <PageBack href="/mis/production" label="Production" />
 
       {/* Header */}
       <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -226,12 +233,12 @@ export function ProductionDetailScreen({ order, logs, summary, employees, machin
           </div>
           <NumberInput label="Qty Produced" value={qty} onChange={(e) => setQty(e.target.value)} />
           <NumberInput label="Qty Waste" value={waste} onChange={(e) => setWaste(e.target.value)} />
-          <Input label="Unit" value={unitInput} onChange={(e) => setUnitInput(e.target.value)} />
+          <Select label="Unit" value={unitInput} options={units} onChange={setUnitInput} />
           <DateInput label="Date" value={logDate} onChange={(e) => setLogDate(e.target.value)} />
           <Select
             label="Operator"
             value={employeeId}
-            options={employeeOptions}
+            options={operators}
             onChange={setEmployeeId}
             placeholder="Select an employee…"
           />
@@ -242,6 +249,16 @@ export function ProductionDetailScreen({ order, logs, summary, employees, machin
             onChange={setMachineId}
             placeholder="Select a machine…"
           />
+          {machineNote && <p role="status" className="-mt-2 text-xs text-amber-800">{machineNote}</p>}
+          {stages.length > 0 && (
+            <Select
+              label="Process / BOM stage (optional)"
+              value={stageId}
+              options={stages}
+              onChange={setStageId}
+              placeholder="Select a stage…"
+            />
+          )}
           <Input label="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
           {error && (
             <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">

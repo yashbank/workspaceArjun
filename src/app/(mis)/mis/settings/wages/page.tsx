@@ -1,6 +1,7 @@
 import { requireMisAccess } from '@/server/mis/guard';
 import { listWageCodes, listWageTypes } from '@/server/mis/wage-type';
 import { WageTypeScreen } from '@/components/mis/payroll/wage-type-screen';
+import { PageBack } from '@/components/mis/common/page-back';
 
 // requireMisAccess() only checks the feature flag / MIS login, not role.
 // listWageTypes() / listWageCodes() are the actual gate: they throw
@@ -10,5 +11,10 @@ import { WageTypeScreen } from '@/components/mis/payroll/wage-type-screen';
 export default async function WageTypesPage() {
   await requireMisAccess();
   const [wageTypes, codes] = await Promise.all([listWageTypes(), listWageCodes()]);
-  return <WageTypeScreen wageTypes={wageTypes} codes={codes} />;
+  return (
+    <>
+      <PageBack href="/mis/settings" label="Settings" />
+      <WageTypeScreen wageTypes={wageTypes} codes={codes} />
+    </>
+  );
 }

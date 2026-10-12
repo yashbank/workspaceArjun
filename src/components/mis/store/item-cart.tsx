@@ -53,6 +53,8 @@ type Props = {
   suppliers?: SupplierOption[];
   supplierId?: string | null;
   onSupplierChange?: (id: string | null) => void;
+  /** RECEIVE: show the per-line rate input. Owner only (D5) — everyone else never sees the field. */
+  canSetRate?: boolean;
   /** Anything else the screen wants above the cart — a PO, an order, a department. */
   children?: ReactNode;
 };
@@ -73,6 +75,7 @@ export function ItemCart({
   suppliers,
   supplierId = null,
   onSupplierChange,
+  canSetRate = false,
   children,
 }: Props) {
   const [query, setQuery] = useState('');
@@ -174,7 +177,7 @@ export function ItemCart({
         lines.map((line) => ({
           itemId: line.itemId,
           qty: round2(Number(line.qty) || 0),
-          rate: isReceive && line.rate.trim() !== '' ? Number(line.rate) : null,
+          rate: isReceive && canSetRate && line.rate.trim() !== '' ? Number(line.rate) : null,
         })),
       );
       setLines([]);
@@ -331,7 +334,7 @@ export function ItemCart({
                 />
                 <span className="text-sm font-medium text-slate-500">{item.unit}</span>
 
-                {isReceive && (
+                {isReceive && canSetRate && (
                   <span className="ml-auto flex items-center gap-1">
                     <span className="text-sm text-slate-500">₹</span>
                     <input

@@ -7,11 +7,23 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface EmployeeDao {
-    @Query("SELECT * FROM employees ORDER BY name ASC")
-    fun observeAll(): Flow<List<EmployeeEntity>>
+    /** Every column EXCEPT `photo`: this Flow re-emits on each roster write, and dragging every
+     *  face (up to ~200 KB each) through it on a low-RAM tablet is what #54 was about. */
+    @Query(
+        "SELECT id, name, badgeCode, shiftId, shiftName, shiftStartTime, shiftEndTime, photoUrl, operatorRole " +
+            "FROM employees ORDER BY name ASC",
+    )
+    fun observeAll(): Flow<List<EmployeeLite>>
 
-    @Query("SELECT * FROM employees WHERE badgeCode = :badgeCode LIMIT 1")
-    suspend fun findByBadgeCode(badgeCode: String): EmployeeEntity?
+    /** Badge lookup without the photo; the face is fetched with [photoById] only for the confirm card. */
+    @Query(
+        "SELECT id, name, badgeCode, shiftId, shiftName, shiftStartTime, shiftEndTime, photoUrl, operatorRole " +
+            "FROM employees WHERE badgeCode = :badgeCode LIMIT 1",
+    )
+    suspend fun findByBadgeCode(badgeCode: String): EmployeeLite?
+
+    @Query("SELECT photo FROM employees WHERE id = :id")
+    suspend fun photoById(id: String): ByteArray?
 
     @Query("SELECT COUNT(*) FROM employees")
     suspend fun count(): Int
@@ -49,6 +61,33 @@ data class ShiftSummary(
     val shiftEndTime: String?,
     val employeeCount: Int,
 )
+
+/** [EmployeeEntity] minus the photo bytes (see [EmployeeDao.observeAll]). */
+data class EmployeeLite(
+    val id: String,
+    val name: String,
+    val badgeCode: String,
+    val shiftId: String?,
+    val shiftName: String?,
+    val shiftStartTime: String?,
+    val shiftEndTime: String?,
+    val photoUrl: String?,
+    val operatorRole: String?,
+) {
+    /** A photo-less [EmployeeEntity]; load the face separately with [EmployeeDao.photoById]. */
+    fun toEntity() = EmployeeEntity(
+        id = id,
+        name = name,
+        badgeCode = badgeCode,
+        shiftId = shiftId,
+        shiftName = shiftName,
+        shiftStartTime = shiftStartTime,
+        shiftEndTime = shiftEndTime,
+        photo = null,
+        photoUrl = photoUrl,
+        operatorRole = operatorRole,
+    )
+}
 
 /** One cached face: the versioned URL it came from and its bytes. */
 data class CachedPhoto(

@@ -123,6 +123,19 @@ describe('assertLineCleared — the production.ts precondition', () => {
     await expect(assertLineCleared('m1')).rejects.toThrow(/expired/i);
   });
 
+  it('words the expiry time in the factory zone, 12-hour, never as an ISO string', async () => {
+    mockClearanceFindFirst.mockResolvedValue({
+      mode: 'JOB',
+      orderId: 'o1',
+      shiftId: null,
+      clearedAt: new Date('2026-09-20T01:00:00.000Z'),
+      expiresAt: new Date('2026-09-20T12:34:00.000Z'),
+    });
+    const err = await assertLineCleared('m1').catch((e: Error) => e);
+    expect((err as Error).message).toContain('20/09/2026 6:04 pm'); // 12:34 UTC = 18:04 IST
+    expect((err as Error).message).not.toMatch(/T\d\d:\d\d|Z\b/);
+  });
+
   it('passes when cleared, uncapped, and the machine has no active allocation', async () => {
     mockClearanceFindFirst.mockResolvedValue({
       mode: 'JOB',

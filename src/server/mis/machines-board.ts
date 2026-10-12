@@ -1,8 +1,9 @@
-import { addDaysToDateKey, dateKeyToDbDate } from '@/lib/mis/factory-time';
+import { addDaysToDateKey, dateKeyToDbDate, friendlyWhen } from '@/lib/mis/factory-time';
 import { buildMachineTimeline, weekStartKey, type MachineTimeline } from '@/lib/mis/machine-timeline';
 import { db } from '@/server/db';
 import { requirePermission } from '@/server/mis/auth';
 import { logAuditEvent } from '@/server/mis/audit';
+import { getFactoryTimezone } from '@/server/mis/business-rules';
 import { isActiveStatus } from '@/server/mis/job-phases';
 import { getFactoryShiftWindow } from '@/server/mis/shift-view';
 
@@ -211,7 +212,10 @@ export async function allocateMachine(data: {
       endsAt: { gt: data.startsAt },
     },
   });
-  if (overlap) throw new Error(`Machine already allocated from ${overlap.startsAt.toISOString()} to ${overlap.endsAt.toISOString()}`);
+  if (overlap) {
+    const tz = await getFactoryTimezone();
+    throw new Error(`Machine already allocated from ${friendlyWhen(overlap.startsAt, tz)} to ${friendlyWhen(overlap.endsAt, tz)}`);
+  }
 
   const rec = await db.misMachineAllocation.create({
     data: {
@@ -227,6 +231,22 @@ export async function allocateMachine(data: {
   });
   await logAuditEvent({ actorId: actor.userId, action: 'ALLOCATE_MACHINE', entity: 'MisMachineAllocation', entityId: rec.id, after: rec });
   return rec;
+}
+
+/**
+ * The machine currently allocated to an order (#39/#43), for pre-filling the production forms.
+ * Returns the machine only when exactly one is allocated; several (or none) is not a guess we
+ * make for the operator. Reads `MisMachineAllocation` the way `currentOrderIdForMachine` does
+ * (window spans `at`, not released). `production.read`.
+ */
+export async function machineForOrder(orderId: string, at: Date = new Date()): Promise<{ id: string; name: string } | null> {
+  await requirePermission('production.read');
+  const rows = await db.misMachineAllocation.findMany({
+    where: { orderId, startsAt: { lte: at }, endsAt: { gte: at }, releasedAt: null },
+    select: { machine: { select: { id: true, name: true } } },
+  });
+  const unique = new Map(rows.map((r) => [r.machine.id, r.machine]));
+  return unique.size === 1 ? [...unique.values()][0] : null;
 }
 
 export async function releaseMachine(allocationId: string) {

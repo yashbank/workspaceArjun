@@ -3,6 +3,8 @@
 import { useRouter } from 'next/navigation';
 import { useCallback } from 'react';
 
+import { unwrap, type ActionResult } from '@/lib/mis/action-result';
+
 import type { Column } from '../kit/data-table';
 import { StatusBadge } from '../kit/status-badge';
 import { useMisLocale } from '../shell/locale-provider';
@@ -35,7 +37,7 @@ export function OptionMasterScreen({
   title: string;
   rows: OptionRow[];
   canWrite: boolean;
-  onSave: (group: string, id: string | null, values: { label: string; labelHi?: string }) => Promise<void>;
+  onSave: (group: string, id: string | null, values: { label: string; labelHi?: string }) => Promise<ActionResult<void>>;
   onDelete: (group: string, id: string) => Promise<void>;
   onRestore: (group: string, id: string) => Promise<void>;
 }) {
@@ -69,7 +71,7 @@ export function OptionMasterScreen({
 
   const handleSave = useCallback(
     async (values: Record<string, string>, row: OptionRow | null) => {
-      await onSave(group, row?.id ?? null, { label: values.label, labelHi: values.labelHi });
+      unwrap(await onSave(group, row?.id ?? null, { label: values.label, labelHi: values.labelHi }));
       router.refresh();
     },
     [group, onSave, router],

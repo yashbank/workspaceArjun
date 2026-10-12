@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 
+import { mapPrismaError } from '@/lib/mis/action-result';
 import { masterSpec } from '@/lib/mis/master-directory';
 import { saveMaster, setMasterDeactivated } from '@/server/mis/master-directory';
 
@@ -35,7 +36,7 @@ export async function saveMasterAction(_previous: SaveState, formData: FormData)
   try {
     await saveMaster(master, id, values);
   } catch (error) {
-    return { error: error instanceof Error ? error.message : 'Could not save', values };
+    return { error: mapPrismaError(error, { entity: master.replace(/-/g, ' ').replace(/ies$/, 'y').replace(/s$/, '').replace(/^./, (c) => c.toUpperCase()), fields: values }), values };
   }
   revalidatePath(spec.href);
   redirect(spec.href);

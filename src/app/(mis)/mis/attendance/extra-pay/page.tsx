@@ -4,6 +4,7 @@ import { can } from '@/lib/mis/permissions';
 import { MisForbiddenError } from '@/server/mis/auth';
 import { listEmployeeRoster } from '@/server/mis/employee';
 import { ExtraPayProposeScreen } from '@/components/mis/attendance/extra-pay-propose-screen';
+import { PageBack } from '@/components/mis/common/page-back';
 
 /**
  * 25.4/D28 — Admin and Super Attendance Operator propose an extra-pay day; the Owner approves it
@@ -16,5 +17,10 @@ export default async function ExtraPayProposePage() {
   const role = await getMisRole(user.id);
   if (!can(role, 'attendance.write')) throw new MisForbiddenError('attendance.write');
   const employees = await listEmployeeRoster();
-  return <ExtraPayProposeScreen employees={employees.map((e) => ({ id: e.id, name: e.name, employeeCode: e.employeeCode }))} />;
+  return (
+    <>
+      <PageBack href="/mis/attendance" label="Attendance" />
+      <ExtraPayProposeScreen employees={employees.map((e) => ({ id: e.id, name: e.name, employeeCode: e.employeeCode }))} />
+    </>
+  );
 }

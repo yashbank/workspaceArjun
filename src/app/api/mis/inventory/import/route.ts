@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireMisAccess } from '@/server/mis/guard';
+import { can } from '@/lib/mis/permissions';
 import { requirePermission } from '@/server/mis/auth';
 import { db } from '@/server/db';
 import { logAuditEvent } from '@/server/mis/audit';
@@ -53,7 +54,7 @@ export async function POST(req: NextRequest) {
     const priceRaw = get(colPrice);
     const category = VALID_CATEGORIES.has(catRaw) ? (catRaw as MisItemCategory) : MisItemCategory.OTHER;
     const unit = VALID_UNITS.has(unitRaw) ? (unitRaw as MisItemUnit) : MisItemUnit.PIECE;
-    const pricePerUnit = priceRaw && !isNaN(Number(priceRaw)) ? Number(priceRaw) : null;
+    const pricePerUnit = can(actor.role, 'wages.read') && priceRaw && !isNaN(Number(priceRaw)) ? Number(priceRaw) : null;
 
     try {
       if (!code) {

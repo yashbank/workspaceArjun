@@ -1,6 +1,6 @@
 'use server';
 import type { QueuedWriteEnvelope } from '@/lib/mis/offline/idempotency';
-import { submitProductionLog, type ProductionLogPayload } from '@/server/mis/production';
+import { getProductionFormContext, submitProductionLog, type ProductionLogPayload } from '@/server/mis/production';
 import { isMisForbiddenError } from '@/server/mis/auth';
 import { clearLine, listClearanceHistory } from '@/server/mis/line-clearance';
 import { revalidatePath } from 'next/cache';
@@ -70,4 +70,9 @@ export async function getClearanceHistoryAction(machineId: string) {
     orderNumber: r.order?.orderNumber ?? null,
     shiftName: r.shift?.name ?? null,
   }));
+}
+
+/** Stages of the chosen order's BOM and its allocated machine(s), to fill the log form (#18, #39). */
+export async function getProductionFormContextAction(orderId: string) {
+  return getProductionFormContext(orderId);
 }

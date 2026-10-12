@@ -8,12 +8,17 @@ import { Select } from '@/components/mis/kit/select';
 import { Input } from '@/components/mis/kit/input';
 import { StatusBadge, type BadgeTone } from '@/components/mis/kit/status-badge';
 import { createPoAction } from '@/app/(mis)/mis/po/actions';
+import { useConfirm } from '@/components/ui/confirm-dialog';
+import { useToast } from '@/components/ui/toast';
+import { EmptyState } from '@/components/mis/kit/empty-state';
+import { isBomNotApprovedDetail } from '@/lib/mis/po-errors';
 import { poPurpose, poPurposeLabel, type PoPurpose } from '@/lib/mis/po-purpose';
 import { useRouter } from 'next/navigation';
 
 type Po = { id: string; poNumber: string; status: string; bomRef: string | null; supplier: { id: string; name: string } | null; _count: { items: number }; createdAt: Date };
 type Supplier = { id: string; name: string };
-type Props = { pos: Po[]; suppliers: Supplier[]; canWrite: boolean };
+type ApprovedBom = { orderNumber: string; label: string };
+type Props = { pos: Po[]; suppliers: Supplier[]; canWrite: boolean; approvedBoms?: ApprovedBom[] };
 
 function statusTone(status: string): BadgeTone {
   switch (status) {
@@ -28,8 +33,10 @@ function statusTone(status: string): BadgeTone {
   }
 }
 
-export function PoListScreen({ pos, suppliers, canWrite }: Props) {
+export function PoListScreen({ pos, suppliers, canWrite, approvedBoms = [] }: Props) {
   const router = useRouter();
+  const { confirm, confirmDialog } = useConfirm();
+  const { toast } = useToast();
   const [search, setSearch] = useState('');
   const filtered = search.trim()
     ? pos.filter(p => p.poNumber.toLowerCase().includes(search.toLowerCase()) || (p.supplier?.name ?? '').toLowerCase().includes(search.toLowerCase()))
@@ -53,9 +60,18 @@ export function PoListScreen({ pos, suppliers, canWrite }: Props) {
 
   const handleCreate = () => {
     startTransition(async () => {
-      const id = await createPoAction({ supplierId: supplierId || null, purpose, bomRef: purpose === 'FOR_ORDER' ? bomRef || null : null, notes: notes || null });
+      const result = await createPoAction({ supplierId: supplierId || null, purpose, bomRef: purpose === 'FOR_ORDER' ? bomRef || null : null, notes: notes || null });
+      if (!result.ok) {
+        // D1: an unapproved BOM is a popup the raiser must acknowledge; any other refusal is a toast.
+        if (isBomNotApprovedDetail(result.detail)) {
+          await confirm({ title: 'BOM is not approved', message: result.detail, confirmLabel: 'OK', cancelLabel: 'Close' });
+        } else {
+          toast('error', result.detail);
+        }
+        return;
+      }
       setOpen(false);
-      router.push(`/mis/po/${id}`);
+      router.push(`/mis/po/${result.value}`);
     });
   };
 
@@ -108,7 +124,16 @@ export function PoListScreen({ pos, suppliers, canWrite }: Props) {
             ]}
           />
           {purpose === 'FOR_ORDER' ? (
-            <Input label="BOM Ref" value={bomRef} onChange={e => setBomRef(e.target.value)} required />
+            approvedBoms.length === 0 ? (
+              <EmptyState title="No approved BOMs yet" body="A PO from a BOM needs an order whose BOM is approved. For a stock top-up, choose Buffer stock instead." />
+            ) : (
+              <Select
+                label="BOM Ref"
+                value={bomRef}
+                onChange={setBomRef}
+                options={[{ value: '', label: '— Select an order with an approved BOM —' }, ...approvedBoms.map(b => ({ value: b.orderNumber, label: b.label }))]}
+              />
+            )
           ) : (
             <p className="text-sm text-slate-500">
               Stock kept on hand. No BOM and no customer order is recorded against this PO.
@@ -121,6 +146,7 @@ export function PoListScreen({ pos, suppliers, canWrite }: Props) {
           </div>
         </div>
       </SlideOver>
+      {confirmDialog}
     </div>
   );
 }

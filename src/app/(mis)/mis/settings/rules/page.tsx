@@ -6,6 +6,7 @@ import { can } from '@/lib/mis/permissions';
 import { getBusinessRules } from '@/server/mis/business-rules';
 import { requireMisAccess } from '@/server/mis/guard';
 import { getMisRole } from '@/server/mis/roles';
+import { PageBack } from '@/components/mis/common/page-back';
 
 /**
  * D12 — Owner only, and absent (a 404) for every other role rather than refused on open (`wages.read`, D24/D25).
@@ -19,7 +20,10 @@ export default async function RulesPage({ searchParams }: { searchParams: Promis
 
   const rules = await getBusinessRules();
   const phone = (
-    <SettingsScreen rules={rules} canWrite={can(role, 'settings.write')} canSeeWages={true} canSeeAql={can(role, 'aql.read')} canManageKiosk={can(role, 'kiosk.manage')} />
+    <>
+      <PageBack href="/mis/settings" label="Settings" />
+      <SettingsScreen rules={rules} canWrite={can(role, 'settings.write')} canSeeWages={true} canSeeAql={can(role, 'aql.read')} canManageKiosk={can(role, 'kiosk.manage')} />
+    </>
   );
   if (sp.view) return phone;
   return (

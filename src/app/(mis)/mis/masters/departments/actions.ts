@@ -1,10 +1,13 @@
 'use server';
 import { revalidatePath } from 'next/cache';
+import { asResult } from '@/lib/mis/action-result';
 import { createDept, updateDept, deleteDept, restoreDept, reorderDepts, type DeptInput } from '@/server/mis/department';
 
 export async function saveDeptAction(id: string | null, values: DeptInput) {
-  if (id) { await updateDept(id, values); } else { await createDept(values); }
-  revalidatePath('/mis/masters/departments');
+  return asResult(async () => {
+    if (id) { await updateDept(id, values); } else { await createDept(values); }
+    revalidatePath('/mis/masters/departments');
+  }, { entity: 'Department', fields: values });
 }
 export async function deleteDeptAction(id: string) {
   await deleteDept(id);

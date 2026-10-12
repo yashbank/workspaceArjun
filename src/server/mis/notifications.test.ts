@@ -73,7 +73,7 @@ describe('readers', () => {
   it('mark-read is scoped to the caller and to the bell\'s own types; junk ids never reach the database', async () => {
     const a = '11111111-1111-4111-8111-111111111111', b = '22222222-2222-4222-8222-222222222222';
     await markMisNotificationsRead([a, 'abc', b]);
-    expect(state.updates[0]).toMatchObject({ where: { id: { in: [a, b] }, userId: 'store-1', type: { in: ['mis.grn_confirmed', 'mis.material_request.raised'] } } });
+    expect(state.updates[0]).toMatchObject({ where: { id: { in: [a, b] }, userId: 'store-1', type: { in: ['mis.grn_confirmed', 'mis.material_request.raised', 'mis.bom_rejected'] } } }); // C2 added mis.bom_rejected to the bell's types
     await markMisNotificationsRead(['abc']);
     expect(state.updates).toHaveLength(1);
   });

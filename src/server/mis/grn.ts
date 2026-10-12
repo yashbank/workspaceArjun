@@ -12,6 +12,7 @@ import { allocateFromReceipt } from './order-allocation';
 import { notifyGrnConfirmed } from './grn-alerts';
 import { itemLockKey, poItemLockKey } from '@/lib/mis/stock-lock-keys';
 import { lockStockKeys } from './stock-lock';
+import { lastLedgerBalance, lastTxnBalance, nextTxnSeq, round2, txnNumberOf } from './store-books';
 
 /** V2 Epic 1 — the delivery's paperwork. `supplierInvoiceAmount` is money: Owner-only to write and to read. */
 export type GrnHeaderInput = {
@@ -253,6 +254,42 @@ export async function updateGRNItem(id: string, patch: Partial<GrnItemInput>) {
   return after;
 }
 
+/** #11 — take a line off a DRAFT GRN. A confirmed GRN's lines are history: refused by `loadDraftGrn`. */
+export async function removeGRNItem(id: string) {
+  const actor = await requirePermission('grn.write');
+  const before = await db.misGrnItem.findUnique({ where: { id } });
+  if (!before) throw new Error(`GRN Item ${id} not found`);
+  await loadDraftGrn(before.grnId);
+  // The status check rides on the delete itself, so a confirm that lands in between cannot lose a line.
+  const removed = await db.misGrnItem.deleteMany({ where: { id, grn: { status: 'DRAFT' } } });
+  if (removed.count !== 1) throw new GrnStateError('A confirmed GRN cannot be edited.');
+  await logAuditEvent({ actorId: actor.userId, action: 'grn_item.delete', entity: 'MisGrnItem', entityId: id, before });
+  return { id };
+}
+
+/** #13 — throw away a DRAFT GRN (header and lines). Nothing was booked, so nothing is reversed. */
+export async function discardGRN(grnId: string) {
+  const actor = await requirePermission('grn.write');
+  const before = await db.misGrn.findUnique({ where: { id: grnId }, include: { items: { select: { id: true } } } });
+  if (!before) throw new Error(`GRN ${grnId} not found`);
+  if (before.status !== 'DRAFT') throw new GrnStateError('A confirmed GRN cannot be discarded.');
+  await db.$transaction(async (tx) => {
+    // Lines first (they reference the header), then the header, both guarded on DRAFT: if a confirm
+    // landed in between, the header delete matches nothing, we throw, and the line delete rolls back.
+    await tx.misGrnItem.deleteMany({ where: { grnId, grn: { status: 'DRAFT' } } });
+    const gone = await tx.misGrn.deleteMany({ where: { id: grnId, status: 'DRAFT' } });
+    if (gone.count !== 1) throw new GrnStateError('A confirmed GRN cannot be discarded.');
+  });
+  await logAuditEvent({
+    actorId: actor.userId,
+    action: 'grn.discard',
+    entity: 'MisGrn',
+    entityId: grnId,
+    before: { ...auditSafeHeader(before), items: undefined, lineCount: before.items.length },
+  });
+  return { id: grnId };
+}
+
 export async function confirmGRN(grnId: string) {
   const actor = await requirePermission('grn.write');
   const grn = await db.misGrn.findUnique({ where: { id: grnId }, include: { po: { select: { bomRef: true, supplierId: true } }, items: { include: { poItem: { include: { item: true } } } } } });
@@ -261,6 +298,14 @@ export async function confirmGRN(grnId: string) {
   // A delivery with nothing on it is not a delivery: at least one line must carry a quantity.
   if (!grn.items.some((i) => i.receivedQty.toNumber() + num(i.damageQuantity) > 0)) {
     throw new GrnStateError('Add at least one item with a received or damaged quantity before confirming.');
+  }
+  // D4: a received line must land in the catalog. Name the first offender and write nothing.
+  const uncatalogued = grn.items.findIndex((i) => i.receivedQty.toNumber() > 0 && !i.poItem.itemId);
+  if (uncatalogued >= 0) {
+    const bad = grn.items[uncatalogued];
+    throw new GrnStateError(
+      `Line ${uncatalogued + 1} ("${bad.poItem.description}") has no catalog item, so its stock cannot be booked. Link the PO line to a catalog item, then confirm again.`,
+    );
   }
 
   // Confirm GRN and update inventory in one transaction
@@ -308,19 +353,16 @@ export async function confirmGRN(grnId: string) {
       });
     }
 
+    const { prefix, next } = await nextTxnSeq(tx);
+    let seq = next;
     for (const grnItem of grn.items) {
       if (grnItem.receivedQty.toNumber() <= 0) continue; // damage-only line: nothing good arrived
-      if (!grnItem.poItem.itemId) continue;
+      if (!grnItem.poItem.itemId) continue; // unreachable: refused above (D4)
       const itemId = grnItem.poItem.itemId;
 
-      // Get current balance
-      const lastLedger = await tx.misInventoryLedger.findFirst({
-        where: { itemId },
-        orderBy: { createdAt: 'desc' },
-        select: { balanceQty: true },
-      });
-      const currentBalance = lastLedger?.balanceQty.toNumber() ?? 0;
-      const newBalance = currentBalance + grnItem.receivedQty.toNumber();
+      // Inventory ledger: the authoritative balance.
+      const currentBalance = await lastLedgerBalance(tx, itemId);
+      const newBalance = round2(currentBalance + grnItem.receivedQty.toNumber());
 
       await tx.misInventoryLedger.create({
         data: {
@@ -332,6 +374,24 @@ export async function confirmGRN(grnId: string) {
           notes: `GRN ${grn.grnNumber}`,
         },
       });
+
+      // The storekeeper's IN/OUT book (what /mis/store/stock and /transactions read), exactly as
+      // commitReceipt writes it: referenced by the GRN number, so the backfill can tell it is there.
+      const txnBalance = await lastTxnBalance(tx, itemId);
+      await tx.misStoreTransaction.create({
+        data: {
+          txnNumber: txnNumberOf(prefix, seq),
+          itemId,
+          type: 'IN',
+          quantity: grnItem.receivedQty,
+          balanceQty: round2(txnBalance + grnItem.receivedQty.toNumber()),
+          referenceNo: grn.grnNumber,
+          reason: null,
+          isOverIssue: false,
+          createdById: actor.userId,
+        },
+      });
+      seq += 1;
 
       // V2 Epic 2: a PO raised against an order (BOM ref = order number) earmarks every line, exactly as
       // the store cart does; a FOR_ORDER line may name a different order with its own ref.

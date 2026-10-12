@@ -28,6 +28,7 @@ export default async function InventoryItemPage({ params }: { params: Promise<{ 
       case 'GRN': return 'GRN Receipt';
       case 'PRODUCTION': return 'Production Use';
       case 'MANUAL_ADJUSTMENT': return 'Manual Adjustment';
+      case 'COUNT_ADJUSTMENT': return 'Count Reconciliation';
       default: return s.replace(/_/g, ' ');
     }
   };
