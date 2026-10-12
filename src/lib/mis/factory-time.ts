@@ -105,6 +105,16 @@ export function formatFactoryDateTime(at: Date, timeZone: string): string {
 }
 
 /**
+ * `20/09/2026 6:04 pm` — the day and a 12-hour time, both the factory's, for a sentence a person reads
+ * (an error message, a toast). Wraps the zone helpers; `formatFactoryDateTime` (24-hour) is unchanged.
+ */
+export function friendlyWhen(at: Date, timeZone: string): string {
+  const p = zonedParts(at, timeZone);
+  const h12 = p.hour % 12 === 0 ? 12 : p.hour % 12;
+  return `${formatFactoryDate(at, timeZone)} ${h12}:${String(p.minute).padStart(2, '0')} ${p.hour < 12 ? 'am' : 'pm'}`;
+}
+
+/**
  * The date key `days` away from `key`. Pure calendar arithmetic on the date itself —
  * no zone is involved, so a daylight-saving edge can never skip or repeat a day.
  */
