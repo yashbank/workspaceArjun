@@ -16,6 +16,11 @@ class RosterPreferences(context: Context) {
         get() = prefs.getBoolean(KEY_LEGACY_SERVER, false)
         set(value) = prefs.edit().putBoolean(KEY_LEGACY_SERVER, value).apply()
 
+    /** Part of the revoked-tablet wipe: forget the sync time and legacy-server flag. */
+    fun clear() {
+        prefs.edit().clear().apply()
+    }
+
     private companion object {
         const val KEY_LEGACY_SERVER = "server_predates_shift_contract"
         const val KEY_LAST_SYNCED_AT = "last_synced_at_millis"

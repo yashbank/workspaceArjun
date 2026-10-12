@@ -21,7 +21,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -169,7 +172,9 @@ fun PunchScreen(
     // Skip the gate only when BOTH the new active-shifts cache and the roster-rollup
     // fallback are empty (viewModel.shifts already merges the two), same as "don't lock
     // out" for a pre-rollout server.
-    if (currentOperator != null && selectedShift == null && shifts.isNotEmpty() && uiState is PunchUiState.Ready) {
+    val staleShiftName by viewModel.staleShiftName.collectAsStateWithLifecycle()
+    val repickRequested by viewModel.repickRequested.collectAsStateWithLifecycle()
+    if (currentOperator != null && (selectedShift == null || repickRequested) && shifts.isNotEmpty() && uiState is PunchUiState.Ready) {
         ShiftSelectionScreen(
             shifts = shifts,
             onSelect = viewModel::selectShift,
@@ -180,6 +185,7 @@ fun PunchScreen(
     PunchScreenContent(
         deviceName = viewModel.deviceName,
         selectedShiftName = selectedShift?.name,
+        staleShiftName = staleShiftName,
         uiState = uiState,
         mode = mode,
         badgeInput = badgeInput,
@@ -193,6 +199,7 @@ fun PunchScreen(
         onBackToIdle = viewModel::backToIdle,
         onQrScanned = viewModel::onQrScanned,
         onConfirmScanned = viewModel::confirmScannedPunch,
+        onToggleKind = viewModel::toggleConfirmKind,
         onRejectConfirmation = viewModel::rejectConfirmation,
         onManualInputChange = viewModel::onManualInputChange,
         onConfirmManualEntry = viewModel::confirmManualEntry,
@@ -208,6 +215,7 @@ fun PunchScreen(
 private fun PunchScreenContent(
     deviceName: String,
     selectedShiftName: String?,
+    staleShiftName: String?,
     uiState: PunchUiState,
     mode: PunchMode,
     badgeInput: String,
@@ -221,6 +229,7 @@ private fun PunchScreenContent(
     onBackToIdle: () -> Unit,
     onQrScanned: (String) -> Unit,
     onConfirmScanned: () -> Unit,
+    onToggleKind: () -> Unit,
     onRejectConfirmation: () -> Unit,
     onManualInputChange: (String) -> Unit,
     onConfirmManualEntry: () -> Unit,
@@ -251,6 +260,16 @@ private fun PunchScreenContent(
                         if (uiState.queuedCount > 0 || uiState.syncError != null) {
                             StatusStrip(uiState)
                         }
+                        if (staleShiftName != null) {
+                            Surface(color = KioskColors.SurfaceVariant) {
+                                Text(
+                                    "Shift $staleShiftName is no longer active — choose another",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = KioskColors.Amber,
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+                                )
+                            }
+                        }
                         if (needsAttention.isNotEmpty()) {
                             NeedsAttentionList(needsAttention, onDismissNeedsAttention)
                         }
@@ -278,6 +297,8 @@ private fun PunchScreenContent(
                                 is PunchMode.Confirming -> ConfirmCardContent(
                                     employee = mode.employee,
                                     kind = mode.kind,
+                                    hint = mode.hint,
+                                    onToggleKind = onToggleKind,
                                     onConfirm = onConfirmScanned,
                                     onReject = onRejectConfirmation,
                                 )
@@ -439,7 +460,7 @@ private fun IdleContent(
         )
         Spacer(Modifier.height(16.dp))
         Text(
-            "$clockedInCount clocked in today",
+            "$clockedInCount IN at this gate today",
             style = MaterialTheme.typography.bodyLarge,
             color = KioskColors.TextSecondary,
         )
@@ -545,6 +566,8 @@ private fun NeutralAvatarPlaceholder() {
 private fun ConfirmCardContent(
     employee: EmployeeEntity,
     kind: String,
+    hint: String?,
+    onToggleKind: () -> Unit,
     onConfirm: () -> Unit,
     onReject: () -> Unit,
 ) {
@@ -596,6 +619,10 @@ private fun ConfirmCardContent(
                         )
                     }
                 }
+                if (hint != null) {
+                    Spacer(Modifier.height(12.dp))
+                    Text(hint, style = MaterialTheme.typography.bodyMedium, color = KioskColors.Amber)
+                }
                 Spacer(Modifier.height(24.dp))
                 val isIn = kind == "attendance.punch_in"
                 Button(
@@ -608,7 +635,11 @@ private fun ConfirmCardContent(
                         style = MaterialTheme.typography.titleMedium,
                     )
                 }
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(8.dp))
+                TextButton(onClick = onToggleKind, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (isIn) "Change to OUT" else "Change to IN", color = KioskColors.Teal)
+                }
+                Spacer(Modifier.height(4.dp))
                 OutlinedButton(onClick = onReject, modifier = Modifier.fillMaxWidth().height(56.dp)) {
                     Text("Not this person")
                 }
@@ -762,8 +793,14 @@ private fun ManualEntryContent(
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
 
+    // Scrollable and keyboard-aware so in landscape the match card and Confirm button stay
+    // reachable above the on-screen keyboard (#60).
     Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .imePadding()
+            .verticalScroll(rememberScrollState())
+            .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {

@@ -25,6 +25,9 @@ sealed interface PunchAttemptResult {
     /** Stays queued (status PENDING) — 503 RETRY, a network hiccup, or an unexpected error;
      *  all three mean "still worth resending this exact same attempt later." */
     data class RetryNeeded(val detail: String?) : PunchAttemptResult
+    /** The server said `wipe: true` — this tablet is revoked and has already been wiped. The
+     *  queue row stays on disk but nothing flushes it without credentials. */
+    data object Revoked : PunchAttemptResult
 }
 
 private const val PUNCH_LOG_TAG = "PunchRepository"
@@ -59,14 +62,15 @@ class PunchRepository(
      *  Accounts for a punch still sitting unresolved in the queue, not only a confirmed one,
      *  so scanning the same badge twice before the first attempt lands doesn't queue two
      *  punch_ins in a row. */
-    suspend fun nextKindFor(employeeId: String): String {
+    suspend fun nextKindFor(employeeId: String): NextKind {
         val pendingKind = punchQueueDao.mostRecentPendingKind(employeeId)
-        val lastDirection = when (pendingKind) {
-            PunchKind.IN -> "IN"
-            PunchKind.OUT -> "OUT"
-            else -> punchStateDao.lastDirection(employeeId)
-        }
-        return if (lastDirection == "IN") PunchKind.OUT else PunchKind.IN
+        val state = if (pendingKind == null) punchStateDao.find(employeeId) else null
+        return decideNextKind(
+            pendingKind = pendingKind,
+            lastDirection = state?.lastDirection,
+            lastPunchedAtMillis = state?.lastPunchedAtMillis,
+            nowMillis = System.currentTimeMillis(),
+        )
     }
 
     /**
@@ -217,8 +221,13 @@ class PunchRepository(
                 "RETRY" -> PunchAttemptResult.RetryNeeded(response.body.detail)
                 else -> PunchAttemptResult.RetryNeeded("The server sent back an unrecognised outcome.")
             }
-            is ApiResult.HttpError ->
+            is ApiResult.HttpError -> if (response.error?.wipe == true) {
+                // Same revoked-tablet handling as the roster sync path (HANDOVER.md §6).
+                wipeAll(context)
+                PunchAttemptResult.Revoked
+            } else {
                 PunchAttemptResult.RetryNeeded(response.error?.message ?: "Could not submit the punch (HTTP ${response.code}).")
+            }
             // A gate tablet loses wifi routinely (HANDOVER.md §3.6) — treat the same as a
             // server-side RETRY: back off and resend this exact same attempt.
             ApiResult.NetworkError ->
