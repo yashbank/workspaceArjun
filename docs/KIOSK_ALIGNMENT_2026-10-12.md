@@ -191,3 +191,18 @@ no other values are recognized as "is an operator."
 - **Empty `employees` from `/pull`** is treated as a failed sync; the cached roster is kept.
 - Verified: Kotlin compile + unit tests pass; queue migration verified on an emulator upgrade
   (2 queued rows preserved, column added). Roster 3->5 migration and UI smoke not run on device.
+
+## Round 4 (tester round 2, cluster C7, branch `fix/c7-android`)
+
+Changed (all under `mis-kiosk-android/`, no Room schema change, no version bump, no web code):
+- **#51** "Retry sync now" pulls the roster (`RosterRepository.sync`), refreshes the cache age and shows the result.
+- **#55** one `wipeAll()` (`data/repository/DeviceWipe.kt`): credentials, employees, active shifts, `punch_state`, roster prefs; cancels the flush worker. Used by the sync REVOKED path and by the punch path (`wipe == true` -> new `PunchAttemptResult.Revoked`, session cleared, back to pairing). Queue rows are kept; `PunchFlushScheduler.schedule` is a no-op while unpaired.
+- **#53** "IN at this gate today": count filters on `lastPunchedAtMillis >= factory-day start` (`data/time/FactoryDay.kt`, 06:00 local, re-evaluated every minute).
+- **#52 / D8** `decideNextKind`: a stale IN (before the current factory day, or older than 14 h) defaults to IN with the hint "Last punch: IN yesterday 14:05 - assumed a missed OUT". The confirm card always has "Change to OUT/IN"; the chosen direction is sent.
+- **#59** a shift dropped by a re-sync keeps the session: banner "Shift X is no longer active - choose another", re-pick forced when the next scan/manual entry starts. A rename (same id) just refreshes the label. A punch already confirmed mid-scan still carries the old shift id.
+- **#54** `observeAll` and badge lookup use a photo-less projection (`EmployeeLite`); `photoById` loads the face only when the confirm card opens; faces over 200 KB are not cached.
+- **#58** `startLockTask()` wrapped (SecurityException / IllegalArgumentException logged). **#57** `paired` starts from the stored credentials. **#61** `allowBackup=false`; backup and data-extraction rules exclude everything.
+- **#56** back camera, falling back to front; visible error text when neither binds; "Flip camera" button when both exist. **#60** manual entry is scrollable with `imePadding`.
+
+Verification: `:app:compileDebugKotlin --rerun-tasks` and `:app:testDebugUnitTest` (new `FactoryDayTest`, `NextKindTest`) pass; debug APK installed on the emulator and launched (pairing screen, no crash).
+Code-verified only (needs a real tablet or a paired emulator): #55 wipe on a live revoke, #53/#52 across a real 06:00 rollover, #59 live shift removal, #54 memory effect, #56 front/back combinations, #58 OEM lock-task policy, #60 keyboard in landscape, #61 `adb backup` exclusion, QR decode speed.
