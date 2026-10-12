@@ -26,6 +26,8 @@ vi.mock('@/server/db', () => ({
     },
     misSupplierInvoice: { upsert: async (args: Row) => { state.invoices.push(args); return args.create; } },
     misInventoryLedger: { findFirst: async () => null, create: async () => null },
+    // C1: confirming a GRN now also writes the storekeeper's book; this fake only needs to accept it.
+    misStoreTransaction: { findFirst: async () => null, create: async () => null },
     misPoItem: { update: async () => null, findMany: async () => [{ id: 'pi1', quantity: D(1000), receivedQuantity: D(0) }] },
     misAuditLog: { create: async ({ data }: Row) => { state.audits.push(JSON.parse(JSON.stringify(data))); return data; } },
     $transaction: async (cb: (tx: unknown) => Promise<unknown>) => cb((await import('@/server/db')).db),

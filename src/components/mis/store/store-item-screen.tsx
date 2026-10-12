@@ -6,6 +6,7 @@ import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { Button } from '@/components/mis/kit/button';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import { NumberInput, Input } from '@/components/mis/kit/input';
+import { unwrap } from '@/lib/mis/action-result';
 import {
   storeInAction,
   storeOutAction,
@@ -81,7 +82,6 @@ export function StoreItemScreen({ items, canWrite, isOwner }: Props) {
   // IN / OUT fields
   const [qty, setQty] = useState('');
   const [refNo, setRefNo] = useState('');
-  const [reason, setReason] = useState('');
 
   // Edit fields (MIS-285)
   const [editCategory, setEditCategory] = useState('');
@@ -115,7 +115,6 @@ export function StoreItemScreen({ items, canWrite, isOwner }: Props) {
     setSlideMode(mode);
     setQty('');
     setRefNo('');
-    setReason('');
     setError('');
   };
 
@@ -141,9 +140,8 @@ export function StoreItemScreen({ items, canWrite, isOwner }: Props) {
       setError('Enter a valid quantity greater than 0');
       return;
     }
-    const isOverIssue = slideMode === 'out' && quantity > slideItem.stockBalance;
-    if (isOverIssue && !reason.trim()) {
-      setError('Reason is required when issuing more than current stock');
+    if (slideMode === 'out' && quantity > slideItem.stockBalance) {
+      setError(`Cannot issue more than the stock balance (${slideItem.stockBalance.toFixed(2)} available)`);
       return;
     }
     setError('');
@@ -152,12 +150,11 @@ export function StoreItemScreen({ items, canWrite, isOwner }: Props) {
         if (slideMode === 'in') {
           await storeInAction({ itemId: slideItem.id, quantity, referenceNo: refNo || undefined });
         } else {
-          await storeOutAction({
+          unwrap(await storeOutAction({
             itemId: slideItem.id,
             quantity,
             referenceNo: refNo || undefined,
-            reason: reason || undefined,
-          });
+          }));
         }
         setSuccess(
           slideMode === 'in'
@@ -205,7 +202,7 @@ export function StoreItemScreen({ items, canWrite, isOwner }: Props) {
     });
   };
 
-  const isOverIssue =
+  const isOverBalance =
     slideMode === 'out' && slideItem != null && parseFloat(qty) > slideItem.stockBalance;
 
   const columns: Column<ItemRow>[] = [
@@ -448,23 +445,12 @@ export function StoreItemScreen({ items, canWrite, isOwner }: Props) {
             placeholder="e.g. 50"
           />
 
-          {isOverIssue && (
-            <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-lg px-3 py-2">
-              ⚠ Over-issue: issuing more than current stock ({slideItem?.stockBalance?.toFixed(2)}{' '}
-              {slideItem?.unit}). Reason is required.
+          {isOverBalance && (
+            <div className="bg-red-50 border border-red-200 text-red-800 text-sm rounded-lg px-3 py-2">
+              Cannot issue more than the stock balance ({slideItem?.stockBalance?.toFixed(2)}{' '}
+              {slideItem?.unit} available).
             </div>
           )}
-
-          <Input
-            label={
-              slideMode === 'out' && isOverIssue
-                ? 'Reason (required)'
-                : 'Reason / Notes (optional)'
-            }
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            placeholder={slideMode === 'in' ? 'GRN ref, supplier name…' : 'Order ref, job number…'}
-          />
 
           <Input
             label="Reference No. (optional)"

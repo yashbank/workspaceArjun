@@ -1,6 +1,9 @@
+import { roundQty } from '@/lib/mis/quantity';
+import { itemLockKey } from '@/lib/mis/stock-lock-keys';
 import { db } from '@/server/db';
 import { logAuditEvent } from './audit';
 import { requirePermission } from './auth';
+import { lockStockKeys } from './stock-lock';
 
 export async function getInventoryBalance(itemId: string) {
   await requirePermission('inventory.read');
@@ -46,23 +49,28 @@ export async function getInventorySummary() {
 
 export async function adjustInventory(itemId: string, changeQty: number, notes?: string) {
   const actor = await requirePermission('inventory.write');
-  // Get current balance
-  const last = await db.misInventoryLedger.findFirst({
-    where: { itemId },
-    orderBy: { createdAt: 'desc' },
-    select: { balanceQty: true },
-  });
-  const current = last?.balanceQty.toNumber() ?? 0;
-  const newBalance = current + changeQty;
-  if (newBalance < 0) throw new Error('Adjustment would result in negative balance');
-  const row = await db.misInventoryLedger.create({
-    data: {
-      itemId,
-      changeQty,
-      balanceQty: newBalance,
-      source: 'MANUAL_ADJUSTMENT',
-      notes: notes?.trim() || null,
-    },
+  // D2: stock never goes negative. The balance read, the check and the write are one read-modify-write,
+  // so they run under the item lock like every other writer of this ledger.
+  const { row, current, newBalance } = await db.$transaction(async (tx) => {
+    await lockStockKeys(tx, [itemLockKey(itemId)]);
+    const last = await tx.misInventoryLedger.findFirst({
+      where: { itemId },
+      orderBy: { createdAt: 'desc' },
+      select: { balanceQty: true },
+    });
+    const current = last?.balanceQty.toNumber() ?? 0;
+    const newBalance = roundQty(current + changeQty);
+    if (newBalance < 0) throw new Error('Adjustment would result in negative balance');
+    const row = await tx.misInventoryLedger.create({
+      data: {
+        itemId,
+        changeQty,
+        balanceQty: newBalance,
+        source: 'MANUAL_ADJUSTMENT',
+        notes: notes?.trim() || null,
+      },
+    });
+    return { row, current, newBalance };
   });
   // V2 Epic 6: a hand adjustment to stock was the one ledger write with no audit row.
   await logAuditEvent({
