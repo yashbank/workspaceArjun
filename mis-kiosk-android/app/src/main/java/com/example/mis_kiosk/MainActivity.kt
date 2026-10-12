@@ -2,6 +2,7 @@ package com.example.mis_kiosk
 
 import android.app.ActivityManager
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -10,9 +11,12 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import com.example.mis_kiosk.data.security.DeviceCredentialStore
 import com.example.mis_kiosk.ui.pairing.PairingScreen
 import com.example.mis_kiosk.ui.punch.PunchScreen
 import com.example.mis_kiosk.ui.theme.MISKioskTheme
+
+private const val TAG = "MainActivity"
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -29,7 +33,9 @@ class MainActivity : ComponentActivity() {
                 // immediately re-fire its old onPaired/onRevoked callback and bounce
                 // straight back to the screen we're trying to leave.
                 var screenGeneration by rememberSaveable { mutableIntStateOf(0) }
-                var paired by rememberSaveable { mutableStateOf(false) }
+                // A tablet that is already paired must open straight on the punch screen after a restart,
+                // not flash the pairing screen first (#57).
+                var paired by rememberSaveable { mutableStateOf(DeviceCredentialStore(this@MainActivity).activeDevice != null) }
                 if (paired) {
                     PunchScreen(
                         viewModelKey = "punch-$screenGeneration",
@@ -64,7 +70,15 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         val activityManager = getSystemService(ActivityManager::class.java)
         if (activityManager?.lockTaskModeState == ActivityManager.LOCK_TASK_MODE_NONE) {
-            startLockTask()
+            // Screen pinning can be refused (no pinning policy, OEM restrictions, a task that is not
+            // pinnable). That must never crash the kiosk; it just runs unpinned (#58).
+            try {
+                startLockTask()
+            } catch (e: SecurityException) {
+                Log.w(TAG, "startLockTask refused; continuing without screen pinning", e)
+            } catch (e: IllegalArgumentException) {
+                Log.w(TAG, "startLockTask rejected; continuing without screen pinning", e)
+            }
         }
     }
 }
