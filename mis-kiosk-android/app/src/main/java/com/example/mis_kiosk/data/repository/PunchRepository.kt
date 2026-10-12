@@ -62,14 +62,15 @@ class PunchRepository(
      *  Accounts for a punch still sitting unresolved in the queue, not only a confirmed one,
      *  so scanning the same badge twice before the first attempt lands doesn't queue two
      *  punch_ins in a row. */
-    suspend fun nextKindFor(employeeId: String): String {
+    suspend fun nextKindFor(employeeId: String): NextKind {
         val pendingKind = punchQueueDao.mostRecentPendingKind(employeeId)
-        val lastDirection = when (pendingKind) {
-            PunchKind.IN -> "IN"
-            PunchKind.OUT -> "OUT"
-            else -> punchStateDao.lastDirection(employeeId)
-        }
-        return if (lastDirection == "IN") PunchKind.OUT else PunchKind.IN
+        val state = if (pendingKind == null) punchStateDao.find(employeeId) else null
+        return decideNextKind(
+            pendingKind = pendingKind,
+            lastDirection = state?.lastDirection,
+            lastPunchedAtMillis = state?.lastPunchedAtMillis,
+            nowMillis = System.currentTimeMillis(),
+        )
     }
 
     /**

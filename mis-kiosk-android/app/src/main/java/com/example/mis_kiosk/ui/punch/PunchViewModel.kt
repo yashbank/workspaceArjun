@@ -10,6 +10,7 @@ import com.example.mis_kiosk.data.local.RosterPreferences
 import com.example.mis_kiosk.data.local.ShiftSummary
 import com.example.mis_kiosk.data.network.ApiClient
 import com.example.mis_kiosk.data.network.KioskApi
+import com.example.mis_kiosk.data.network.dto.PunchKind
 import com.example.mis_kiosk.data.repository.PunchAttemptResult
 import com.example.mis_kiosk.data.repository.PunchRepository
 import com.example.mis_kiosk.data.repository.RosterRepository
@@ -205,15 +206,28 @@ class PunchViewModel @JvmOverloads constructor(
     val shifts: StateFlow<List<PunchShiftOption>> =
         shiftOptions.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    /** Name of the picked shift once a re-sync has dropped it; null while it is still active.
+     *  The session is kept (no mid-scan bounce); the banner shows and the next punch re-picks. */
+    private val _staleShiftName = MutableStateFlow<String?>(null)
+    val staleShiftName: StateFlow<String?> = _staleShiftName.asStateFlow()
+
+    private val _repickRequested = MutableStateFlow(false)
+    val repickRequested: StateFlow<Boolean> = _repickRequested.asStateFlow()
+
     init {
-        // After a re-sync the picked shift may no longer exist; clear it so the operator must
-        // re-pick rather than punches carrying a dead shiftId. Collects the raw DB-backed flow
-        // (not the stateIn above) so its initial emptyList() can never clear a valid pick.
+        // After a re-sync the picked shift may no longer exist (#59). Do not yank the operator
+        // to the picker mid-scan: flag it stale and require a re-pick before the NEXT punch. A
+        // rename (same id) just refreshes the label. Collects the raw DB-backed flow (not the
+        // stateIn above) so its initial emptyList() can never flag a valid pick.
         viewModelScope.launch {
             shiftOptions.collect { options ->
-                val selected = _selectedShift.value
-                if (selected != null && options.none { it.id == selected.id }) {
-                    _selectedShift.value = null
+                val selected = _selectedShift.value ?: return@collect
+                val current = options.firstOrNull { it.id == selected.id }
+                if (current != null) {
+                    _staleShiftName.value = null
+                    if (current != selected) _selectedShift.value = current
+                } else if (options.isNotEmpty()) {
+                    _staleShiftName.value = selected.name ?: "selected shift"
                 }
             }
         }
@@ -221,6 +235,15 @@ class PunchViewModel @JvmOverloads constructor(
 
     fun selectShift(shift: PunchShiftOption) {
         _selectedShift.value = shift
+        _staleShiftName.value = null
+        _repickRequested.value = false
+    }
+
+    /** True (and the picker is shown) when the picked shift went stale and a new punch is starting. */
+    private fun requireRepickIfStale(): Boolean {
+        if (_staleShiftName.value == null) return false
+        _repickRequested.value = true
+        return true
     }
 
     fun onOperatorInputChange(value: String) {
@@ -276,6 +299,8 @@ class PunchViewModel @JvmOverloads constructor(
     fun endShift() {
         _currentOperator.value = null
         _selectedShift.value = null
+        _staleShiftName.value = null
+        _repickRequested.value = false
     }
 
     private var pending: PendingAttempt? = null
@@ -308,8 +333,7 @@ class PunchViewModel @JvmOverloads constructor(
     /** The data wipe already ran in the repository; this clears the in-memory operator + shift
      *  session and flips the screen back to pairing. */
     private fun onRevoked() {
-        _currentOperator.value = null
-        _selectedShift.value = null
+        endShift()
         pending = null
         revoked.value = true
     }
@@ -332,11 +356,13 @@ class PunchViewModel @JvmOverloads constructor(
     // ---- Idle / mode switching -------------------------------------------------------
 
     fun startScanning() {
+        if (requireRepickIfStale()) return
         _scanHint.value = null
         _mode.value = PunchMode.Scanning
     }
 
     fun openManualEntry() {
+        if (requireRepickIfStale()) return
         _badgeInput.value = ""
         _manualMatch.value = null
         _mode.value = PunchMode.ManualEntry
@@ -367,14 +393,22 @@ class PunchViewModel @JvmOverloads constructor(
                 }
                 return@launch
             }
-            val kind = punchRepository.nextKindFor(employee.id)
-            _mode.value = PunchMode.Confirming(employee, kind)
+            val next = punchRepository.nextKindFor(employee.id)
+            _mode.value = PunchMode.Confirming(employee, next.kind, next.hint)
         }
     }
 
     fun confirmScannedPunch() {
         val mode = _mode.value as? PunchMode.Confirming ?: return
         beginAttempt(mode.employee, mode.kind)
+    }
+
+    /** The operator overrides the pre-selected direction (the other gate or HR may have changed
+     *  the person's state); whatever is showing when they confirm is what is sent. */
+    fun toggleConfirmKind() {
+        val mode = _mode.value as? PunchMode.Confirming ?: return
+        val flipped = if (mode.kind == PunchKind.IN) PunchKind.OUT else PunchKind.IN
+        _mode.value = mode.copy(kind = flipped)
     }
 
     fun rejectConfirmation() {
@@ -419,8 +453,8 @@ class PunchViewModel @JvmOverloads constructor(
     fun confirmManualEntry() {
         val employee = _manualMatch.value ?: return
         viewModelScope.launch {
-            val kind = punchRepository.nextKindFor(employee.id)
-            _mode.value = PunchMode.Confirming(employee, kind)
+            val next = punchRepository.nextKindFor(employee.id)
+            _mode.value = PunchMode.Confirming(employee, next.kind, next.hint)
         }
     }
 

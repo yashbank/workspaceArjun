@@ -31,7 +31,12 @@ sealed interface PunchMode {
     data object Idle : PunchMode
     data object Scanning : PunchMode
     data object ManualEntry : PunchMode
-    data class Confirming(val employee: EmployeeEntity, val kind: String) : PunchMode
+    data class Confirming(
+        val employee: EmployeeEntity,
+        val kind: String,
+        /** Why [kind] was pre-selected, when it is not the plain toggle (e.g. an assumed missed OUT). */
+        val hint: String? = null,
+    ) : PunchMode
 }
 
 /** The outcome of one submitted punch attempt, shown as an overlay on the entry screen. */
