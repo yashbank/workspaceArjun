@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.mis_kiosk.data.local.EmployeeEntity
+import com.example.mis_kiosk.data.local.EmployeeLite
 import com.example.mis_kiosk.data.local.PunchQueueDatabase
 import com.example.mis_kiosk.data.local.RosterDatabase
 import com.example.mis_kiosk.data.local.RosterPreferences
@@ -65,7 +66,7 @@ data class PunchShiftOption(
 )
 
 private data class RosterSnapshot(
-    val employees: List<EmployeeEntity>,
+    val employees: List<EmployeeLite>,
     val syncing: Boolean,
     val syncError: String?,
     val revoked: Boolean,
@@ -233,6 +234,13 @@ class PunchViewModel @JvmOverloads constructor(
         }
     }
 
+    /** Badge lookup without the photo bytes; [withPhoto] adds the face once a confirm card opens. */
+    private suspend fun lookupEmployee(code: String): EmployeeEntity? =
+        (employeeDao.findByBadgeCode(code) ?: employeeDao.findByBadgeCode(code.uppercase()))?.toEntity()
+
+    private suspend fun withPhoto(employee: EmployeeEntity): EmployeeEntity =
+        employee.copy(photo = employeeDao.photoById(employee.id))
+
     fun selectShift(shift: PunchShiftOption) {
         _selectedShift.value = shift
         _staleShiftName.value = null
@@ -256,7 +264,7 @@ class PunchViewModel @JvmOverloads constructor(
             return
         }
         operatorLookupJob = viewModelScope.launch {
-            val match = employeeDao.findByBadgeCode(code) ?: employeeDao.findByBadgeCode(code.uppercase())
+            val match = lookupEmployee(code)
             _operatorMatch.value = match
         }
     }
@@ -383,7 +391,7 @@ class PunchViewModel @JvmOverloads constructor(
         if (_mode.value !is PunchMode.Scanning) return
         viewModelScope.launch {
             val code = rawValue.trim()
-            val employee = employeeDao.findByBadgeCode(code) ?: employeeDao.findByBadgeCode(code.uppercase())
+            val employee = lookupEmployee(code)
             if (employee == null) {
                 scanHintClearJob?.cancel()
                 _scanHint.value = "Badge not recognised: $code"
@@ -394,7 +402,7 @@ class PunchViewModel @JvmOverloads constructor(
                 return@launch
             }
             val next = punchRepository.nextKindFor(employee.id)
-            _mode.value = PunchMode.Confirming(employee, next.kind, next.hint)
+            _mode.value = PunchMode.Confirming(withPhoto(employee), next.kind, next.hint)
         }
     }
 
@@ -441,7 +449,7 @@ class PunchViewModel @JvmOverloads constructor(
             return
         }
         manualLookupJob = viewModelScope.launch {
-            val match = employeeDao.findByBadgeCode(code) ?: employeeDao.findByBadgeCode(code.uppercase())
+            val match = lookupEmployee(code)
             _manualMatch.value = match
         }
     }
@@ -454,7 +462,7 @@ class PunchViewModel @JvmOverloads constructor(
         val employee = _manualMatch.value ?: return
         viewModelScope.launch {
             val next = punchRepository.nextKindFor(employee.id)
-            _mode.value = PunchMode.Confirming(employee, next.kind, next.hint)
+            _mode.value = PunchMode.Confirming(withPhoto(employee), next.kind, next.hint)
         }
     }
 

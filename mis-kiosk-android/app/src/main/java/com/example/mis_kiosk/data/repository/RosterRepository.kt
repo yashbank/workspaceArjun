@@ -5,6 +5,7 @@ import androidx.room.withTransaction
 import com.example.mis_kiosk.data.health.collectHealthReport
 import com.example.mis_kiosk.data.local.ActiveShiftEntity
 import com.example.mis_kiosk.data.local.EmployeeEntity
+import com.example.mis_kiosk.data.local.EmployeeLite
 import com.example.mis_kiosk.data.local.RosterDatabase
 import com.example.mis_kiosk.data.local.RosterPreferences
 import com.example.mis_kiosk.data.network.ApiResult
@@ -18,6 +19,9 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
+
+/** A face larger than this is dropped (the card falls back to the placeholder), not cached. */
+const val MAX_PHOTO_BYTES = 200 * 1024
 
 sealed interface RosterSyncResult {
     data class Success(val count: Int) : RosterSyncResult
@@ -37,7 +41,7 @@ class RosterRepository(
     private val employeeDao = database.employeeDao()
     private val activeShiftDao = database.activeShiftDao()
 
-    val employees: Flow<List<EmployeeEntity>> = employeeDao.observeAll()
+    val employees: Flow<List<EmployeeLite>> = employeeDao.observeAll()
     val activeShifts: Flow<List<ActiveShiftEntity>> = activeShiftDao.observeAll()
     val lastSyncedAtMillis: Long? get() = rosterPreferences.lastSyncedAtMillis
 
@@ -63,7 +67,7 @@ class RosterRepository(
                             val photo = when {
                                 url == null -> null
                                 cached[url]?.let { decodesAsImage(it) } == true -> cached[url] // poisoned (non-image) bytes are refetched
-                                else -> api.fetchPhoto(device.token, url)
+                                else -> api.fetchPhoto(device.token, url)?.takeIf { it.size <= MAX_PHOTO_BYTES }
                             }
                             dto.toEntity(photo = photo)
                         }
