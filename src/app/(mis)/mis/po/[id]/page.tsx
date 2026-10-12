@@ -3,8 +3,9 @@ import { toPlain } from '@/lib/mis/plain';
 import { notFound } from 'next/navigation';
 import { requireMisAccess } from '@/server/mis/guard';
 import { checkPermission } from '@/server/mis/auth';
-import { getPO, computePoTotal, formatMoney } from '@/server/mis/po';
+import { getPO, computePoTotal, formatMoney, listApprovedBomOrders } from '@/server/mis/po';
 import { listItems } from '@/server/mis/item';
+import { listSuppliers } from '@/server/mis/supplier';
 import { reconcilePO } from '@/server/mis/supplier-invoice';
 import { PoDetailScreen } from '@/components/mis/po/po-detail-screen';
 
@@ -24,6 +25,8 @@ export default async function PoDetailPage({ params }: { params: Promise<{ id: s
   // The item catalog only feeds the "Add Item" form, which is itself gated on canWrite — a
   // po.read-only viewer (e.g. STORE_GUY, who lacks masters.read) must never reach listItems().
   const items = canWrite ? await listItems() : [];
+  // The header editor (DRAFT only) needs the supplier list and the approved-BOM picker.
+  const [suppliers, approvedBoms] = canWrite && po.status === 'DRAFT' ? await Promise.all([listSuppliers(), listApprovedBomOrders()]) : [[], []];
   const total = canSeeMoney ? await computePoTotal(id) : null;
   const reconciliation = (po.grns?.length ?? 0) > 0 ? await reconcilePO(id) : null;
   type PoItem = (typeof po.items)[number];
@@ -41,5 +44,5 @@ export default async function PoDetailPage({ params }: { params: Promise<{ id: s
         }
       : {}),
   }));
-  return <PoDetailScreen po={toPlain(po)} formattedItems={formattedItems} total={total} catalogItems={toPlain(items)} canWrite={canWrite} canApprove={canApprove} reconciliation={reconciliation} />;
+  return <PoDetailScreen po={toPlain(po)} formattedItems={formattedItems} total={total} catalogItems={toPlain(items)} canWrite={canWrite} canApprove={canApprove} reconciliation={reconciliation} suppliers={suppliers.map((s) => ({ id: s.id, name: s.name }))} approvedBoms={approvedBoms} />;
 }

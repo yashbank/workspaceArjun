@@ -50,7 +50,9 @@ function makeDb(): Row {
         if (state.pos.some((p) => p.poNumber === data.poNumber)) {
           throw Object.assign(new Error('Unique constraint failed on the fields: (`po_number`)'), { code: 'P2002' });
         }
-        const row = { id: nextId(), status: 'APPROVED', ...data, purpose };
+        // The live column default is DRAFT. This fake used to hand back APPROVED, which hid that
+        // submit/approve/edit now check the PO's status (tester round 2, C2).
+        const row = { id: nextId(), status: 'DRAFT', ...data, purpose };
         state.pos.push(row);
         return row;
       },
@@ -61,6 +63,13 @@ function makeDb(): Row {
         if (include?.items) return { ...po, items: state.poItems.filter((i) => i.poId === po.id) };
         return po;
       },
+    },
+    // D1 (tester round 2, C2): a FOR_ORDER PO's ref must name an order whose BOM is APPROVED. Every
+    // ORD-… number resolves to such an order here; the refusal itself is covered in po-bom-guards.test.ts.
+    misOrder: {
+      findUnique: async ({ where }: Row) => ({ orderNumber: where.orderNumber, bom: { status: 'APPROVED' } }),
+      // store.ts looks the order up again on receipt to earmark stock; none is needed for this arithmetic.
+      findFirst: async () => null,
     },
     misPoItem: {
       create: async ({ data }: Row) => { const row = { id: nextId(), receivedQuantity: 0, ...data }; state.poItems.push(row); return row; },
@@ -148,12 +157,12 @@ describe('createPO — FOR_ORDER validation (MIS-279 cases 2 & 3)', () => {
   });
 
   it('switching to BUFFER_STOCK strips a reference typed before the raiser switched paths', async () => {
-    const po = await createPO({ purpose: 'BUFFER_STOCK', bomRef: 'BOM-118' });
+    const po = await createPO({ purpose: 'BUFFER_STOCK', bomRef: 'ORD-202610-00118' });
     expect(po.bomRef).toBeNull();
   });
 
   it('omitting purpose infers FOR_ORDER from a present bomRef, and BUFFER_STOCK from none — existing callers are unaffected', async () => {
-    expect((await createPO({ bomRef: 'BOM-9' })).bomRef).toBe('BOM-9');
+    expect((await createPO({ bomRef: 'ORD-202610-00009' })).bomRef).toBe('ORD-202610-00009');
     expect((await createPO({})).bomRef).toBeNull();
   });
 });
@@ -172,7 +181,7 @@ describe('createPO writes `purpose` in step with `bomRef` (Track 4 Part B — th
   });
 
   it('a FOR_ORDER PO is created with purpose=FOR_ORDER, matching its bomRef', async () => {
-    const po = await createPO({ bomRef: 'BOM-900' });
+    const po = await createPO({ bomRef: 'ORD-202610-00900' });
     expect((po as Row).purpose).toBe('FOR_ORDER');
   });
 });
@@ -208,7 +217,7 @@ describe('classification-on-issue (MIS-279 case 4)', () => {
 
 describe('partial-receipt arithmetic, to the paisa (this phase\'s own acceptance check)', () => {
   it('order 100, receive 40 then 35: outstanding, ledger and PO status are correct after EACH step, and the PO never auto-completes short of the full 100', async () => {
-    const po = await createPO({ bomRef: 'BOM-500' });
+    const po = await createPO({ bomRef: 'ORD-202610-00500' });
     const poItem = await fakeDb.misPoItem.create({ data: { poId: po.id, itemId: 'i1', quantity: 100, ratePerUnit: 20 } });
 
     await commitReceipt([{ itemId: 'i1', qty: 40, rate: 20 }], { poId: po.id });
@@ -234,7 +243,7 @@ describe('partial-receipt arithmetic, to the paisa (this phase\'s own acceptance
 
 describe('approval chain (Phase 21 · D1/D2/D34)', () => {
   it('a buffer-stock PO and an order-linked PO of the SAME value take the identical approval path (D2\'s own acceptance check)', async () => {
-    const orderPo = await createPO({ bomRef: 'BOM-700' });
+    const orderPo = await createPO({ bomRef: 'ORD-202610-00700' });
     await fakeDb.misPoItem.create({ data: { poId: orderPo.id, itemId: 'i1', quantity: 10, ratePerUnit: 1000 } }); // 10,000
     const bufferPo = await createPO({ purpose: 'BUFFER_STOCK' });
     await fakeDb.misPoItem.create({ data: { poId: bufferPo.id, itemId: 'i1', quantity: 10, ratePerUnit: 1000 } }); // 10,000
@@ -246,7 +255,7 @@ describe('approval chain (Phase 21 · D1/D2/D34)', () => {
   });
 
   it('below the threshold: ADMIN_ONLY, a single step an Admin can complete alone', async () => {
-    const po = await createPO({ bomRef: 'BOM-701' });
+    const po = await createPO({ bomRef: 'ORD-202610-00701' });
     await fakeDb.misPoItem.create({ data: { poId: po.id, itemId: 'i1', quantity: 1, ratePerUnit: 100 } }); // 100
     const submitted = await submitForApproval(po.id);
     expect(submitted.approvalMode).toBe('ADMIN_ONLY');
@@ -259,7 +268,7 @@ describe('approval chain (Phase 21 · D1/D2/D34)', () => {
   });
 
   it('at/above the threshold: BOTH — an Admin\'s first step does not itself approve, and only the Owner can give the second', async () => {
-    const po = await createPO({ bomRef: 'BOM-702' });
+    const po = await createPO({ bomRef: 'ORD-202610-00702' });
     await fakeDb.misPoItem.create({ data: { poId: po.id, itemId: 'i1', quantity: 100, ratePerUnit: 1000 } }); // 100,000
     const submitted = await submitForApproval(po.id);
     expect(submitted.approvalMode).toBe('BOTH');
@@ -280,7 +289,7 @@ describe('approval chain (Phase 21 · D1/D2/D34)', () => {
   });
 
   it('OWNER_ONLY is a manual override only an Owner can invoke, and only an Owner can then approve it', async () => {
-    const po = await createPO({ bomRef: 'BOM-703' });
+    const po = await createPO({ bomRef: 'ORD-202610-00703' });
     await fakeDb.misPoItem.create({ data: { poId: po.id, itemId: 'i1', quantity: 1, ratePerUnit: 100 } }); // 100 — would otherwise be ADMIN_ONLY
 
     getMisRole.mockResolvedValue('ADMIN');
@@ -299,7 +308,7 @@ describe('approval chain (Phase 21 · D1/D2/D34)', () => {
   });
 
   it('a threshold change after submission never reopens a PO already decided (frozen at submission, D34)', async () => {
-    const po = await createPO({ bomRef: 'BOM-704' });
+    const po = await createPO({ bomRef: 'ORD-202610-00704' });
     await fakeDb.misPoItem.create({ data: { poId: po.id, itemId: 'i1', quantity: 100, ratePerUnit: 1000 } }); // 100,000 -> BOTH today
     const submitted = await submitForApproval(po.id);
     expect(submitted.approvalMode).toBe('BOTH');

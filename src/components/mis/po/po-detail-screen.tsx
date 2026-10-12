@@ -8,8 +8,14 @@ import { Input, NumberInput } from '@/components/mis/kit/input';
 import { Select } from '@/components/mis/kit/select';
 import { StatusBadge, type BadgeTone } from '@/components/mis/kit/status-badge';
 import { Card, CardRow } from '@/components/mis/kit/card';
-import { addPoItemAction, removePoItemAction, submitPoAction, approvePoAction, cancelPoAction } from '@/app/(mis)/mis/po/actions';
-import { poPurpose, poPurposeLabel } from '@/lib/mis/po-purpose';
+import { useRouter } from 'next/navigation';
+import { addPoItemAction, removePoItemAction, submitPoAction, approvePoAction, cancelPoAction, deletePoAction, updatePoAction } from '@/app/(mis)/mis/po/actions';
+import { poPurpose, poPurposeLabel, type PoPurpose } from '@/lib/mis/po-purpose';
+import { isBomNotApprovedDetail } from '@/lib/mis/po-errors';
+import { useConfirm } from '@/components/ui/confirm-dialog';
+import { useToast } from '@/components/ui/toast';
+import { EmptyState } from '@/components/mis/kit/empty-state';
+import type { ActionResult } from '@/lib/mis/action-result';
 import type { PoReconciliation } from '@/server/mis/supplier-invoice';
 
 type CatalogItem = { id: string; name: string; unit: string };
@@ -23,7 +29,7 @@ type Po = {
   supplier: { id: string; name: string; phone: string | null } | null;
   grns: { id: string; grnNumber: string; status: string; createdAt: Date }[];
 };
-type Props = { po: Po; formattedItems: FormattedPoItem[]; total: string | null; catalogItems: CatalogItem[]; canWrite: boolean; canApprove: boolean; /** V2 Epic 1 — PO ↔ GRN ↔ invoice; null until a GRN exists. */ reconciliation?: PoReconciliation | null };
+type Props = { po: Po; formattedItems: FormattedPoItem[]; total: string | null; catalogItems: CatalogItem[]; canWrite: boolean; canApprove: boolean; suppliers?: { id: string; name: string }[]; approvedBoms?: { orderNumber: string; label: string }[]; /** V2 Epic 1 — PO ↔ GRN ↔ invoice; null until a GRN exists. */ reconciliation?: PoReconciliation | null };
 
 function statusTone(status: string): BadgeTone {
   switch (status) {
@@ -37,7 +43,15 @@ function statusTone(status: string): BadgeTone {
   }
 }
 
-export function PoDetailScreen({ po, formattedItems, total, catalogItems, canWrite, canApprove, reconciliation = null }: Props) {
+export function PoDetailScreen({ po, formattedItems, total, catalogItems, canWrite, canApprove, reconciliation = null, suppliers = [], approvedBoms = [] }: Props) {
+  const router = useRouter();
+  const { confirm, confirmDialog } = useConfirm();
+  const { toast } = useToast();
+  const [editOpen, setEditOpen] = useState(false);
+  const [editSupplierId, setEditSupplierId] = useState(po.supplier?.id ?? '');
+  const [editPurpose, setEditPurpose] = useState<PoPurpose>(poPurpose(po));
+  const [editBomRef, setEditBomRef] = useState(po.bomRef ?? '');
+  const [editNotes, setEditNotes] = useState(po.notes ?? '');
   const [addOpen, setAddOpen] = useState(false);
   const [itemId, setItemId] = useState('');
   const [description, setDescription] = useState('');
@@ -45,12 +59,39 @@ export function PoDetailScreen({ po, formattedItems, total, catalogItems, canWri
   const [ratePerUnit, setRatePerUnit] = useState('0');
   const [isPending, startTransition] = useTransition();
 
+  /** A refusal is shown, never swallowed: the unapproved-BOM one as a popup (D1), the rest as a toast. Returns true on success. */
+  const settle = async (result: ActionResult<unknown>): Promise<boolean> => {
+    if (result.ok) return true;
+    if (isBomNotApprovedDetail(result.detail)) {
+      await confirm({ title: 'BOM is not approved', message: result.detail, confirmLabel: 'OK', cancelLabel: 'Close' });
+    } else {
+      toast('error', result.detail);
+    }
+    return false;
+  };
+  const run = (action: () => Promise<ActionResult<unknown>>) => startTransition(async () => { await settle(await action()); });
+
   const handleAddItem = () => {
     if (!description) return;
     startTransition(async () => {
-      await addPoItemAction(po.id, { itemId: itemId || null, description, quantity: parseFloat(quantity) || 1, ratePerUnit: parseFloat(ratePerUnit) || 0 });
+      const ok = await settle(await addPoItemAction(po.id, { itemId: itemId || null, description, quantity: parseFloat(quantity) || 1, ratePerUnit: parseFloat(ratePerUnit) || 0 }));
+      if (!ok) return;
       setItemId(''); setDescription(''); setQuantity('1'); setRatePerUnit('0');
       setAddOpen(false);
+    });
+  };
+
+  const handleSaveDetails = () => {
+    startTransition(async () => {
+      const ok = await settle(await updatePoAction(po.id, { supplierId: editSupplierId || null, purpose: editPurpose, bomRef: editPurpose === 'FOR_ORDER' ? editBomRef || null : null, notes: editNotes || null }));
+      if (ok) setEditOpen(false);
+    });
+  };
+
+  const handleDelete = async () => {
+    if (!(await confirm({ title: 'Delete this draft PO?', message: `${po.poNumber} and its line items will be removed for good.`, confirmLabel: 'Delete', destructive: true }))) return;
+    startTransition(async () => {
+      if (await settle(await deletePoAction(po.id))) router.push('/mis/po');
     });
   };
 
@@ -69,12 +110,14 @@ export function PoDetailScreen({ po, formattedItems, total, catalogItems, canWri
     )},
     { key: 'actions', header: '', render: (r) => (
       po.status === 'DRAFT' && canWrite
-        ? <Button variant="ghost" onClick={() => startTransition(async () => { await removePoItemAction(r.id, po.id); })}>Remove</Button>
+        ? <Button variant="ghost" onClick={() => startTransition(async () => { await settle(await removePoItemAction(r.id, po.id)); })}>Remove</Button>
         : null
     )},
   ];
 
   const isDraft = po.status === 'DRAFT';
+  // #6: submit needs at least one line with a quantity above zero.
+  const hasLines = formattedItems.some((i) => i.quantity > 0);
   const isPendingApproval = po.status === 'PENDING_APPROVAL';
 
   return (
@@ -89,9 +132,15 @@ export function PoDetailScreen({ po, formattedItems, total, catalogItems, canWri
           <Link href={`/mis/print/po/${po.id}`} target="_blank" className="text-sm text-blue-600 hover:underline ml-4">🖨 Print PO</Link>
         </div>
         <div className="flex gap-2 flex-shrink-0">
-          {isDraft && canWrite && <Button onClick={() => startTransition(async () => { await submitPoAction(po.id); })} disabled={isPending}>Submit for Approval</Button>}
-          {isPendingApproval && canApprove && <Button onClick={() => startTransition(async () => { await approvePoAction(po.id); })} disabled={isPending}>Approve</Button>}
-          {(isDraft || isPendingApproval) && canWrite && <Button variant="ghost" onClick={() => startTransition(async () => { await cancelPoAction(po.id); })} disabled={isPending}>Cancel</Button>}
+          {isDraft && canWrite && <Button variant="ghost" onClick={() => setEditOpen(true)} disabled={isPending}>Edit details</Button>}
+          {isDraft && canWrite && (
+            <span title={hasLines ? undefined : 'Add at least one line item'}>
+              <Button onClick={() => run(() => submitPoAction(po.id))} disabled={isPending || !hasLines}>Submit for Approval</Button>
+            </span>
+          )}
+          {isPendingApproval && canApprove && <Button onClick={() => run(() => approvePoAction(po.id))} disabled={isPending}>Approve</Button>}
+          {(isDraft || isPendingApproval) && canWrite && <Button variant="ghost" onClick={() => run(() => cancelPoAction(po.id))} disabled={isPending}>Cancel</Button>}
+          {isDraft && canWrite && <Button variant="danger" onClick={handleDelete} disabled={isPending}>Delete</Button>}
         </div>
       </div>
 
@@ -189,6 +238,45 @@ export function PoDetailScreen({ po, formattedItems, total, catalogItems, canWri
         </div>
       )}
 
+      <SlideOver open={editOpen} onClose={() => setEditOpen(false)} title="Edit PO details">
+        <div className="flex flex-col gap-4 p-4">
+          <Select
+            label="Supplier"
+            value={editSupplierId}
+            onChange={setEditSupplierId}
+            options={[{ value: '', label: '— Select supplier —' }, ...suppliers.map(s => ({ value: s.id, label: s.name }))]}
+          />
+          <Select
+            label="Purpose"
+            value={editPurpose}
+            onChange={(v) => setEditPurpose(v as PoPurpose)}
+            options={[
+              { value: 'FOR_ORDER', label: 'From a BOM requirement' },
+              { value: 'BUFFER_STOCK', label: 'Buffer stock — no BOM' },
+            ]}
+          />
+          {editPurpose === 'FOR_ORDER' ? (
+            approvedBoms.length === 0 ? (
+              <EmptyState title="No approved BOMs yet" body="A PO from a BOM needs an order whose BOM is approved. For a stock top-up, choose Buffer stock instead." />
+            ) : (
+              <Select
+                label="BOM Ref"
+                value={editBomRef}
+                onChange={setEditBomRef}
+                options={[{ value: '', label: '— Select an order with an approved BOM —' }, ...approvedBoms.map(b => ({ value: b.orderNumber, label: b.label }))]}
+              />
+            )
+          ) : (
+            <p className="text-sm text-slate-500">Stock kept on hand. No BOM and no customer order is recorded against this PO.</p>
+          )}
+          <Input label="Notes" value={editNotes} onChange={e => setEditNotes(e.target.value)} />
+          <div className="flex gap-2 pt-2">
+            <Button onClick={handleSaveDetails} disabled={isPending || (editPurpose === 'FOR_ORDER' && !editBomRef.trim())}>{isPending ? 'Saving…' : 'Save'}</Button>
+            <Button variant="ghost" onClick={() => setEditOpen(false)}>Cancel</Button>
+          </div>
+        </div>
+      </SlideOver>
+
       <SlideOver open={addOpen} onClose={() => setAddOpen(false)} title="Add Line Item">
         <div className="flex flex-col gap-4 p-4">
           <Select
@@ -210,6 +298,7 @@ export function PoDetailScreen({ po, formattedItems, total, catalogItems, canWri
           </div>
         </div>
       </SlideOver>
+      {confirmDialog}
     </div>
   );
 }

@@ -29,7 +29,7 @@ const PRICE = 88.41;
 
 const poItem = { id: 'pi1', poId: 'po1', itemId: 'i1', description: 'Kraft', quantity: 10, receivedQuantity: 0, ratePerUnit: RATE, sortOrder: 1, item: { id: 'i1', name: 'Kraft', unit: 'KG' } };
 const world = {
-  po: { id: 'po1', poNumber: 'PO-1', status: 'APPROVED', supplier: { id: 's1', name: 'Acme' }, items: [poItem], grns: [] } as Row,
+  po: { id: 'po1', poNumber: 'PO-1', status: 'DRAFT' /* line edits need a DRAFT PO (tester round 2, C2) */, supplier: { id: 's1', name: 'Acme' }, items: [poItem], grns: [] } as Row,
   grn: { id: 'g1', grnNumber: 'GRN-1', po: { id: 'po1', poNumber: 'PO-1', items: [poItem] }, items: [{ id: 'gi1', poItem }] } as Row,
   items: [{ id: 'i1', code: 'K1', name: 'Kraft', unit: 'KG', pricePerUnit: PRICE, deletedAt: null }] as Row[],
 };
@@ -55,6 +55,7 @@ vi.mock('@/server/db', () => ({
       update: async ({ data }: { data: Row }) => ({ ...poItem, ...data }),
       delete: async () => poItem,
     },
+    misBomStage: { findUnique: async () => ({ id: 's1', bom: { status: 'DRAFT' } }) }, // add/edit needs a DRAFT BOM (C2)
     misBomMaterial: { create: async ({ data }: { data: Row }) => ({ id: 'm9', ...data }) },
     misAuditLog: { create: async ({ data }: { data: Row }) => { auditRows.push(JSON.parse(JSON.stringify(data))); return data; } },
   },
