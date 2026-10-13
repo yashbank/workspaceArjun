@@ -40,7 +40,11 @@ vi.mock('@/server/mis/reports', () => ({
   getProductionReport: async () => reportRows, getAttendanceReport: async () => ({ rows: [] }), getQcReport: async () => ({ rows: [{ defectQty: d(2) }] }),
   getOrdersReport: async () => [{ id: 'o', qty: d(3) }], getStoreReport: async () => ({ raw: [{ quantity: d(4), balanceQty: d(6) }] }), getWastageReport: async () => null,
   getMachineUtilisationReport: async () => ({ rows: [], availableMinutes: 0, totals: { bookedMinutes: 0, allocationCount: 0, machineCount: 0 } }),
+  // R3-QCR B77/B78: the page now builds its range from these two helpers (mock shape only; the page's output is what is asserted).
+  clampReportMonth: () => ({ year: 2026, month: 9 }),
+  factoryMonthRange: () => ({ from: new Date('2026-08-31T18:30:00Z'), to: new Date('2026-09-30T18:30:00Z') }),
 }));
+vi.mock('@/server/mis/business-rules', () => ({ getFactoryTimezone: async () => 'Asia/Kolkata' }));
 vi.mock('@/lib/mis/wastage', () => ({ clampWeeks: () => 4 }));
 
 vi.mock('@/components/mis/grn/grn-detail-screen', () => ({ GrnDetailScreen: () => null }));

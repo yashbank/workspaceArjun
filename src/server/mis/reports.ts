@@ -1,4 +1,5 @@
-import { addDaysToDateKey, dateKeyToDbDate, factoryDateKey } from '@/lib/mis/factory-time';
+import { addDaysToDateKey, dateKeyToDbDate, factoryDateKey, zonedParts } from '@/lib/mis/factory-time';
+import { normaliseUnit, sumByUnit } from '@/lib/mis/qty-by-unit';
 import { buildMachineUtilisation, type MachineUtilisationReport } from '@/lib/mis/machine-utilisation';
 import { withoutMoneyFields } from '@/lib/mis/money-fields';
 import { can } from '@/lib/mis/permissions';
@@ -7,13 +8,61 @@ import { buildWastage, clampWeeks, windowKeys, type WastageReport } from '@/lib/
 import { requirePermission } from '@/server/mis/auth';
 import { getFactoryTimezone } from '@/server/mis/business-rules';
 
+/** Half-open: every filter below is `gte from, lt to`, so the last instant of a month can never be dropped or double counted (B77). */
 export type ReportRange = { from: Date; to: Date };
 
-/** Production summary by order — qty produced, waste, entry count */
+/**
+ * R3-QCR B77: the instant a factory-calendar month starts, and the next month's start, in the factory's
+ * zone. A log made at 01:00 IST on 1 Oct is 19:00Z on 30 Sep: it belongs to October.
+ */
+export function factoryMonthRange(year: number, month: number, timeZone: string): ReportRange {
+  const startOf = (y: number, m: number) => {
+    // Find the instant whose wall-clock in `timeZone` is the 1st of (y, m) 00:00: guess UTC midnight,
+    // measure how far the zone's reading is from it, and shift back (twice, for a DST edge).
+    const wanted = Date.UTC(y, m - 1, 1);
+    let guess = wanted;
+    for (let i = 0; i < 2; i += 1) {
+      const p = zonedParts(new Date(guess), timeZone);
+      const seen = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute);
+      guess += wanted - seen;
+    }
+    return new Date(guess);
+  };
+  const nextYear = month === 12 ? year + 1 : year;
+  const nextMonth = month === 12 ? 1 : month + 1;
+  return { from: startOf(year, month), to: startOf(nextYear, nextMonth) };
+}
+
+/**
+ * R3-QCR B78: `?year` / `?month` are user input. Out of range or not a number falls back to the factory's
+ * current month (year 2000..2100, month 1..12 independently).
+ */
+export function clampReportMonth(
+  input: { year?: unknown; month?: unknown },
+  todayKey: string,
+): { year: number; month: number } {
+  const curYear = Number(todayKey.slice(0, 4));
+  const curMonth = Number(todayKey.slice(5, 7));
+  const asInt = (v: unknown) => (typeof v === 'string' && /^\d{1,4}$/.test(v.trim()) ? parseInt(v.trim(), 10) : NaN);
+  const y = asInt(input.year);
+  const m = asInt(input.month);
+  return {
+    year: Number.isInteger(y) && y >= 2000 && y <= 2100 ? y : curYear,
+    month: Number.isInteger(m) && m >= 1 && m <= 12 ? m : curMonth,
+  };
+}
+
+export type ProductionTotal = { unit: string; produced: number; waste: number; wastePct: number | null };
+
+/**
+ * Production summary by order and unit — qty produced, waste, entry count.
+ * B76: a log row carries ONE unit, so an order's figures are split per unit and `totals` is per unit
+ * ("500 PIECE + 200 KG" is two rows, never "700"). Unit text is normalised (trim, upper-case).
+ */
 export async function getProductionReport(range: ReportRange) {
   await requirePermission('reports.read');
   const logs = await db.misProductionLog.findMany({
-    where: { loggedAt: { gte: range.from, lte: range.to } },
+    where: { loggedAt: { gte: range.from, lt: range.to } },
     include: {
       order: { select: { orderNumber: true, description: true } },
       machine: { select: { name: true } },
@@ -21,18 +70,25 @@ export async function getProductionReport(range: ReportRange) {
     },
     orderBy: { loggedAt: 'desc' },
   });
-  // group by order
-  const byOrder: Record<string, { orderNumber: string; description: string | null; produced: number; waste: number; entries: number }> = {};
+  // group by order AND unit
+  const byOrder: Record<string, { orderNumber: string; description: string | null; unit: string; produced: number; waste: number; entries: number }> = {};
   for (const log of logs) {
-    const key = log.orderId;
+    const unit = normaliseUnit(log.unit);
+    const key = `${log.orderId}|${unit}`;
     if (!byOrder[key]) {
-      byOrder[key] = { orderNumber: log.order?.orderNumber ?? '?', description: log.order?.description ?? null, produced: 0, waste: 0, entries: 0 };
+      byOrder[key] = { orderNumber: log.order?.orderNumber ?? '?', description: log.order?.description ?? null, unit, produced: 0, waste: 0, entries: 0 };
     }
     byOrder[key].produced += Number(log.qtyProduced);
     byOrder[key].waste += Number(log.qtyWaste ?? 0);
     byOrder[key].entries += 1;
   }
-  return { rows: Object.values(byOrder), raw: logs };
+  const produced = sumByUnit(logs.map((l) => ({ qty: Number(l.qtyProduced), unit: l.unit })));
+  const waste = sumByUnit(logs.map((l) => ({ qty: Number(l.qtyWaste ?? 0), unit: l.unit })));
+  const totals: ProductionTotal[] = produced.map((p) => {
+    const w = waste.find((x) => x.unit === p.unit)?.qty ?? 0;
+    return { unit: p.unit, produced: p.qty, waste: w, wastePct: p.qty > 0 ? Math.round((w / p.qty) * 1000) / 10 : null };
+  });
+  return { rows: Object.values(byOrder), totals, raw: logs };
 }
 
 /**
@@ -76,7 +132,9 @@ export async function getMachineUtilisationReport(range: ReportRange): Promise<M
 export async function getAttendanceReport(range: ReportRange) {
   await requirePermission('reports.read');
   const records = await db.misAttendance.findMany({
-    where: { date: { gte: range.from, lte: range.to } },
+    // Half-open like every other filter here (B77). `date` is a calendar-day column, so "< to" is written as
+    // "<= to - 1 ms": identical for a date, and the shared wage-world fake db (not ours to edit) knows only gte/lte.
+    where: { date: { gte: range.from, lte: new Date(range.to.getTime() - 1) } },
     include: {
       employee: { select: { name: true, employeeCode: true, department: { select: { name: true } } } },
       shift: { select: { name: true } },
@@ -107,7 +165,7 @@ export async function getAttendanceReport(range: ReportRange) {
 export async function getQcReport(range: ReportRange) {
   await requirePermission('reports.read');
   const checks = await db.misQcCheck.findMany({
-    where: { checkTime: { gte: range.from, lte: range.to } },
+    where: { checkTime: { gte: range.from, lt: range.to } },
     include: {
       order: { select: { orderNumber: true } },
     },
@@ -128,7 +186,7 @@ export async function getQcReport(range: ReportRange) {
 export async function getOrdersReport(range: ReportRange) {
   await requirePermission('reports.read');
   return db.misOrder.findMany({
-    where: { createdAt: { gte: range.from, lte: range.to } },
+    where: { createdAt: { gte: range.from, lt: range.to } },
     include: { customer: { select: { name: true } } },
     orderBy: { createdAt: 'desc' },
   });
@@ -143,7 +201,7 @@ export async function getStoreReport(range: ReportRange) {
   const seesPrice = can(actor.role, 'wages.read');
 
   const txns = await db.misStoreTransaction.findMany({
-    where: { createdAt: { gte: range.from, lte: range.to } },
+    where: { createdAt: { gte: range.from, lt: range.to } },
     include: {
       item: { select: { id: true, name: true, code: true, unit: true, ...(seesPrice ? { pricePerUnit: true } : {}) } },
     },
@@ -255,7 +313,7 @@ export type BufferDriftBucket = { valueReceived: number; grnItemCount: number };
 export async function getBufferDriftReport(range: ReportRange) {
   await requirePermission('wages.read');
   const grnItems = await db.misGrnItem.findMany({
-    where: { grn: { receivedAt: { gte: range.from, lte: range.to } } },
+    where: { grn: { receivedAt: { gte: range.from, lt: range.to } } },
     include: { poItem: { select: { ratePerUnit: true, po: { select: { purpose: true } } } } },
   });
 
