@@ -4,7 +4,7 @@ import { db } from '@/server/db';
 import { can } from '@/lib/mis/permissions';
 import { requirePermission } from './auth';
 import { logAuditEvent } from './audit';
-import { assertPoReceivable, auditOverReceipt, enforceReceiptCap, isGrnNumberClash, GRN_NUMBER_ATTEMPTS, nextGrnNumber } from './grn';
+import { assertPoReceivable, auditOverReceipt, enforceReceiptCap, isGrnNumberClash, GRN_NUMBER_ATTEMPTS, lockPoRow, nextGrnNumber } from './grn';
 import { runIdempotent } from './idempotency';
 import { allocateFromReceipt, allocationShortfalls } from './order-allocation';
 import { notifyGrnConfirmed } from './grn-alerts';
@@ -986,6 +986,18 @@ async function runOnce<T extends object>(
   throw new Error(out.detail || 'That did not save. Try again.');
 }
 
+/**
+ * A GRN number nobody holds yet. `runIdempotent` turns a unique-violation into "still in progress", so a clash inside a
+ * keyed commit could never be retried from outside; the number is therefore checked (bounded) before it is used.
+ */
+async function freeGrnNumber(tx: Prisma.TransactionClient, attempt: number, zone: string): Promise<string> {
+  for (let i = 0; i < GRN_NUMBER_ATTEMPTS; i += 1) {
+    const candidate = nextGrnNumber(attempt + i, zone);
+    if (!(await tx.misGrn.findUnique({ where: { grnNumber: candidate }, select: { id: true } }))) return candidate;
+  }
+  return nextGrnNumber(attempt + GRN_NUMBER_ATTEMPTS, zone);
+}
+
 type ReceiptDone = { reference: string; grnId: string | null; lineCount: number; totalQty: number };
 
 /**
@@ -1046,9 +1058,7 @@ export async function commitReceipt(
     let freshLines: FreshLine[] = [];
     const planned = new Map<string, FreshLine>();
     if (po) {
-      const freshPo = await tx.misPurchaseOrder.findUnique({ where: { id: po.id }, select: { poNumber: true, status: true } });
-      if (!freshPo) throw new Error('That purchase order no longer exists.');
-      assertPoReceivable(freshPo);
+      await lockPoRow(tx, po.id); // R3 review: the PO row, first — also refuses a PO cancelled since the page loaded
       freshLines = (await tx.misPoItem.findMany({
         where: { poId: po.id },
         select: { id: true, itemId: true, quantity: true, receivedQuantity: true, description: true },
@@ -1082,7 +1092,7 @@ export async function commitReceipt(
         .join(' · ');
       const grn = await tx.misGrn.create({
         data: {
-          grnNumber: nextGrnNumber(attempt, zone),
+          grnNumber: await freeGrnNumber(tx, attempt, zone),
           poId: po.id,
           // Confirmed on creation: the ledger rows below are written in the
           // same breath, so leaving it DRAFT would let confirmGRN post them a

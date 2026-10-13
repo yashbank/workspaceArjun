@@ -26,7 +26,7 @@ vi.mock('@/server/db', () => ({
     },
     misSupplierInvoice: { upsert: async (args: Row) => { state.invoices.push(args); return args.create; }, findFirst: async () => null },
     // R3-STK B02/B01: creating a GRN reads the PO's status; confirming moves it on.
-    misPurchaseOrder: { findUnique: async () => ({ poNumber: 'PO-1', status: 'APPROVED' }), update: async () => null },
+    misPurchaseOrder: { findUnique: async () => ({ poNumber: 'PO-1', status: 'APPROVED' }), update: async () => null, updateMany: async () => ({ count: 1 }) },
     misInventoryLedger: { findFirst: async () => null, create: async () => null },
     // C1: confirming a GRN now also writes the storekeeper's book; this fake only needs to accept it.
     misStoreTransaction: { findFirst: async () => null, create: async () => null },

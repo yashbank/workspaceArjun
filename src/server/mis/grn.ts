@@ -5,6 +5,7 @@ import { orderNumberFromRef } from '@/lib/mis/order-allocation';
 import { roundQty } from '@/lib/mis/quantity';
 import {
   isReceivablePoStatus,
+  RECEIVABLE_PO_STATUSES,
   mayOverrideReceipt,
   overReceiptMessage,
   poNotReceivableMessage,
@@ -150,6 +151,22 @@ export function enforceReceiptCap(
 /** The PO must still be open for goods (approved or part-received). */
 export function assertPoReceivable(po: { poNumber?: string | null; status?: string | null }) {
   if (!isReceivablePoStatus(po.status)) throw new GrnStateError(poNotReceivableMessage(po.poNumber ?? '', po.status));
+}
+
+/**
+ * Take the PO's ROW lock (an update that only matches while the PO is still open for goods). Two receipts on different
+ * lines of one PO serialise here, so the second computes the PO status from the first's committed counters, and a
+ * cancel that landed first makes this match nothing. Call it after the advisory locks, before reading the PO's lines.
+ * Not `async` on purpose (an internal tx helper, gated by its callers).
+ */
+export function lockPoRow(tx: Parameters<typeof lockStockKeys>[0], poId: string): Promise<void> {
+  return tx.misPurchaseOrder
+    .updateMany({ where: { id: poId, status: { in: [...RECEIVABLE_PO_STATUSES] } }, data: { updatedAt: new Date() } })
+    .then(async (locked) => {
+      if (locked.count === 1) return;
+      const po = await tx.misPurchaseOrder.findUnique({ where: { id: poId }, select: { poNumber: true, status: true } });
+      throw new GrnStateError(poNotReceivableMessage(po?.poNumber ?? '', po?.status));
+    });
 }
 
 const NO_LONGER_DRAFT = 'GRN is no longer a draft';
@@ -440,6 +457,7 @@ export async function confirmGRN(grnId: string, opts: { overReceiptReason?: stri
     // Serialise with every other writer of these items' ledgers, these PO lines' counters and the daily
     // transaction sequence, so the cap below is checked on figures nobody else can change until we commit.
     await lockStockKeys(tx, [...[...lockedItems].map(itemLockKey), ...[...lockedPoItems].map(poItemLockKey), STXN_SEQ_KEY]);
+    await lockPoRow(tx, grn.poId); // R3 review: serialise on the PO row before any line is read
 
     // The DRAFT -> CONFIRMED flip is the claim. Checked in the same statement that writes it, so of
     // two concurrent confirms exactly one gets count 1; the loser writes nothing.

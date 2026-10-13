@@ -57,6 +57,8 @@ function makeDb(): Row {
         return row;
       },
       update: async ({ where, data }: Row) => { const row = state.pos.find((p) => p.id === where.id)!; Object.assign(row, data); return row; },
+      // R3 review: the PO row lock — matches only while the PO is open for goods (APPROVED / RECEIVING / PARTIAL).
+      updateMany: async ({ where }: Row) => ({ count: state.pos.filter((p) => p.id === where.id && where.status.in.includes(p.status)).length }),
       findUnique: async ({ where, include }: Row) => {
         const po = state.pos.find((p) => p.id === where.id);
         if (!po) return null;
@@ -89,6 +91,7 @@ function makeDb(): Row {
     },
     misGrn: {
       create: async ({ data }: Row) => { const row = { id: nextId(), ...data }; state.grns.push(row); return row; },
+      findUnique: async ({ where }: Row) => state.grns.find((g) => g.grnNumber === where.grnNumber) ?? null,
     },
     misGrnItem: {
       create: async ({ data }: Row) => { const row = { id: nextId(), ...data }; state.grnItems.push(row); return row; },
@@ -234,7 +237,6 @@ describe('partial-receipt arithmetic, to the paisa (this phase\'s own acceptance
     expect(state.ledger[0].balanceQty).toBe(40);
     expect(state.pos.find((p) => p.id === po.id)!.status).toBe('PARTIAL');
 
-    openPo(po.id);
 
     await commitReceipt([{ itemId: 'i1', qty: 35, rate: 20 }], { poId: po.id });
     item = state.poItems.find((i) => i.id === poItem.id)!;
@@ -244,7 +246,6 @@ describe('partial-receipt arithmetic, to the paisa (this phase\'s own acceptance
     expect(state.pos.find((p) => p.id === po.id)!.status).toBe('PARTIAL'); // 75 of 100 — not COMPLETE
 
     // Completing the order takes it to COMPLETE, confirming PARTIAL was never a terminal mistake.
-    openPo(po.id);
     await commitReceipt([{ itemId: 'i1', qty: 25, rate: 20 }], { poId: po.id });
     expect(state.poItems.find((i) => i.id === poItem.id)!.receivedQuantity).toBe(100);
     expect(state.pos.find((p) => p.id === po.id)!.status).toBe('COMPLETE');

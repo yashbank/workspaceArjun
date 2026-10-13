@@ -19,10 +19,10 @@ const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
 
 const state: {
   pos: Row[]; poItems: Row[]; grns: Row[]; grnItems: Row[]; ledger: Row[]; txns: Row[]; invoices: Row[]; audits: Row[];
-  lockCalls: string[][]; stamp: number; grnCreateAttempts: string[]; failGrnNumbers: number; keyed: Map<string, unknown>;
+  events: string[]; lockCalls: string[][]; stamp: number; grnCreateAttempts: string[]; failGrnNumbers: number; keyed: Map<string, unknown>;
 } = {
   pos: [], poItems: [], grns: [], grnItems: [], ledger: [], txns: [], invoices: [], audits: [],
-  lockCalls: [], stamp: 0, grnCreateAttempts: [], failGrnNumbers: 0, keyed: new Map(),
+  events: [], lockCalls: [], stamp: 0, grnCreateAttempts: [], failGrnNumbers: 0, keyed: new Map(),
 };
 const kraft = { id: 'i1', name: 'Kraft', code: 'K1', unit: 'KG', category: 'RAW_MATERIAL', isActive: true, deletedAt: null };
 const stamp = () => new Date(Date.UTC(2026, 9, 1) + ++state.stamp);
@@ -58,9 +58,11 @@ const db: Row = {
       return include?.items ? { ...po, items: state.poItems.filter((i) => i.poId === po.id).map((i) => ({ id: i.id, itemId: i.itemId })) } : { ...po };
     },
     update: async ({ where, data }: Row) => { Object.assign(state.pos.find((p) => p.id === where.id)!, data); return null; },
+    // The PO row lock: matches only while the PO is open for goods.
+    updateMany: async ({ where }: Row) => { state.events.push('po-lock'); return { count: state.pos.filter((p) => p.id === where.id && where.status.in.includes(p.status)).length }; },
   },
   misPoItem: {
-    findMany: async ({ where }: Row) => state.poItems
+    findMany: async ({ where }: Row) => (state.events.push('po-lines'), state.poItems)
       .filter((p) => (where.poId ? p.poId === where.poId : where.id.in.includes(p.id)))
       .map((p) => ({ ...p, quantity: D(p.quantity), receivedQuantity: D(p.receivedQuantity), ratePerUnit: D(p.ratePerUnit) })),
     update: async ({ where, data }: Row) => { const p = state.poItems.find((x) => x.id === where.id)!; p.receivedQuantity = Math.round((p.receivedQuantity + n(data.receivedQuantity.increment)) * 100) / 100; return p; },
@@ -73,7 +75,7 @@ const db: Row = {
       state.grns.push(row);
       return { ...row };
     },
-    findUnique: async ({ where }: Row) => { const g = state.grns.find((x) => x.id === where.id); return g ? grnView(g) : null; },
+    findUnique: async ({ where }: Row) => { const g = state.grns.find((x) => (where.id ? x.id === where.id : x.grnNumber === where.grnNumber)); return g ? grnView(g) : null; },
     findMany: async ({ where }: Row) => state.grns.filter((g) => match(g, where)).map((g) => ({ ...grnView(g) })),
     updateMany: async ({ where, data }: Row) => {
       const g = state.grns.find((x) => x.id === where.id && (!where.status || x.status === where.status));
@@ -155,7 +157,7 @@ beforeEach(() => {
       { id: 'pi2', poId: 'po1', itemId: 'i1', description: 'Kraft 140gsm', quantity: 100, receivedQuantity: 0, ratePerUnit: 10 },
     ],
     grns: [grnRow('g1'), grnRow('g2')], grnItems: [], ledger: [{ id: 'l0', itemId: 'i1', changeQty: 0, balanceQty: 0, source: 'OPENING', createdAt: stamp() }],
-    txns: [], invoices: [], audits: [], lockCalls: [], stamp: 0, grnCreateAttempts: [], failGrnNumbers: 0, keyed: new Map(),
+    txns: [], invoices: [], audits: [], events: [], lockCalls: [], stamp: 0, grnCreateAttempts: [], failGrnNumbers: 0, keyed: new Map(),
   });
   getCurrentUser.mockResolvedValue({ id: 'u1' });
   as('STORE_GUY');
@@ -403,5 +405,55 @@ describe('B21 refusals come back as data', () => {
     state.pos[0].status = 'CANCELLED';
     const result = await asResult(() => createGRN({ poId: 'po1' }));
     expect(result).toEqual({ ok: false, detail: 'PO PO-1 is CANCELLED; goods can only be received against an approved PO.' });
+  });
+});
+
+describe('R3 review: the PO row is locked first', () => {
+  it('confirmGRN and commitReceipt take the PO row lock before reading the PO lines', async () => {
+    state.grnItems = [line('g1', 'pi1', 10)];
+    await confirmGRN('g1');
+    expect(state.events.indexOf('po-lock')).toBeGreaterThanOrEqual(0);
+    state.events.length = 0;
+    await commitReceipt([{ itemId: 'i1', qty: 5 }], { poId: 'po1' });
+    expect(state.events.indexOf('po-lock')).toBeLessThan(state.events.indexOf('po-lines'));
+  });
+
+  it('a PO cancelled after the page loaded is refused by the lock itself, and nothing is written', async () => {
+    const original = db.misPurchaseOrder.updateMany;
+    db.misPurchaseOrder.updateMany = async (args: Row) => { state.pos[0].status = 'CANCELLED'; return original(args); }; // the cancel lands just before our lock
+    await expect(commitReceipt([{ itemId: 'i1', qty: 5 }], { poId: 'po1' })).rejects.toThrow(/PO PO-1 is CANCELLED/);
+    state.grnItems = [line('g1', 'pi1', 10)];
+    state.pos[0].status = 'APPROVED';
+    await expect(confirmGRN('g1')).rejects.toThrow(/PO PO-1 is CANCELLED/);
+    db.misPurchaseOrder.updateMany = original;
+    expect(state.ledger).toHaveLength(1);
+    expect(state.grns[0].status).toBe('DRAFT');
+  });
+
+  it('a PARTIAL PO is still receivable (the lock admits APPROVED, RECEIVING and PARTIAL)', async () => {
+    state.poItems = [state.poItems[0]];
+    await commitReceipt([{ itemId: 'i1', qty: 40 }], { poId: 'po1' });
+    expect(poStatus()).toBe('PARTIAL');
+    await expect(commitReceipt([{ itemId: 'i1', qty: 60 }], { poId: 'po1' })).resolves.toBeTruthy();
+    expect(poStatus()).toBe('COMPLETE');
+  });
+});
+
+describe('R3 review: a GRN-number clash on a keyed commit is retried', () => {
+  it('the number is checked before use, so the keyed call books under the next number', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-14T05:00:00Z'));
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0);
+    try {
+      state.grns.push(grnRow('gx', { grnNumber: nextGrnNumber(0, 'Asia/Kolkata') })); // attempt 0's number is taken
+      state.poItems = [state.poItems[0]];
+      const out = await commitReceipt([{ itemId: 'i1', qty: 10 }], { poId: 'po1', idempotencyKey: '7c0f3a52-1b6e-4d2a-8c11-2f3e4d5c6b7a' });
+      expect(out.reference).toMatch(/^GRN-202610-/);
+      expect(out.reference).not.toBe(state.grns.find((g) => g.id === 'gx')!.grnNumber);
+      expect(state.ledger.filter((l) => l.source === 'GRN')).toHaveLength(1);
+    } finally {
+      random.mockRestore();
+      vi.useRealTimers();
+    }
   });
 });

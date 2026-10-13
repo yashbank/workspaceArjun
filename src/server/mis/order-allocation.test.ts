@@ -36,6 +36,7 @@ const db: Row = {
     // R3-STK B08: a delivery's issue is checked against the smaller of the two books, so the storekeeper book has stock too.
     findFirst: async ({ where }: Row) => (where?.txnNumber ? null : { balanceQty: D(1000) }),
   },
+  misPurchaseOrder: { updateMany: async () => ({ count: 1 }), update: async () => null },
   misGrn: { findUnique: async () => state.grn, update: async () => null, updateMany: async () => ({ count: 1 }) },
   misPoItem: {
     update: async ({ data }: Row) => { state.poItemIncrements.push(data.receivedQuantity.increment); },

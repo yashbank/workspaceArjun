@@ -77,7 +77,7 @@ const db: Row = {
   misStoreTransaction: { findFirst: async () => null, create: async () => null },
   misSupplierInvoice: { upsert: async () => null },
   // R3-STK B02/B01: the PO status is read with the GRN (an open PO) and moved on after a receipt.
-  misPurchaseOrder: { update: async () => null },
+  misPurchaseOrder: { update: async () => null, updateMany: async () => ({ count: 1 }) },
   misOrder: { findFirst: async () => null },
   misOrderStockAllocation: { create: async () => null },
   misAuditLog: { create: async ({ data }: Row) => data },
