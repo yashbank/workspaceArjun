@@ -292,7 +292,7 @@ export function PoDetailScreen({ po, formattedItems, total, catalogItems, canWri
           />
           <Input label="Description" value={description} onChange={e => setDescription(e.target.value)} required />
           <NumberInput label="Quantity" value={quantity} onChange={e => setQuantity(e.target.value)} />
-          <NumberInput label="Rate per Unit (₹)" value={ratePerUnit} onChange={e => setRatePerUnit(e.target.value)} />
+          {seesMoney && <NumberInput label="Rate per Unit (₹)" value={ratePerUnit} onChange={e => setRatePerUnit(e.target.value)} />}
           <div className="flex gap-2 pt-2">
             <Button onClick={handleAddItem} disabled={isPending || !description}>{isPending ? 'Adding…' : 'Add Item'}</Button>
             <Button variant="ghost" onClick={() => setAddOpen(false)}>Cancel</Button>

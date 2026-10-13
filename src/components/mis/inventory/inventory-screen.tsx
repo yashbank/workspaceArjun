@@ -1,19 +1,19 @@
 'use client';
-import { useState, useTransition, useRef } from 'react';
+import { useState, useTransition, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { Button } from '@/components/mis/kit/button';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import { NumberInput, Input, Select } from '@/components/mis/kit/input';
-import { adjustInventoryAction, createItemAction } from '@/app/(mis)/mis/inventory/actions';
+import { adjustInventoryAction, createItemAction, getItemFormOptionsAction, type ItemFormOptions } from '@/app/(mis)/mis/inventory/actions';
+import { ItemOptionFields } from '@/components/mis/items/item-option-fields';
 import { MisItemCategory, MisItemUnit } from '@/generated/prisma/enums';
 
 type InventoryRow = { itemId: string; code: string; name: string; unit: string | null; balance: number; lastUpdated: Date | null };
 type Props = { summary: InventoryRow[]; canWrite?: boolean; /** Owner only (D5): the price field exists for no one else. */ canPrice?: boolean };
 
 const CATEGORIES = Object.values(MisItemCategory);
-const UNITS = Object.values(MisItemUnit);
 
 function downloadInventoryCsv(rows: InventoryRow[]) {
   const headers = ['Code', 'Item Name', 'Unit', 'Balance', 'Last Updated'];
@@ -44,7 +44,10 @@ export function InventoryScreen({ summary, canWrite = false, canPrice = false }:
   const [addCode, setAddCode] = useState('');
   const [addSku, setAddSku] = useState('');
   const [addCategory, setAddCategory] = useState<MisItemCategory>(MisItemCategory.OTHER);
-  const [addUnit, setAddUnit] = useState<MisItemUnit>(MisItemUnit.PIECE);
+  const [addUnit, setAddUnit] = useState<string>(MisItemUnit.PIECE);
+  const [addGsm, setAddGsm] = useState('');
+  const [addSize, setAddSize] = useState('');
+  const [options, setOptions] = useState<ItemFormOptions | null>(null);
   const [addPrice, setAddPrice] = useState('');
   const [addError, setAddError] = useState('');
 
@@ -55,6 +58,14 @@ export function InventoryScreen({ summary, canWrite = false, canPrice = false }:
   const [importResult, setImportResult] = useState<{ created: number; updated: number; skipped: number } | null>(null);
   const [importError, setImportError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // GSM / Size / Unit are master dropdowns (R3-MST B32); load them when the Add Item form first opens.
+  useEffect(() => {
+    if (!showAddItem || options) return;
+    let live = true;
+    void getItemFormOptionsAction().then((r) => { if (live && r.ok) setOptions(r.value); });
+    return () => { live = false; };
+  }, [showAddItem, options]);
 
   const filtered = search.trim()
     ? summary.filter(r => r.name.toLowerCase().includes(search.toLowerCase()) || r.code.toLowerCase().includes(search.toLowerCase()))
@@ -67,13 +78,13 @@ export function InventoryScreen({ summary, canWrite = false, canPrice = false }:
     if (!adjustItem || !changeQty) return;
     const qty = parseFloat(changeQty);
     if (isNaN(qty) || qty === 0) { setError('Enter a non-zero quantity'); return; }
+    if (adjNotes.trim().length < 3) { setError('Give a reason (at least 3 characters)'); return; }
     setError('');
     startTransition(async () => {
-      try {
-        await adjustInventoryAction(adjustItem.itemId, qty, adjNotes || undefined);
-        setSuccess(`${adjustItem.name} adjusted by ${qty > 0 ? '+' : ''}${qty}`);
-        setAdjustItem(null); setChangeQty(''); setAdjNotes('');
-      } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Adjustment failed'); }
+      const res = await adjustInventoryAction(adjustItem.itemId, qty, adjNotes.trim());
+      if (!res.ok) { setError(res.detail); return; }
+      setSuccess(`${adjustItem.name} adjusted by ${qty > 0 ? '+' : ''}${qty}`);
+      setAdjustItem(null); setChangeQty(''); setAdjNotes('');
     });
   };
 
@@ -81,11 +92,10 @@ export function InventoryScreen({ summary, canWrite = false, canPrice = false }:
     if (!addName.trim()) { setAddError('Name is required'); return; }
     setAddError('');
     startTransition(async () => {
-      try {
-        const res = await createItemAction({ name: addName, code: addCode || undefined, sku: addSku || undefined, category: addCategory, unit: addUnit, pricePerUnit: canPrice ? addPrice || undefined : undefined });
-        setSuccess(`Item ${res.code} created`);
-        setShowAddItem(false); setAddName(''); setAddCode(''); setAddSku(''); setAddPrice(''); setAddCategory(MisItemCategory.OTHER); setAddUnit(MisItemUnit.PIECE);
-      } catch (e: unknown) { setAddError(e instanceof Error ? e.message : 'Failed to create item'); }
+      const res = await createItemAction({ name: addName, code: addCode || undefined, sku: addSku || undefined, category: addCategory, unit: addUnit as MisItemUnit, gsm: addGsm || undefined, size: addSize || undefined, pricePerUnit: canPrice ? addPrice || undefined : undefined });
+      if (!res.ok) { setAddError(res.detail); return; }
+      setSuccess(`Item ${res.value.code} created`);
+      setShowAddItem(false); setAddName(''); setAddCode(''); setAddSku(''); setAddPrice(''); setAddGsm(''); setAddSize(''); setAddCategory(MisItemCategory.OTHER); setAddUnit(MisItemUnit.PIECE);
     });
   };
 
@@ -189,10 +199,10 @@ export function InventoryScreen({ summary, canWrite = false, canPrice = false }:
             <div className="text-lg font-bold text-slate-900 mt-0.5">{adjustItem?.balance ?? 0} {adjustItem?.unit ?? ''}</div>
           </div>
           <NumberInput label="Change Quantity (positive = add, negative = remove)" value={changeQty} onChange={e => setChangeQty(e.target.value)} placeholder="e.g. 50 or -10" />
-          <Input label="Reason / Notes" value={adjNotes} onChange={e => setAdjNotes(e.target.value)} placeholder="Physical count, write-off, etc." />
+          <Input label="Reason (required)" value={adjNotes} onChange={e => setAdjNotes(e.target.value)} placeholder="Physical count, write-off, etc." />
           {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-2 pt-2">
-            <Button onClick={handleAdjust} disabled={isPending || !changeQty}>{isPending ? 'Saving...' : 'Apply Adjustment'}</Button>
+            <Button onClick={handleAdjust} disabled={isPending || !changeQty || adjNotes.trim().length < 3}>{isPending ? 'Saving...' : 'Apply Adjustment'}</Button>
             <Button variant="ghost" onClick={() => setAdjustItem(null)}>Cancel</Button>
           </div>
         </div>
@@ -210,10 +220,8 @@ export function InventoryScreen({ summary, canWrite = false, canPrice = false }:
             <Select label="Category" value={addCategory} onChange={e => setAddCategory(e.target.value as MisItemCategory)}>
               {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
             </Select>
-            <Select label="Unit" value={addUnit} onChange={e => setAddUnit(e.target.value as MisItemUnit)}>
-              {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
-            </Select>
           </div>
+          <ItemOptionFields options={options} gsm={addGsm} size={addSize} unit={addUnit} onGsm={setAddGsm} onSize={setAddSize} onUnit={setAddUnit} />
           {canPrice && <NumberInput label="Price Per Unit (₹)" value={addPrice} onChange={e => setAddPrice(e.target.value)} placeholder="e.g. 250.00" />}
           {addError && <p className="text-sm text-red-600">{addError}</p>}
           <div className="flex gap-2 pt-2">

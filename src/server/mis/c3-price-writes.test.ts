@@ -17,6 +17,7 @@ vi.mock('@/server/db', () => ({
   db: {
     misItem: {
       count: async () => 0,
+      findMany: async () => [], // R3-MST B24: a blank code is allocated from the existing codes
       create: async ({ data }: Row) => { itemCreates.push(data); return { id: 'i1', ...data }; },
     },
     misBomStage: { findUnique: async () => ({ id: 's1', bom: { status: 'DRAFT' } }) },

@@ -152,6 +152,43 @@ async function loadPo(poId: string) {
 
 const statusWords = (status: string) => status.toLowerCase().replace(/_/g, ' ');
 
+const STALE_PO = 'This PO was changed by someone else. Refresh and try again.';
+
+/**
+ * Compare-and-set (R3-MST B28): the status transitions write with the status they read in the `where`,
+ * so two people acting at once cannot both win. Prisma raises P2025 when no row matches; that becomes
+ * the friendly refusal.
+ */
+async function casWrite<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (err) {
+    if (err && typeof err === 'object' && (err as { code?: unknown }).code === 'P2025') throw new Error(STALE_PO);
+    throw err;
+  }
+}
+
+/** Quantity: finite, above zero, rounded to 2 dp (R3-MST B26). */
+function cleanQuantity(q: unknown): number {
+  const n = typeof q === 'number' ? q : Number.NaN;
+  const rounded = Math.round(n * 100) / 100;
+  if (!Number.isFinite(rounded) || rounded <= 0) throw new Error('Quantity must be a number above zero.');
+  return rounded;
+}
+
+function cleanDescription(d: unknown): string {
+  const t = typeof d === 'string' ? d.trim() : '';
+  if (!t) throw new Error('Description is required.');
+  return t;
+}
+
+/** A line's item, when given, must be a live catalogue item (R3-MST B26). */
+async function requireLiveItem(itemId: string | null | undefined) {
+  if (!itemId) return;
+  const item = await db.misItem.findFirst({ where: { id: itemId, isActive: true, deletedAt: null }, select: { id: true } });
+  if (!item) throw new Error('That item is inactive or has been deleted. Pick another item.');
+}
+
 /** Lines can only change while the PO is a draft; afterwards the approved paperwork is frozen. */
 async function requireDraftPo(poId: string, what: string) {
   const po = await loadPo(poId);
@@ -195,15 +232,21 @@ export async function createPO(input: PoInput) {
 export async function addPOItem(poId: string, input: PoItemInput) {
   const actor = await requirePermission('po.write');
   await requireDraftPo(poId, 'adding a line');
+  const description = cleanDescription(input.description);
+  const quantity = cleanQuantity(input.quantity);
+  await requireLiveItem(input.itemId);
+  // D5: a purchase rate is the Owner's (`wages.read`). Anyone else's value is ignored: the line is stored
+  // unpriced (0; the column is NOT NULL) and the Owner prices it at approval.
+  const rate = can(actor.role, 'wages.read') ? Number(input.ratePerUnit) || 0 : 0;
   const last = await db.misPoItem.findFirst({ where: { poId }, orderBy: { sortOrder: 'desc' }, select: { sortOrder: true } });
   const created = await db.misPoItem.create({
     data: {
       poId,
       itemId: input.itemId || null,
-      description: input.description.trim(),
-      quantity: input.quantity,
+      description,
+      quantity,
       unitId: input.unitId || null,
-      ratePerUnit: input.ratePerUnit,
+      ratePerUnit: rate,
       sortOrder: (last?.sortOrder ?? 0) + 1,
     },
   });
@@ -216,10 +259,15 @@ export async function updatePOItem(id: string, patch: Partial<PoItemInput>) {
   const before = await db.misPoItem.findUnique({ where: { id } });
   if (!before) throw new Error(`PO Item ${id} not found`);
   await requireDraftPo(before.poId, 'editing a line');
+  const description = patch.description !== undefined ? cleanDescription(patch.description) : undefined;
+  const quantity = patch.quantity !== undefined ? cleanQuantity(patch.quantity) : undefined;
+  if (patch.itemId) await requireLiveItem(patch.itemId);
+  // A non-Owner's rate is ignored: the stored rate is left unchanged.
+  const mayPrice = can(actor.role, 'wages.read');
   const after = await db.misPoItem.update({ where: { id }, data: {
-    ...(patch.description !== undefined ? { description: patch.description.trim() } : {}),
-    ...(patch.quantity !== undefined ? { quantity: patch.quantity } : {}),
-    ...(patch.ratePerUnit !== undefined ? { ratePerUnit: patch.ratePerUnit } : {}),
+    ...(description !== undefined ? { description } : {}),
+    ...(quantity !== undefined ? { quantity } : {}),
+    ...(mayPrice && patch.ratePerUnit !== undefined ? { ratePerUnit: patch.ratePerUnit } : {}),
     ...(patch.itemId !== undefined ? { itemId: patch.itemId || null } : {}),
     ...(patch.unitId !== undefined ? { unitId: patch.unitId || null } : {}),
   }});
@@ -250,6 +298,11 @@ export async function submitForApproval(poId: string, opts: { forceOwnerOnly?: b
   if (!before) throw new Error(`PO ${poId} not found`);
   if (before.status !== 'DRAFT') throw new Error(`This PO is ${statusWords(before.status)}, not a draft — there is nothing to submit.`);
   if (!(await hasBillableLine(poId))) throw new Error('Add at least one line item (with a quantity) before submitting this PO.');
+  // R3-MST B27: a PO needs a supplier and an item on every line. The message names the first offender.
+  if (!before.supplierId) throw new Error('Choose a supplier before submitting this PO.');
+  const lines = await db.misPoItem.findMany({ where: { poId }, orderBy: { sortOrder: 'asc' } });
+  const noItem = lines.findIndex((l) => !l.itemId);
+  if (noItem >= 0) throw new Error(`Line ${noItem + 1} ("${lines[noItem].description}") has no item. Pick an item from the catalogue on every line.`);
   let approvalMode: MisPoApprovalMode;
   if (opts.forceOwnerOnly) {
     if (actor.role !== 'OWNER') throw new Error('Only the owner can force a PO to owner-only approval.');
@@ -257,9 +310,12 @@ export async function submitForApproval(poId: string, opts: { forceOwnerOnly?: b
   } else {
     const total = await sumPoItems(poId);
     const threshold = await getPoApprovalThreshold();
-    approvalMode = total >= threshold ? 'BOTH' : 'ADMIN_ONLY';
+    // An unpriced line (rate 0: an Admin cannot price) cannot be judged against the threshold, so the
+    // Owner must sign and price it: BOTH (R3-MST B26).
+    const unpriced = lines.some((l) => l.ratePerUnit.toNumber() <= 0);
+    approvalMode = unpriced || total >= threshold ? 'BOTH' : 'ADMIN_ONLY';
   }
-  const after = await db.misPurchaseOrder.update({ where: { id: poId }, data: { status: 'PENDING_APPROVAL', approvalMode } });
+  const after = await casWrite(() => db.misPurchaseOrder.update({ where: { id: poId, status: 'DRAFT' }, data: { status: 'PENDING_APPROVAL', approvalMode } }));
   await logAuditEvent({ actorId: actor.userId, action: 'po.submit', entity: 'MisPurchaseOrder', entityId: poId, before, after });
   return after;
 }
@@ -281,10 +337,10 @@ export async function approvePO(poId: string) {
   if (before.approvalMode === 'BOTH' && !before.adminApprovedAt) {
     // po.write is held only by ADMIN and OWNER, so whoever got past requirePermission above
     // may give this first step — no extra role check needed.
-    const after = await db.misPurchaseOrder.update({
-      where: { id: poId },
+    const after = await casWrite(() => db.misPurchaseOrder.update({
+      where: { id: poId, status: 'PENDING_APPROVAL', adminApprovedAt: null },
       data: { adminApprovedById: actor.userId, adminApprovedAt: new Date() },
-    });
+    }));
     await logAuditEvent({ actorId: actor.userId, action: 'po.approve_admin_step', entity: 'MisPurchaseOrder', entityId: poId, before, after });
     return after;
   }
@@ -297,26 +353,30 @@ export async function approvePO(poId: string) {
   if (before.approvalMode === 'BOTH' && actor.role !== 'OWNER') {
     throw new Error('Only the owner can give the final approval on this PO.');
   }
-  const after = await db.misPurchaseOrder.update({
-    where: { id: poId },
+  const after = await casWrite(() => db.misPurchaseOrder.update({
+    where: { id: poId, status: 'PENDING_APPROVAL' },
     data: { status: 'APPROVED', approvedById: actor.userId, approvedAt: new Date() },
-  });
+  }));
   await logAuditEvent({ actorId: actor.userId, action: 'po.approve', entity: 'MisPurchaseOrder', entityId: poId, before, after });
   return after;
 }
 
 export async function cancelPO(poId: string) {
   const actor = await requirePermission('po.write');
-  const before = await db.misPurchaseOrder.findUnique({ where: { id: poId } });
-  if (!before) throw new Error(`PO ${poId} not found`);
-  if (before.status === 'APPROVED') {
-    if ((await db.misGrn.count({ where: { poId } })) > 0) {
-      throw new Error('This PO already has a goods receipt (GRN), so it can no longer be cancelled.');
+  // The GRN check and the status write share one transaction, so a receipt cannot land in between.
+  const { before, after } = await casWrite(() => db.$transaction(async (tx) => {
+    const current = await tx.misPurchaseOrder.findUnique({ where: { id: poId } });
+    if (!current) throw new Error(`PO ${poId} not found`);
+    if (current.status === 'APPROVED') {
+      if ((await tx.misGrn.count({ where: { poId } })) > 0) {
+        throw new Error('This PO already has a goods receipt (GRN), so it can no longer be cancelled.');
+      }
+    } else if (current.status !== 'DRAFT' && current.status !== 'PENDING_APPROVAL') {
+      throw new Error(`This PO is ${statusWords(current.status)} and cannot be cancelled.`);
     }
-  } else if (before.status !== 'DRAFT' && before.status !== 'PENDING_APPROVAL') {
-    throw new Error(`This PO is ${statusWords(before.status)} and cannot be cancelled.`);
-  }
-  const after = await db.misPurchaseOrder.update({ where: { id: poId }, data: { status: 'CANCELLED' } });
+    const updated = await tx.misPurchaseOrder.update({ where: { id: poId, status: current.status }, data: { status: 'CANCELLED' } });
+    return { before: current, after: updated };
+  }));
   await logAuditEvent({ actorId: actor.userId, action: 'po.cancel', entity: 'MisPurchaseOrder', entityId: poId, before, after });
   return after;
 }
@@ -343,15 +403,15 @@ export async function updatePO(poId: string, input: PoInput) {
     purpose: input.purpose ?? (input.bomRef !== undefined ? undefined : poPurpose(before)),
     bomRef: input.bomRef !== undefined ? input.bomRef : before.bomRef,
   });
-  const after = await db.misPurchaseOrder.update({
-    where: { id: poId },
+  const after = await casWrite(() => db.misPurchaseOrder.update({
+    where: { id: poId, status: 'DRAFT' },
     data: {
       ...(input.supplierId !== undefined ? { supplierId: input.supplierId || null } : {}),
       purpose,
       bomRef,
       ...(input.notes !== undefined ? { notes: input.notes?.trim() || null } : {}),
     },
-  });
+  }));
   await logAuditEvent({ actorId: actor.userId, action: 'po.update', entity: 'MisPurchaseOrder', entityId: poId, before, after });
   return after;
 }

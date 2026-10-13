@@ -56,6 +56,9 @@ const REVIEWED_UNGATED: Record<string, Reviewed> = {
   'store-books.ts#lastLedgerBalance': { reason: 'internal tx helper; callers (store.ts, grn.ts) are gated' },
   'store-books.ts#lastTxnBalance': { reason: 'internal tx helper; callers (store.ts, grn.ts) are gated' },
   'stock-lock.ts#lockStockKeys': { reason: 'internal tx helper; callers (store.ts, grn.ts) are gated' },
+  // R3-MST B24: item-code allocation, run on the caller's db/tx after createItem / createItemAction / the import route gate.
+  'item-code.ts#allocateItemCode': { reason: 'internal helper; callers (item.ts, inventory actions, import route) are gated' },
+  'item-code.ts#createWithItemCode': { reason: 'internal helper; callers (item.ts, inventory actions, import route) are gated' },
   // V2 Epic 4: a writer, not a reader — called by confirmGRN after its gate; best-effort like logAuditEvent.
   'grn-alerts.ts#notifyGrnConfirmed': { reason: 'internal; called only by confirmGRN after its grn.write gate' },
   'notifications.ts#notifyRoles': { reason: 'writer, not a reader; called by gated mutations after their own write (V2 bell)' },

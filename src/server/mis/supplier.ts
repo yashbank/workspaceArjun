@@ -1,6 +1,7 @@
 import { db } from '@/server/db';
 import { requirePermission } from './auth';
 import { logAuditEvent } from './audit';
+import type { MisPoStatus } from '@/generated/prisma/enums';
 
 export type SupplierInput = {
   code: string;
@@ -59,10 +60,16 @@ export async function updateSupplier(id: string, patch: Partial<SupplierInput>) 
   return after;
 }
 
+/** POs that still need this supplier (R3-MST B29). */
+const OPEN_PO_STATUSES: MisPoStatus[] = ['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'PARTIAL'];
+
 export async function deleteSupplier(id: string) {
   const actor = await requirePermission('po.write');
   const before = await db.misSupplier.findUnique({ where: { id } });
   if (!before) throw new Error(`Supplier ${id} not found`);
+  if (before.deletedAt) throw new Error('This supplier is already deleted.');
+  const open = await db.misPurchaseOrder.count({ where: { supplierId: id, status: { in: OPEN_PO_STATUSES } } });
+  if (open > 0) throw new Error(`Supplier has ${open} open PO${open === 1 ? '' : 's'}. Close or cancel them first.`);
   const after = await db.misSupplier.update({ where: { id }, data: { deletedAt: new Date(), isActive: false } });
   await logAuditEvent({ actorId: actor.userId, action: 'supplier.delete', entity: 'MisSupplier', entityId: id, before, after });
   return after;
@@ -70,6 +77,9 @@ export async function deleteSupplier(id: string) {
 
 export async function restoreSupplier(id: string) {
   const actor = await requirePermission('po.write');
+  const existing = await db.misSupplier.findUnique({ where: { id } });
+  if (!existing) throw new Error('Supplier not found.');
+  if (!existing.deletedAt) throw new Error('This supplier is not deleted, so there is nothing to restore.');
   const after = await db.misSupplier.update({ where: { id }, data: { deletedAt: null, isActive: true } });
   await logAuditEvent({ actorId: actor.userId, action: 'supplier.restore', entity: 'MisSupplier', entityId: id, after });
   return after;

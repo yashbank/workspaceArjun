@@ -1,4 +1,5 @@
 import { db } from '@/server/db';
+import { isOrderClosed } from '@/lib/mis/order-status';
 import { requirePermission } from './auth';
 import { logAuditEvent } from './audit';
 
@@ -78,6 +79,10 @@ export async function deleteCustomer(id: string) {
   const actor = await requirePermission('orders.write');
   const before = await db.misCustomer.findUnique({ where: { id } });
   if (!before) throw new Error(`Customer ${id} not found`);
+  if (before.deletedAt) throw new Error('This customer is already deleted.');
+  const orders = await db.misOrder.findMany({ where: { customerId: id }, select: { status: true } });
+  const open = orders.filter((o) => !isOrderClosed(o.status)).length;
+  if (open > 0) throw new Error(`Customer has ${open} open order${open === 1 ? '' : 's'}. Close or cancel them first.`);
   const after = await db.misCustomer.update({ where: { id }, data: { deletedAt: new Date(), isActive: false } });
   await logAuditEvent({ actorId: actor.userId, action: 'customer.delete', entity: 'MisCustomer', entityId: id, before, after });
   return after;
@@ -85,6 +90,9 @@ export async function deleteCustomer(id: string) {
 
 export async function restoreCustomer(id: string) {
   const actor = await requirePermission('orders.write');
+  const existing = await db.misCustomer.findUnique({ where: { id } });
+  if (!existing) throw new Error('Customer not found.');
+  if (!existing.deletedAt) throw new Error('This customer is not deleted, so there is nothing to restore.');
   const after = await db.misCustomer.update({ where: { id }, data: { deletedAt: null, isActive: true } });
   await logAuditEvent({ actorId: actor.userId, action: 'customer.restore', entity: 'MisCustomer', entityId: id, after });
   return after;
