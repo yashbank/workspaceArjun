@@ -104,10 +104,11 @@ export async function closePayrollPeriod(
     }
   }
 
-  // Existence check, compute and write share ONE transaction under an advisory lock, so two
-  // concurrent closes serialise: the second sees CLOSED and is refused instead of double-writing.
-  // Compute reads the month's attendance and wage tables once; keep the whole tx under the 10 s
-  // timeout below (measured time: not measurable in the agent shell - check on the first real close).
+  // Existence check and write share ONE short transaction under an advisory lock, so two concurrent
+  // closes serialise: the second sees CLOSED and is refused instead of double-writing.
+  // All reads that go through the global client happen BEFORE the transaction opens: the pool is
+  // connection_limit=1, so a global-db call while the tx holds the connection would starve until timeout.
+  const rows = await calculateMonthlyPayroll(year, month);
   const lockKey = 'payroll-close-' + year + '-' + String(month).padStart(2, '0');
   const { period, lineCount, existing } = await db.$transaction(
     async (tx) => {
@@ -115,7 +116,6 @@ export async function closePayrollPeriod(
       const existing = await tx.misPayrollPeriod.findUnique({ where: { year_month: { year, month } } });
       if (existing?.status === 'CLOSED') throw new Error(`${year}-${month} is already closed.`);
 
-      const rows = await calculateMonthlyPayroll(year, month, tx);
       const now = new Date();
       const p = existing
         ? await tx.misPayrollPeriod.update({ where: { id: existing.id }, data: { status: 'CLOSED', closedById: actor.userId, closedAt: now } })

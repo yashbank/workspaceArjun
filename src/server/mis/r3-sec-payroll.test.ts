@@ -13,17 +13,37 @@ type Row = Record<string, any>;
 // pg_advisory_xact_lock('payroll-close-...') makes them, and (b) a switch to break the period lookup.
 let queue: Promise<unknown> = Promise.resolve();
 const control: { periodError: Error | null } = { periodError: null };
-const dbProxy = {
-  ...fakeDb,
-  misPayrollPeriod: {
-    ...fakeDb.misPayrollPeriod,
-    findUnique: async (args: Row) => {
-      if (control.periodError) throw control.periodError;
-      return fakeDb.misPayrollPeriod.findUnique(args);
-    },
+let txOpen = false;
+let guardOn = true; // off only where two callers legitimately overlap
+// Global-client calls while a transaction is open would starve a connection_limit=1 pool: fail them.
+const guard = <T extends object>(model: T): T =>
+  Object.fromEntries(
+    Object.entries(model).map(([k, v]) => [
+      k,
+      typeof v === 'function'
+        ? (...args: unknown[]) => {
+            if (txOpen && guardOn) throw new Error(`global db call (${k}) while a transaction is open`);
+            return (v as (...a: unknown[]) => unknown)(...args);
+          }
+        : v,
+    ]),
+  ) as T;
+const periodModel = {
+  ...fakeDb.misPayrollPeriod,
+  findUnique: async (args: Row) => {
+    if (control.periodError) throw control.periodError;
+    return fakeDb.misPayrollPeriod.findUnique(args);
   },
+};
+const txClient = { ...fakeDb, misPayrollPeriod: periodModel };
+const dbProxy = {
+  ...Object.fromEntries(Object.entries(fakeDb).map(([k, v]) => [k, typeof v === 'object' ? guard(v as object) : v])),
+  misPayrollPeriod: guard(periodModel),
   $transaction: (fn: (tx: unknown) => Promise<unknown>) => {
-    const run = queue.then(() => fn(dbProxy));
+    const run = queue.then(async () => {
+      txOpen = true;
+      try { return await fn(txClient); } finally { txOpen = false; }
+    });
     queue = run.catch(() => undefined);
     return run;
   },
@@ -51,6 +71,8 @@ beforeEach(() => {
   vi.setSystemTime(new Date('2026-03-15T06:00:00Z')); // the factory's 15 March 2026
   seedWorld();
   queue = Promise.resolve();
+  txOpen = false;
+  guardOn = true;
   control.periodError = null;
   getCurrentUser.mockResolvedValue({ id: 'u1' });
   getMisRole.mockResolvedValue('OWNER');
@@ -156,9 +178,14 @@ describe('B46 closePayrollPeriod', () => {
     expect(JSON.stringify(closed)).not.toMatch(/wage|salary|gross|amount|\d{3,}\.\d/i);
   });
 
+  it('a close touches the global db only before the transaction opens (connection_limit=1 pool)', async () => {
+    await expect(closePayrollPeriod(2026, 2)).resolves.toMatchObject({ status: 'CLOSED' });
+  });
+
   it('two concurrent closes: one succeeds, the other is told it is already closed', async () => {
     // seed the timezone rule so the two closes do not race on its create-if-missing
     state.rules.push({ id: 'tz', ruleKey: 'factory.timezone', ruleValue: 'Asia/Kolkata', valueType: 'string', label: 'tz', description: null, effectiveFrom: new Date('2026-01-01'), updatedById: null });
+    guardOn = false; // the second caller's reads overlap the first caller's transaction on purpose
     const results = await Promise.allSettled([closePayrollPeriod(2026, 1), closePayrollPeriod(2026, 1)]);
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
     const failed = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
