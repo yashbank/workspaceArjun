@@ -15,8 +15,9 @@ export async function createGrnAction(poId: string, notes?: string | null) {
 
 export async function updateGrnHeaderAction(grnId: string, patch: GrnHeaderInput) {
   return asResult(async () => {
-    await updateGRNHeader(grnId, patch);
+    const saved = await updateGRNHeader(grnId, patch);
     revalidatePath(`/mis/grn/${grnId}`);
+    return { warnings: saved.warnings };
   });
 }
 
@@ -49,14 +50,18 @@ export async function discardGrnAction(grnId: string) {
   });
 }
 
-export async function confirmGrnAction(grnId: string) {
+/** `overReceiptReason`: an Admin/Owner's reason to take more than the order + 2% (R3-STK B03). */
+export async function confirmGrnAction(grnId: string, overReceiptReason?: string | null) {
   // "Already confirmed", "more than is outstanding" and "add at least one item" must reach the storekeeper as words.
   return asResult(async () => {
-    await confirmGRN(grnId);
+    const confirmed = await confirmGRN(grnId, { overReceiptReason });
     revalidatePath(`/mis/grn/${grnId}`);
     revalidatePath('/mis/grn');
     revalidatePath('/mis/inventory');
     revalidatePath('/mis/store/stock');
     revalidatePath('/mis/store/transactions');
+    // B12: an advisory note (e.g. the invoice is already on another PO); nothing at all when there is none.
+    const warnings = confirmed?.warnings;
+    return warnings && warnings.length > 0 ? { warnings } : undefined;
   });
 }

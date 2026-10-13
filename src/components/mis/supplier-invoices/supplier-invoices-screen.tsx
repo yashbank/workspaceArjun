@@ -3,6 +3,7 @@ import { useState, useTransition } from 'react';
 
 import { reconcileSupplierInvoiceAction } from '@/app/(mis)/mis/supplier-invoices/actions';
 import { Button } from '@/components/mis/kit/button';
+import { unwrap } from '@/lib/mis/action-result';
 import { MATCH_STATUSES, type MatchStatus } from '@/lib/mis/invoice-match';
 import type { SupplierInvoiceRow } from '@/server/mis/supplier-invoice';
 
@@ -57,7 +58,7 @@ export function SupplierInvoicesScreen({ rows, canReconcile }: Props) {
     startTransition(async () => {
       setError(null);
       try {
-        await reconcileSupplierInvoiceAction(id);
+        unwrap(await reconcileSupplierInvoiceAction(id));
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Could not re-check this invoice.');
       }

@@ -16,12 +16,15 @@ type StockRow = {
   belowReorder: boolean;
   pricePerUnit?: number | null;
   stockValue?: number | null;
+  stockValueLabel?: string | null;
   isDemo: boolean;
 };
 
 type Props = {
   rows: StockRow[];
   isOwner: boolean;
+  /** Server-formatted total (Owner only). The screen does no money arithmetic. */
+  totalValueLabel?: string | null;
 };
 
 const CATEGORY_LABEL: Record<string, string> = {
@@ -59,7 +62,7 @@ function downloadCsv(rows: StockRow[], isOwner: boolean) {
   URL.revokeObjectURL(url);
 }
 
-export function StoreStockScreen({ rows, isOwner }: Props) {
+export function StoreStockScreen({ rows, isOwner, totalValueLabel = null }: Props) {
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -80,9 +83,6 @@ export function StoreStockScreen({ rows, isOwner }: Props) {
     return matchSearch && matchCat && matchStatus;
   });
 
-  const totalValue = isOwner
-    ? rows.reduce((sum, r) => sum + (r.stockValue ?? 0), 0)
-    : null;
   const criticalCount = rows.filter((r) => r.stockBalance <= 0).length;
   const warnCount = rows.filter((r) => r.belowReorder && r.stockBalance > 0).length;
 
@@ -137,7 +137,7 @@ export function StoreStockScreen({ rows, isOwner }: Props) {
             render: (r: StockRow) => (
               <div className="text-right">
                 {r.stockValue != null ? (
-                  <span className="font-mono text-sm">₹{r.stockValue.toFixed(2)}</span>
+                  <span className="font-mono text-sm">{r.stockValueLabel ?? `₹${r.stockValue.toFixed(2)}`}</span>
                 ) : (
                   '—'
                 )}
@@ -188,12 +188,12 @@ export function StoreStockScreen({ rows, isOwner }: Props) {
       </div>
 
       {/* Owner total value card */}
-      {isOwner && totalValue != null && (
+      {isOwner && totalValueLabel != null && (
         <div className="bg-blue-50 border border-blue-100 rounded-xl px-5 py-3 flex items-center gap-3">
           <div>
             <div className="text-xs text-blue-500 font-medium">Total Stock Value</div>
             <div className="text-2xl font-bold text-blue-900 font-mono">
-              ₹{totalValue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              {totalValueLabel}
             </div>
           </div>
           <span className="ml-2 text-xs text-amber-500 font-medium">DEMO PRICES</span>

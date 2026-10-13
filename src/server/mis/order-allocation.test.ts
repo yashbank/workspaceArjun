@@ -33,8 +33,10 @@ const db: Row = {
   },
   misStoreTransaction: {
     create: async ({ data }: Row) => { state.txns.push(data); return data; },
-    findFirst: async () => null,
+    // R3-STK B08: a delivery's issue is checked against the smaller of the two books, so the storekeeper book has stock too.
+    findFirst: async ({ where }: Row) => (where?.txnNumber ? null : { balanceQty: D(1000) }),
   },
+  misPurchaseOrder: { updateMany: async () => ({ count: 1 }), update: async () => null },
   misGrn: { findUnique: async () => state.grn, update: async () => null, updateMany: async () => ({ count: 1 }) },
   misPoItem: {
     update: async ({ data }: Row) => { state.poItemIncrements.push(data.receivedQuantity.increment); },
@@ -60,7 +62,7 @@ beforeEach(() => {
 });
 
 const grnWith = (lines: Row[], bomRef: string | null = null) => ({
-  id: 'g1', grnNumber: 'GRN-1', status: 'DRAFT', po: { bomRef },
+  id: 'g1', grnNumber: 'GRN-1', status: 'DRAFT', po: { bomRef, status: 'APPROVED', poNumber: 'PO-1', items: [] }, // R3-STK B02: confirm needs an open PO
   items: lines.map((l, i) => ({ id: `gl${i}`, poItemId: `pi${i}`, receivedQty: D(l.qty), type: l.type ?? 'GENERAL', forOrderRef: l.ref ?? null, poItem: { itemId: 'i1', item } })),
 });
 

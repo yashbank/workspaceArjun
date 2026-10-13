@@ -35,8 +35,8 @@ export function IssueScreen({ header, items, orders, departments, allocations = 
     null,
   );
 
-  async function commit(lines: CartLine[]) {
-    const result = unwrap(await commitIssueAction(lines, { orderId, departmentId }));
+  async function commit(lines: CartLine[], key: string) {
+    const result = unwrap(await commitIssueAction(lines, { orderId, departmentId }, key));
     setDone(result);
   }
 

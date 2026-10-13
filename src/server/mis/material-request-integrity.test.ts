@@ -33,7 +33,15 @@ vi.mock('@/server/db', () => ({
     misDepartment: { findUnique: async ({ where }: Row) => (where.id === 'd1' ? { id: 'd1', name: 'Press' } : null) },
   },
 }));
-const txClient = { misMaterialRequestLine: { update: async (args: Row) => { state.txLineWrites.push(args); return args; } } };
+// R3-STK B20: the PENDING -> APPROVED claim now runs on the issue's transaction client. Its write is staged and only
+// lands on `state.request` when the (mocked) issue commits, so a failed issue claims nothing.
+const staged: { request: Row | null } = { request: null };
+const claim = async ({ where, data }: Row) => {
+  const matches = state.request && state.request.status === where.status;
+  if (matches) staged.request = { ...state.request!, ...data };
+  return { count: matches ? 1 : 0 };
+};
+const txClient = { misMaterialRequest: { updateMany: claim }, misMaterialRequestLine: { update: async (args: Row) => { state.txLineWrites.push(args); return args; } } };
 const commitIssue = vi.fn();
 vi.mock('./store', () => ({ commitIssue: (...a: unknown[]) => commitIssue(...a) }));
 vi.mock('./audit', () => ({ logAuditEvent: async () => undefined }));
@@ -60,7 +68,9 @@ beforeEach(() => {
   getCurrentUser.mockResolvedValue({ id: 'u1' });
   getMisRole.mockResolvedValue('STORE_GUY');
   commitIssue.mockImplementation(async (_cart: unknown, meta: Row) => {
+    staged.request = null;
     await meta.inTransaction?.(txClient);
+    if (staged.request) state.request = staged.request;
     return { reference: 'ORD-1', lineCount: 1, totalQty: 7 };
   });
 });
@@ -113,7 +123,7 @@ describe('G. line quantities commit with the stock movement', () => {
 
   it('a failed line write rolls the issue back, so the note goes back to PENDING (no APPROVED note without quantities)', async () => {
     commitIssue.mockImplementation(async (_cart: unknown, meta: Row) => {
-      await meta.inTransaction?.({ misMaterialRequestLine: { update: async () => { throw new Error('connection reset'); } } });
+      await meta.inTransaction?.({ misMaterialRequest: { updateMany: claim }, misMaterialRequestLine: { update: async () => { throw new Error('connection reset'); } } });
       return { reference: 'x', lineCount: 1, totalQty: 7 };
     });
     await expect(approveMaterialRequest('r1', [{ lineId: 'l1', actualIssuedQty: 5 }])).rejects.toThrow(/connection reset/);

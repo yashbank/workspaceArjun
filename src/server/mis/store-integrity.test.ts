@@ -63,7 +63,13 @@ function makeDb(): Row {
       create: async ({ data }: Row) => { await tick(); state.ledger.push({ createdAt: stamp(), ...data }); return data; },
     },
     misStoreTransaction: {
-      findFirst: async () => { await tick(); const last = state.txns[state.txns.length - 1]; return last ? { txnNumber: last.txnNumber, balanceQty: D(last.balanceQty) } : null; },
+      // R3-STK B08: per item, and by txn-number prefix when asked (the daily sequence).
+      findFirst: async ({ where }: Row = {}) => {
+        await tick();
+        const rows = state.txns.filter((t) => (where?.itemId ? t.itemId === where.itemId : true) && (where?.txnNumber?.startsWith ? t.txnNumber.startsWith(where.txnNumber.startsWith) : true));
+        const last = rows[rows.length - 1];
+        return last ? { txnNumber: last.txnNumber, balanceQty: D(last.balanceQty) } : null;
+      },
       create: async ({ data }: Row) => { await tick(); state.txns.push(data); return data; },
     },
   };
@@ -90,7 +96,11 @@ vi.mock('@/server/mis/roles', () => ({ getMisRole: (...a: unknown[]) => getMisRo
 
 const { commitIssue } = await import('./store');
 
-const stock = (itemId: string, qty: number) => state.ledger.push({ itemId, changeQty: qty, balanceQty: qty, source: 'OPENING', sourceId: null, createdAt: stamp() });
+// R3-STK B08: an issue is checked against the smaller of the two books, so opening stock sits in both.
+const stock = (itemId: string, qty: number) => {
+  state.ledger.push({ itemId, changeQty: qty, balanceQty: qty, source: 'OPENING', sourceId: null, createdAt: stamp() });
+  state.txns.push({ itemId, txnNumber: 'STXN-20260101-0001', balanceQty: qty });
+};
 const allocate = (qty: number) => state.allocations.push({ orderId: 'o1', itemId: 'i1', allocatedQty: qty, createdAt: stamp() });
 const balance = (itemId: string) => state.ledger.filter((l) => l.itemId === itemId).at(-1)?.balanceQty;
 

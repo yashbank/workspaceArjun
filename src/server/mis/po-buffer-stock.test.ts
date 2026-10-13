@@ -57,6 +57,8 @@ function makeDb(): Row {
         return row;
       },
       update: async ({ where, data }: Row) => { const row = state.pos.find((p) => p.id === where.id)!; Object.assign(row, data); return row; },
+      // R3 review: the PO row lock — matches only while the PO is open for goods (APPROVED / RECEIVING / PARTIAL).
+      updateMany: async ({ where }: Row) => ({ count: state.pos.filter((p) => p.id === where.id && where.status.in.includes(p.status)).length }),
       findUnique: async ({ where, include }: Row) => {
         const po = state.pos.find((p) => p.id === where.id);
         if (!po) return null;
@@ -89,6 +91,7 @@ function makeDb(): Row {
     },
     misGrn: {
       create: async ({ data }: Row) => { const row = { id: nextId(), ...data }; state.grns.push(row); return row; },
+      findUnique: async ({ where }: Row) => state.grns.find((g) => g.grnNumber === where.grnNumber) ?? null,
     },
     misGrnItem: {
       create: async ({ data }: Row) => { const row = { id: nextId(), ...data }; state.grnItems.push(row); return row; },
@@ -124,6 +127,8 @@ function makeDb(): Row {
   };
   return db;
 }
+// R3-STK B02: goods are received only against an open (approved) PO; createPO leaves a DRAFT.
+const openPo = (id: string) => { state.pos.find((p) => p.id === id)!.status = 'APPROVED'; };
 const round = (n: number) => Math.round(n * 100) / 100;
 
 let fakeDb = makeDb();
@@ -193,6 +198,8 @@ describe('buffer PO end to end (MIS-279 case 1) — never surfaces as an error (
 
     const poItem = await fakeDb.misPoItem.create({ data: { poId: po.id, itemId: 'i1', quantity: 50, ratePerUnit: 12 } });
 
+    openPo(po.id);
+
     const result = await commitReceipt([{ itemId: 'i1', qty: 50, rate: 12 }], { poId: po.id });
     expect(result.totalQty).toBe(50);
 
@@ -209,6 +216,7 @@ describe('classification-on-issue (MIS-279 case 4)', () => {
   it("a buffer PO's received line gets the same GENERAL type any PO's line gets — the buffer/for-order split lives on the PO's own bomRef, not the GRN line", async () => {
     const bufferPo = await createPO({ purpose: 'BUFFER_STOCK', supplierId: 's1' });
     await fakeDb.misPoItem.create({ data: { poId: bufferPo.id, itemId: 'i1', quantity: 10, ratePerUnit: 5 } });
+    openPo(bufferPo.id);
     await commitReceipt([{ itemId: 'i1', qty: 10, rate: 5 }], { poId: bufferPo.id });
     expect(state.grnItems).toHaveLength(1);
     expect(state.grnItems[0].type).toBe('GENERAL');
@@ -220,12 +228,15 @@ describe('partial-receipt arithmetic, to the paisa (this phase\'s own acceptance
     const po = await createPO({ bomRef: 'ORD-202610-00500' });
     const poItem = await fakeDb.misPoItem.create({ data: { poId: po.id, itemId: 'i1', quantity: 100, ratePerUnit: 20 } });
 
+    openPo(po.id);
+
     await commitReceipt([{ itemId: 'i1', qty: 40, rate: 20 }], { poId: po.id });
     let item = state.poItems.find((i) => i.id === poItem.id)!;
     expect(item.receivedQuantity).toBe(40);
     expect(item.quantity - item.receivedQuantity).toBe(60); // outstanding
     expect(state.ledger[0].balanceQty).toBe(40);
     expect(state.pos.find((p) => p.id === po.id)!.status).toBe('PARTIAL');
+
 
     await commitReceipt([{ itemId: 'i1', qty: 35, rate: 20 }], { poId: po.id });
     item = state.poItems.find((i) => i.id === poItem.id)!;

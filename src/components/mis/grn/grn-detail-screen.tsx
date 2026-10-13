@@ -1,6 +1,6 @@
 'use client';
 import { PageBack } from '@/components/mis/common/page-back';
-import { useState, useTransition } from 'react';
+import { useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/mis/kit/button';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
@@ -49,7 +49,7 @@ type Grn = {
   po: { id: string; poNumber: string; supplier: { id: string; name: string } | null; items: PoItem[] } | null;
   items: GrnItem[];
 };
-type Props = { grn: Grn; canWrite: boolean; canSeeMoney?: boolean; /** Server-formatted (Owner only); null otherwise. */ invoiceAmountFormatted?: string | null };
+type Props = { grn: Grn; canWrite: boolean; /** ADMIN/OWNER: may take more than the order + 2% with a reason (R3-STK B03). */ canOverride?: boolean; canSeeMoney?: boolean; /** Server-formatted (Owner only); null otherwise. */ invoiceAmountFormatted?: string | null };
 
 const isoDate = (d: Date | string | null | undefined) => (d ? new Date(d).toISOString().slice(0, 10) : '');
 
@@ -64,7 +64,7 @@ function parseAmount(raw: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-export function GrnDetailScreen({ grn, canWrite, canSeeMoney = false, invoiceAmountFormatted = null }: Props) {
+export function GrnDetailScreen({ grn, canWrite, canOverride = false, canSeeMoney = false, invoiceAmountFormatted = null }: Props) {
   const [isPending, startTransition] = useTransition();
   const [selectedPoItemId, setSelectedPoItemId] = useState('');
   const [qty, setQty] = useState('');
@@ -81,6 +81,14 @@ export function GrnDetailScreen({ grn, canWrite, canSeeMoney = false, invoiceAmo
     transporterName: grn.transporterName ?? '',
     dcNumber: grn.dcNumber ?? '',
   });
+  const [warnings, setWarnings] = useState<string[]>([]);
+  // R3-STK B03: an Admin/Owner's reason for going past the 2% tolerance. Once given it rides on every later call of this screen.
+  const [overReason, setOverReason] = useState('');
+  const [overOpen, setOverOpen] = useState(false);
+  const [overDraft, setOverDraft] = useState('');
+  const retryWithReason = useRef<((reason: string) => void) | null>(null);
+  const isOverRefusal = (message: string) => canOverride && /more than 2%/.test(message);
+  const offerOverride = (retry: (reason: string) => void) => { retryWithReason.current = retry; };
   const [headerSaved, setHeaderSaved] = useState(false);
   const [headerError, setHeaderError] = useState<string | null>(null);
   const setH = (k: keyof typeof header) => (e: React.ChangeEvent<HTMLInputElement>) => { setHeaderSaved(false); setHeader({ ...header, [k]: e.target.value }); };
@@ -94,7 +102,7 @@ export function GrnDetailScreen({ grn, canWrite, canSeeMoney = false, invoiceAmo
     }
     startTransition(async () => {
       try {
-      unwrap(await updateGrnHeaderAction(grn.id, {
+      const saved = unwrap(await updateGrnHeaderAction(grn.id, {
         supplierInvoiceNo: header.supplierInvoiceNo || null,
         invoiceDate: header.invoiceDate || null,
         ...(canSeeMoney ? { supplierInvoiceAmount: amount } : {}),
@@ -103,6 +111,7 @@ export function GrnDetailScreen({ grn, canWrite, canSeeMoney = false, invoiceAmo
         transporterName: header.transporterName || null,
         dcNumber: header.dcNumber || null,
       }));
+      setWarnings(saved?.warnings ?? []);
       setHeaderSaved(true);
       } catch (e) {
         setHeaderError(e instanceof Error ? e.message : 'That did not save.');
@@ -140,7 +149,7 @@ export function GrnDetailScreen({ grn, canWrite, canSeeMoney = false, invoiceAmo
     });
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = (reasonOverride?: string) => {
     if (!editLine) return;
     const received = parseAmount(editFields.received);
     const dc = parseAmount(editFields.dc);
@@ -157,10 +166,13 @@ export function GrnDetailScreen({ grn, canWrite, canSeeMoney = false, invoiceAmo
           dcQuantity: dc,
           damageQuantity: damage ?? 0,
           batchNo: editFields.batch || null,
+          overReceiptReason: reasonOverride ?? (overReason || null),
         }));
         setEditLine(null);
       } catch (e) {
-        setEditError(e instanceof Error ? e.message : 'That did not save.');
+        const message = e instanceof Error ? e.message : 'That did not save.';
+        setEditError(message);
+        if (isOverRefusal(message)) offerOverride((reason) => handleSaveEdit(reason));
       }
     });
   };
@@ -191,7 +203,7 @@ export function GrnDetailScreen({ grn, canWrite, canSeeMoney = false, invoiceAmo
     });
   };
 
-  const handleAddItem = () => {
+  const handleAddItem = (reasonOverride?: string) => {
     if (!selectedPoItemId || !qty) return;
     setItemError(null);
     const received = parseAmount(qty);
@@ -211,24 +223,46 @@ export function GrnDetailScreen({ grn, canWrite, canSeeMoney = false, invoiceAmo
           batchNo: batchNo || null,
           dcQuantity: dc,
           damageQuantity: damage ?? 0,
+          overReceiptReason: reasonOverride ?? (overReason || null),
         }));
         setSelectedPoItemId(''); setQty(''); setOrderRef(''); setBatchNo(''); setDcQty(''); setDamageQty('');
       } catch (e) {
-        setItemError(e instanceof Error ? e.message : 'That did not save.');
+        const message = e instanceof Error ? e.message : 'That did not save.';
+        setItemError(message);
+        if (isOverRefusal(message)) offerOverride((reason) => handleAddItem(reason));
       }
     });
   };
 
-  const handleConfirm = () => {
-    if (!confirm('Confirming this GRN will update inventory and cannot be undone. Proceed?')) return;
+  const runConfirm = (reason?: string) => {
     setConfirmError(null);
     startTransition(async () => {
       try {
-        unwrap(await confirmGrnAction(grn.id));
+        const done = unwrap(await confirmGrnAction(grn.id, reason ?? (overReason || null)));
+        setWarnings(done?.warnings ?? []);
       } catch (e) {
-        setConfirmError(e instanceof Error ? e.message : 'That did not save.');
+        const message = e instanceof Error ? e.message : 'That did not save.';
+        setConfirmError(message);
+        if (isOverRefusal(message)) offerOverride((r) => runConfirm(r));
       }
     });
+  };
+  const handleConfirm = async () => {
+    if (!(await askConfirm({ title: 'Confirm this GRN?', message: 'Confirming this GRN will update inventory and cannot be undone.', confirmLabel: 'Confirm GRN' }))) return;
+    runConfirm();
+  };
+
+  const overrideControl = (message: string | null) =>
+    message && isOverRefusal(message) ? (
+      <Button variant="secondary" onClick={() => { setOverDraft(overReason); setOverOpen(true); }}>Override with reason</Button>
+    ) : null;
+  const submitOverride = () => {
+    const reason = overDraft.trim();
+    if (reason.length < 3) return;
+    setOverReason(reason);
+    setOverOpen(false);
+    retryWithReason.current?.(reason);
+    retryWithReason.current = null;
   };
 
   return (
@@ -250,7 +284,13 @@ export function GrnDetailScreen({ grn, canWrite, canSeeMoney = false, invoiceAmo
         )}
       </div>
       {confirmDialog}
-      {confirmError && <p role="alert" className="text-sm text-red-600">{confirmError}</p>}
+      {confirmError && (
+        <div className="flex flex-wrap items-center gap-3">
+          <p role="alert" className="text-sm text-red-600">{confirmError}</p>
+          {overrideControl(confirmError)}
+        </div>
+      )}
+      {warnings.map((w) => <p key={w} role="status" className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">{w}</p>)}
 
       <Card>
         {grn.po && <CardRow label="PO #" value={<Link href={`/mis/po/${grn.po.id}`} className="text-blue-600 hover:underline">{grn.po.poNumber}</Link>} />}
@@ -335,7 +375,12 @@ export function GrnDetailScreen({ grn, canWrite, canSeeMoney = false, invoiceAmo
             <NumberInput label="Damaged Qty" value={damageQty} onChange={e => setDamageQty(e.target.value)} />
           </div>
           {dcQty && <p className="text-xs text-slate-500">Short = {dcQty} − ({qty || 0} + {damageQty || 0}) = <strong>{Math.round(((parseFloat(dcQty) || 0) - (parseFloat(qty) || 0) - (parseFloat(damageQty) || 0)) * 100) / 100}</strong></p>}
-          {itemError && <p className="text-sm text-red-600">{itemError}</p>}
+          {itemError && (
+            <div className="flex flex-wrap items-center gap-3">
+              <p role="alert" className="text-sm text-red-600">{itemError}</p>
+              {overrideControl(itemError)}
+            </div>
+          )}
           <Select
             label="Type"
             value={type}
@@ -347,7 +392,7 @@ export function GrnDetailScreen({ grn, canWrite, canSeeMoney = false, invoiceAmo
           )}
           <Input label="Batch No" value={batchNo} onChange={e => setBatchNo(e.target.value)} />
           <div>
-            <Button onClick={handleAddItem} disabled={isPending || !selectedPoItemId || !qty}>{isPending ? 'Adding…' : 'Add Item'}</Button>
+            <Button onClick={() => handleAddItem()} disabled={isPending || !selectedPoItemId || !qty}>{isPending ? 'Adding…' : 'Add Item'}</Button>
           </div>
         </div>
       )}
@@ -362,13 +407,29 @@ export function GrnDetailScreen({ grn, canWrite, canSeeMoney = false, invoiceAmo
               <NumberInput label="Damaged Qty" value={editFields.damage} onChange={e => setEditFields({ ...editFields, damage: e.target.value })} />
             </div>
             <Input label="Batch No" value={editFields.batch} onChange={e => setEditFields({ ...editFields, batch: e.target.value })} />
-            {editError && <p role="alert" className="text-sm text-red-600">{editError}</p>}
+            {editError && (
+              <div className="flex flex-col gap-2">
+                <p role="alert" className="text-sm text-red-600">{editError}</p>
+                {overrideControl(editError)}
+              </div>
+            )}
             <div className="flex gap-2 pt-2">
-              <Button onClick={handleSaveEdit} disabled={isPending || !editFields.received}>{isPending ? 'Saving…' : 'Save line'}</Button>
+              <Button onClick={() => handleSaveEdit()} disabled={isPending || !editFields.received}>{isPending ? 'Saving…' : 'Save line'}</Button>
               <Button variant="ghost" onClick={() => setEditLine(null)}>Cancel</Button>
             </div>
           </div>
         )}
+      </SlideOver>
+
+      <SlideOver open={overOpen} onClose={() => setOverOpen(false)} title="Override the 2% limit">
+        <div className="flex flex-col gap-4 p-4">
+          <p className="text-sm text-slate-600">This delivery is more than the order plus 2%. Give a reason; it is recorded against the GRN.</p>
+          <Input label="Reason" value={overDraft} onChange={(e) => setOverDraft(e.target.value)} />
+          <div className="flex gap-2">
+            <Button onClick={submitOverride} disabled={overDraft.trim().length < 3}>Override and retry</Button>
+            <Button variant="ghost" onClick={() => setOverOpen(false)}>Cancel</Button>
+          </div>
+        </div>
       </SlideOver>
     </div>
   );

@@ -90,12 +90,12 @@ export function StoreTransactionsScreen({ txns, items, canWrite }: Props) {
     setInError(null);
     startTransition(async () => {
       try {
-        await storeInAction({
+        unwrap(await storeInAction({
           itemId: inForm.itemId,
           quantity,
           referenceNo: inForm.referenceNo.trim() || undefined,
           notes: inForm.notes.trim() || undefined,
-        });
+        }));
         setInOpen(false);
         setInForm(emptyIn);
       } catch (e: unknown) {

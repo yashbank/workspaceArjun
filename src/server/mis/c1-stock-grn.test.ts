@@ -39,7 +39,7 @@ const match = (row: Row, where: Row = {}) =>
 const decimals = (r: Row, keys: string[]) => ({ ...r, ...Object.fromEntries(keys.map((k) => [k, r[k] == null ? r[k] : D(r[k])])) });
 const grnView = (g: Row): Row => ({
   ...g,
-  po: { bomRef: null, supplierId: 's1', items: state.poItems.filter((p) => p.poId === g.poId).map((p) => ({ id: p.id, quantity: D(p.quantity), receivedQuantity: D(p.receivedQuantity) })) },
+  po: { poNumber: 'PO-1', status: 'APPROVED', bomRef: null, supplierId: 's1', items: state.poItems.filter((p) => p.poId === g.poId).map((p) => ({ id: p.id, quantity: D(p.quantity), receivedQuantity: D(p.receivedQuantity) })) },
   items: state.grnItems.filter((i) => i.grnId === g.id).map((i) => ({
     ...decimals(i, ['receivedQty', 'damageQuantity', 'dcQuantity']),
     poItem: { ...state.poItems.find((p) => p.id === i.poItemId), ratePerUnit: D(1), item: kraft },
@@ -110,6 +110,8 @@ const db: Row = {
     findMany: async () => state.counts.map((c) => ({ ...c, physicalQty: D(c.physicalQty), systemQty: D(c.systemQty), discrepancy: D(c.discrepancy), item: { name: 'Kraft' } })),
   },
   misSupplierInvoice: { upsert: async () => null },
+  // R3-STK B02/B01: an open PO is read with the GRN and moved on after a receipt.
+  misPurchaseOrder: { update: async () => null, updateMany: async () => ({ count: 1 }) },
   misOrder: { findFirst: async () => null },
   misOrderStockAllocation: { create: async () => null },
   misAuditLog: { create: async ({ data }: Row) => { state.audits.push(data); return data; } },
@@ -238,9 +240,10 @@ describe('#24/D2 store out never goes below the balance', () => {
   it('an inventory adjustment below zero is refused and writes nothing', async () => {
     getMisRole.mockResolvedValue('ADMIN');
     seedStock(5);
-    await expect(adjustInventory('i1', -5.01)).rejects.toThrow(/negative balance/);
+    // R3-STK B07: an adjustment now needs a reason.
+    await expect(adjustInventory('i1', -5.01, 'stock write-off')).rejects.toThrow(/negative balance/);
     expect(state.ledger).toHaveLength(1);
-    await expect(adjustInventory('i1', -5)).resolves.toBe(0);
+    await expect(adjustInventory('i1', -5, 'stock write-off')).resolves.toBe(0);
   });
 
   it('the over-issue-with-reason input is gone: a reason cannot buy extra stock', async () => {
@@ -289,12 +292,12 @@ describe('#23/D3 reconcile a physical count', () => {
     await expect(reconcilePhysicalCount('c1', 'no variance')).rejects.toThrow(/nothing to reconcile/);
   });
 
-  it('a negative variance larger than the balance is refused and writes nothing', async () => {
+  it('R3-STK B09: the adjustment is worked out against the stock NOW, so a count taken at 10 (physical 5) with 2 left books +3, never a write-off beyond the balance', async () => {
     seedStock(2);
-    state.counts = [count(-5)];
-    await expect(reconcilePhysicalCount('c1', 'writing off')).rejects.toThrow(/more than the stock balance \(2 available\)/);
-    expect(state.ledger).toHaveLength(1);
-    expect(state.txns).toHaveLength(1);
+    state.counts = [count(-5)]; // physical 5, recorded when the system said 10; only 2 remain today
+    await expect(reconcilePhysicalCount('c1', 'writing off')).resolves.toEqual({ adjustment: 3 });
+    expect(ledgerBalance()).toBe(5);
+    expect(txnBalance()).toBe(5);
   });
 
   it('"reconciled" is derived from the ledger, without a column', async () => {

@@ -1,18 +1,36 @@
 import type { Prisma } from '@/generated/prisma/client';
+import { MisItemCategory } from '@/generated/prisma/enums';
 import { db } from '@/server/db';
 import { can } from '@/lib/mis/permissions';
 import { requirePermission } from './auth';
 import { logAuditEvent } from './audit';
-import { nextGrnNumber } from './grn';
+import { assertPoReceivable, auditOverReceipt, enforceReceiptCap, isGrnNumberClash, GRN_NUMBER_ATTEMPTS, lockPoRow, nextGrnNumber } from './grn';
+import { runIdempotent } from './idempotency';
 import { allocateFromReceipt, allocationShortfalls } from './order-allocation';
 import { notifyGrnConfirmed } from './grn-alerts';
+import { addDaysToDateKey, factoryDateKey } from '@/lib/mis/factory-time';
+import type { QueuedWriteKind } from '@/lib/mis/offline/idempotency';
 import { poPurpose, type PoPurpose } from '@/lib/mis/po-purpose';
 import { categoryRefusal } from '@/lib/mis/material-request';
 import { OrderStockQuotaExceededError } from '@/lib/mis/order-allocation';
 import { isOrderClosed } from '@/lib/mis/order-status';
-import { itemLockKey } from '@/lib/mis/stock-lock-keys';
+import { positiveQty, roundQty } from '@/lib/mis/quantity';
+import { poStatusAfterReceipt, receiptVerdict } from '@/lib/mis/receipt-rules';
+import { isLowStock } from '@/lib/mis/stock-predicates';
+import { itemLockKey, poItemLockKey } from '@/lib/mis/stock-lock-keys';
 import { lockStockKeys } from './stock-lock';
-import { lastLedgerBalance, lastTxnBalance, nextTxnSeq, round2, txnNumberOf } from './store-books';
+import { formatMoney } from './po';
+import {
+  factoryDayStart,
+  lastLedgerBalance,
+  lastTxnBalance,
+  nextTxnSeq,
+  nonNegativeQty,
+  round2,
+  storeFactoryZone,
+  STXN_SEQ_KEY,
+  txnNumberOf,
+} from './store-books';
 
 // ---------------------------------------------------------------------------
 // Types (runtime only — no generated Prisma types imported)
@@ -133,7 +151,7 @@ export async function listStoreItems(): Promise<StoreItemRow[]> {
         name: item.name,
         category: item.category,
         unit: item.unit,
-        reorderLevel: item.reorderLevel ? Number(item.reorderLevel) : null,
+        reorderLevel: item.reorderLevel != null ? Number(item.reorderLevel) : null,
         stockBalance: balance,
         isDemo: item.isDemo,
         isActive: item.isActive,
@@ -163,7 +181,7 @@ export type StoreInInput = {
 export async function createStoreIn(input: StoreInInput): Promise<StoreTxnRow> {
   const actor = await requirePermission('store.write');
 
-  if (input.quantity <= 0) throw new Error('Quantity must be positive');
+  const quantity = positiveQty(input.quantity, 'Quantity must be positive');
 
   const item = await db.misItem.findFirst({
     where: { id: input.itemId, isActive: true, deletedAt: null },
@@ -171,30 +189,31 @@ export async function createStoreIn(input: StoreInInput): Promise<StoreTxnRow> {
   });
   if (!item) throw new Error('Item not found or inactive');
 
+  const zone = await storeFactoryZone();
   // Both books, one transaction, under the item lock: the Inventory ledger and the storekeeper's
   // book must agree, or a later OUT is refused against a ledger that never heard of this stock.
   const txn = await db.$transaction(async (tx) => {
-    await lockStockKeys(tx, [itemLockKey(input.itemId)]);
+    await lockStockKeys(tx, [itemLockKey(input.itemId), STXN_SEQ_KEY]);
     const ledgerBalance = await lastLedgerBalance(tx, input.itemId);
     await tx.misInventoryLedger.create({
       data: {
         itemId: input.itemId,
-        changeQty: input.quantity,
-        balanceQty: round2(ledgerBalance + input.quantity),
+        changeQty: quantity,
+        balanceQty: round2(ledgerBalance + quantity),
         source: 'STORE_IN',
         sourceId: null,
         notes: input.referenceNo ?? input.notes ?? 'Store IN',
       },
     });
     const txnBalance = await lastTxnBalance(tx, input.itemId);
-    const { prefix, next } = await nextTxnSeq(tx);
+    const { prefix, next } = await nextTxnSeq(tx, zone);
     return tx.misStoreTransaction.create({
       data: {
         txnNumber: txnNumberOf(prefix, next),
         itemId: input.itemId,
         type: 'IN',
-        quantity: input.quantity,
-        balanceQty: round2(txnBalance + input.quantity),
+        quantity,
+        balanceQty: round2(txnBalance + quantity),
         referenceNo: input.referenceNo ?? null,
         reason: input.notes ?? null,
         isOverIssue: false,
@@ -210,7 +229,7 @@ export async function createStoreIn(input: StoreInInput): Promise<StoreTxnRow> {
     entity: 'MisStoreTransaction',
     entityId: txn.id,
     actorId: actor.userId,
-    after: { itemId: input.itemId, quantity: input.quantity, txnNumber, newBalance: String(newBalance) },
+    after: { itemId: input.itemId, quantity, txnNumber, newBalance: String(newBalance) },
   });
 
   return {
@@ -243,7 +262,7 @@ export type StoreOutInput = {
 export async function createStoreOut(input: StoreOutInput): Promise<StoreTxnRow> {
   const actor = await requirePermission('store.write');
 
-  if (input.quantity <= 0) throw new Error('Quantity must be positive');
+  const quantity = positiveQty(input.quantity, 'Quantity must be positive');
 
   const item = await db.misItem.findFirst({
     where: { id: input.itemId, isActive: true, deletedAt: null },
@@ -251,35 +270,36 @@ export async function createStoreOut(input: StoreOutInput): Promise<StoreTxnRow>
   });
   if (!item) throw new Error('Item not found or inactive');
 
+  const zone = await storeFactoryZone();
   // D2: stock never goes negative, so there is no over-issue. Both books are written under the item
   // lock (as commitIssue does) so Inventory, Store stock and Traceability agree after every issue.
   const txn = await db.$transaction(async (tx) => {
-    await lockStockKeys(tx, [itemLockKey(input.itemId)]);
+    await lockStockKeys(tx, [itemLockKey(input.itemId), STXN_SEQ_KEY]);
     const ledgerBalance = await lastLedgerBalance(tx, input.itemId);
     const txnBalance = await lastTxnBalance(tx, input.itemId);
     const available = Math.min(ledgerBalance, txnBalance);
-    if (input.quantity > available) {
+    if (quantity > available) {
       throw new Error(`Cannot issue more than the stock balance (${round2(Math.max(0, available))} available)`);
     }
-    const reference = input.referenceNo ?? `Issue ${new Date().toISOString().slice(0, 10)}`;
+    const reference = input.referenceNo ?? `Issue ${factoryDateKey(new Date(), zone)}`;
     await tx.misInventoryLedger.create({
       data: {
         itemId: input.itemId,
-        changeQty: -input.quantity,
-        balanceQty: round2(ledgerBalance - input.quantity),
+        changeQty: -quantity,
+        balanceQty: round2(ledgerBalance - quantity),
         source: 'STORE_ISSUE',
         sourceId: null,
         notes: reference,
       },
     });
-    const { prefix, next } = await nextTxnSeq(tx);
+    const { prefix, next } = await nextTxnSeq(tx, zone);
     return tx.misStoreTransaction.create({
       data: {
         txnNumber: txnNumberOf(prefix, next),
         itemId: input.itemId,
         type: 'OUT',
-        quantity: input.quantity,
-        balanceQty: round2(txnBalance - input.quantity),
+        quantity,
+        balanceQty: round2(txnBalance - quantity),
         referenceNo: input.referenceNo ?? null,
         reason: null,
         isOverIssue: false,
@@ -293,7 +313,7 @@ export async function createStoreOut(input: StoreOutInput): Promise<StoreTxnRow>
     entity: 'MisStoreTransaction',
     entityId: txn.id,
     actorId: actor.userId,
-    after: { itemId: input.itemId, quantity: input.quantity, txnNumber: txn.txnNumber, newBalance: String(Number(txn.balanceQty)), isOverIssue: false },
+    after: { itemId: input.itemId, quantity, txnNumber: txn.txnNumber, newBalance: String(Number(txn.balanceQty)), isOverIssue: false },
   });
 
   return {
@@ -363,9 +383,11 @@ export type StockSummaryRow = {
   stockBalance: number;
   reorderLevel: number | null;
   belowReorder: boolean;
-  // OWNER only
+  // OWNER only. B16: the value is computed and formatted here; the client only prints it.
   pricePerUnit?: number | null;
   stockValue?: number | null;
+  /** `formatMoney(stockValue)`, e.g. "₹4,420.50". */
+  stockValueLabel?: string | null;
   isDemo: boolean;
 };
 
@@ -392,7 +414,7 @@ export async function listStockSummary(): Promise<StockSummaryRow[]> {
   return Promise.all(
     items.map(async (item) => {
       const balance = balances.get(item.id) ?? 0;
-      const reorderLevel = item.reorderLevel ? Number(item.reorderLevel) : null;
+      const reorderLevel = item.reorderLevel != null ? Number(item.reorderLevel) : null;
       const row: StockSummaryRow = {
         id: item.id,
         code: item.code,
@@ -402,13 +424,14 @@ export async function listStockSummary(): Promise<StockSummaryRow[]> {
         unit: item.unit,
         stockBalance: balance,
         reorderLevel,
-        belowReorder: reorderLevel !== null && balance <= reorderLevel,
+        belowReorder: isLowStock(balance, reorderLevel),
         isDemo: item.isDemo,
       };
       if (actor.role === 'OWNER') {
         const price = item.pricePerUnit ? Number(item.pricePerUnit) : null;
         row.pricePerUnit = price;
-        row.stockValue = price !== null ? price * balance : null;
+        row.stockValue = price !== null ? round2(price * balance) : null;
+        row.stockValueLabel = row.stockValue !== null ? formatMoney(row.stockValue) : null;
       }
       return row;
     }),
@@ -431,6 +454,7 @@ export type PhysicalCountInput = {
 
 export async function recordPhysicalCount(input: PhysicalCountInput): Promise<PhysicalCountRow> {
   const actor = await requirePermission('store.count');
+  const physicalQty = nonNegativeQty(input.physicalQty, 'Enter the counted quantity (zero or more).');
 
   const item = await db.misItem.findFirst({
     where: { id: input.itemId, isActive: true, deletedAt: null },
@@ -439,13 +463,13 @@ export async function recordPhysicalCount(input: PhysicalCountInput): Promise<Ph
   if (!item) throw new Error('Item not found');
 
   const systemQty = await getStockBalance(input.itemId);
-  const discrepancy = input.physicalQty - systemQty;
+  const discrepancy = round2(physicalQty - systemQty);
 
   const count = await db.misPhysicalCount.create({
     data: {
       itemId: input.itemId,
       countDate: new Date(input.countDate),
-      physicalQty: input.physicalQty,
+      physicalQty,
       systemQty,
       discrepancy,
       notes: input.notes ?? null,
@@ -458,7 +482,7 @@ export async function recordPhysicalCount(input: PhysicalCountInput): Promise<Ph
     entity: 'MisPhysicalCount',
     entityId: count.id,
     actorId: actor.userId,
-    after: { itemId: input.itemId, physicalQty: String(input.physicalQty), systemQty: String(systemQty), discrepancy: String(discrepancy) },
+    after: { itemId: input.itemId, physicalQty: String(physicalQty), systemQty: String(systemQty), discrepancy: String(discrepancy) },
   });
 
   return {
@@ -521,26 +545,37 @@ export async function reconcilePhysicalCount(countId: string, reason: string): P
 
   const count = await db.misPhysicalCount.findUnique({ where: { id: countId } });
   if (!count) throw new Error('Physical count not found.');
-  const delta = round2(Number(count.discrepancy));
-  if (delta === 0) throw new Error('This count matches the system: there is nothing to reconcile.');
 
-  const countDay = count.countDate.toISOString().slice(0, 10);
-  const txn = await db.$transaction(async (tx) => {
-    await lockStockKeys(tx, [itemLockKey(count.itemId)]);
+  const countDay = count.countDate.toISOString().slice(0, 10); // a @db.Date column: its UTC date IS the day
+  const zone = await storeFactoryZone();
+  const { txn, delta } = await db.$transaction(async (tx) => {
+    await lockStockKeys(tx, [itemLockKey(count.itemId), STXN_SEQ_KEY]);
     const already = await tx.misInventoryLedger.findFirst({
       where: { source: COUNT_ADJUSTMENT_SOURCE, sourceId: count.id },
       select: { id: true },
     });
     if (already) throw new Error('This count has already been reconciled.');
 
+    // B09 — one reconcile per item per count day: another count of this item on the same day that is already settled
+    // names itself in the ledger (`source`/`sourceId`), so no column is needed to know.
+    const sameDay = await tx.misPhysicalCount.findMany({
+      where: { itemId: count.itemId, countDate: count.countDate, id: { not: count.id } },
+      select: { id: true },
+    });
+    if (sameDay.length > 0) {
+      const settled = await tx.misInventoryLedger.findFirst({
+        where: { source: COUNT_ADJUSTMENT_SOURCE, sourceId: { in: sameDay.map((c) => c.id) } },
+        select: { id: true },
+      });
+      if (settled) throw new Error(`This item was already reconciled for the count of ${countDay}.`);
+    }
+
+    // B09 — the adjustment is worked out NOW, under the lock, against what is actually in stock: stock issued since
+    // the count was typed must not be written off a second time. The smaller book is the stock (as in the issue check).
     const ledgerBalance = await lastLedgerBalance(tx, count.itemId);
     const txnBalance = await lastTxnBalance(tx, count.itemId);
-    if (delta < 0) {
-      const available = Math.min(ledgerBalance, txnBalance);
-      if (-delta > available) {
-        throw new Error(`Cannot reconcile: the shortfall of ${-delta} is more than the stock balance (${round2(Math.max(0, available))} available)`);
-      }
-    }
+    const delta = round2(Number(count.physicalQty) - Math.min(ledgerBalance, txnBalance));
+    if (delta === 0) throw new Error('This count matches the system: there is nothing to reconcile.');
     await tx.misInventoryLedger.create({
       data: {
         itemId: count.itemId,
@@ -551,8 +586,8 @@ export async function reconcilePhysicalCount(countId: string, reason: string): P
         notes: `Count ${countDay}: ${why}`,
       },
     });
-    const { prefix, next } = await nextTxnSeq(tx);
-    return tx.misStoreTransaction.create({
+    const { prefix, next } = await nextTxnSeq(tx, zone);
+    const txn = await tx.misStoreTransaction.create({
       data: {
         txnNumber: txnNumberOf(prefix, next),
         itemId: count.itemId,
@@ -565,6 +600,7 @@ export async function reconcilePhysicalCount(countId: string, reason: string): P
         createdById: actor.userId,
       },
     });
+    return { txn, delta };
   });
 
   await logAuditEvent({
@@ -595,13 +631,11 @@ export async function listAllStoreTxns(filter: GlobalTxnFilter = {}): Promise<St
   if (filter.itemId) where.itemId = filter.itemId;
   if (filter.type) where.type = filter.type;
   if (filter.from || filter.to) {
+    // The days are the FACTORY's: "to 14 Oct" runs to the end of the 14th in the factory, not in the server's zone.
+    const zone = await storeFactoryZone();
     const dateRange: Record<string, Date> = {};
-    if (filter.from) dateRange.gte = new Date(filter.from);
-    if (filter.to) {
-      const d = new Date(filter.to);
-      d.setHours(23, 59, 59, 999);
-      dateRange.lte = d;
-    }
+    if (filter.from) dateRange.gte = factoryDayStart(filter.from, zone);
+    if (filter.to) dateRange.lt = factoryDayStart(addDaysToDateKey(filter.to, 1), zone);
     where.createdAt = dateRange;
   }
 
@@ -641,14 +675,21 @@ export type StoreDashboardStats = {
   todayOut: number;
   recentTxns: StoreTxnRow[];
   hasDemo: boolean;
-  // OWNER only
+  // OWNER only. B16: summed and formatted here; the client only prints it.
   totalStockValue?: number | null;
+  /** `formatMoney(totalStockValue)`. */
+  totalStockValueLabel?: string | null;
 };
 
-export async function getStoreDashboard(): Promise<StoreDashboardStats> {
+/** `now` is injectable so "today" can be tested at the factory's midnight; callers pass nothing. */
+export async function getStoreDashboard(now: Date = new Date()): Promise<StoreDashboardStats> {
   const actor = await requirePermission('store.read');
 
-  const todayStart = new Date(new Date().toISOString().slice(0, 10));
+  // "Today" is the factory's day (B15), not the server's UTC day.
+  const zone = await storeFactoryZone();
+  const todayKey = factoryDateKey(now, zone);
+  const todayStart = factoryDayStart(todayKey, zone);
+  const tomorrowStart = factoryDayStart(addDaysToDateKey(todayKey, 1), zone);
 
   const [items, todayTxns, recentTxns, demoCount] = await Promise.all([
     db.misItem.findMany({
@@ -656,7 +697,7 @@ export async function getStoreDashboard(): Promise<StoreDashboardStats> {
       select: { id: true, reorderLevel: true, pricePerUnit: true },
     }),
     db.misStoreTransaction.findMany({
-      where: { createdAt: { gte: todayStart } },
+      where: { createdAt: { gte: todayStart, lt: tomorrowStart } },
       select: { type: true, quantity: true },
     }),
     db.misStoreTransaction.findMany({
@@ -674,15 +715,14 @@ export async function getStoreDashboard(): Promise<StoreDashboardStats> {
       return {
         id: item.id,
         balance,
-        reorderLevel: item.reorderLevel ? Number(item.reorderLevel) : null,
+        reorderLevel: item.reorderLevel != null ? Number(item.reorderLevel) : null,
         price: item.pricePerUnit ? Number(item.pricePerUnit) : null,
       };
     }),
   );
 
-  const lowStockCount = balances.filter(
-    (b) => b.reorderLevel !== null && b.balance > 0 && b.balance < b.reorderLevel,
-  ).length;
+  // B17: the same predicate as the stock page. An item at zero is counted as out of stock, not as low.
+  const lowStockCount = balances.filter((b) => b.balance > 0 && isLowStock(b.balance, b.reorderLevel)).length;
   const outOfStockCount = balances.filter((b) => b.balance <= 0).length;
   const todayIn = todayTxns
     .filter((t) => t.type === 'IN')
@@ -716,10 +756,11 @@ export async function getStoreDashboard(): Promise<StoreDashboardStats> {
   };
 
   if (actor.role === 'OWNER') {
-    const totalStockValue = balances.reduce((sum, b) => {
-      return b.price !== null ? sum + b.price * b.balance : sum;
-    }, 0);
+    const totalStockValue = round2(
+      balances.reduce((sum, b) => (b.price !== null ? sum + round2(b.price * b.balance) : sum), 0),
+    );
     stats.totalStockValue = totalStockValue;
+    stats.totalStockValueLabel = formatMoney(totalStockValue);
   }
 
   return stats;
@@ -746,6 +787,14 @@ export async function updateStoreItemProps(
     select: { id: true, pricePerUnit: true, reorderLevel: true, category: true },
   });
   if (!before) throw new Error('Item not found');
+
+  // B14 — a friendly refusal, not a database error or a poisoned reorder level.
+  if (patch.reorderLevel !== undefined && patch.reorderLevel !== null) {
+    if (!Number.isFinite(patch.reorderLevel) || patch.reorderLevel < 0) throw new Error('Reorder level must be a number, zero or more.');
+  }
+  if (patch.category !== undefined && !(Object.values(MisItemCategory) as string[]).includes(patch.category)) {
+    throw new Error(`Category must be one of: ${Object.values(MisItemCategory).join(', ')}.`);
+  }
 
   const data: Record<string, unknown> = {};
   const mayPrice = can(actor.role, 'wages.read'); // D5: the price is the Owner's to set
@@ -831,12 +880,18 @@ export type ReceiptMeta = {
   poId?: string | null;
   invoiceNo?: string | null;
   notes?: string | null;
+  /** R3-STK B03 — an ADMIN/OWNER's reason for taking more than the order + 2%. Ignored for anyone else. */
+  overReceiptReason?: string | null;
+  /** R3-STK B11 — one UUID per cart open: pressing Confirm twice books once. */
+  idempotencyKey?: string | null;
 };
 
 export type IssueMeta = {
   orderId?: string | null;
   departmentId?: string | null;
   notes?: string | null;
+  /** R3-STK B11 — one UUID per cart open: pressing Confirm twice books once. */
+  idempotencyKey?: string | null;
   /**
    * Runs inside the issue's own transaction, after the ledger rows are written. If it throws, the
    * whole issue rolls back — so a caller's bookkeeping (a request's per-line quantities) commits
@@ -899,6 +954,52 @@ async function loadCartItems(lines: CartLineInput[]): Promise<Map<string, CartIt
   return byId;
 }
 
+type KeyedKind = 'STORE_RECEIPT' | 'STORE_ISSUE';
+
+/**
+ * R3-STK B11 — run a cart commit exactly once per key, on the shared idempotency table (`runIdempotent`, unedited).
+ * The key row and the stock rows commit together or not at all, so a second press of Confirm (or a retry after a
+ * dropped connection) returns the FIRST result and writes nothing. `live`: the person is at the screen, so a refusal
+ * is handed back as the sentence they read and nothing is recorded or parked.
+ *
+ * The idempotency vocabulary (`QueuedWriteKind`) is the offline queue's closed list; the column itself is free text,
+ * and a store kind needs no timing or inbox rule, so the kind is passed through as-is rather than editing that list.
+ */
+async function runOnce<T extends object>(
+  kind: KeyedKind,
+  key: string,
+  actorId: string,
+  payload: object,
+  entityType: string,
+  apply: (tx: Prisma.TransactionClient) => Promise<{ entityId: string | null; result: T }>,
+): Promise<{ value: T; replay: boolean }> {
+  const out = await runIdempotent<T>(
+    { key, kind: kind as unknown as QueuedWriteKind, payload, clientRecordedAt: new Date().toISOString(), actorId },
+    async (tx) => {
+      const done = await apply(tx);
+      return { entityType, entityId: done.entityId as string, result: done.result };
+    },
+    { live: true },
+  );
+  if (out.outcome === 'APPLIED' && out.result) return { value: out.result, replay: false };
+  if (out.outcome === 'DUPLICATE' && out.result) return { value: out.result, replay: true };
+  throw new Error(out.detail || 'That did not save. Try again.');
+}
+
+/**
+ * A GRN number nobody holds yet. `runIdempotent` turns a unique-violation into "still in progress", so a clash inside a
+ * keyed commit could never be retried from outside; the number is therefore checked (bounded) before it is used.
+ */
+async function freeGrnNumber(tx: Prisma.TransactionClient, attempt: number, zone: string): Promise<string> {
+  for (let i = 0; i < GRN_NUMBER_ATTEMPTS; i += 1) {
+    const candidate = nextGrnNumber(attempt + i, zone);
+    if (!(await tx.misGrn.findUnique({ where: { grnNumber: candidate }, select: { id: true } }))) return candidate;
+  }
+  return nextGrnNumber(attempt + GRN_NUMBER_ATTEMPTS, zone);
+}
+
+type ReceiptDone = { reference: string; grnId: string | null; lineCount: number; totalQty: number };
+
 /**
  * Commit a whole delivery.
  *
@@ -908,6 +1009,9 @@ async function loadCartItems(lines: CartLineInput[]): Promise<Map<string, CartIt
  * A GRN header needs a purchase order (mis_grns.po_id is NOT NULL), so a
  * walk-in delivery with no PO posts to the ledger without one rather than
  * inventing a fake PO to hang it from.
+ *
+ * Against a PO: the PO must be open for goods, a line takes at most ordered + 2% (an ADMIN/OWNER may go beyond with a
+ * reason), and the PO-line counters are read and written under the same advisory locks `confirmGRN` takes.
  */
 export async function commitReceipt(
   lines: CartLineInput[],
@@ -925,16 +1029,60 @@ export async function commitReceipt(
   const po = meta.poId
     ? await db.misPurchaseOrder.findUnique({
         where: { id: meta.poId },
-        include: { items: { select: { id: true, itemId: true, quantity: true, receivedQuantity: true } } },
+        include: { items: { select: { id: true, itemId: true } } },
       })
     : null;
   if (meta.poId && !po) throw new Error('That purchase order no longer exists.');
+  if (po) assertPoReceivable(po); // fast refusal; checked again under the locks below
 
   const invoiceNo = meta.invoiceNo?.trim() || null;
   const notes = meta.notes?.trim() || null;
+  const zone = await storeFactoryZone(); // read before the transaction: the runtime pool is one connection wide
+  const today = factoryDateKey(new Date(), zone);
+  const overrides: { poItemId: string; ordered: number; receivedTotal: number; max: number }[] = [];
+  let overrideReason = '';
 
-  const result = await db.$transaction(async (tx) => {
-    await lockStockKeys(tx, cart.map((l) => itemLockKey(l.itemId))); // serialise the balance read-modify-write per item
+  const apply = async (tx: Prisma.TransactionClient, attempt: number): Promise<ReceiptDone> => {
+    overrides.length = 0;
+    const cartItemIds = new Set(cart.map((l) => l.itemId));
+    // Serialise the balance read-modify-write per item, the PO-line counters (the same keys confirmGRN takes) and the
+    // daily transaction sequence. One sorted set, so two carts can never deadlock.
+    await lockStockKeys(tx, [
+      ...cart.map((l) => itemLockKey(l.itemId)),
+      ...(po ? po.items.filter((pi) => pi.itemId && cartItemIds.has(pi.itemId)).map((pi) => poItemLockKey(pi.id)) : []),
+      STXN_SEQ_KEY,
+    ]);
+
+    // Fresh PO figures, read under the locks. Plan every line BEFORE any row is written, so a refusal writes nothing.
+    type FreshLine = { id: string; itemId: string | null; quantity: { toNumber(): number } | number; receivedQuantity: { toNumber(): number } | number; description?: string | null };
+    let freshLines: FreshLine[] = [];
+    const planned = new Map<string, FreshLine>();
+    if (po) {
+      await lockPoRow(tx, po.id); // R3 review: the PO row, first — also refuses a PO cancelled since the page loaded
+      freshLines = (await tx.misPoItem.findMany({
+        where: { poId: po.id },
+        select: { id: true, itemId: true, quantity: true, receivedQuantity: true, description: true },
+      })) as FreshLine[];
+      const toNum = (v: FreshLine['quantity']) => (typeof v === 'number' ? v : v.toNumber());
+      const claimed = new Set<string>();
+      for (const line of cart) {
+        const candidates = freshLines.filter((pl) => pl.itemId === line.itemId && !claimed.has(pl.id));
+        if (candidates.length === 0) continue; // an item the PO does not list: stock moves, no GRN line
+        const roomy = (pl: FreshLine) => roundQty(toNum(pl.receivedQuantity) + line.qty) <= toNum(pl.quantity);
+        const withinTolerance = (pl: FreshLine) =>
+          receiptVerdict({ ordered: toNum(pl.quantity), receivedSoFar: toNum(pl.receivedQuantity), qty: line.qty, role: actor.role }).kind === 'OK';
+        // The first line with outstanding room; else the first within the 2% tolerance; else the first (and let the cap speak).
+        const chosen = candidates.find(roomy) ?? candidates.find(withinTolerance) ?? candidates[0];
+        const verdict = enforceReceiptCap(actor.role, chosen, line.qty, 0, meta.overReceiptReason);
+        if (verdict.kind === 'OVERRIDE') {
+          overrideReason = verdict.reason;
+          overrides.push({ poItemId: chosen.id, ordered: toNum(chosen.quantity), receivedTotal: verdict.receivedTotal, max: verdict.max });
+        }
+        claimed.add(chosen.id);
+        planned.set(line.itemId, chosen);
+      }
+    }
+
     let grnId: string | null = null;
     let grnNumber: string | null = null;
 
@@ -944,7 +1092,7 @@ export async function commitReceipt(
         .join(' · ');
       const grn = await tx.misGrn.create({
         data: {
-          grnNumber: nextGrnNumber(),
+          grnNumber: await freeGrnNumber(tx, attempt, zone),
           poId: po.id,
           // Confirmed on creation: the ledger rows below are written in the
           // same breath, so leaving it DRAFT would let confirmGRN post them a
@@ -968,9 +1116,9 @@ export async function commitReceipt(
       }
     }
 
-    const reference = grnNumber ?? invoiceNo ?? `Receipt ${new Date().toISOString().slice(0, 10)}`;
-    const { prefix, next } = await nextTxnSeq(tx);
-    const claimedPoItems = new Set<string>();
+    const reference = grnNumber ?? invoiceNo ?? `Receipt ${today}`;
+    const { prefix, next } = await nextTxnSeq(tx, zone);
+    const received = new Map<string, number>(); // PO line id -> quantity this delivery added
     let seq = next;
     let totalQty = 0;
 
@@ -995,7 +1143,7 @@ export async function commitReceipt(
       const txnBalance = await lastTxnBalance(tx, item.id);
       await tx.misStoreTransaction.create({
         data: {
-          txnNumber: `${prefix}${String(seq).padStart(4, '0')}`,
+          txnNumber: txnNumberOf(prefix, seq),
           itemId: item.id,
           type: 'IN',
           quantity: line.qty,
@@ -1009,11 +1157,9 @@ export async function commitReceipt(
       seq += 1;
 
       // Against the PO, where the delivery matches a line on it.
-      const poItem = po?.items.find(
-        (pi) => pi.itemId === item.id && !claimedPoItems.has(pi.id),
-      );
+      const poItem = planned.get(item.id);
       if (grnId && poItem) {
-        claimedPoItems.add(poItem.id);
+        received.set(poItem.id, round2((received.get(poItem.id) ?? 0) + line.qty));
         await tx.misGrnItem.create({
           data: { grnId, poItemId: poItem.id, receivedQty: line.qty, type: 'GENERAL' },
         });
@@ -1041,22 +1187,48 @@ export async function commitReceipt(
     // Move the PO on, so a fully received order stops showing as open. Only
     // when something on this delivery actually matched a line of it — a
     // delivery booked to a PO it shares no items with has not part-filled it.
-    if (po && claimedPoItems.size > 0) {
-      const after = await tx.misPoItem.findMany({
-        where: { poId: po.id },
-        select: { quantity: true, receivedQuantity: true },
-      });
-      const complete =
-        after.length > 0 &&
-        after.every((pi) => pi.receivedQuantity.toNumber() >= pi.quantity.toNumber());
-      await tx.misPurchaseOrder.update({
-        where: { id: po.id },
-        data: { status: complete ? 'COMPLETE' : 'PARTIAL' },
-      });
+    if (po && received.size > 0) {
+      const toNum = (v: FreshLine['quantity']) => (typeof v === 'number' ? v : v.toNumber());
+      const status = poStatusAfterReceipt(
+        freshLines.map((l) => ({ quantity: toNum(l.quantity), receivedQuantity: roundQty(toNum(l.receivedQuantity) + (received.get(l.id) ?? 0)) })),
+      );
+      if (status) await tx.misPurchaseOrder.update({ where: { id: po.id }, data: { status } });
     }
 
     return { reference, grnId, lineCount: cart.length, totalQty };
-  });
+  };
+
+  // A clash on the GRN number (two receipts in the same instant) is retried with a new number, as createGRN does.
+  let result: ReceiptDone;
+  let replay = false;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      if (meta.idempotencyKey) {
+        const keyed = await runOnce<ReceiptDone>(
+          'STORE_RECEIPT',
+          meta.idempotencyKey,
+          actor.userId,
+          // Quantities only: a rate is money and never rests in the idempotency table.
+          { itemIds: cart.map((l) => l.itemId), poId: meta.poId ?? null },
+          'MisGrn',
+          async (tx) => {
+            const done = await apply(tx, attempt);
+            return { entityId: done.grnId, result: done };
+          },
+        );
+        result = keyed.value;
+        replay = keyed.replay;
+      } else {
+        result = await db.$transaction((tx) => apply(tx, attempt));
+      }
+      break;
+    } catch (error) {
+      if (!isGrnNumberClash(error) || attempt >= GRN_NUMBER_ATTEMPTS - 1) throw error;
+    }
+  }
+
+  // The first call already notified and audited; a replay answers with the same result and stops there.
+  if (replay) return { reference: result.reference, lineCount: result.lineCount, totalQty: result.totalQty };
 
   if (result.grnId) await notifyGrnConfirmed(result.grnId); // V2 Epic 4 — same alert as the GRN screen's confirm
 
@@ -1074,6 +1246,7 @@ export async function commitReceipt(
       itemIds: cart.map((l) => l.itemId),
     },
   });
+  if (overrides.length > 0) await auditOverReceipt(actor.userId, result.grnId, overrides, overrideReason);
 
   return { reference: result.reference, lineCount: result.lineCount, totalQty: result.totalQty };
 }
@@ -1126,31 +1299,37 @@ export async function commitIssue(
   if (refusal) throw new Error(refusal);
 
   const notes = meta.notes?.trim() || null;
+  const zone = await storeFactoryZone(); // read before the transaction: the runtime pool is one connection wide
   const reference =
-    order?.orderNumber ?? department?.name ?? `Issue ${new Date().toISOString().slice(0, 10)}`;
+    order?.orderNumber ?? department?.name ?? `Issue ${factoryDateKey(new Date(), zone)}`;
   const reason = [department ? `To ${department.name}` : null, notes].filter(Boolean).join(' · ') || null;
 
-  const result = await db.$transaction(async (tx) => {
+  const apply = async (tx: Prisma.TransactionClient): Promise<CartCommitResult> => {
     // One issue at a time per item. The balance read, the order-cap read and the ledger write below
     // are a read-modify-write; without the lock two concurrent issues both read the same balance
     // and both pass. Transaction-scoped, so it is released by commit/rollback (pooler-safe).
-    await lockStockKeys(tx, cart.map((l) => itemLockKey(l.itemId)));
+    await lockStockKeys(tx, [...cart.map((l) => itemLockKey(l.itemId)), STXN_SEQ_KEY]);
 
-    // Read every balance first and refuse the whole cart if any line is short.
-    const balances = new Map<string, number>();
-    const shortfalls: string[] = [];
+    // Read every balance first and refuse the whole cart if any line is short. B08: the stock is the SMALLER of the
+    // two books (as createStoreOut checks), so an item the storekeeper's book has not caught up on cannot go negative.
+    const ledgerBalances = new Map<string, number>();
+    const txnBalances = new Map<string, number>();
+    const shortfalls: { label: string; available: number; unit: string }[] = [];
     for (const line of cart) {
       const item = items.get(line.itemId)!;
-      const balance = await lastLedgerBalance(tx, item.id);
-      balances.set(item.id, balance);
-      if (line.qty > balance) {
-        shortfalls.push(
-          `${item.name} (${item.code}) — asked for ${line.qty} ${item.unit}, only ${balance} ${item.unit} in stock`,
-        );
-      }
+      const ledgerBalance = await lastLedgerBalance(tx, item.id);
+      const txnBalance = await lastTxnBalance(tx, item.id);
+      ledgerBalances.set(item.id, ledgerBalance);
+      txnBalances.set(item.id, txnBalance);
+      const available = round2(Math.max(0, Math.min(ledgerBalance, txnBalance)));
+      if (line.qty > available) shortfalls.push({ label: `${item.name} (${item.code})`, available, unit: item.unit });
     }
-    if (shortfalls.length > 0) {
-      throw new Error(`Cannot issue more than the stock balance: ${shortfalls.join(' · ')}`);
+    if (shortfalls.length === 1) {
+      const [one] = shortfalls;
+      throw new Error(`Cannot issue more than the stock balance (${one.available} available): ${one.label}`);
+    }
+    if (shortfalls.length > 1) {
+      throw new Error(`Cannot issue more than the stock balance: ${shortfalls.map((f) => `${f.label} (${f.available} ${f.unit} available)`).join(' · ')}`);
     }
     // V2 Epic 2: against an order, (issued so far + this) may not exceed what was earmarked for it.
     if (meta.orderId) {
@@ -1162,14 +1341,14 @@ export async function commitIssue(
       if (over.length > 0) throw new OrderStockQuotaExceededError(meta.orderId, over);
     }
 
-    const { prefix, next } = await nextTxnSeq(tx);
+    const { prefix, next } = await nextTxnSeq(tx, zone);
     let seq = next;
     let totalQty = 0;
 
     for (const line of cart) {
       const item = items.get(line.itemId)!;
 
-      const newLedgerBalance = round2(balances.get(item.id)! - line.qty);
+      const newLedgerBalance = round2(ledgerBalances.get(item.id)! - line.qty);
       await tx.misInventoryLedger.create({
         data: {
           itemId: item.id,
@@ -1181,20 +1360,17 @@ export async function commitIssue(
         },
       });
 
-      const txnBalance = await lastTxnBalance(tx, item.id);
       await tx.misStoreTransaction.create({
         data: {
-          txnNumber: `${prefix}${String(seq).padStart(4, '0')}`,
+          txnNumber: txnNumberOf(prefix, seq),
           itemId: item.id,
           type: 'OUT',
           quantity: line.qty,
-          balanceQty: round2(txnBalance - line.qty),
+          balanceQty: round2(txnBalances.get(item.id)! - line.qty),
           referenceNo: reference,
           reason,
-          // The two books disagree on a handful of legacy items; if this issue
-          // drives the storekeeper's own book negative, say so rather than
-          // quietly recording a negative balance.
-          isOverIssue: line.qty > txnBalance,
+          // D2: stock never goes negative, so there is no over-issue (the check above uses the smaller book).
+          isOverIssue: false,
           createdById: actor.userId,
         },
       });
@@ -1205,7 +1381,23 @@ export async function commitIssue(
     await meta.inTransaction?.(tx);
 
     return { reference, lineCount: cart.length, totalQty };
-  });
+  };
+
+  let result: CartCommitResult;
+  if (meta.idempotencyKey) {
+    const keyed = await runOnce<CartCommitResult>(
+      'STORE_ISSUE',
+      meta.idempotencyKey,
+      actor.userId,
+      { itemIds: cart.map((l) => l.itemId), orderId: meta.orderId ?? null, departmentId: meta.departmentId ?? null },
+      'MisStoreTransaction',
+      async (tx) => ({ entityId: null, result: await apply(tx) }),
+    );
+    if (keyed.replay) return keyed.value; // the first call already audited it
+    result = keyed.value;
+  } else {
+    result = await db.$transaction((tx) => apply(tx));
+  }
 
   await logAuditEvent({
     actorId: actor.userId,
