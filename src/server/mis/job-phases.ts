@@ -3,7 +3,7 @@ import { BPR_WORKFLOW, processNameKey } from '@/lib/mis/bpr-workflow';
 import { db } from '@/server/db';
 import { requirePermission, type MisActor } from '@/server/mis/auth';
 import { logAuditEvent } from '@/server/mis/audit';
-import * as allocationRelease from '@/server/mis/allocation-release';
+import { flushReleaseAudit, releaseMachineAllocations, type ReleaseAuditEvent } from '@/server/mis/allocation-release';
 import { isOrderClosed } from '@/lib/mis/order-status';
 import { NO_UNIT, normaliseUnit, sumByUnit } from '@/lib/mis/qty-by-unit';
 
@@ -390,8 +390,7 @@ export async function signOffPhase(phaseId: string, input?: { notes?: string }) 
 
   // R3-ORD contract (PR #90): the release helpers hand back `auditEvents` and the caller flushes
   // them AFTER commit - nothing inside this interactive tx may touch the global db or audit.
-  // The cast is a shim that works before and after #90 lands; drop it after the rebase.
-  let releaseAudit: unknown;
+  let releaseAudit: ReleaseAuditEvent[] = [];
   const rec = await db.$transaction(async (tx) => {
     const updated = await tx.misJobPhase.update({
       where: { id: phaseId },
@@ -410,12 +409,12 @@ export async function signOffPhase(phaseId: string, input?: { notes?: string }) 
       where: { jobPhaseId: phaseId, releasedAt: null },
       select: { id: true },
     });
-    const released = await allocationRelease.releaseMachineAllocations(
+    const released = await releaseMachineAllocations(
       tx,
       held.map((h) => h.id),
       { reason: 'PHASE_SIGNED_OFF', actorUserId: actor.userId, at: signedOffAt },
     );
-    releaseAudit = (released as { auditEvents?: unknown }).auditEvents;
+    releaseAudit = released.auditEvents;
 
     // Transactional on purpose: a notification that fires on a rolled-back
     // sign-off tells the next section to start work that never unblocked.
@@ -441,8 +440,7 @@ export async function signOffPhase(phaseId: string, input?: { notes?: string }) 
     return updated;
   });
 
-  const flush = (allocationRelease as { flushReleaseAudit?: (events: unknown) => Promise<void> }).flushReleaseAudit;
-  if (flush && releaseAudit) await flush(releaseAudit);
+  await flushReleaseAudit(releaseAudit);
   await logAuditEvent({
     actorId: actor.userId,
     action: 'SIGN_OFF_PHASE',

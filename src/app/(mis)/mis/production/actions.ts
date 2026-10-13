@@ -48,19 +48,16 @@ export async function replayProductionAction(envelope: Envelope, retry = false) 
  * into a sentence here rather than escaping to the error boundary, as it always was.
  */
 export async function clearLineAction(data: { machineId: string; orderId?: string | null; notes?: string }) {
-  const result = await asResult(async () => {
+  return asResult(async () => {
     try {
       await clearLine(data);
     } catch (error) {
       if (isMisForbiddenError(error)) throw new Error('Only a supervisor or above can clear a line.');
       throw error;
     }
-  });
-  if (result.ok) {
     revalidatePath('/mis/production');
     revalidatePath('/mis');
-  }
-  return result;
+  });
 }
 
 export async function getClearanceHistoryAction(machineId: string) {
@@ -84,10 +81,9 @@ export async function getProductionFormContextAction(orderId: string) {
 
 /** R3 B126: edit an entry within 24 h. */
 export async function editProductionLogAction(id: string, patch: ProductionLogPatch) {
-  const result = await asResult(async () => {
+  return asResult(async () => {
     const rec = await editProductionLog(id, patch);
+    revalidateFor(rec.orderId);
     return { id: rec.id, orderId: rec.orderId };
   });
-  if (result.ok) revalidateFor(result.value.orderId);
-  return result;
 }

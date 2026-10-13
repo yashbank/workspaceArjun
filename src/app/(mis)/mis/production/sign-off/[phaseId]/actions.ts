@@ -17,40 +17,32 @@ import {
  * R3 B127: every export returns an `ActionResult`; the screen shows `detail` on a refusal.
  */
 export async function signOffPhaseAction(phaseId: string, orderId: string) {
-  const result = await asResult(async () => {
+  return asResult(async () => {
     await signOffPhase(phaseId);
-  });
-  if (result.ok) {
     revalidatePath(`/mis/production/sign-off/${phaseId}`);
     revalidatePath(`/mis/orders/${orderId}`);
     revalidatePath('/mis');
-  }
-  return result;
+  });
 }
 
 export async function startPhaseAction(phaseId: string, orderId: string) {
-  const result = await asResult(async () => {
+  return asResult(async () => {
     await startPhase(phaseId);
-  });
-  if (result.ok) {
     revalidatePath(`/mis/orders/${orderId}`);
     revalidatePath('/mis');
-  }
-  return result;
+  });
 }
 
 export async function setWasteReasonAction(productionLogId: string, reason: string, phaseId: string) {
-  const result = await asResult(async () => {
+  return asResult(async () => {
     await setWasteReason(productionLogId, reason);
+    revalidatePath(`/mis/production/sign-off/${phaseId}`);
   });
-  if (result.ok) revalidatePath(`/mis/production/sign-off/${phaseId}`);
-  return result;
 }
 
 export async function acknowledgeQcFailureAction(checkId: string, note: string, phaseId: string) {
-  const result = await asResult(async () => {
+  return asResult(async () => {
     await acknowledgeQcFailure(checkId, note);
+    revalidatePath(`/mis/production/sign-off/${phaseId}`);
   });
-  if (result.ok) revalidatePath(`/mis/production/sign-off/${phaseId}`);
-  return result;
 }
