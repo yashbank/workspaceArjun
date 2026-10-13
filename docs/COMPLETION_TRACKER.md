@@ -362,6 +362,7 @@ Specs: docs/specs/R3-README.md, R3-backlog.md, audits in docs/specs/audit/. Gate
 | ATT | MERGED #87 |
 | AND (APK rebuild + 1-tablet pilot pending) | MERGED #88 |
 | QCR | MERGED #89 |
-| ORD, PRD (wave 2) | IN_PROGRESS |
+| ORD #90, PRD #91 (wave 2) | MERGED |
+| Deploy 1 (PR #92, commit ff567d6) | DEPLOYED 2026-10-13 (Vercel Ready; curl smoke OK; real-browser role check NOT run: agent refused to type test passwords into hosted Supabase login) |
 | SG, S1, S2 (schema; after owner SQL) | TODO |
 Next: wave-2 gate -> Deploy 1 (no schema) -> owner SQL -> SG -> wave 3 -> Deploy 2.
