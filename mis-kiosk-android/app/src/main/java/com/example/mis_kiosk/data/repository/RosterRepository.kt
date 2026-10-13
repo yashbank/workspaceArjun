@@ -86,6 +86,10 @@ class RosterRepository(
                     }
                 }
                 rosterPreferences.serverPredatesShiftContract = activeShifts == null
+                // R3 B68: the factory's zone (absent on an older server -> keep what we have, or
+                // the device zone). A pull that succeeded also proves the token is good again.
+                result.body.factoryTimezone?.takeIf { it.isNotBlank() }?.let { rosterPreferences.factoryTimezone = it }
+                if (rosterPreferences.needsRepair) rosterPreferences.needsRepair = false
                 rosterPreferences.lastSyncedAtMillis = System.currentTimeMillis()
                 RosterSyncResult.Success(entities.size)
             }

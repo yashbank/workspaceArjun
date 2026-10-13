@@ -10,6 +10,9 @@ interface ActiveShiftDao {
     @Query("SELECT * FROM active_shifts ORDER BY startTime ASC")
     fun observeAll(): Flow<List<ActiveShiftEntity>>
 
+    @Query("SELECT * FROM active_shifts ORDER BY startTime ASC")
+    suspend fun all(): List<ActiveShiftEntity>
+
     @Query("DELETE FROM active_shifts")
     suspend fun deleteAll()
 

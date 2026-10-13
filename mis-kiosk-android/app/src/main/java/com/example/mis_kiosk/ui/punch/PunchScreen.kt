@@ -116,7 +116,8 @@ fun PunchScreen(
     var showHealthScreen by remember { mutableStateOf(false) }
 
     LaunchedEffect(uiState) {
-        if (uiState is PunchUiState.Revoked) onRevoked()
+        // R3 B65: with unsent punches, stay on a message until the operator acknowledges it.
+        if ((uiState as? PunchUiState.Revoked)?.unsent == 0) onRevoked()
     }
 
     LaunchedEffect(submission) {
@@ -208,6 +209,7 @@ fun PunchScreen(
         onDismissNeedsAttention = viewModel::dismissNeedsAttention,
         onRefresh = viewModel::refresh,
         onHoldStatusBar = { showHealthScreen = true },
+        onRevoked = onRevoked,
     )
 }
 
@@ -238,6 +240,7 @@ private fun PunchScreenContent(
     onDismissNeedsAttention: (String) -> Unit,
     onRefresh: () -> Unit,
     onHoldStatusBar: () -> Unit,
+    onRevoked: () -> Unit,
 ) {
     Surface(modifier = Modifier.fillMaxSize(), color = KioskColors.Background) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -255,9 +258,9 @@ private fun PunchScreenContent(
                 when (uiState) {
                     is PunchUiState.Loading -> LoadingContent()
                     is PunchUiState.Error -> ErrorContent(uiState.message, onRefresh)
-                    is PunchUiState.Revoked -> Unit
+                    is PunchUiState.Revoked -> RevokedContent(uiState.unsent, onContinue = onRevoked)
                     is PunchUiState.Ready -> Column(modifier = Modifier.fillMaxSize()) {
-                        if (uiState.queuedCount > 0 || uiState.syncError != null) {
+                        if (uiState.queuedCount > 0 || uiState.syncError != null || uiState.needsRepair) {
                             StatusStrip(uiState)
                         }
                         if (staleShiftName != null) {
@@ -363,6 +366,29 @@ private fun ErrorContent(message: String, onRetry: () -> Unit) {
     }
 }
 
+/** R3 B65: shown only when punches were still queued as the wipe ran. */
+@Composable
+private fun RevokedContent(unsent: Int, onContinue: () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            "This tablet has been reset.",
+            style = MaterialTheme.typography.titleMedium,
+            textAlign = TextAlign.Center,
+            color = KioskColors.TextPrimary,
+        )
+        unsentAfterWipeText(unsent)?.let { message ->
+            Spacer(Modifier.height(12.dp))
+            Text(message, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center, color = KioskColors.Amber)
+        }
+        Spacer(Modifier.height(24.dp))
+        Button(onClick = onContinue) { Text("Re-pair this tablet") }
+    }
+}
+
 @Composable
 private fun StatusStrip(state: PunchUiState.Ready) {
     Surface(color = KioskColors.SurfaceVariant) {
@@ -372,6 +398,13 @@ private fun StatusStrip(state: PunchUiState.Ready) {
                     "${state.queuedCount} punch${if (state.queuedCount == 1) "" else "es"} queued — will send when back online",
                     style = MaterialTheme.typography.bodySmall,
                     color = KioskColors.Amber,
+                )
+            }
+            if (state.needsRepair) {
+                Text(
+                    "This tablet must be paired again (HTTP 401)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = KioskColors.Error,
                 )
             }
             if (state.syncError != null) {
@@ -908,6 +941,10 @@ private fun SubmissionOverlay(
                         if (submission.wasDuplicate) {
                             Spacer(Modifier.height(4.dp))
                             Text("(already recorded)", style = MaterialTheme.typography.bodyMedium, color = KioskColors.TextSecondary)
+                        }
+                        punchNoteText(submission.note)?.let { noteText ->
+                            Spacer(Modifier.height(4.dp))
+                            Text(noteText, style = MaterialTheme.typography.bodyMedium, color = KioskColors.Amber, textAlign = TextAlign.Center)
                         }
                     }
                     is PunchSubmission.NeedsAttention -> {

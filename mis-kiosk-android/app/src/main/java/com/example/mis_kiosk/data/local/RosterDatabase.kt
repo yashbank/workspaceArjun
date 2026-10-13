@@ -9,8 +9,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [EmployeeEntity::class, PunchStateEntity::class, ActiveShiftEntity::class],
-    version = 5,
-    exportSchema = false,
+    version = 6,
+    exportSchema = true,
 )
 abstract class RosterDatabase : RoomDatabase() {
     abstract fun employeeDao(): EmployeeDao
@@ -34,15 +34,23 @@ abstract class RosterDatabase : RoomDatabase() {
             }
         }
 
+        /** R3 B68: the factory work date of each employee's last punch (nullable, additive). */
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE punch_state ADD COLUMN lastWorkDate TEXT")
+            }
+        }
+
         @Volatile private var instance: RosterDatabase? = null
 
         fun getInstance(context: Context): RosterDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(context.applicationContext, RosterDatabase::class.java, "roster.db")
-                    .addMigrations(MIGRATION_3_4, MIGRATION_4_5)
-                    // Last resort only (versions older than 3). It also wipes punch_state, so every
-                    // future version bump needs a real Migration above.
-                    .fallbackToDestructiveMigration(dropAllTables = true)
+                    .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                    // Last resort only for versions older than 3 (they predate every Migration above).
+                    // Any roster version bump needs a Migration + test. A destructive fallback also
+                    // wipes punch_state, so it must never apply to a version we can migrate.
+                    .fallbackToDestructiveMigrationFrom(true, 1, 2)
                     .build()
                     .also { instance = it }
             }
