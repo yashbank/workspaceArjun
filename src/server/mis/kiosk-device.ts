@@ -464,7 +464,7 @@ export type ClaimResult =
   | { status: 'EXPIRED' }
   | { status: 'REVOKED' }
   /** The token was already collected (or lost). The fix is to pair again. */
-  | { status: 'ALREADY_CLAIMED' }
+  | { status: 'ALREADY_CLAIMED'; detail: string }
   | { status: 'ACTIVE'; token: string; name: string };
 
 /**
@@ -495,13 +495,17 @@ export async function claimEnrolment(input: unknown): Promise<ClaimResult> {
 
   // ACTIVE. Issue the token once: the `tokenHash: null` guard means two racing
   // polls cannot both be handed a token — one update matches, the other does not.
-  if (device.tokenHash) return { status: 'ALREADY_CLAIMED' };
+  const alreadyClaimed = (): ClaimResult => ({
+    status: 'ALREADY_CLAIMED',
+    detail: `This code was already used. Ask an Admin to retire ${device.name ?? 'this tablet'} in Settings \u2192 Devices, then pair again.`,
+  });
+  if (device.tokenHash) return alreadyClaimed();
   const token = newSecret('mkd_');
   const issued = await db.misKioskDevice.updateMany({
     where: { id: device.id, status: 'ACTIVE', tokenHash: null },
     data: { tokenHash: sha256Hex(token), tokenIssuedAt: now },
   });
-  if (issued.count !== 1) return { status: 'ALREADY_CLAIMED' };
+  if (issued.count !== 1) return alreadyClaimed();
 
   await logAuditEvent({
     actorId: null,
@@ -643,6 +647,8 @@ export type PullPayload = {
   /** Every active shift (the clock only), so an operator can pick the shift being run even when nobody is allocated yet. */
   shifts: PullShift[];
   employees: PullEmployee[];
+  /** R3 B60: the factory's IANA zone, so the tablet can read shift windows in the plant's clock. Additive. */
+  factoryTimezone: string;
 };
 
 /**
@@ -654,7 +660,8 @@ export type PullPayload = {
 async function buildPullPayload(device: AuthenticatedDevice, now: Date): Promise<PullPayload> {
   // "Today" is the factory's today (D22), as a UTC-midnight `@db.Date` value. The server's
   // own midnight is 2.5 hours off the plant's, and on a UTC+8 host it names yesterday.
-  const today = dateKeyToDbDate(factoryDateKey(now, await getFactoryTimezone()));
+  const factoryTimezone = await getFactoryTimezone();
+  const today = dateKeyToDbDate(factoryDateKey(now, factoryTimezone));
 
   const [employees, shifts, allocations, attendance] = await Promise.all([
     db.misEmployee.findMany({
@@ -685,6 +692,7 @@ async function buildPullPayload(device: AuthenticatedDevice, now: Date): Promise
   return {
     device: { id: device.id, name: device.name },
     pulledAt: now.toISOString(),
+    factoryTimezone,
     shifts: [...shifts]
       .sort((a, b) => a.startTime.localeCompare(b.startTime))
       .map((s) => ({ id: s.id, name: s.name, startTime: s.startTime, endTime: s.endTime })),

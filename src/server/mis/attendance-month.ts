@@ -25,10 +25,12 @@ import {
   type DayDetail,
   type EmployeeMonth,
 } from '@/lib/mis/attendance-month';
-import { dateKeyToDbDate, factoryDateKey } from '@/lib/mis/factory-time';
+import { dateKeyToDbDate, factoryDateKey, formatFactoryDateTime } from '@/lib/mis/factory-time';
 import { can } from '@/lib/mis/permissions';
 import { db } from '@/server/db';
 import { requirePermission } from '@/server/mis/auth';
+import { logAuditEvent } from '@/server/mis/audit';
+import { resolveVisibleEmployeeWhere } from '@/server/mis/visibility';
 import { getFactoryTimezone } from '@/server/mis/business-rules';
 
 const asString = (v: unknown): string | null => (typeof v === 'string' && v !== '' ? v : null);
@@ -131,3 +133,53 @@ export async function getAttendanceMonthView(
     canPayroll: can(actor.role, 'wages.read'),
   };
 }
+
+/**
+ * R3 B62: the phone register's `?date=` and `?month=` params, made safe. A malformed `date` falls back to the
+ * factory's today and a malformed `month` to the factory's current month, so `?date=foo` renders today instead of
+ * reaching a query as an Invalid Date. Pure: the caller passes the factory's today key.
+ */
+export function resolveRegisterQuery(input: { date?: unknown; month?: unknown }, todayKey: string): { date: string; month: string } {
+  const asDate = typeof input.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input.date) ? input.date : null;
+  const parsed = asDate ? new Date(`${asDate}T00:00:00Z`) : null;
+  const real = parsed !== null && !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === asDate;
+  const month = typeof input.month === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(input.month) ? input.month : todayKey.slice(0, 7);
+  return { date: real ? (asDate as string) : todayKey, month };
+}
+
+/**
+ * R3 B64: append a note to a register row. Needs `attendance.note` (not `attendance.write`), changes nothing
+ * but `notes`, only for people the actor may see, and never in a closed month.
+ */
+export async function addAttendanceNote(attendanceId: string, note: string) {
+  const actor = await requirePermission('attendance.note');
+  const text = (note ?? '').trim();
+  if (text.length < 1 || text.length > 500) throw new Error('A note must be 1 to 500 characters');
+  const row = await db.misAttendance.findUnique({ where: { id: attendanceId } });
+  if (!row) throw new Error('Attendance record not found');
+  const visible = await db.misEmployee.findFirst({
+    where: { AND: [{ id: row.employeeId }, await resolveVisibleEmployeeWhere(actor)] },
+    select: { id: true },
+  });
+  if (!visible) throw new Error('Attendance record not found');
+  const dateKey = row.date.toISOString().slice(0, 10);
+  const period = await db.misPayrollPeriod.findUnique({ where: { year_month: { year: Number(dateKey.slice(0, 4)), month: Number(dateKey.slice(5, 7)) } } });
+  if (period?.status === 'CLOSED') throw new Error('This month is closed. Notes cannot be added.');
+
+  const me = await db.misEmployee.findFirst({ where: { userProfileId: actor.userId }, select: { name: true } });
+  const stamp = formatFactoryDateTime(new Date(), await getFactoryTimezone());
+  const line = `[${me?.name ?? 'User'} ${stamp}] ${text}`;
+  const notesBefore = row.notes;
+  const notes = notesBefore ? `${notesBefore}\n${line}` : line;
+  const rec = await db.misAttendance.update({ where: { id: attendanceId }, data: { notes } });
+  await logAuditEvent({
+    actorId: actor.userId,
+    action: 'ATTENDANCE_NOTE',
+    entity: 'MisAttendance',
+    entityId: attendanceId,
+    before: { notes: notesBefore },
+    after: { notes: rec.notes },
+  });
+  return rec;
+}
+

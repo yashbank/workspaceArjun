@@ -65,7 +65,7 @@ vi.mock('@/server/mis/business-rules', () => ({
 const { getTodayQcBoard, addQcCheck, recordAqlSample } = await import('./qc');
 
 const READERS: MisRoleName[] = ['OWNER', 'ADMIN', 'SUPERVISOR', 'QC'];
-const WRITERS: MisRoleName[] = ['OWNER', 'ADMIN', 'QC'];
+const WRITERS: MisRoleName[] = ['OWNER', 'ADMIN', 'QC', 'SUPERVISOR']; // R3 B64: SUPERVISOR gains qc.write
 const ist = (hhmm: string, day = '2026-09-05') => new Date(`${day}T${hhmm}:00+05:30`);
 const as = (role: MisRoleName) => {
   getCurrentUser.mockResolvedValue({ id: 'u1' });

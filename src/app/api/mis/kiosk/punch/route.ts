@@ -1,6 +1,6 @@
 import { ingestDevicePunch } from '@/server/mis/attendance-punch';
 
-import { failure, ok, readJsonBody } from '../respond';
+import { PUNCH_MAX_BODY_BYTES, PayloadTooLargeError, failure, ok, readJsonBody } from '../respond';
 
 /**
  * A tablet sends one punch. Authenticates by device token before anything is read
@@ -12,7 +12,16 @@ import { failure, ok, readJsonBody } from '../respond';
  */
 export async function POST(request: Request) {
   try {
-    const out = await ingestDevicePunch(request.headers.get('authorization'), await readJsonBody(request));
+    const authorization = request.headers.get('authorization');
+    let body: unknown;
+    try {
+      body = await readJsonBody(request, PUNCH_MAX_BODY_BYTES);
+    } catch (error) {
+      // An over-limit body: still answer an un-tokened caller with 401 first (an empty envelope writes nothing).
+      if (error instanceof PayloadTooLargeError) await ingestDevicePunch(authorization, {});
+      throw error;
+    }
+    const out = await ingestDevicePunch(authorization, body);
     return ok(
       { outcome: out.outcome, reason: out.reason, detail: out.detail, result: out.result },
       out.outcome === 'RETRY' ? 503 : 200,

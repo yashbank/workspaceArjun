@@ -4,7 +4,9 @@ import { useState, useTransition } from 'react';
 import { Button } from '@/components/mis/kit/button';
 import { Input, TimeInput } from '@/components/mis/kit/input';
 import { SlideOver } from '@/components/mis/kit/slide-over';
-import { saveShiftAction } from '@/app/(mis)/mis/attendance/actions';
+import { saveShiftAction, setShiftActiveAction } from '@/app/(mis)/mis/attendance/actions';
+import { useToast } from '@/components/ui/toast';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 
 type Shift = { id: string; name: string; startTime: string; endTime: string; isDefault: boolean; isActive: boolean };
 
@@ -17,19 +19,38 @@ export function ShiftsScreen({ shifts, canWrite }: Props) {
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('18:00');
   const [isPending, startTransition] = useTransition();
+  const { toast } = useToast();
+  const { confirm, confirmDialog } = useConfirm();
+  const [isDefault, setIsDefault] = useState(false);
 
   const openAdd = () => {
-    setEditing(null); setName(''); setStartTime('09:00'); setEndTime('18:00'); setOpen(true);
+    setEditing(null); setName(''); setStartTime('09:00'); setEndTime('18:00'); setIsDefault(false); setOpen(true);
   };
 
   const openEdit = (s: Shift) => {
-    setEditing(s); setName(s.name); setStartTime(s.startTime); setEndTime(s.endTime); setOpen(true);
+    setEditing(s); setName(s.name); setStartTime(s.startTime); setEndTime(s.endTime); setIsDefault(s.isDefault); setOpen(true);
   };
 
   const handleSave = () => startTransition(async () => {
-    await saveShiftAction(editing?.id ?? null, { name, startTime, endTime });
+    const res = await saveShiftAction(editing?.id ?? null, { name, startTime, endTime, isDefault });
+    if (!res.ok) { toast('error', res.detail); return; }
     setOpen(false);
   });
+
+  const toggleActive = async (shift: Shift) => {
+    const next = !shift.isActive;
+    const ok = await confirm({
+      title: next ? 'Activate shift?' : 'Deactivate shift?',
+      message: next ? `${shift.name} will be offered again at the gate.` : `${shift.name} will no longer be offered at the gate.`,
+      confirmLabel: next ? 'Activate' : 'Deactivate',
+      destructive: !next,
+    });
+    if (!ok) return;
+    startTransition(async () => {
+      const res = await setShiftActiveAction(shift.id, next);
+      if (!res.ok) toast('error', res.detail);
+    });
+  };
 
   function calcHours(start: string, end: string): string {
     try {
@@ -69,7 +90,10 @@ export function ShiftsScreen({ shifts, canWrite }: Props) {
                 </div>
               </div>
               {canWrite && (
-                <Button variant="ghost" onClick={() => openEdit(shift)}>Edit</Button>
+                <div className="flex gap-2">
+                  <Button variant="ghost" onClick={() => openEdit(shift)}>Edit</Button>
+                  <Button variant="ghost" onClick={() => toggleActive(shift)} disabled={isPending}>{shift.isActive ? 'Deactivate' : 'Activate'}</Button>
+                </div>
               )}
             </div>
           ))
@@ -81,12 +105,17 @@ export function ShiftsScreen({ shifts, canWrite }: Props) {
           <Input label="Shift Name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Morning Shift" />
           <TimeInput label="Start Time" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
           <TimeInput label="End Time" value={endTime} onChange={(e) => setEndTime(e.target.value)} />
+          <label className="flex min-h-11 items-center gap-2 text-base text-slate-900">
+            <input type="checkbox" checked={isDefault} onChange={(e) => setIsDefault(e.target.checked)} className="h-4 w-4" />
+            Default shift
+          </label>
           <div className="flex gap-2 pt-2">
             <Button onClick={handleSave} disabled={isPending || !name}>{isPending ? 'Saving…' : 'Save'}</Button>
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
           </div>
         </div>
       </SlideOver>
+      {confirmDialog}
     </div>
   );
 }

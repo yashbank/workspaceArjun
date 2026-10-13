@@ -19,16 +19,18 @@ const ALL = [
   'masters', 'orders', 'production', 'quality', 'attendance', 'machine-board', 'reports', 'settings', 'employees',
   'po', 'grn', 'supplier-invoices', 'inventory', 'customers', 'suppliers', 'documents', 'bom', 'traceability', 'approvals', 'queue', 'kiosk',
   'audit', 'payroll', 'store',
+  'crew', // R3-WRK (PR #84): desktop sidebar entry for OWNER, ADMIN, SUPERVISOR and QC, after store
 ];
 
 const EXPECTED: Record<MisRoleName, string[]> = {
   OWNER: ALL,
   ADMIN: ALL.filter((id) => id !== 'payroll'), // Payroll is a wage screen: Owner only (F-01, D24)
-  SUPERVISOR: ['masters', 'orders', 'production', 'quality', 'attendance', 'machine-board', 'reports', 'employees', 'grn', 'inventory', 'customers', 'documents', 'bom', 'traceability', 'store'],
-  QC: ['masters', 'orders', 'production', 'quality', 'machine-board', 'reports', 'customers', 'documents', 'bom', 'traceability'],
+  SUPERVISOR: ['masters', 'orders', 'production', 'quality', 'attendance', 'machine-board', 'reports', 'employees', 'grn', 'inventory', 'customers', 'documents', 'bom', 'traceability', 'store', 'crew'],
+  QC: ['masters', 'orders', 'production', 'quality', 'machine-board', 'reports', 'customers', 'documents', 'bom', 'traceability', 'crew'], // crew: R3-WRK (PR #84)
   ATTENDANCE_OPERATOR: ['attendance', 'employees', 'kiosk'],
   SUPER_ATTENDANCE_OPERATOR: ['attendance', 'reports', 'employees', 'queue', 'kiosk'],
-  STORE_GUY: ['po', 'grn', 'supplier-invoices', 'inventory', 'suppliers', 'store'],
+  // R3 B64: STORE_GUY gains orders.read, so the read-only Orders entry appears.
+  STORE_GUY: ['orders', 'po', 'grn', 'supplier-invoices', 'inventory', 'customers', 'suppliers', 'documents', 'bom', 'traceability', 'store'], // orders.read also opens customers, documents, bom and traceability
   WORKER: [],
 };
 
@@ -53,7 +55,8 @@ describe('getNavigationFor — per role, exactly', () => {
   it('every entry is absent, never greyed: a role that cannot open a page is not offered its link', async () => {
     getMisRole.mockResolvedValue('STORE_GUY');
     const hrefs = (await getNavigationFor('u')).map((e) => e.href);
-    for (const forbidden of ['/mis/orders', '/mis/attendance', '/mis/settings', '/mis/audit', '/mis/payroll', '/mis/employees']) {
+    // R3 B64: '/mis/orders' left this list because STORE_GUY now holds orders.read.
+    for (const forbidden of ['/mis/attendance', '/mis/settings', '/mis/audit', '/mis/payroll', '/mis/employees']) {
       expect(hrefs).not.toContain(forbidden);
     }
   });

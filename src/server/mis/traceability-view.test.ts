@@ -56,7 +56,7 @@ vi.mock('@/server/mis/visibility', () => ({ resolveVisibleOrderWhere: async () =
 
 const { getTraceView } = await import('./traceability-view');
 
-const READERS: MisRoleName[] = ['OWNER', 'ADMIN', 'SUPERVISOR', 'QC'];
+const READERS: MisRoleName[] = ['OWNER', 'ADMIN', 'SUPERVISOR', 'QC', 'STORE_GUY']; // R3 B64: STORE_GUY holds orders.read
 const NOW = new Date('2026-09-10T10:00:00Z');
 const at = (iso: string) => new Date(`${iso}+05:30`);
 const as = (role: MisRoleName) => {

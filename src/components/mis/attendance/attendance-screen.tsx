@@ -5,8 +5,12 @@ import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import { Input } from '@/components/mis/kit/input';
-import { clockInAction, clockOutAction, approveClockOutAction, editAttendanceAction, markAbsentBulkAction, listPunchesForDayAction } from '@/app/(mis)/mis/attendance/actions';
+import { clockInAction, clockOutAction, approveClockOutAction, editAttendanceAction, markAbsentBulkAction, listPunchesForDayAction, addAttendanceNoteAction } from '@/app/(mis)/mis/attendance/actions';
+import { useToast } from '@/components/ui/toast';
+import { formatFactoryTime } from '@/lib/mis/factory-time';
+import type { ActionResult } from '@/lib/mis/action-result';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 type AttendanceRec = {
   id: string; date: Date; status: string; clockIn: Date | null; clockOut: Date | null;
@@ -22,21 +26,28 @@ type SummaryRec = { employee: { id: string; name: string; employeeCode: string }
 
 type Props = {
   records: AttendanceRec[]; summary: SummaryRec[]; shifts: { id: string; name: string }[];
-  canWrite: boolean; view: string; year: number; month: number; date?: string;
+  canWrite: boolean; canNote?: boolean; view: string; monthKey: string; date?: string; timeZone: string;
 };
 
 const STATUS_TONE: Record<string, 'good' | 'warning' | 'critical' | 'neutral'> = {
   PRESENT: 'good', HALF_DAY: 'warning', ABSENT: 'critical', LEAVE: 'neutral', HOLIDAY: 'neutral',
 };
 
-function fmtTime(d: Date | null) {
+function fmtTime(d: Date | null, timeZone: string) {
   if (!d) return '—';
-  return new Date(d).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+  return formatFactoryTime(new Date(d), timeZone);
 }
 
 function fmtMin(m: number) { return m > 0 ? `${m}m` : '—'; }
 
-export function AttendanceScreen({ records, summary, shifts: _shifts, canWrite, view, year, month, date }: Props) {
+export function AttendanceScreen({ records, summary, shifts: _shifts, canWrite, canNote = false, view, monthKey, date, timeZone }: Props) {
+  const { toast } = useToast();
+  const router = useRouter();
+  /** B63: show a refusal as a toast; true when the action went through. */
+  const settle = (result: ActionResult<unknown>) => {
+    if (!result.ok) toast('error', result.detail);
+    return result.ok;
+  };
   const [empSearch, setEmpSearch] = useState('');
   const [isPending, startTransition] = useTransition();
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -51,7 +62,10 @@ export function AttendanceScreen({ records, summary, shifts: _shifts, canWrite, 
   };
 
   const markSelectedAbsent = () => startTransition(async () => {
-    await markAbsentBulkAction([...selected], date);
+    const res = await markAbsentBulkAction([...selected], date);
+    if (settle(res) && res.ok && res.value.skipped.length > 0) {
+      toast('info', `${res.value.skipped.length} skipped (already punched, on leave or edited)`);
+    }
     setSelected(new Set());
   });
   const filteredRecords = empSearch.trim()
@@ -65,8 +79,13 @@ export function AttendanceScreen({ records, summary, shifts: _shifts, canWrite, 
   const [editRec, setEditRec] = useState<AttendanceRec | null>(null);
   const [editStatus, setEditStatus] = useState('PRESENT');
   const [editNotes, setEditNotes] = useState('');
+  const [editReason, setEditReason] = useState('');
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [noteRec, setNoteRec] = useState<AttendanceRec | null>(null);
+  const [noteText, setNoteText] = useState('');
 
-  const openEdit = (r: AttendanceRec) => { setEditRec(r); setEditStatus(r.status); setEditNotes(r.notes ?? ''); setEditOpen(true); };
+  const openEdit = (r: AttendanceRec) => { setEditRec(r); setEditStatus(r.status); setEditNotes(r.notes ?? ''); setEditReason(''); setEditOpen(true); };
+  const openNote = (r: AttendanceRec) => { setNoteRec(r); setNoteText(''); setNoteOpen(true); };
 
   const [punchesOpen, setPunchesOpen] = useState(false);
   const [punchesRec, setPunchesRec] = useState<AttendanceRec | null>(null);
@@ -78,7 +97,9 @@ export function AttendanceScreen({ records, summary, shifts: _shifts, canWrite, 
     setPunches(null);
     setPunchesOpen(true);
     const dateKey = new Date(r.date).toISOString().slice(0, 10);
-    setPunches(await listPunchesForDayAction(r.employee.id, dateKey));
+    const res = await listPunchesForDayAction(r.employee.id, dateKey);
+    if (settle(res) && res.ok) setPunches(res.value);
+    else setPunchesOpen(false);
   };
 
   const dailyCols: Column<AttendanceRec>[] = [
@@ -95,18 +116,19 @@ export function AttendanceScreen({ records, summary, shifts: _shifts, canWrite, 
     } as Column<AttendanceRec>] : []),
     { key: 'emp', header: 'Employee', render: (r) => <div><div className="font-medium">{r.employee?.name ?? '—'}</div><div className="text-xs text-slate-500">{r.employee?.employeeCode}</div></div> },
     { key: 'shift', header: 'Shift', render: (r) => <span>{r.shift ? `${r.shift.name} (${r.shift.startTime}–${r.shift.endTime})` : '—'}</span> },
-    { key: 'in', header: 'Clock In', render: (r) => <span>{fmtTime(r.clockIn)}</span> },
-    { key: 'out', header: 'Clock Out', render: (r) => <span>{fmtTime(r.clockOut)}{r.approvedOut ? <span className="ml-1 text-xs text-green-600">✓</span> : null}</span> },
+    { key: 'in', header: 'Clock In', render: (r) => <span>{fmtTime(r.clockIn, timeZone)}</span> },
+    { key: 'out', header: 'Clock Out', render: (r) => <span>{fmtTime(r.clockOut, timeZone)}{r.approvedOut ? <span className="ml-1 text-xs text-green-600">✓</span> : null}</span> },
     { key: 'status', header: 'Status', render: (r) => <StatusBadge tone={STATUS_TONE[r.status] ?? 'neutral'}>{r.status.replace(/_/g, ' ')}</StatusBadge> },
     { key: 'late', header: 'Late', render: (r) => <span>{fmtMin(r.lateMinutes)}</span> },
     { key: 'ot', header: 'OT', render: (r) => <span>{fmtMin(r.otMinutes)}</span> },
     { key: 'actions', header: '', render: (r) => (
       <div className="flex gap-2 justify-end">
-        {canWrite && !r.clockIn && <Button variant="ghost" onClick={() => startTransition(async () => { await clockInAction(r.employee!.id); })}>Clock In</Button>}
-        {canWrite && r.clockIn && !r.clockOut && <Button variant="ghost" onClick={() => startTransition(async () => { await clockOutAction(r.id); })}>Clock Out</Button>}
-        {canWrite && r.clockOut && !r.approvedOut && <Button variant="ghost" onClick={() => startTransition(async () => { await approveClockOutAction(r.id); })}>Approve Out</Button>}
+        {canWrite && !r.clockIn && <Button variant="ghost" onClick={() => startTransition(async () => { settle(await clockInAction(r.employee!.id)); })}>Clock In</Button>}
+        {canWrite && r.clockIn && !r.clockOut && <Button variant="ghost" onClick={() => startTransition(async () => { settle(await clockOutAction(r.id)); })}>Clock Out</Button>}
+        {canWrite && r.clockOut && !r.approvedOut && <Button variant="ghost" onClick={() => startTransition(async () => { settle(await approveClockOutAction(r.id)); })}>Approve Out</Button>}
         {(r.clockIn || r.clockOut) && <Button variant="ghost" onClick={() => openPunches(r)}>Punches</Button>}
         {canWrite && <Button variant="ghost" onClick={() => openEdit(r)}>Edit</Button>}
+        {canNote && !canWrite && <Button variant="ghost" onClick={() => openNote(r)}>Add note</Button>}
       </div>
     )},
   ];
@@ -125,7 +147,7 @@ export function AttendanceScreen({ records, summary, shifts: _shifts, canWrite, 
         <h1 className="text-xl font-semibold text-slate-900">Attendance</h1>
         <div className="flex gap-2">
           <Link href="/mis/attendance?view=daily" className={`inline-flex min-h-11 items-center rounded-lg px-3 text-base font-medium ${view === 'daily' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Daily</Link>
-          <Link href="/mis/attendance?view=monthly" className={`inline-flex min-h-11 items-center rounded-lg px-3 text-base font-medium ${view === 'monthly' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Monthly ({month}/{year})</Link>
+          <Link href="/mis/attendance?view=monthly" className={`inline-flex min-h-11 items-center rounded-lg px-3 text-base font-medium ${view === 'monthly' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Monthly ({monthKey})</Link>
           {/* D28 — the same door (attendance.write) that already gates clock-in/out edits on this screen. */}
           {canWrite && (
             <Link href="/mis/attendance/extra-pay" className="inline-flex min-h-11 items-center rounded-lg bg-indigo-50 px-3 text-base font-medium text-indigo-700 hover:bg-indigo-100">
@@ -134,6 +156,18 @@ export function AttendanceScreen({ records, summary, shifts: _shifts, canWrite, 
           )}
         </div>
       </div>
+
+      {view === 'monthly' && (
+        <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+          Month
+          <input
+            type="month"
+            value={monthKey}
+            onChange={(e) => { if (e.target.value) router.push(`/mis/attendance?view=monthly&month=${e.target.value}`); }}
+            className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900"
+          />
+        </label>
+      )}
 
       <div>
         <input type="search" placeholder="Search employee…" value={empSearch} onChange={e => setEmpSearch(e.target.value)} className="w-full max-w-sm min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500" />
@@ -165,9 +199,20 @@ export function AttendanceScreen({ records, summary, shifts: _shifts, canWrite, 
             </select>
           </div>
           <Input label="Notes" value={editNotes} onChange={e => setEditNotes(e.target.value)} />
+          <Input label="Reason (only for a closed month; Owner)" value={editReason} onChange={e => setEditReason(e.target.value)} />
           <div className="flex gap-2 pt-2">
-            <Button onClick={() => startTransition(async () => { if (editRec) { await editAttendanceAction(editRec.id, { status: editStatus, notes: editNotes }); setEditOpen(false); } })} disabled={isPending}>Save</Button>
+            <Button onClick={() => startTransition(async () => { if (editRec) { const override = editReason.trim().length >= 3 ? { reason: editReason.trim() } : undefined; if (settle(await editAttendanceAction(editRec.id, { status: editStatus, notes: editNotes }, override))) setEditOpen(false); } })} disabled={isPending}>Save</Button>
             <Button variant="ghost" onClick={() => setEditOpen(false)}>Cancel</Button>
+          </div>
+        </div>
+      </SlideOver>
+
+      <SlideOver open={noteOpen} onClose={() => setNoteOpen(false)} title={noteRec?.employee ? `Add note — ${noteRec.employee.name}` : 'Add note'}>
+        <div className="flex flex-col gap-4 p-4">
+          <Input label="Note (up to 500 characters)" value={noteText} onChange={e => setNoteText(e.target.value)} />
+          <div className="flex gap-2 pt-2">
+            <Button onClick={() => startTransition(async () => { if (noteRec && settle(await addAttendanceNoteAction(noteRec.id, noteText))) setNoteOpen(false); })} disabled={isPending || !noteText.trim()}>Save note</Button>
+            <Button variant="ghost" onClick={() => setNoteOpen(false)}>Cancel</Button>
           </div>
         </div>
       </SlideOver>
@@ -182,7 +227,7 @@ export function AttendanceScreen({ records, summary, shifts: _shifts, canWrite, 
                 <li key={p.id} className="py-2">
                   <div className="flex items-center justify-between">
                     <span className="font-medium text-slate-900">{p.direction === 'IN' ? 'Clock In' : 'Clock Out'}</span>
-                    <span className="font-mono text-sm text-slate-500">{fmtTime(p.punchedAt)}</span>
+                    <span className="font-mono text-sm text-slate-500">{fmtTime(p.punchedAt, timeZone)}</span>
                   </div>
                   <div className="mt-0.5 text-xs text-slate-500">
                     {p.deviceName ?? 'Portal'}

@@ -45,8 +45,9 @@ beforeEach(() => {
 });
 
 describe('permission gating (MIS-206)', () => {
-  it('listDocuments needs orders.read — STORE_GUY (no orders.read) is refused', async () => {
-    getMisRole.mockResolvedValue('STORE_GUY');
+  it('listDocuments needs orders.read — ATTENDANCE_OPERATOR (no orders.read) is refused', async () => {
+    // R3 B64: this used STORE_GUY, who now holds orders.read.
+    getMisRole.mockResolvedValue('ATTENDANCE_OPERATOR');
     await expect(listDocuments('ord-1')).rejects.toThrow();
   });
 

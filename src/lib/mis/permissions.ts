@@ -21,6 +21,8 @@ export const MIS_ACTIONS = [
   'qc.write',
   'attendance.read',
   'attendance.write',
+  // R3 B64: add a note to a register row; no status/time change.
+  'attendance.note',
   'reports.read',
   'settings.read',
   'settings.write',
@@ -30,9 +32,8 @@ export const MIS_ACTIONS = [
   // change here silently re-scores every QC sample going forward, so it is
   // not something Admin's general settings.write should reach.
   'aql.read',
-  // MIS user management. Owner only — ADMIN may view via employees.read but
-  // never invite or grant a role (MIS-11/E1-08). Viewing an existing
-  // employee's role change still goes through employees.write, unchanged.
+  // MIS user management. Owner only. Admin may set roles strictly below ADMIN on employee rows (B41);
+  // never ADMIN or OWNER. Viewing an existing employee's role change still goes through employees.write.
   'users.invite',
   // Inventory, PO, GRN
   'inventory.read',
@@ -99,6 +100,7 @@ const MATRIX: Record<MisRoleName, readonly MisAction[]> = {
     'qc.write',
     'attendance.read',
     'attendance.write',
+    'attendance.note',
     'reports.read',
     'settings.read',
     'settings.write',
@@ -129,7 +131,9 @@ const MATRIX: Record<MisRoleName, readonly MisAction[]> = {
     'production.read',
     'production.write',
     'qc.read',
+    'qc.write', // R3 B64
     'attendance.read',
+    'attendance.note', // R3 B64
     'reports.read',
     'inventory.read',
     'grn.read',
@@ -146,13 +150,15 @@ const MATRIX: Record<MisRoleName, readonly MisAction[]> = {
     'employees.read',
     'attendance.read',
     'attendance.write',
+    'attendance.note', // R3 B64
     'reports.read',
     'queue.review',
   ],
 
-  ATTENDANCE_OPERATOR: ['employees.read', 'attendance.read', 'attendance.write'],
+  ATTENDANCE_OPERATOR: ['employees.read', 'attendance.read', 'attendance.write', 'attendance.note' /* R3 B64 */],
 
   STORE_GUY: [
+    'orders.read', // R3 B64: read-only Orders tab, no prices
     'inventory.read',
     'grn.read',
     'grn.write',

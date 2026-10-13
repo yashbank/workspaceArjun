@@ -88,7 +88,7 @@ const { getDocumentLibrary, saveDocumentLink } = await import('./document-librar
 
 const NOW = new Date('2026-09-10T10:00:00Z');
 const at = (iso: string) => new Date(`${iso}+05:30`);
-const READERS: MisRoleName[] = ['OWNER', 'ADMIN', 'SUPERVISOR', 'QC'];
+const READERS: MisRoleName[] = ['OWNER', 'ADMIN', 'SUPERVISOR', 'QC', 'STORE_GUY']; // R3 B64: STORE_GUY holds orders.read
 const WRITERS: MisRoleName[] = ['OWNER', 'ADMIN'];
 const as = (role: MisRoleName) => { getCurrentUser.mockResolvedValue({ id: 'u1', authId: 'auth-1' }); getMisRole.mockResolvedValue(role); };
 const forbidden = async (fn: () => Promise<unknown>) => { try { await fn(); return false; } catch (e) { return (e as Error).name === 'MisForbiddenError'; } };

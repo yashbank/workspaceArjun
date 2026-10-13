@@ -13,6 +13,7 @@ import {
   isUuid,
   parkable,
   rejectable,
+  type ParkReason,
   type QueuedWriteEnvelope,
   type QueuedWriteKind,
 } from '@/lib/mis/offline/idempotency';
@@ -83,7 +84,12 @@ export type PunchResult = {
   dayRebuilt: boolean;
   /** Set when a person had edited that day by hand, so the punch was kept but the day was not touched. */
   dayHeld: 'EDITED_BY_HAND' | null;
+  /** R3 B58: additive. ALREADY_IN = an IN was absorbed by an open stretch; NO_OPEN_IN = an OUT with no IN to pair with. */
+  note?: 'ALREADY_IN' | 'NO_OPEN_IN';
 };
+
+/** Who may confirm a face at the gate (R3 B57). */
+const OPERATOR_ROLES = ['ATTENDANCE_OPERATOR', 'SUPER_ATTENDANCE_OPERATOR', 'ADMIN', 'OWNER'];
 
 type Source =
   | { kind: 'device'; deviceId: string; revoked: boolean }
@@ -153,8 +159,21 @@ async function applyPunch(
     where: { isActive: true },
     select: { id: true, name: true, startTime: true, endTime: true },
   });
-  // The tablet's shift is a hint, not a fact: use it only if it names a real active shift.
-  const hintShiftId = payload.shiftId && shifts.some((s) => s.id === payload.shiftId) ? payload.shiftId : null;
+  // R3 B57: a named gate operator must be an active employee who may run the gate. Not retryable.
+  if (payload.operatorId) {
+    const op = await tx.misEmployee.findFirst({
+      where: { id: payload.operatorId },
+      select: { id: true, role: true, isActive: true, deletedAt: true },
+    });
+    if (!op || !op.isActive || op.deletedAt || !OPERATOR_ROLES.includes(String(op.role))) {
+      throw rejectable('BAD_OPERATOR' as ParkReason, 'The gate operator on this punch is not an active attendance operator.');
+    }
+  }
+  // The tablet's shift is a hint, not a fact: it must name a real active shift (R3 B57), else the punch is refused.
+  if (payload.shiftId && !shifts.some((s) => s.id === payload.shiftId)) {
+    throw rejectable('BAD_SHIFT' as ParkReason, 'The shift on this punch is not an active shift.');
+  }
+  const hintShiftId = payload.shiftId ?? null;
 
   // The day is a function of ALL this person's active punches (D20). Superseded ones
   // are not active — `supersededBy: null` is "nothing has replaced me".
@@ -183,9 +202,11 @@ async function applyPunch(
 
   // Which day is this punch for? Normally the day it landed in; a repeated clock-in
   // inside a stretch is absorbed by it, so fall back to where it would have gone.
-  const workDate =
-    [...after.values()].find((d) => d.punchIds.includes(punchId))?.workDate ??
-    workDateFor(recordedAt, shifts, timeZone, hintShiftId).workDate;
+  const ownDay = [...after.values()].find((d) => d.punchIds.includes(punchId));
+  const workDate = ownDay?.workDate ?? workDateFor(recordedAt, shifts, timeZone, hintShiftId).workDate;
+  // R3 B58: say so when the punch changed nothing the person would expect.
+  const note: PunchResult['note'] =
+    direction === 'IN' && !ownDay ? 'ALREADY_IN' : direction === 'OUT' && ownDay && !ownDay.clockIn ? 'NO_OPEN_IN' : undefined;
 
   if (!overrideFlags?.skipEmployeeChecks && !isWithinCorrectionWindow(workDate, new Date(), windowDays, timeZone)) {
     throw parkable(
@@ -305,6 +326,7 @@ async function applyPunch(
       workDate,
       dayRebuilt,
       dayHeld,
+      ...(note ? { note } : {}),
     },
   };
 }
