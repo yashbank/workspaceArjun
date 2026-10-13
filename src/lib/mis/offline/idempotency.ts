@@ -55,6 +55,7 @@ export type ParkReason =
   | 'PHASE_NOT_ACTIVE'
   | 'PHASE_AMBIGUOUS'
   | 'ORDER_CLOSED'
+  | 'ORDER_NOT_STARTED' // R3 B113: the order is still a DRAFT
   | 'FORBIDDEN'
   | 'PREDECESSOR_PARKED'
   | 'CLOCK_SKEW'
@@ -92,6 +93,7 @@ export type ParkReason =
  */
 export const RETRYABLE_PARK_REASONS: ReadonlySet<ParkReason> = new Set<ParkReason>([
   'ORDER_CLOSED',
+  'ORDER_NOT_STARTED',
   'PHASE_SIGNED_OFF',
   'PHASE_NOT_ACTIVE',
   'PHASE_AMBIGUOUS',

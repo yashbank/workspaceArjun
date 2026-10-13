@@ -1,6 +1,7 @@
 'use server';
 import type { QueuedWriteEnvelope } from '@/lib/mis/offline/idempotency';
-import { getProductionFormContext, submitProductionLog, type ProductionLogPayload } from '@/server/mis/production';
+import { asResult } from '@/lib/mis/action-result';
+import { editProductionLog, getProductionFormContext, submitProductionLog, type ProductionLogPatch, type ProductionLogPayload } from '@/server/mis/production';
 import { isMisForbiddenError } from '@/server/mis/auth';
 import { clearLine, listClearanceHistory } from '@/server/mis/line-clearance';
 import { revalidatePath } from 'next/cache';
@@ -42,37 +43,51 @@ export async function replayProductionAction(envelope: Envelope, retry = false) 
 }
 
 /**
- * Returns an outcome for the same reason the two above do: `clearLine` throws
- * `MisForbiddenError` for a role that may not clear, and in a production build
- * the screen would see a generic string instead of "only a supervisor can".
+ * R3 B127: every action below returns an `ActionResult`, so a refusal reaches the screen as data
+ * (React hides a thrown message in production). `clearLine`'s permission refusal is translated
+ * into a sentence here rather than escaping to the error boundary, as it always was.
  */
 export async function clearLineAction(data: { machineId: string; orderId?: string | null; notes?: string }) {
-  try {
-    await clearLine(data);
-  } catch (error) {
-    if (isMisForbiddenError(error)) {
-      return { ok: false as const, detail: 'Only a supervisor or above can clear a line.' };
+  const result = await asResult(async () => {
+    try {
+      await clearLine(data);
+    } catch (error) {
+      if (isMisForbiddenError(error)) throw new Error('Only a supervisor or above can clear a line.');
+      throw error;
     }
-    throw error;
+  });
+  if (result.ok) {
+    revalidatePath('/mis/production');
+    revalidatePath('/mis');
   }
-  revalidatePath('/mis/production');
-  revalidatePath('/mis');
-  return { ok: true as const };
+  return result;
 }
 
 export async function getClearanceHistoryAction(machineId: string) {
-  const rows = await listClearanceHistory(machineId, 5);
-  return rows.map((r) => ({
-    id: r.id,
-    mode: r.mode,
-    clearedAt: r.clearedAt.toISOString(),
-    expiresAt: r.expiresAt ? r.expiresAt.toISOString() : null,
-    orderNumber: r.order?.orderNumber ?? null,
-    shiftName: r.shift?.name ?? null,
-  }));
+  return asResult(async () => {
+    const rows = await listClearanceHistory(machineId, 5);
+    return rows.map((r) => ({
+      id: r.id,
+      mode: r.mode,
+      clearedAt: r.clearedAt.toISOString(),
+      expiresAt: r.expiresAt ? r.expiresAt.toISOString() : null,
+      orderNumber: r.order?.orderNumber ?? null,
+      shiftName: r.shift?.name ?? null,
+    }));
+  });
 }
 
 /** Stages of the chosen order's BOM and its allocated machine(s), to fill the log form (#18, #39). */
 export async function getProductionFormContextAction(orderId: string) {
-  return getProductionFormContext(orderId);
+  return asResult(() => getProductionFormContext(orderId));
+}
+
+/** R3 B126: edit an entry within 24 h. */
+export async function editProductionLogAction(id: string, patch: ProductionLogPatch) {
+  const result = await asResult(async () => {
+    const rec = await editProductionLog(id, patch);
+    return { id: rec.id, orderId: rec.orderId };
+  });
+  if (result.ok) revalidateFor(result.value.orderId);
+  return result;
 }

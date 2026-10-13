@@ -8,17 +8,32 @@ import { NumberInput, Input, DateInput } from '@/components/mis/kit/input';
 import { Select } from '@/components/mis/kit/select';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
-import { clearLineAction } from '@/app/(mis)/mis/production/actions';
+import { clearLineAction, editProductionLogAction } from '@/app/(mis)/mis/production/actions';
 import { useT } from '@/components/mis/shell/locale-provider';
 import { PendingSyncNote } from '@/components/mis/shell/pending-sync-note';
 import { useToast } from '@/components/ui/toast';
 import { newIdempotencyKey, type ParkReason } from '@/lib/mis/offline/idempotency';
 import { isClearanceBlock, submitProduction } from './submit-production';
 import { fmtDate, fmtTime } from '@/lib/mis/client-dates';
-import { DEFAULT_PRODUCTION_UNIT, machineMismatchNote, preselectMachine, type SelectChoice } from '@/lib/mis/production-form';
+import {
+  canEditLogNow,
+  crewFirst,
+  DEFAULT_PRODUCTION_UNIT,
+  isClosedOrderStatus,
+  machineMismatchNote,
+  preselectMachine,
+  validateQuantities,
+  type SelectChoice,
+} from '@/lib/mis/production-form';
+import { formatQty } from '@/lib/mis/qty-by-unit';
+import type { ProductionWarning } from '@/server/mis/production';
 
 type Log = {
   id: string;
+  /** The log's phase is SIGNED_OFF, so it can no longer be edited (R3 B126). */
+  phaseSigned?: boolean;
+  machineId?: string | null;
+  employeeId?: string | null;
   loggedAt: Date | string;
   qtyProduced: number | string;
   qtyWaste: number | string;
@@ -29,7 +44,8 @@ type Log = {
   shift: { name: string } | null;
 };
 
-type Summary = { totalProduced: number; totalWaste: number; entries: number };
+type UnitTotal = { unit: string; produced: number; waste: number; wastePercent: number | null };
+type Summary = { totalProduced: number; totalWaste: number; entries: number; byUnit?: UnitTotal[] };
 type Order = { id: string; orderNumber: string; status: string; customer: { name: string } | null };
 type Person = { id: string; name: string };
 
@@ -48,18 +64,22 @@ interface Props {
   allocatedMachines: Person[];
   canWrite: boolean;
   userId: string;
+  /** machineId -> employee ids booked on it now (R3 B122); the picker lists them first. */
+  crewByMachine?: Record<string, string[]>;
+  /** The factory's today as YYYY-MM-DD, from the server (R3 B120). */
+  factoryToday?: string;
+  /** Server time at render, for the 24 h edit window (R3 B126). */
+  nowIso?: string;
 }
 
-function todayIso() {
-  return new Date().toISOString().slice(0, 10);
-}
 
 function fmt(dt: Date | string) {
   const d = typeof dt === 'string' ? new Date(dt) : dt;
   return fmtDate(d, { day: '2-digit', month: 'short' }) + ' ' + fmtTime(d, { hour: '2-digit', minute: '2-digit', hour12: true });
 }
 
-export function ProductionDetailScreen({ order, logs, summary, operators, machines, units, stages, allocatedMachines, canWrite, userId }: Props) {
+export function ProductionDetailScreen({ order, logs, summary, operators, machines, units, stages, allocatedMachines, canWrite, userId, crewByMachine = {}, factoryToday = '', nowIso }: Props) {
+  const todayIso = () => factoryToday;
   const t = useT();
   const { toast } = useToast();
   // One key per form, made when the form starts — see production-screen.tsx.
@@ -78,10 +98,22 @@ export function ProductionDetailScreen({ order, logs, summary, operators, machin
   const [isPending, startTransition] = useTransition();
   const [isClearing, startClearing] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [editing, setEditing] = useState<Log | null>(null);
+  const [editQty, setEditQty] = useState('');
+  const [editWaste, setEditWaste] = useState('');
+  const [editNotes, setEditNotes] = useState('');
+  const [isEditing, startEditing] = useTransition();
 
-  const unit = logs[0]?.unit ?? DEFAULT_PRODUCTION_UNIT;
+  const closed = isClosedOrderStatus(order.status);
+  const now = nowIso ? new Date(nowIso) : new Date(0);
+  const unitTotals: UnitTotal[] =
+    summary.byUnit && summary.byUnit.length > 0
+      ? summary.byUnit
+      : [{ unit: logs[0]?.unit ?? DEFAULT_PRODUCTION_UNIT, produced: Number(summary.totalProduced), waste: Number(summary.totalWaste), wastePercent: null }];
+  const operatorChoices = crewFirst(operators, machineId ? (crewByMachine[machineId] ?? []) : []);
+
   const machineNote = machineMismatchNote(machineId, allocatedMachines);
-  const produced = summary.totalProduced;
 
   const machineOptions = machines.map((m) => ({ value: m.id, label: m.name }));
 
@@ -93,6 +125,8 @@ export function ProductionDetailScreen({ order, logs, summary, operators, machin
 
   const handleLog = () => startTransition(async () => {
     if (!machineId) { setError('Select a machine before logging production.'); return; }
+    const invalid = validateQuantities(qty, waste);
+    if (invalid) { setError(invalid); return; }
     setError(null);
     setBlockedReason(undefined);
     const outcome = await submitProduction({
@@ -116,6 +150,7 @@ export function ProductionDetailScreen({ order, logs, summary, operators, machin
 
     switch (outcome.kind) {
       case 'APPLIED':
+        setNotice(outcome.warnings && outcome.warnings.length > 0 ? outcome.warnings.map((w: ProductionWarning) => w.message).join(' ') : null);
         resetForm();
         setOpen(false);
         break;
@@ -165,24 +200,37 @@ export function ProductionDetailScreen({ order, logs, summary, operators, machin
           <Link href={`/mis/print/job-card/${order.id}`} target="_blank">
             <Button variant="ghost">Print Job Card</Button>
           </Link>
-          {canWrite && <Button onClick={() => setOpen(true)}>+ Log Production</Button>}
+          {canWrite && !closed && <Button onClick={() => setOpen(true)}>+ Log Production</Button>}
+          {canWrite && closed && <span className="self-center text-sm text-gray-500">Order is {order.status.toLowerCase().replace(/_/g, ' ')}</span>}
         </div>
       </div>
 
       <PendingSyncNote />
 
-      {/* Progress & Stats */}
+      {notice && (
+        <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          {notice}
+        </p>
+      )}
+
+      {/* Progress & Stats - per unit, never one mixed sum (R3 B124) */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <div className="text-xs text-gray-500 mb-1">Total Produced</div>
-          <div className="text-2xl font-bold text-gray-900">{Number(produced).toFixed(1)} <span className="text-sm font-normal text-gray-500">{unit}</span></div>
+          {unitTotals.map((u) => (
+            <div key={u.unit} className="text-2xl font-bold text-gray-900">{formatQty(u.produced)} <span className="text-sm font-normal text-gray-500">{u.unit}</span></div>
+          ))}
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <div className="text-xs text-gray-500 mb-1">Total Waste</div>
-          <div className="text-2xl font-bold text-orange-500">{Number(summary.totalWaste).toFixed(1)} <span className="text-sm font-normal text-gray-500">{unit}</span></div>
-          <div className="text-xs text-gray-400 mt-0.5">
-            {produced > 0 ? ((Number(summary.totalWaste) / (produced + Number(summary.totalWaste))) * 100).toFixed(1) : 0}% waste rate
-          </div>
+          {unitTotals.map((u) => (
+            <div key={u.unit}>
+              <div className="text-2xl font-bold text-orange-500">{formatQty(u.waste)} <span className="text-sm font-normal text-gray-500">{u.unit}</span></div>
+              <div className="text-xs text-gray-400 mt-0.5">
+                {u.produced + u.waste > 0 ? ((u.waste / (u.produced + u.waste)) * 100).toFixed(1) : 0}% waste rate
+              </div>
+            </div>
+          ))}
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <div className="text-xs text-gray-500 mb-1">Log Entries</div>
@@ -206,6 +254,7 @@ export function ProductionDetailScreen({ order, logs, summary, operators, machin
                 <th className="px-5 py-3 text-left font-medium">Machine</th>
                 <th className="px-5 py-3 text-left font-medium">Operator</th>
                 <th className="px-5 py-3 text-left font-medium">Notes</th>
+                {canWrite && <th className="px-5 py-3" />}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
@@ -217,6 +266,24 @@ export function ProductionDetailScreen({ order, logs, summary, operators, machin
                   <td className="px-5 py-3 text-gray-500">{log.machine?.name ?? '—'}</td>
                   <td className="px-5 py-3 text-gray-500">{log.employee?.name ?? '—'}</td>
                   <td className="px-5 py-3 text-gray-400 max-w-xs truncate">{log.notes ?? '—'}</td>
+                  {canWrite && (
+                    <td className="px-5 py-3 text-right">
+                      {canEditLogNow(log, order.status, now) && (
+                        <Button
+                          variant="ghost"
+                          onClick={() => {
+                            setEditing(log);
+                            setEditQty(String(Number(log.qtyProduced)));
+                            setEditWaste(String(Number(log.qtyWaste)));
+                            setEditNotes(log.notes ?? '');
+                            setError(null);
+                          }}
+                        >
+                          Edit
+                        </Button>
+                      )}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -238,7 +305,7 @@ export function ProductionDetailScreen({ order, logs, summary, operators, machin
           <Select
             label="Operator"
             value={employeeId}
-            options={operators}
+            options={operatorChoices}
             onChange={setEmployeeId}
             placeholder="Select an employee…"
           />
@@ -278,6 +345,36 @@ export function ProductionDetailScreen({ order, logs, summary, operators, machin
           <div className="flex gap-2 pt-2">
             <Button onClick={handleLog} disabled={isPending || !qty || !machineId}>Log</Button>
             <Button variant="ghost" onClick={() => { setOpen(false); setError(null); }}>Cancel</Button>
+          </div>
+        </div>
+      </SlideOver>
+
+      {/* Edit an entry within 24 h (R3 B126) */}
+      <SlideOver open={editing !== null} onClose={() => setEditing(null)} title="Edit entry">
+        <div className="flex flex-col gap-4 p-4">
+          <NumberInput label="Qty Produced" value={editQty} onChange={(e) => setEditQty(e.target.value)} />
+          <NumberInput label="Qty Waste" value={editWaste} onChange={(e) => setEditWaste(e.target.value)} />
+          <Input label="Notes" value={editNotes} onChange={(e) => setEditNotes(e.target.value)} />
+          {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+          <div className="flex gap-2 pt-2">
+            <Button
+              disabled={isEditing}
+              onClick={() =>
+                startEditing(async () => {
+                  const invalid = validateQuantities(editQty, editWaste);
+                  if (invalid) { setError(invalid); return; }
+                  const res = await editProductionLogAction(editing!.id, {
+                    qtyProduced: parseFloat(editQty),
+                    qtyWaste: editWaste ? parseFloat(editWaste) : 0,
+                    notes: editNotes,
+                  });
+                  if (res.ok) { setEditing(null); setError(null); } else { setError(res.detail); }
+                })
+              }
+            >
+              Save
+            </Button>
+            <Button variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
           </div>
         </div>
       </SlideOver>

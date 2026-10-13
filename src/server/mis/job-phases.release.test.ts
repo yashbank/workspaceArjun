@@ -9,7 +9,8 @@ const getMisRole = vi.fn();
 vi.mock('@/server/mis/roles', () => ({ getMisRole: (...a: unknown[]) => getMisRole(...a) }));
 
 type Alloc = { id: string; machineId: string; orderId: string; jobPhaseId: string | null; startsAt: Date; endsAt: Date; releasedAt: Date | null };
-const state: { allocs: Alloc[] } = { allocs: [] };
+type Worker = { id: string; employeeId: string; machineAllocationId: string; releasedAt: Date | null; deletedAt: Date | null };
+const state: { allocs: Alloc[]; workers: Worker[] } = { allocs: [], workers: [] };
 
 const phaseFindFirst = vi.fn();
 const phaseUpdate = vi.fn();
@@ -59,6 +60,19 @@ const dbMock = {
       return { count: hit.length };
     },
   },
+  // B118: signOffPhase now frees the crew through allocation-release.ts, which reads/updates
+  // worker rows. Mock plumbing only: the pre-existing expectations above are unchanged.
+  misWorkerAllocation: {
+    findMany: async ({ where }: { where: { machineAllocationId?: { in: string[] } } }) =>
+      state.workers.filter(
+        (w) => w.releasedAt === null && w.deletedAt === null && (where.machineAllocationId?.in ?? []).includes(w.machineAllocationId),
+      ),
+    updateMany: async ({ where, data }: { where: { id: { in: string[] } }; data: { releasedAt: Date } }) => {
+      const hit = state.workers.filter((w) => where.id.in.includes(w.id) && w.releasedAt === null);
+      hit.forEach((w) => { w.releasedAt = data.releasedAt; });
+      return { count: hit.length };
+    },
+  },
   $transaction: (fn: (tx: unknown) => unknown) => fn(dbMock),
 };
 vi.mock('@/server/db', () => ({ db: dbMock }));
@@ -89,6 +103,7 @@ beforeEach(() => {
     { id: 'a1', machineId: 'm1', orderId: 'ord-1', jobPhaseId: 'ph-1', startsAt: new Date(now - hour), endsAt: new Date(now + hour), releasedAt: null },
     { id: 'a2', machineId: 'm2', orderId: 'ord-1', jobPhaseId: 'ph-OTHER', startsAt: new Date(now - hour), endsAt: new Date(now + hour), releasedAt: null },
   ];
+  state.workers = [];
 });
 
 describe('signOffPhase releases the phase machine (#42/#44)', () => {
@@ -123,6 +138,33 @@ describe('signOffPhase releases the phase machine (#42/#44)', () => {
     getCurrentUser.mockResolvedValue({ id: 'someone-else' });
     await expect(signOffPhase('ph-1')).rejects.toMatchObject({ reason: 'NOT_THE_IN_CHARGE' });
     expect(state.allocs[0].releasedAt).toBeNull();
+  });
+});
+
+describe('signOffPhase frees the crew (R3 B118)', () => {
+  const stamp = new Date(Date.now() - 5 * hour);
+  const worker = (id: string, machineAllocationId: string, releasedAt: Date | null = null): Worker => ({
+    id, employeeId: `emp-${id}`, machineAllocationId, releasedAt, deletedAt: null,
+  });
+
+  it('releases the booking and its 4 worker rows together', async () => {
+    state.workers = [worker('w1', 'a1'), worker('w2', 'a1'), worker('w3', 'a1'), worker('w4', 'a1'), worker('w5', 'a2')];
+    await signOffPhase('ph-1');
+    expect(state.allocs[0].releasedAt).toBeInstanceOf(Date);
+    const at = state.allocs[0].releasedAt as Date;
+    expect(state.workers.slice(0, 4).every((w) => w.releasedAt?.getTime() === at.getTime())).toBe(true);
+    // The other phase's crew is untouched.
+    expect(state.workers[4].releasedAt).toBeNull();
+    const reasons = mockAudit.mock.calls.map((c) => c[0]).filter((e) => e.action === 'RELEASE_WORKER');
+    expect(reasons).toHaveLength(4);
+    expect(reasons[0].after.reason).toBe('PHASE_SIGNED_OFF');
+  });
+
+  it('keeps the stamp of a worker row that was already released', async () => {
+    state.workers = [worker('w1', 'a1', stamp), worker('w2', 'a1')];
+    await signOffPhase('ph-1');
+    expect(state.workers[0].releasedAt).toBe(stamp);
+    expect(state.workers[1].releasedAt).toBeInstanceOf(Date);
   });
 });
 

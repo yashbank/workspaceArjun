@@ -3,6 +3,9 @@ import { BPR_WORKFLOW, processNameKey } from '@/lib/mis/bpr-workflow';
 import { db } from '@/server/db';
 import { requirePermission, type MisActor } from '@/server/mis/auth';
 import { logAuditEvent } from '@/server/mis/audit';
+import * as allocationRelease from '@/server/mis/allocation-release';
+import { isOrderClosed } from '@/lib/mis/order-status';
+import { NO_UNIT, normaliseUnit, sumByUnit } from '@/lib/mis/qty-by-unit';
 
 /**
  * The phase sign-off and handover gate.
@@ -288,7 +291,7 @@ export async function startPhase(phaseId: string) {
 
 export type SignOffBlocker =
   | { kind: 'NO_PRODUCTION' }
-  | { kind: 'WASTE_REASON'; logId: string; loggedAt: Date; qtyWaste: number }
+  | { kind: 'WASTE_REASON'; logId: string; loggedAt: Date; qtyWaste: number; unit?: string }
   | { kind: 'QC_FAILURE'; checkId: string; parameterName: string | null; checkTime: Date };
 
 /**
@@ -307,7 +310,7 @@ async function collectSignOffBlockers(phase: PhaseWithRefs): Promise<SignOffBloc
 
   const logs = await db.misProductionLog.findMany({
     where: { jobPhaseId: phase.id },
-    select: { id: true, qtyWaste: true, wasteReason: true, loggedAt: true },
+    select: { id: true, qtyWaste: true, wasteReason: true, loggedAt: true, unit: true },
     orderBy: { loggedAt: 'asc' },
   });
 
@@ -316,7 +319,7 @@ async function collectSignOffBlockers(phase: PhaseWithRefs): Promise<SignOffBloc
   for (const log of logs) {
     const waste = Number(log.qtyWaste ?? 0);
     if (waste > 0 && !log.wasteReason?.trim()) {
-      blockers.push({ kind: 'WASTE_REASON', logId: log.id, loggedAt: log.loggedAt, qtyWaste: waste });
+      blockers.push({ kind: 'WASTE_REASON', logId: log.id, loggedAt: log.loggedAt, qtyWaste: waste, unit: log.unit });
     }
   }
 
@@ -385,7 +388,10 @@ export async function signOffPhase(phaseId: string, input?: { notes?: string }) 
   const next = await nextApplicablePhase(phase.orderId, phase.sequence);
   const notifyUserId = next?.inCharge?.userProfileId ?? null;
 
-  let releasedAllocations: { id: string; machineId: string }[] = [];
+  // R3-ORD contract (PR #90): the release helpers hand back `auditEvents` and the caller flushes
+  // them AFTER commit - nothing inside this interactive tx may touch the global db or audit.
+  // The cast is a shim that works before and after #90 lands; drop it after the rebase.
+  let releaseAudit: unknown;
   const rec = await db.$transaction(async (tx) => {
     const updated = await tx.misJobPhase.update({
       where: { id: phaseId },
@@ -397,21 +403,19 @@ export async function signOffPhase(phaseId: string, input?: { notes?: string }) 
       },
     });
 
-    // #42/#44 — signing a phase off frees the machine it held. Same semantics as
-    // `releaseMachine` (releasedAt = now on a still-open allocation); done inside this
-    // transaction so a rolled-back sign-off never leaves a machine released. Reopening a
-    // phase deliberately does NOT re-lock: the supervisor allocates again if they need to.
+    // #42/#44 + R3 B118 — signing a phase off frees the machine it held AND its crew, in this
+    // same transaction (a rolled-back sign-off never leaves them released). Already-released rows
+    // keep their stamp. Reopening a phase deliberately does NOT re-lock.
     const held = await tx.misMachineAllocation.findMany({
       where: { jobPhaseId: phaseId, releasedAt: null },
-      select: { id: true, machineId: true },
+      select: { id: true },
     });
-    if (held.length > 0) {
-      await tx.misMachineAllocation.updateMany({
-        where: { id: { in: held.map((h) => h.id) }, releasedAt: null },
-        data: { releasedAt: signedOffAt },
-      });
-      releasedAllocations = held;
-    }
+    const released = await allocationRelease.releaseMachineAllocations(
+      tx,
+      held.map((h) => h.id),
+      { reason: 'PHASE_SIGNED_OFF', actorUserId: actor.userId, at: signedOffAt },
+    );
+    releaseAudit = (released as { auditEvents?: unknown }).auditEvents;
 
     // Transactional on purpose: a notification that fires on a rolled-back
     // sign-off tells the next section to start work that never unblocked.
@@ -437,6 +441,8 @@ export async function signOffPhase(phaseId: string, input?: { notes?: string }) 
     return updated;
   });
 
+  const flush = (allocationRelease as { flushReleaseAudit?: (events: unknown) => Promise<void> }).flushReleaseAudit;
+  if (flush && releaseAudit) await flush(releaseAudit);
   await logAuditEvent({
     actorId: actor.userId,
     action: 'SIGN_OFF_PHASE',
@@ -451,15 +457,6 @@ export async function signOffPhase(phaseId: string, input?: { notes?: string }) 
       notifiedPhaseId: next?.id ?? null,
     },
   });
-  for (const a of releasedAllocations) {
-    await logAuditEvent({
-      actorId: actor.userId,
-      action: 'RELEASE_MACHINE',
-      entity: 'MisMachineAllocation',
-      entityId: a.id,
-      after: { machineId: a.machineId, releasedAt: signedOffAt.toISOString(), reason: 'PHASE_SIGNED_OFF', phaseId },
-    });
-  }
   return rec;
 }
 
@@ -724,12 +721,40 @@ export async function acknowledgeQcFailure(checkId: string, note?: string) {
   }
   if (check.acknowledgedAt) return check;
 
+  // R3 B116 — a closed order's records are frozen.
+  const order = await db.misOrder.findUnique({ where: { id: check.orderId }, select: { status: true } });
+  if (order && isOrderClosed(order.status)) {
+    throw new JobPhaseError('ILLEGAL_TRANSITION', 'This order is closed, so its failed checks can no longer be acknowledged.', { checkId });
+  }
+
+  // R3 B116 — only the in-charge of the check's phase may acknowledge; OWNER/ADMIN may too,
+  // with a written note (>= 3 chars) so the override is accountable.
+  const trimmedNote = note?.trim() || '';
+  const privileged = actor.role === 'OWNER' || actor.role === 'ADMIN';
+  const phases = await db.misJobPhase.findMany({
+    where: { orderId: check.orderId, deletedAt: null, bomStageId: check.bomStageId },
+    include: phaseInclude,
+  });
+  const isPhaseInCharge = phases.some((p) => isInCharge(p, actor));
+  if (!isPhaseInCharge) {
+    if (!privileged) {
+      throw new JobPhaseError(
+        'NOT_THE_IN_CHARGE',
+        'Only the in-charge of this phase can acknowledge its failed check.',
+        { checkId },
+      );
+    }
+    if (trimmedNote.length < 3) {
+      throw new JobPhaseError('REASON_REQUIRED', "Add a note of at least 3 characters to acknowledge this failure on the in-charge's behalf.", { checkId });
+    }
+  }
+
   const rec = await db.misQcCheck.update({
     where: { id: checkId },
     data: {
       acknowledgedAt: new Date(),
       acknowledgedById: actor.userId,
-      acknowledgementNote: note?.trim() || null,
+      acknowledgementNote: trimmedNote || null,
     },
   });
   await logAuditEvent({
@@ -749,6 +774,15 @@ export async function setWasteReason(productionLogId: string, reason: string) {
   if (!trimmed) {
     throw new JobPhaseError('REASON_REQUIRED', 'A wastage reason cannot be blank.', { productionLogId });
   }
+  // R3 B115 — a typed not-found, and a signed record is frozen until its phase is reopened.
+  const log = await db.misProductionLog.findUnique({
+    where: { id: productionLogId },
+    select: { id: true, wasteReason: true, jobPhase: { select: { status: true } } },
+  });
+  if (!log) throw new JobPhaseError('PHASE_NOT_FOUND', 'That production entry no longer exists.', { productionLogId });
+  if (log.jobPhase?.status === 'SIGNED_OFF') {
+    throw new JobPhaseError('ILLEGAL_TRANSITION', 'Reopen the phase to change a signed record.', { productionLogId });
+  }
   const rec = await db.misProductionLog.update({
     where: { id: productionLogId },
     data: { wasteReason: trimmed },
@@ -758,6 +792,7 @@ export async function setWasteReason(productionLogId: string, reason: string) {
     action: 'SET_WASTE_REASON',
     entity: 'MisProductionLog',
     entityId: rec.id,
+    before: { wasteReason: log.wasteReason },
     after: { wasteReason: trimmed },
   });
   return rec;
@@ -779,6 +814,8 @@ export type SignOffSummary = {
   wastePercent: number | null;
   entries: number;
   unit: string;
+  /** R3 B124 - per-unit figures; `output`/`waste`/`unit` above are the first unit only. Never summed across units. */
+  byUnit: { unit: string; produced: number; waste: number; wastePercent: number | null }[];
   /**
    * What the previous signed phase handed over, which is what this phase's
    * output is read against — the BPR's own "Received Sheets → Printed Sheets"
@@ -803,18 +840,26 @@ export async function getSignOffSummary(phaseId: string): Promise<SignOffSummary
     previousApplicablePhase(phase.orderId, phase.sequence),
   ]);
 
-  const output = logs.reduce((sum, l) => sum + Number(l.qtyProduced), 0);
-  const waste = logs.reduce((sum, l) => sum + Number(l.qtyWaste ?? 0), 0);
+  const producedBy = sumByUnit(logs.map((l) => ({ qty: Number(l.qtyProduced), unit: l.unit })));
+  const wasteBy = sumByUnit(logs.map((l) => ({ qty: Number(l.qtyWaste ?? 0), unit: l.unit })));
+  const byUnit = producedBy.map((p) => {
+    const w = wasteBy.find((x) => x.unit === p.unit)?.qty ?? 0;
+    return { unit: p.unit, produced: p.qty, waste: w, wastePercent: p.qty + w > 0 ? (w / (p.qty + w)) * 100 : null };
+  });
+  const first = byUnit[0] ?? { unit: 'KG', produced: 0, waste: 0, wastePercent: null };
+  const output = first.produced;
+  const waste = first.waste;
 
   let handedOver: SignOffSummary['handedOver'] = null;
   if (previous && previous.status === 'SIGNED_OFF') {
     const previousLogs = await db.misProductionLog.findMany({
       where: { jobPhaseId: previous.id },
-      select: { qtyProduced: true },
+      select: { qtyProduced: true, unit: true },
     });
+    const prevBy = sumByUnit(previousLogs.map((l) => ({ qty: Number(l.qtyProduced), unit: l.unit })));
     handedOver = {
       processName: previous.process.name,
-      output: previousLogs.reduce((sum, l) => sum + Number(l.qtyProduced), 0),
+      output: prevBy.filter((x) => x.unit === first.unit || x.unit === NO_UNIT).reduce((n, x) => n + x.qty, 0),
     };
   }
 
@@ -837,9 +882,11 @@ export async function getSignOffSummary(phaseId: string): Promise<SignOffSummary
     canSign: isInCharge(phase, actor) && blockers.length === 0 && isActiveStatus(phase.status),
     output,
     waste,
-    wastePercent: output + waste > 0 ? (waste / (output + waste)) * 100 : null,
+    wastePercent: first.wastePercent,
     entries: logs.length,
-    unit: logs[0]?.unit ?? 'KG',
+    // The legacy single `unit` keeps the stored spelling of the first unit's rows.
+    unit: logs.find((l) => normaliseUnit(l.unit) === first.unit)?.unit ?? first.unit,
+    byUnit,
     handedOver,
     materials,
     blockers,
@@ -931,13 +978,33 @@ export async function planPhases(
     );
   }
 
-  const existing = await db.misJobPhase.count({ where: { orderId, deletedAt: null } });
-  if (existing > 0) {
-    throw new JobPhaseError(
-      'ILLEGAL_TRANSITION',
-      'This order already has a phase plan. Skip or restore individual phases instead of re-planning it.',
-      { orderId, existing },
-    );
+  const refuse = (message: string, detail: Record<string, unknown> = {}) =>
+    new JobPhaseError('ILLEGAL_TRANSITION', message, { orderId, ...detail });
+
+  // R3 B117 - validate the plan before any write.
+  if (!selection.some((e) => e.applies)) throw refuse('Tick at least one process for this job card.');
+  const seen = new Set<string>();
+  for (const e of selection) {
+    const k = `${e.processId}|${e.bomStageId ?? ''}`;
+    if (seen.has(k)) throw refuse('The same process and stage is listed twice.', { processId: e.processId });
+    seen.add(k);
+  }
+  const order = await db.misOrder.findUnique({ where: { id: orderId }, select: { id: true, status: true } });
+  if (!order) throw new JobPhaseError('PHASE_NOT_FOUND', 'That order no longer exists.', { orderId });
+  if (isOrderClosed(order.status)) throw refuse(`This order is ${order.status.toLowerCase()}, so it cannot be planned.`);
+  const processIds = [...new Set(selection.map((e) => e.processId))];
+  const processes = await db.misProcess.findMany({
+    where: { id: { in: processIds }, isActive: true, deletedAt: null },
+    select: { id: true },
+  });
+  if (processes.length !== processIds.length) throw refuse('A selected process does not exist or is inactive.');
+  const stageIds = [...new Set(selection.map((e) => e.bomStageId).filter((x): x is string => Boolean(x)))];
+  if (stageIds.length > 0) {
+    const stages = await db.misBomStage.findMany({
+      where: { id: { in: stageIds }, bom: { orderId } },
+      select: { id: true },
+    });
+    if (stages.length !== stageIds.length) throw refuse("A selected stage is not part of this order's BOM.");
   }
 
   const rows = selection.map((entry, index) => ({
@@ -949,7 +1016,20 @@ export async function planPhases(
     notApplicableReason: entry.applies ? null : 'Not on this job card',
   }));
 
-  await db.misJobPhase.createMany({ data: rows });
+  // The count and the insert share one transaction and an advisory lock, so two concurrent
+  // plans cannot both see "nothing planned yet".
+  await db.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`plan-phases-${orderId}`}))`;
+    const existing = await tx.misJobPhase.count({ where: { orderId, deletedAt: null } });
+    if (existing > 0) {
+      throw new JobPhaseError(
+        'ILLEGAL_TRANSITION',
+        'This order already has a phase plan. Skip or restore individual phases instead of re-planning it.',
+        { orderId, existing },
+      );
+    }
+    await tx.misJobPhase.createMany({ data: rows });
+  });
   await logAuditEvent({
     actorId: actor.userId,
     action: 'PLAN_PHASES',

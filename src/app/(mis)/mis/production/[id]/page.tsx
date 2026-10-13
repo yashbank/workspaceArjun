@@ -9,6 +9,8 @@ import { listEmployees } from '@/server/mis/employee';
 import { listMachines } from '@/server/mis/machine';
 import { notFound } from 'next/navigation';
 import { db } from '@/server/db';
+import { factoryDateKey } from '@/lib/mis/factory-time';
+import { getFactoryTimezone } from '@/server/mis/business-rules';
 import { ProductionDetailScreen } from '@/components/mis/production/production-detail-screen';
 
 export default async function ProductionDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -35,11 +37,27 @@ export default async function ProductionDetailPage({ params }: { params: Promise
     canWrite ? getProductionFormContext(id) : Promise.resolve({ stages: [], machines: [] }),
   ]);
 
+  // R3 B122: who is booked on each of this order's machines right now (open rows only).
+  const crewRows = canWrite
+    ? await db.misWorkerAllocation.findMany({
+        where: { deletedAt: null, releasedAt: null, machineAllocation: { orderId: id, releasedAt: null } },
+        select: { employeeId: true, machineAllocation: { select: { machineId: true } } },
+      })
+    : [];
+  const crewByMachine: Record<string, string[]> = {};
+  for (const r of crewRows) {
+    (crewByMachine[r.machineAllocation.machineId] ??= []).push(r.employeeId);
+  }
+  const timeZone = await getFactoryTimezone();
+
   return (
     <ProductionDetailScreen
       order={{ id: order.id, orderNumber: order.orderNumber, status: order.status, customer: order.customer }}
       logs={logs.map((l) => ({
         id: l.id,
+        phaseSigned: l.jobPhase?.status === 'SIGNED_OFF',
+        machineId: l.machineId,
+        employeeId: l.employeeId,
         loggedAt: l.loggedAt,
         qtyProduced: Number(l.qtyProduced),
         qtyWaste: Number(l.qtyWaste),
@@ -57,6 +75,9 @@ export default async function ProductionDetailPage({ params }: { params: Promise
       allocatedMachines={formContext.machines}
       canWrite={canWrite}
       userId={user.id}
+      crewByMachine={crewByMachine}
+      factoryToday={factoryDateKey(new Date(), timeZone)}
+      nowIso={new Date().toISOString()}
     />
   );
 }

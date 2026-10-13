@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useState, useTransition } from 'react';
 
 import { useT } from '@/components/mis/shell/locale-provider';
+import { fmtDateTime } from '@/lib/mis/client-dates';
 
 import {
   acknowledgeQcFailureAction,
@@ -13,7 +14,7 @@ import {
 
 type Blocker =
   | { kind: 'NO_PRODUCTION' }
-  | { kind: 'WASTE_REASON'; logId: string; loggedAt: string; qtyWaste: number }
+  | { kind: 'WASTE_REASON'; logId: string; loggedAt: string; qtyWaste: number; unit?: string }
   | { kind: 'QC_FAILURE'; checkId: string; parameterName: string | null; checkTime: string };
 
 export type SignOffScreenProps = {
@@ -29,6 +30,8 @@ export type SignOffScreenProps = {
   wastePercent: number | null;
   entries: number;
   unit: string;
+  /** R3 B124: per-unit figures; never summed across units. */
+  byUnit?: { unit: string; produced: number; waste: number; wastePercent: number | null }[];
   handedOver: { processName: string; output: number } | null;
   materials: { description: string; quantity: number; unit: string }[];
   blockers: Blocker[];
@@ -57,7 +60,11 @@ export function SignOffScreen(props: SignOffScreenProps) {
     startTransition(async () => {
       setError(null);
       try {
-        await fn();
+        // R3 B127: the actions return an ActionResult; a refusal is data, not a throw.
+        const out = await fn();
+        if (out && typeof out === 'object' && 'ok' in out && (out as { ok: boolean }).ok === false) {
+          setError((out as { detail?: string }).detail ?? 'That did not work.');
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'That did not work.');
       }
@@ -87,25 +94,37 @@ export function SignOffScreen(props: SignOffScreenProps) {
         </p>
 
         <div className="mt-3">
-          <p className="text-4xl font-bold leading-none text-slate-900">
-            {num(props.output)}
-            {props.handedOver && (
-              <span className="text-lg font-bold text-slate-400">/{num(props.handedOver.output)}</span>
-            )}
-          </p>
-          <p className="mt-1 text-sm text-slate-500">
-            {t('phase.summary.output')} ({props.unit})
-            {props.handedOver && ` · ${t('phase.summary.handedOver')}: ${props.handedOver.processName}`}
-          </p>
+          {(props.byUnit && props.byUnit.length > 0
+            ? props.byUnit
+            : [{ unit: props.unit, produced: props.output, waste: props.waste, wastePercent: props.wastePercent }]
+          ).map((u, i) => (
+            <div key={u.unit} className={i > 0 ? 'mt-2' : undefined}>
+              <p className="text-4xl font-bold leading-none text-slate-900">
+                {num(u.produced)}
+                {i === 0 && props.handedOver && (
+                  <span className="text-lg font-bold text-slate-400">/{num(props.handedOver.output)}</span>
+                )}
+              </p>
+              <p className="mt-1 text-sm text-slate-500">
+                {t('phase.summary.output')} ({u.unit})
+                {i === 0 && props.handedOver && ` · ${t('phase.summary.handedOver')}: ${props.handedOver.processName}`}
+              </p>
+            </div>
+          ))}
         </div>
 
         <div className="mt-3 grid grid-cols-2 gap-2">
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-center">
-            <span className="block text-2xl font-bold leading-none text-amber-800">{num(props.waste)}</span>
-            <span className="mt-1 block text-[11px] font-medium text-amber-800/80">
-              {t('phase.summary.waste')}
-              {props.wastePercent != null && ` · ${props.wastePercent.toFixed(1)}%`}
-            </span>
+            {(props.byUnit && props.byUnit.length > 0
+              ? props.byUnit
+              : [{ unit: props.unit, produced: props.output, waste: props.waste, wastePercent: props.wastePercent }]
+            ).map((u) => (
+              <span key={u.unit} className="block text-lg font-bold leading-tight text-amber-800">
+                {num(u.waste)} {u.unit}
+                {u.wastePercent != null && <span className="text-[11px] font-medium"> · {u.wastePercent.toFixed(1)}%</span>}
+              </span>
+            ))}
+            <span className="mt-1 block text-[11px] font-medium text-amber-800/80">{t('phase.summary.waste')}</span>
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-3 text-center">
             <span className="block text-2xl font-bold leading-none text-slate-900">{props.entries}</span>
@@ -217,7 +236,7 @@ function WasteReasonCard({
         {t('phase.blocker.wasteReason')}
       </p>
       <p className="mt-1 font-semibold text-slate-900">
-        {num(blocker.qtyWaste)} {unit} · {new Date(blocker.loggedAt).toLocaleString('en-IN')}
+        {num(blocker.qtyWaste)} {blocker.unit ?? unit} · {fmtDateTime(blocker.loggedAt)}
       </p>
       <input
         value={reason}
@@ -254,7 +273,7 @@ function QcFailureCard({
         {t('phase.blocker.qcFailure')}
       </p>
       <p className="mt-1 font-semibold text-slate-900">
-        {blocker.parameterName ?? 'Quality check'} · {new Date(blocker.checkTime).toLocaleString('en-IN')}
+        {blocker.parameterName ?? 'Quality check'} · {fmtDateTime(blocker.checkTime)}
       </p>
       <input
         value={note}
