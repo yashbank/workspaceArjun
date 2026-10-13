@@ -7,8 +7,8 @@ import { CustomerScreen } from '@/components/mis/customers/customer-screen';
 export default async function CustomersPage({ searchParams }: { searchParams: Promise<{ view?: string; q?: string; deactivated?: string; edit?: string; create?: string; error?: string }> }) {
   const sp = await searchParams;
   await requireMisAccess();
-  const [customers, canWrite] = await Promise.all([listCustomers(), checkPermission('orders.write')]);
-  const phone = <CustomerScreen customers={customers} canWrite={canWrite} />;
+  const [customers, canWrite, canView] = await Promise.all([listCustomers(), checkPermission('orders.write'), checkPermission('masters.read')]);
+  const phone = <CustomerScreen customers={customers} canWrite={canWrite} canView={canView} />;
 
   // D10 from 1024px up; the existing screen below it. ANY explicit `?view` is the existing screen at every width.
   if (sp.view) return phone;
