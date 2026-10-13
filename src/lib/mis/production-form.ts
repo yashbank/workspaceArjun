@@ -23,11 +23,27 @@ type OperatorSource = {
   isActive?: boolean;
 };
 
-/** "Name (CODE · Role)" options for the production floor only. */
-export function operatorOptions(employees: OperatorSource[]): SelectChoice[] {
-  return employees
-    .filter((e) => e.isActive !== false && (PRODUCTION_FLOOR_ROLES as readonly string[]).includes(e.role))
-    .map((e) => ({ value: e.id, label: `${e.name} (${e.employeeCode} · ${ROLE_LABEL[e.role] ?? e.role})` }));
+export const ON_THIS_MACHINE = 'On this machine';
+
+/**
+ * Put the people booked on the chosen machine first, labelled "On this machine" (R3 B122), then
+ * everyone else in their given order. Pure; `crewIds` empty leaves the list untouched.
+ */
+export function crewFirst(options: SelectChoice[], crewIds: readonly string[]): SelectChoice[] {
+  if (crewIds.length === 0) return options;
+  const crew = new Set(crewIds);
+  const on = options.filter((o) => crew.has(o.value)).map((o) => ({ ...o, label: `${o.label} · ${ON_THIS_MACHINE}` }));
+  return [...on, ...options.filter((o) => !crew.has(o.value))];
+}
+
+/** "Name (CODE · Role)" options for the production floor only; the machine's crew first (B122). */
+export function operatorOptions(employees: OperatorSource[], crewIds: readonly string[] = []): SelectChoice[] {
+  return crewFirst(
+    employees
+      .filter((e) => e.isActive !== false && (PRODUCTION_FLOOR_ROLES as readonly string[]).includes(e.role))
+      .map((e) => ({ value: e.id, label: `${e.name} (${e.employeeCode} · ${ROLE_LABEL[e.role] ?? e.role})` })),
+    crewIds,
+  );
 }
 
 export const DEFAULT_PRODUCTION_UNIT = 'KG';
@@ -69,4 +85,32 @@ export function machineMismatchNote(
   if (!chosenId || allocated.length === 0) return null;
   if (allocated.some((m) => m.id === chosenId)) return null;
   return `Allocated machine is ${allocated.map((m) => m.name).join(', ')}`;
+}
+
+/** The 24 h edit window for a production entry (R3 B126). Mirrors `editProductionLog` on the server. */
+export const PRODUCTION_EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+export function canEditLogNow(
+  log: { loggedAt: Date | string; phaseSigned?: boolean },
+  orderStatus: string,
+  now: Date,
+): boolean {
+  if (log.phaseSigned) return false;
+  if (['CANCELLED', 'DELIVERED', 'COMPLETED'].includes(orderStatus)) return false;
+  return now.getTime() - new Date(log.loggedAt).getTime() <= PRODUCTION_EDIT_WINDOW_MS;
+}
+
+/** Client-side check before submit (R3 B120): qty finite > 0, waste >= 0 and <= produced. Null when fine. */
+export function validateQuantities(qty: string, waste: string): string | null {
+  const produced = Number(qty);
+  if (qty.trim() === '' || !Number.isFinite(produced) || produced <= 0) return 'Enter a quantity produced greater than 0.';
+  const w = waste.trim() === '' ? 0 : Number(waste);
+  if (!Number.isFinite(w) || w < 0) return 'Waste cannot be negative.';
+  if (w > produced) return 'Waste cannot be more than the quantity produced.';
+  return null;
+}
+
+/** Closed orders accept no production (R3 B120). */
+export function isClosedOrderStatus(status: string): boolean {
+  return ['CANCELLED', 'DELIVERED', 'COMPLETED'].includes(status);
 }

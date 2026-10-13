@@ -59,8 +59,14 @@ const dbMock = {
   // C5 #42: signOffPhase now releases the phase's machine allocations. This suite holds none;
   // the release itself is covered in job-phases.release.test.ts. Mock plumbing only, no expectation changed.
   misMachineAllocation: { findMany: async () => [], updateMany: async () => ({ count: 0 }) },
+  // R3 B115/B116/B117 plumbing only (no existing expectation changed): the new guards read the
+  // order, the log's phase, the BOM stages, and take an advisory lock inside planPhases.
+  misOrder: { findUnique: async () => ({ id: 'ord-1', status: 'IN_PRODUCTION' }) },
+  misBomStage: { findMany: async () => [] },
+  $executeRaw: async () => 0,
   $transaction: (fn: (tx: unknown) => unknown) => fn(dbMock),
 };
+Object.assign(dbMock.misProductionLog, { findUnique: async () => ({ id: 'log-1', wasteReason: null, jobPhase: null }) });
 vi.mock('@/server/db', () => ({ db: dbMock }));
 
 const mockAudit = vi.fn();
@@ -518,7 +524,9 @@ describe('reassigning the in-charge (D12)', () => {
 
 describe('acknowledging a QC failure is not resolving it (MIS-163)', () => {
   it('leaves the result FAIL and stamps who acknowledged it', async () => {
-    qcFindUnique.mockResolvedValue({ id: 'qc-1', result: 'FAIL', acknowledgedAt: null });
+    // R3 B116: the check now needs its order and a phase whose in-charge is the actor.
+    qcFindUnique.mockResolvedValue({ id: 'qc-1', orderId: 'ord-1', bomStageId: null, result: 'FAIL', acknowledgedAt: null });
+    phaseFindMany.mockResolvedValue([phase()]);
     qcUpdate.mockImplementation(({ data }: { data: Record<string, unknown> }) => ({
       id: 'qc-1',
       result: 'FAIL',
@@ -655,6 +663,8 @@ describe('planning a job card', () => {
   it('writes unticked processes as NOT_APPLICABLE rather than leaving them out', async () => {
     getMisRole.mockResolvedValue('ADMIN');
     phaseCount.mockResolvedValue(0);
+    // R3 B117: every processId must exist and be active.
+    processFindMany.mockResolvedValue([{ id: 'proc-1' }, { id: 'proc-2' }, { id: 'proc-3' }]);
     phaseCreateMany.mockResolvedValue({ count: 3 });
     phaseFindMany.mockResolvedValue([]);
 
@@ -676,7 +686,9 @@ describe('planning a job card', () => {
   it('refuses to re-plan an order that already has phases', async () => {
     getMisRole.mockResolvedValue('ADMIN');
     phaseCount.mockResolvedValue(4);
-    await expect(planPhases('ord-1', [])).rejects.toMatchObject({ reason: 'ILLEGAL_TRANSITION' });
+    // R3 B117: the plan is validated first, so the call needs one valid ticked process.
+    processFindMany.mockResolvedValue([{ id: 'proc-1' }]);
+    await expect(planPhases('ord-1', [{ processId: 'proc-1', applies: true }])).rejects.toMatchObject({ reason: 'ILLEGAL_TRANSITION' });
   });
 });
 

@@ -1,4 +1,5 @@
 'use client';
+import { fmtDateTime } from '@/lib/mis/client-dates';
 import { useState, useTransition } from 'react';
 
 import { discardParkedWriteAction, resolveParkedWriteAction } from '@/app/(mis)/mis/queue/actions';
@@ -121,7 +122,7 @@ function payloadSummary(payload: unknown): string {
 
 function fmt(d: Date | null): string {
   if (!d) return '—';
-  return new Date(d).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+  return fmtDateTime(d, { dateStyle: 'medium', timeStyle: 'short' });
 }
 
 function ParkedWriteCard({
@@ -143,7 +144,12 @@ function ParkedWriteCard({
       return;
     }
     startTransition(async () => {
-      const outcome = await resolveParkedWriteAction(row.key, note);
+      const result = await resolveParkedWriteAction(row.key, note);
+      if (!result.ok) {
+        setMessage(result.detail);
+        return;
+      }
+      const outcome = result.value;
       if (outcome.outcome === 'APPLIED' || outcome.outcome === 'DUPLICATE') {
         setMessage(null); // the row disappears on revalidate — nothing more to say
       } else {
@@ -158,7 +164,8 @@ function ParkedWriteCard({
       return;
     }
     startTransition(async () => {
-      await discardParkedWriteAction(row.key, note);
+      const result = await discardParkedWriteAction(row.key, note);
+      if (!result.ok) setMessage(result.detail);
     });
   };
 

@@ -1,4 +1,5 @@
 'use client';
+import { fmtTime } from '@/lib/mis/client-dates';
 import { useEffect, useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/mis/kit/button';
@@ -165,7 +166,9 @@ export function ProductionScreen({
     setAllocated([]);
     if (!id) return;
     void getProductionFormContextAction(id)
-      .then((ctx) => {
+      .then((res) => {
+        if (!res.ok) return;
+        const ctx = res.value;
         setStages(stageOptions(ctx.stages));
         setAllocated(ctx.machines);
         const only = preselectMachine(ctx.machines.map((m) => m.id));
@@ -191,8 +194,8 @@ export function ProductionScreen({
     setHistoryOpen(true);
     if (machineId) {
       startTransition(async () => {
-        const rows = await getClearanceHistoryAction(machineId);
-        setHistory(rows);
+        const res = await getClearanceHistoryAction(machineId);
+        if (res.ok) setHistory(res.value);
       });
     }
   };
@@ -221,7 +224,7 @@ export function ProductionScreen({
         <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
           {online ? t('sync.staleLists') : t('sync.offlineLists')}{' '}
           <span className="font-mono">
-            {new Date(loadedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+            {fmtTime(loadedAt, { hour: '2-digit', minute: '2-digit' })}
           </span>
         </p>
       )}

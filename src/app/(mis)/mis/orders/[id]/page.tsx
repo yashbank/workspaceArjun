@@ -36,7 +36,7 @@ export default async function OrderDetailPage({
   const [bom, productionLogs, productionSummary, qcLogs, qcSummary, phases, documents, allocations] = await Promise.all([
     getBom(id).catch(() => null),
     getProductionForOrder(id).catch(() => []),
-    getProductionSummary(id).catch(() => ({ totalProduced: 0, totalWaste: 0, entries: 0 })),
+    getProductionSummary(id).catch(() => ({ totalProduced: 0, totalWaste: 0, entries: 0, byUnit: [] })),
     getQcForOrder(id).catch(() => []),
     getQcSummary(id).catch(() => ({ total: 0, pass: 0, fail: 0 })),
     // Deliberately NOT caught to an empty list like its neighbours: an empty

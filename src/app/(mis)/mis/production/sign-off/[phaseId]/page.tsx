@@ -37,6 +37,7 @@ export default async function SignOffPage({ params }: { params: Promise<{ phaseI
       wastePercent={summary.wastePercent}
       entries={summary.entries}
       unit={summary.unit}
+      byUnit={summary.byUnit}
       handedOver={summary.handedOver}
       materials={summary.materials}
       blockers={summary.blockers.map((b) =>
