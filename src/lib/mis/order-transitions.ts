@@ -67,7 +67,7 @@ export function canOverrideCloseGates(role: string): boolean {
 
 export const MIN_REASON_LENGTH = 3;
 
-export type CloseGateKey = 'PHASES_SIGNED_OFF' | 'QC_RESOLVED';
+export type CloseGateKey = 'PHASES_SIGNED_OFF' | 'QC_RESOLVED' | 'PRODUCTION_LOGGED';
 
 export type CloseGate = {
   key: CloseGateKey;
@@ -91,7 +91,7 @@ export type CloseGateQcCheck = {
  * (c) No QC parameter whose latest check is a FAIL: a failure is resolved only by a later
  * PASS on the same stage + parameter (the rule MisQcCheck documents).
  */
-export function evaluateCloseGates(input: { phases: CloseGatePhase[]; qcChecks: CloseGateQcCheck[] }): CloseGate[] {
+export function evaluateCloseGates(input: { phases: CloseGatePhase[]; qcChecks: CloseGateQcCheck[]; productionCount?: number }): CloseGate[] {
   const applicable = input.phases.filter((p) => p.status !== 'NOT_APPLICABLE');
   const unsigned = applicable.filter((p) => p.status !== 'SIGNED_OFF').length;
 
@@ -102,6 +102,17 @@ export function evaluateCloseGates(input: { phases: CloseGatePhase[]; qcChecks: 
     if (!prev || new Date(check.checkTime).getTime() >= new Date(prev.checkTime).getTime()) latest.set(key, check);
   }
   const failing = [...latest.values()].filter((c) => c.result === 'FAIL');
+
+  // R3 B105: optional, so every caller that does not pass it keeps the old two gates.
+  const productionGate: CloseGate[] =
+    input.productionCount === undefined
+      ? []
+      : [{
+          key: 'PRODUCTION_LOGGED',
+          label: 'Production logged',
+          passed: input.productionCount > 0,
+          detail: input.productionCount > 0 ? '' : 'No production has been logged',
+        }];
 
   return [
     {
@@ -119,6 +130,7 @@ export function evaluateCloseGates(input: { phases: CloseGatePhase[]; qcChecks: 
           ? ''
           : `Failed and not re-passed: ${failing.map((c) => c.parameterName ?? 'General').join(', ')}`,
     },
+    ...productionGate,
   ];
 }
 

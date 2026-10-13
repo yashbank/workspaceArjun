@@ -16,13 +16,23 @@ const orderUpdateMany = vi.fn();
 const phaseFindMany = vi.fn();
 const qcFindMany = vi.fn();
 const auditFindMany = vi.fn();
+// R3-ORD fixtures: B104 runs the status write in a transaction (same client here) and reads the
+// order's bookings / reservations / BOM / requests; B105 counts production logs.
+const productionCount = vi.fn();
+const txDb: Record<string, unknown> = {};
 vi.mock('@/server/db', () => ({
-  db: {
+  db: Object.assign(txDb, {
+    $transaction: async (fn: (tx: unknown) => unknown) => fn(txDb),
+    misProductionLog: { count: (...a: unknown[]) => productionCount(...a) },
+    misMachineAllocation: { findMany: async () => [] },
+    misOrderStockAllocation: { deleteMany: async () => ({ count: 0 }) },
+    misBom: { findUnique: async () => null, update: async () => ({}) },
+    misMaterialRequest: { findMany: async () => [], updateMany: async () => ({ count: 0 }) },
     misOrder: { findUnique: (...a: unknown[]) => orderFindUnique(...a), update: (...a: unknown[]) => orderUpdate(...a), updateMany: (...a: unknown[]) => orderUpdateMany(...a) },
     misJobPhase: { findMany: (...a: unknown[]) => phaseFindMany(...a) },
     misQcCheck: { findMany: (...a: unknown[]) => qcFindMany(...a) },
     misAuditLog: { findMany: (...a: unknown[]) => auditFindMany(...a) },
-  },
+  }),
 }));
 const audit = vi.fn();
 vi.mock('@/server/mis/audit', () => ({ logAuditEvent: (...a: unknown[]) => audit(...a) }));
@@ -37,6 +47,7 @@ beforeEach(() => {
   getMisRole.mockResolvedValue('ADMIN');
   phaseFindMany.mockResolvedValue([]);
   qcFindMany.mockResolvedValue([]);
+  productionCount.mockResolvedValue(1);
   orderUpdateMany.mockResolvedValue({ count: 1 });
   orderUpdate.mockImplementation(({ data }: { data: { status: string } }) => ({ id: 'o1', orderNumber: 'ORD-118', ...data }));
 });
@@ -168,7 +179,8 @@ describe('close gate reads', () => {
   it('getOrderCloseGates reports each gate', async () => {
     phaseFindMany.mockResolvedValue([{ status: 'PENDING' }]);
     const gates = await getOrderCloseGates('o1');
-    expect(gates.map((g) => [g.key, g.passed])).toEqual([['PHASES_SIGNED_OFF', false], ['QC_RESOLVED', true]]);
+    // R3 B105: the production-logged gate is now the third entry (one log is mocked, so it is met).
+    expect(gates.map((g) => [g.key, g.passed])).toEqual([['PHASES_SIGNED_OFF', false], ['QC_RESOLVED', true], ['PRODUCTION_LOGGED', true]]);
   });
 
   it('getOrderCloseOverride finds the latest completion that overrode gates', async () => {

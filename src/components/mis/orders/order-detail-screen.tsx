@@ -7,6 +7,7 @@ import { SlideOver } from '@/components/mis/kit/slide-over';
 import { StatusBadge, type BadgeTone } from '@/components/mis/kit/status-badge';
 import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { addOrderDocumentAction, reopenOrderAction } from '@/app/(mis)/mis/orders/actions';
+import { useToast } from '@/components/ui/toast';
 import { useT } from '@/components/mis/shell/locale-provider';
 import { isOrderClosed } from '@/lib/mis/order-status';
 import { validateDocumentInput } from '@/lib/mis/document-library';
@@ -95,13 +96,15 @@ export function OrderDetailScreen({
   const [docPath, setDocPath] = useState('');
   const [docError, setDocError] = useState<string | null>(null);
   const [docPending, startDoc] = useTransition();
+  const { toast } = useToast();
 
   const handleAddDocument = () => {
     const message = validateDocumentInput({ orderId: order.id, name: docName, description: docDesc, link: docPath });
     if (message) { setDocError(message); return; }
     setDocError(null);
     startDoc(async () => {
-      await addOrderDocumentAction(order.id, { name: docName.trim(), description: docDesc.trim() || undefined, filePath: docPath.trim() });
+      const res = await addOrderDocumentAction(order.id, { name: docName.trim(), description: docDesc.trim() || undefined, filePath: docPath.trim() });
+      if (!res.ok) { setDocError(res.detail); toast('error', res.detail); return; }
       setDocName(''); setDocDesc(''); setDocPath(''); setDocOpen(false);
     });
   };

@@ -2,9 +2,14 @@ import { CLOSED_ORDER_STATUSES, isOrderClosed, REOPENED_ORDER_STATUS } from '@/l
 import {
   canOverrideCloseGates, canTransitionOrder, evaluateCloseGates, isOrderStatus, MIN_REASON_LENGTH, transitionNeedsReason, unmetGates, type CloseGate,
 } from '@/lib/mis/order-transitions';
+import { dateKeyToDbDate, factoryDateKey } from '@/lib/mis/factory-time';
 import { db } from '@/server/db';
+import { releaseMachineAllocations } from '@/server/mis/allocation-release';
+import { getFactoryTimezone } from '@/server/mis/business-rules';
 import { requirePermission } from './auth';
 import { logAuditEvent } from './audit';
+
+const humanStatus = (s: string) => s.toLowerCase().replace(/_/g, ' ');
 
 export type OrderInput = {
   customerId?: string | null;
@@ -80,6 +85,10 @@ export async function updateOrder(id: string, input: OrderInput) {
   const actor = await requirePermission('orders.write');
   const before = await db.misOrder.findUnique({ where: { id } });
   if (!before) throw new Error(`Order ${id} not found`);
+  // R3 B106: a closed order is edited only after a reasoned reopen.
+  if (isOrderClosed(before.status)) {
+    throw new Error(`Order ${before.orderNumber} is ${humanStatus(before.status)}. Reopen it first.`);
+  }
   const after = await db.misOrder.update({
     where: { id },
     data: {
@@ -99,13 +108,14 @@ export async function updateOrder(id: string, input: OrderInput) {
  * `OrderReopenError`, so the server action can return the message as data while a database
  * error stays an exception. `reason` is what callers branch on.
  */
-export type OrderStatusRefusal = 'UNKNOWN_STATUS' | 'ILLEGAL_TRANSITION' | 'REASON_REQUIRED' | 'STALE_STATUS' | 'GATES_UNMET' | 'OVERRIDE_NOT_ALLOWED';
+export type OrderStatusRefusal = 'OPEN_ITEMS' | 'UNKNOWN_STATUS' | 'ILLEGAL_TRANSITION' | 'REASON_REQUIRED' | 'STALE_STATUS' | 'GATES_UNMET' | 'OVERRIDE_NOT_ALLOWED';
 
 export class OrderStatusError extends Error {
   constructor(
     readonly reason: OrderStatusRefusal,
     message: string,
     readonly gates?: CloseGate[],
+    readonly openItems?: string[],
   ) {
     super(message);
     this.name = 'OrderStatusError';
@@ -123,11 +133,12 @@ export async function getOrderCloseGates(orderId: string): Promise<CloseGate[]> 
 }
 
 async function computeCloseGates(orderId: string): Promise<CloseGate[]> {
-  const [phases, qcChecks] = await Promise.all([
+  const [phases, qcChecks, productionCount] = await Promise.all([
     db.misJobPhase.findMany({ where: { orderId, deletedAt: null }, select: { status: true } }),
     db.misQcCheck.findMany({ where: { orderId }, select: { bomStageId: true, parameterName: true, result: true, checkTime: true } }),
+    db.misProductionLog.count({ where: { orderId } }),
   ]);
-  return evaluateCloseGates({ phases, qcChecks });
+  return evaluateCloseGates({ phases, qcChecks, productionCount });
 }
 
 export type CloseOverrideNote = { reason: string; at: Date };
@@ -148,14 +159,13 @@ export async function getOrderCloseOverride(orderId: string): Promise<CloseOverr
   return null;
 }
 
-const humanStatus = (s: string) => s.toLowerCase().replace(/_/g, ' ');
 
 /**
  * Move an order along ORDER_TRANSITIONS. `reason` is required to cancel, and is the override
  * reason when completing past unmet close gates (OWNER/ADMIN only). Reopening a closed order
  * is `reopenOrder`, not this.
  */
-export async function updateOrderStatus(id: string, status: string, options: { reason?: string } = {}) {
+export async function updateOrderStatus(id: string, status: string, options: { reason?: string; confirmOpenItems?: boolean } = {}) {
   const actor = await requirePermission('orders.write');
   const before = await db.misOrder.findUnique({ where: { id } });
   if (!before) throw new Error(`Order ${id} not found`);
@@ -189,12 +199,65 @@ export async function updateOrderStatus(id: string, status: string, options: { r
     }
   }
 
+  // R3 B104: cancelling with a BOM awaiting approval or an open material request needs a
+  // deliberate "cancel anyway"; the open items are listed so the person can see what dies.
+  let openBomId: string | null = null;
+  let openRequests: { id: string; requestNumber: string }[] = [];
+  if (status === 'CANCELLED') {
+    const [bom, requests] = await Promise.all([
+      db.misBom.findUnique({ where: { orderId: id }, select: { id: true, status: true } }),
+      db.misMaterialRequest.findMany({
+        where: { orderId: id, status: { in: ['PENDING', 'APPROVED'] } },
+        select: { id: true, requestNumber: true, status: true, lines: { select: { actualIssuedQty: true } } },
+      }),
+    ]);
+    if (bom?.status === 'PENDING_APPROVAL') openBomId = bom.id;
+    openRequests = requests.filter((r) => r.status === 'PENDING' || r.lines.every((l) => !l.actualIssuedQty || Number(l.actualIssuedQty) === 0));
+    const items = [
+      ...(openBomId ? ['BOM waiting for approval'] : []),
+      ...openRequests.map((r) => `Material request ${r.requestNumber}`),
+    ];
+    if (items.length > 0 && options.confirmOpenItems !== true) {
+      throw new OrderStatusError('OPEN_ITEMS', `${before.orderNumber} still has open items: ${items.join('; ')}. Cancel anyway to drop them.`, undefined, items);
+    }
+  }
+
   // Compare-and-set on the status we validated against: two people acting on the same screen
-  // must not both pass the transition check and then both write. (The audit write stays outside
-  // a transaction — logAuditEvent uses the shared client and must never fail a save.)
-  const { count } = await db.misOrder.updateMany({ where: { id, status: before.status }, data: { status } });
-  if (count === 0) {
-    throw new OrderStatusError('STALE_STATUS', `${before.orderNumber} was changed by someone else. Refresh and try again.`);
+  // must not both pass the transition check and then both write. For CANCELLED and COMPLETED the
+  // machine/crew release and the stock-reservation release commit in the SAME transaction, so a
+  // failure in any of them leaves the status unchanged. (The audit write stays outside: it uses
+  // the shared client and must never fail a save.)
+  const closes = status === 'CANCELLED' || status === 'COMPLETED';
+  const at = new Date();
+  const released = { releasedMachines: 0, releasedWorkers: 0, releasedReservations: 0 };
+  await db.$transaction(async (tx) => {
+    const { count } = await tx.misOrder.updateMany({ where: { id, status: before.status }, data: { status } });
+    if (count === 0) {
+      throw new OrderStatusError('STALE_STATUS', `${before.orderNumber} was changed by someone else. Refresh and try again.`);
+    }
+    if (!closes) return;
+    const bookings = await tx.misMachineAllocation.findMany({ where: { orderId: id, releasedAt: null }, select: { id: true } });
+    const freed = await releaseMachineAllocations(tx, bookings.map((b) => b.id), { reason: 'ORDER_CLOSED', actorUserId: actor.userId, at });
+    released.releasedMachines = freed.machines;
+    released.releasedWorkers = freed.workers;
+    // The reservation has no released marker, so releasing it means removing the earmark row;
+    // the count goes on the audit row below.
+    released.releasedReservations = (await tx.misOrderStockAllocation.deleteMany({ where: { orderId: id } })).count;
+    if (status === 'CANCELLED') {
+      if (openBomId) await tx.misBom.update({ where: { id: openBomId }, data: { status: 'DRAFT', approvedById: null, approvedAt: null } });
+      if (openRequests.length > 0) {
+        await tx.misMaterialRequest.updateMany({
+          where: { id: { in: openRequests.map((r) => r.id) } },
+          data: { status: 'REJECTED', decidedById: actor.userId, decidedAt: at, decisionNote: `Order ${before.orderNumber} cancelled` },
+        });
+      }
+    }
+  });
+  if (status === 'CANCELLED') {
+    if (openBomId) await logAuditEvent({ actorId: actor.userId, action: 'order.cancel_bom_reset', entity: 'MisBom', entityId: openBomId, before: { status: 'PENDING_APPROVAL' }, after: { status: 'DRAFT', reason: `Order ${before.orderNumber} cancelled` } });
+    for (const r of openRequests) {
+      await logAuditEvent({ actorId: actor.userId, action: 'order.cancel_request_closed', entity: 'MisMaterialRequest', entityId: r.id, after: { status: 'REJECTED', reason: `Order ${before.orderNumber} cancelled` } });
+    }
   }
   const after = { ...before, status };
   await logAuditEvent({
@@ -206,6 +269,7 @@ export async function updateOrderStatus(id: string, status: string, options: { r
     after: {
       ...after,
       ...(reason ? { reason } : {}),
+      ...(closes ? released : {}),
       ...(overriddenGates ? { gatesOverridden: overriddenGates.map((g) => ({ key: g.key, detail: g.detail })) } : {}),
     },
   });
@@ -297,13 +361,15 @@ export async function listOrdersNeedingAction(limit = 5): Promise<OrderNeedingAc
     take: 50,
   });
 
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
+  const timeZone = await getFactoryTimezone();
+  const todayKey = factoryDateKey(new Date(), timeZone);
   const DAY = 24 * 60 * 60 * 1000;
+  const today = dateKeyToDbDate(todayKey).getTime();
 
   const rows = orders.map((o) => {
+    // deliveryDate is a calendar date (UTC midnight); compare date keys, never clock hours.
     const daysToDelivery = o.deliveryDate
-      ? Math.round((o.deliveryDate.getTime() - startOfToday.getTime()) / DAY)
+      ? Math.round((dateKeyToDbDate(o.deliveryDate.toISOString().slice(0, 10)).getTime() - today) / DAY)
       : null;
 
     let nextAction: string;

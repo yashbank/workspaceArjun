@@ -9,24 +9,33 @@ export async function getPendingApprovals() {
   // of holding order context. Approvals are Owner/Admin-only sign-off work.
   const actor = await requirePermission('approvals.read');
 
+  // R3 B110: each query in its own try/catch; a failure is reported, never shown as "all caught up".
+  const errors: string[] = [];
+  const attempt = async <T>(kind: string, run: () => Promise<T[]>): Promise<T[]> => {
+    try {
+      return await run();
+    } catch {
+      errors.push(`Could not load ${kind} approvals`);
+      return [];
+    }
+  };
+
   const [pendingBoms, pendingLeaves, pendingPos] = await Promise.all([
-    db.misBom.findMany({
+    attempt('BOM', () => db.misBom.findMany({
       where: { status: 'PENDING_APPROVAL' },
       include: { order: { select: { id: true, orderNumber: true, description: true } } },
       orderBy: { updatedAt: 'desc' },
-    }).catch(() => []),
-
-    db.misLeaveRequest.findMany({
+    })),
+    attempt('leave', () => db.misLeaveRequest.findMany({
       where: { status: 'PENDING' },
       include: { employee: { select: { name: true, employeeCode: true } } },
       orderBy: { createdAt: 'desc' },
-    }).catch(() => []),
-
-    db.misPurchaseOrder.findMany({
+    })),
+    attempt('purchase order', () => db.misPurchaseOrder.findMany({
       where: { status: 'PENDING_APPROVAL' },
       include: { supplier: { select: { name: true } } },
       orderBy: { createdAt: 'desc' },
-    }).catch(() => []),
+    })),
   ]);
 
   // Extra-pay days (25.4, D28) carry a rupee/multiplier figure, so they are folded in ONLY when
@@ -37,7 +46,7 @@ export async function getPendingApprovals() {
   // second gate that could disagree with the first.
   const role = await getMisRole(actor.userId);
   const pendingExtraPayDays: ExtraPayDayRow[] = can(role, 'wages.read')
-    ? await listExtraPayDays('PENDING').catch(() => [])
+    ? await attempt('extra-pay day', () => listExtraPayDays('PENDING'))
     : [];
 
   return {
@@ -45,6 +54,7 @@ export async function getPendingApprovals() {
     leaves: pendingLeaves,
     pos: pendingPos,
     extraPayDays: pendingExtraPayDays,
+    errors,
     total: pendingBoms.length + pendingLeaves.length + pendingPos.length + pendingExtraPayDays.length,
   };
 }

@@ -21,9 +21,11 @@ export async function rejectBomAction(orderId: string, reason: string): Promise<
   });
 }
 
-export async function approveLeaveAction(leaveId: string, approve: boolean) {
-  await approveLeave(leaveId, approve);
-  revalidatePath('/mis/approvals');
+export async function approveLeaveAction(leaveId: string, approve: boolean): Promise<ActionResult> {
+  return asResult(async () => {
+    await approveLeave(leaveId, approve);
+    revalidatePath('/mis/approvals');
+  });
 }
 
 export async function approvePOAction(poId: string): Promise<ActionResult> {
@@ -33,12 +35,16 @@ export async function approvePOAction(poId: string): Promise<ActionResult> {
   });
 }
 
-export async function approveExtraPayDayAction(id: string) {
-  await approveExtraPayDay(id);
-  revalidatePath('/mis/approvals');
+export async function approveExtraPayDayAction(id: string): Promise<ActionResult> {
+  return asResult(async () => {
+    await approveExtraPayDay(id);
+    revalidatePath('/mis/approvals');
+  });
 }
 
-export async function rejectExtraPayDayAction(id: string) {
-  await rejectExtraPayDay(id);
-  revalidatePath('/mis/approvals');
+export async function rejectExtraPayDayAction(id: string): Promise<ActionResult> {
+  return asResult(async () => {
+    await rejectExtraPayDay(id);
+    revalidatePath('/mis/approvals');
+  });
 }
