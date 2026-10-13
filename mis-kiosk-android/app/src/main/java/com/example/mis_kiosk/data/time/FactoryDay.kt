@@ -12,6 +12,11 @@ import java.time.ZoneId
 object FactoryDay {
     const val START_HOUR = 6
 
+    /** R3 B68: the factory's zone from the pull's `factoryTimezone`; the device zone when absent
+     *  or not a zone this JVM knows (an older server, a typo - never a crash). */
+    fun zoneFrom(timezoneId: String?): ZoneId =
+        timezoneId?.takeIf { it.isNotBlank() }?.let { runCatching { ZoneId.of(it) }.getOrNull() } ?: ZoneId.systemDefault()
+
     /** Epoch millis of the most recent 06:00 local boundary at or before [nowMillis]. */
     fun startMillis(nowMillis: Long = System.currentTimeMillis(), zone: ZoneId = ZoneId.systemDefault()): Long {
         val now = Instant.ofEpochMilli(nowMillis).atZone(zone)

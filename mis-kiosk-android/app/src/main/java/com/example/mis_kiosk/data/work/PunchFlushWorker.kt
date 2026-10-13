@@ -6,8 +6,13 @@ import androidx.work.WorkerParameters
 import com.example.mis_kiosk.data.local.PunchQueueDatabase
 import com.example.mis_kiosk.data.local.RosterDatabase
 import com.example.mis_kiosk.data.network.ApiClient
+import com.example.mis_kiosk.data.repository.FlushStop
 import com.example.mis_kiosk.data.repository.PunchRepository
 import com.example.mis_kiosk.data.security.DeviceCredentialStore
+
+/** R3 B69: WorkManager retries (with backoff) only for a transient stop with rows still waiting. */
+internal fun shouldRetryFlush(stop: FlushStop, stillPending: Boolean): Boolean =
+    stop == FlushStop.RETRY_NEEDED && stillPending
 
 /**
  * Drains the offline punch queue, oldest tap first, one at a time. Constrained to
@@ -29,7 +34,11 @@ class PunchFlushWorker(
             punchQueueDao = PunchQueueDatabase.getInstance(applicationContext).punchQueueDao(),
             credentialStore = credentialStore,
         )
-        repository.flushQueue()
-        return Result.success()
+        val stop = repository.flushQueue()
+        // R3 B69: a transient failure with rows still waiting must be retried by WorkManager (with
+        // the scheduler's exponential backoff), not forgotten until the next app open. A 401 is not
+        // transient (the banner asks for a re-pair) and a revoked tablet has nothing left to send.
+        val stillPending = PunchQueueDatabase.getInstance(applicationContext).punchQueueDao().pendingCount() > 0
+        return if (shouldRetryFlush(stop, stillPending)) Result.retry() else Result.success()
     }
 }

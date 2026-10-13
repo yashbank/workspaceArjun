@@ -69,4 +69,7 @@ data class PullResponse(
     /** Null when the key is absent entirely (older server) — distinct from an empty list, which
      *  means the newer server genuinely has no active shifts. See [RosterRepository.sync]. */
     val shifts: List<ShiftListEntryDto>? = null,
+    /** R3-ATT: the factory's IANA zone (e.g. "Asia/Kolkata"). Absent on an older server, in which
+     *  case the tablet keeps using its own zone. */
+    val factoryTimezone: String? = null,
 )

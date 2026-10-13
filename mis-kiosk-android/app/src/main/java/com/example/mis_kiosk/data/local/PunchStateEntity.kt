@@ -14,4 +14,7 @@ data class PunchStateEntity(
     @PrimaryKey val employeeId: String,
     val lastDirection: String,
     val lastPunchedAtMillis: Long,
+    /** R3 B68 - the factory work date (`YYYY-MM-DD`) of that punch: the server's `workDate`, or
+     *  the local [com.example.mis_kiosk.data.time.WorkDate] result. Null on rows from before v6. */
+    val lastWorkDate: String? = null,
 )
