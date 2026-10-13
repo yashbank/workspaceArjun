@@ -58,7 +58,14 @@ beforeEach(() => {
   getMisRole.mockResolvedValue('STORE_GUY');
   // F2 (G): commitIssue now runs the caller's `inTransaction` writes on its own transaction (here the fake db itself).
   commitIssue.mockImplementation(async (_cart: unknown, meta: { inTransaction?: (tx: unknown) => Promise<void> }) => {
-    await meta.inTransaction?.((await import('@/server/db')).db);
+    // R3-STK B20: the claim is part of this transaction, so a throw rolls it back (the fake db has no rollback of its own).
+    const before = state.request;
+    try {
+      await meta.inTransaction?.((await import('@/server/db')).db);
+    } catch (error) {
+      state.request = before;
+      throw error;
+    }
     return { reference: 'ORD-1', lineCount: 1, totalQty: 7 };
   });
 });

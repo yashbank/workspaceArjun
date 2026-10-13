@@ -1,3 +1,4 @@
+-- DEV/E2E DB ONLY — never on live. It deletes by test markers and recomputes running balances.
 -- MIS automated-test cleanup — run once in the Supabase SQL editor (plain Run). Re-running is harmless.
 -- Removes every record the Playwright suites created (all carry an 'E2E' marker or are listed
 -- below), deleting child rows before parents so no foreign key is violated.
@@ -43,6 +44,12 @@ DELETE FROM mis_material_requests
     OR order_id IN (SELECT id FROM e2e_orders)
     OR request_number IN ('MRN-202610-58882','MRN-202610-75277','MRN-202610-54240','MRN-202610-45384');
 
+-- 5a. The items whose books are about to lose rows (their balances are recomputed at the end).
+CREATE TEMP TABLE e2e_items ON COMMIT DROP AS
+  SELECT item_id FROM mis_inventory_ledger WHERE source_id IN (SELECT id::text FROM e2e_grns) OR source_id IN (SELECT id::text FROM e2e_orders)
+  UNION
+  SELECT item_id FROM mis_store_transactions WHERE reference_no IN (SELECT grn_number FROM e2e_grns) OR reference_no IN (SELECT order_number FROM e2e_orders);
+
 -- 5. Stock movements written by the test receipts/issues (ledger rows keyed by GRN id / order id, store book by reference).
 DELETE FROM mis_inventory_ledger
  WHERE source_id IN (SELECT id::text FROM e2e_grns) OR source_id IN (SELECT id::text FROM e2e_orders);
@@ -66,6 +73,18 @@ DELETE FROM mis_leave_requests WHERE reason LIKE 'E2E-%';
 DELETE FROM mis_qc_templates   WHERE name LIKE 'E2E-template-%';
 DELETE FROM mis_customers      WHERE code LIKE 'E2E-%' OR name = 'E2E-customer';
 
+-- Recompute the running balances of the touched items (both books carry "balance after this row").
+WITH ordered AS (
+  SELECT l.id, SUM(l.change_qty) OVER (PARTITION BY l.item_id ORDER BY l.created_at, l.id) AS bal
+  FROM mis_inventory_ledger l WHERE l.item_id IN (SELECT item_id FROM e2e_items)
+)
+UPDATE mis_inventory_ledger l SET balance_qty = o.bal FROM ordered o WHERE l.id = o.id;
+WITH ordered AS (
+  SELECT t.id, SUM(CASE WHEN t.type = 'IN' THEN t.quantity ELSE -t.quantity END) OVER (PARTITION BY t.item_id ORDER BY t.created_at, t.id) AS bal
+  FROM mis_store_transactions t WHERE t.item_id IN (SELECT item_id FROM e2e_items)
+)
+UPDATE mis_store_transactions t SET balance_qty = o.bal FROM ordered o WHERE t.id = o.id;
+
 COMMIT;
 
 -- verify (all 0):
@@ -84,9 +103,7 @@ DELETE FROM mis_material_requests WHERE request_number IN ('MRN-202610-23655','M
 DELETE FROM mis_store_transactions WHERE reference_no = 'ORD-202610-53687' OR reason LIKE 'MRN-202610-23655%' OR reason LIKE 'MRN-202610-51845%';
 DELETE FROM mis_inventory_ledger
  WHERE source_id IN (SELECT id::text FROM mis_orders WHERE order_number = 'ORD-202610-53687')
-    OR source_id IN (SELECT id::text FROM mis_grns WHERE grn_number = 'GRN-202610-63302')
-    OR (source = 'STORE_ISSUE' AND source_id IS NULL AND created_at BETWEEN '2026-10-10T14:45:49.781Z' AND '2026-10-10T14:47:35.635Z'
-        AND item_id IN (SELECT id FROM mis_items WHERE code = 'ITEM-001'));
+    OR source_id IN (SELECT id::text FROM mis_grns WHERE grn_number = 'GRN-202610-63302');
 DELETE FROM mis_order_stock_allocations WHERE source_id IN (SELECT id::text FROM mis_grns WHERE grn_number = 'GRN-202610-63302');
 DELETE FROM mis_supplier_invoices WHERE invoice_no = 'E2E-INV-MV2IB6MT';
 DELETE FROM mis_grn_items WHERE grn_id IN (SELECT id FROM mis_grns WHERE grn_number = 'GRN-202610-63302');
@@ -94,6 +111,18 @@ DELETE FROM mis_grns WHERE grn_number = 'GRN-202610-63302';
 DELETE FROM mis_po_items WHERE po_id IN (SELECT id FROM mis_purchase_orders WHERE po_number = 'PO-202610-56395');
 DELETE FROM mis_purchase_orders WHERE po_number = 'PO-202610-56395';
 DELETE FROM mis_orders WHERE order_number = 'ORD-202610-53687';
+
+-- Recompute the running balances of the touched items (both books carry "balance after this row").
+WITH ordered AS (
+  SELECT l.id, SUM(l.change_qty) OVER (PARTITION BY l.item_id ORDER BY l.created_at, l.id) AS bal
+  FROM mis_inventory_ledger l WHERE l.item_id IN (SELECT id FROM mis_items WHERE code = 'ITEM-001')
+)
+UPDATE mis_inventory_ledger l SET balance_qty = o.bal FROM ordered o WHERE l.id = o.id;
+WITH ordered AS (
+  SELECT t.id, SUM(CASE WHEN t.type = 'IN' THEN t.quantity ELSE -t.quantity END) OVER (PARTITION BY t.item_id ORDER BY t.created_at, t.id) AS bal
+  FROM mis_store_transactions t WHERE t.item_id IN (SELECT id FROM mis_items WHERE code = 'ITEM-001')
+)
+UPDATE mis_store_transactions t SET balance_qty = o.bal FROM ordered o WHERE t.id = o.id;
 COMMIT;
 
 -- v2-flows run MV2IJA5Z (2026-10-10T14:52:07.607Z → 2026-10-10T14:53:38.796Z):
@@ -105,9 +134,7 @@ DELETE FROM mis_material_requests WHERE request_number IN ('MRN-202610-07004','M
 DELETE FROM mis_store_transactions WHERE reference_no = 'ORD-202610-31806' OR reason LIKE 'MRN-202610-07004%' OR reason LIKE 'MRN-202610-15068%';
 DELETE FROM mis_inventory_ledger
  WHERE source_id IN (SELECT id::text FROM mis_orders WHERE order_number = 'ORD-202610-31806')
-    OR source_id IN (SELECT id::text FROM mis_grns WHERE grn_number = 'GRN-202610-41471')
-    OR (source = 'STORE_ISSUE' AND source_id IS NULL AND created_at BETWEEN '2026-10-10T14:52:07.607Z' AND '2026-10-10T14:53:38.796Z'
-        AND item_id IN (SELECT id FROM mis_items WHERE code = 'ITEM-001'));
+    OR source_id IN (SELECT id::text FROM mis_grns WHERE grn_number = 'GRN-202610-41471');
 DELETE FROM mis_order_stock_allocations WHERE source_id IN (SELECT id::text FROM mis_grns WHERE grn_number = 'GRN-202610-41471');
 DELETE FROM mis_supplier_invoices WHERE invoice_no = 'E2E-INV-MV2IJA5Z';
 DELETE FROM mis_grn_items WHERE grn_id IN (SELECT id FROM mis_grns WHERE grn_number = 'GRN-202610-41471');
@@ -115,4 +142,16 @@ DELETE FROM mis_grns WHERE grn_number = 'GRN-202610-41471';
 DELETE FROM mis_po_items WHERE po_id IN (SELECT id FROM mis_purchase_orders WHERE po_number = 'PO-202610-34633');
 DELETE FROM mis_purchase_orders WHERE po_number = 'PO-202610-34633';
 DELETE FROM mis_orders WHERE order_number = 'ORD-202610-31806';
+
+-- Recompute the running balances of the touched items (both books carry "balance after this row").
+WITH ordered AS (
+  SELECT l.id, SUM(l.change_qty) OVER (PARTITION BY l.item_id ORDER BY l.created_at, l.id) AS bal
+  FROM mis_inventory_ledger l WHERE l.item_id IN (SELECT id FROM mis_items WHERE code = 'ITEM-001')
+)
+UPDATE mis_inventory_ledger l SET balance_qty = o.bal FROM ordered o WHERE l.id = o.id;
+WITH ordered AS (
+  SELECT t.id, SUM(CASE WHEN t.type = 'IN' THEN t.quantity ELSE -t.quantity END) OVER (PARTITION BY t.item_id ORDER BY t.created_at, t.id) AS bal
+  FROM mis_store_transactions t WHERE t.item_id IN (SELECT id FROM mis_items WHERE code = 'ITEM-001')
+)
+UPDATE mis_store_transactions t SET balance_qty = o.bal FROM ordered o WHERE t.id = o.id;
 COMMIT;

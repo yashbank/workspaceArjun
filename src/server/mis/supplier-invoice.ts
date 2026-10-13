@@ -73,17 +73,23 @@ export type SupplierInvoiceRow = {
   money?: { expected: string; invoiced: string | null; variance: string | null };
 };
 
+const grnItemsSelect = { select: { receivedQty: true, dcQuantity: true, poItem: { select: { ratePerUnit: true } } } } as const;
+
 const invoiceInclude = {
-  po: { select: { poNumber: true } },
+  // B10: an invoice can arrive in several deliveries, so the match reads every confirmed GRN of the PO that names it.
+  po: { select: { poNumber: true, grns: { where: { status: 'CONFIRMED' }, select: { supplierInvoiceNo: true, items: grnItemsSelect } } } },
   supplier: { select: { name: true } },
-  grn: { select: { grnNumber: true, items: { select: { receivedQty: true, dcQuantity: true, poItem: { select: { ratePerUnit: true } } } } } },
+  grn: { select: { grnNumber: true, items: grnItemsSelect } },
 } as const;
 
 type InvoiceWithGrn = Prisma.MisSupplierInvoiceGetPayload<{ include: typeof invoiceInclude }>;
 
 function matchFor(inv: InvoiceWithGrn) {
+  const named = (inv.po.grns ?? []).filter((g) => g.supplierInvoiceNo === inv.invoiceNo);
+  // An older invoice whose GRN header never carried the number still has its one linked GRN.
+  const items = named.length > 0 ? named.flatMap((g) => g.items) : (inv.grn?.items ?? []);
   return matchSupplierInvoice(
-    (inv.grn?.items ?? []).map((i) => ({ receivedQty: i.receivedQty.toNumber(), ratePerUnit: i.poItem.ratePerUnit.toNumber(), dcQuantity: i.dcQuantity?.toNumber() ?? null })),
+    items.map((i) => ({ receivedQty: i.receivedQty.toNumber(), ratePerUnit: i.poItem.ratePerUnit.toNumber(), dcQuantity: i.dcQuantity?.toNumber() ?? null })),
     inv.invoiceAmount?.toNumber() ?? null,
   );
 }

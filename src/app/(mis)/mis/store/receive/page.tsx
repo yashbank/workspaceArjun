@@ -1,7 +1,7 @@
-import { format } from 'date-fns';
-
 import { ReceiveScreen } from '@/components/mis/store/receive-screen';
+import { formatFactoryDateTime } from '@/lib/mis/factory-time';
 import { checkPermission } from '@/server/mis/auth';
+import { getFactoryTimezone } from '@/server/mis/business-rules';
 import { requireMisAccess } from '@/server/mis/guard';
 import { listOpenPOs, listPickerItems, listReceiveSuppliers } from '@/server/mis/store';
 
@@ -14,14 +14,17 @@ import { listOpenPOs, listPickerItems, listReceiveSuppliers } from '@/server/mis
  */
 export default async function StoreReceivePage() {
   const user = await requireMisAccess();
-  const [items, suppliers, openPos, canSetRate] = await Promise.all([
+  const [items, suppliers, openPos, canSetRate, canOverride, zone] = await Promise.all([
     listPickerItems(),
     listReceiveSuppliers(),
     listOpenPOs(),
     checkPermission('wages.read'),
+    // `supplier_invoice.write` is held by exactly Owner and Admin: the roles that may override the 2% receipt limit.
+    checkPermission('supplier_invoice.write'),
+    getFactoryTimezone(),
   ]);
 
-  const meta = `${format(new Date(), 'EEE d MMM · HH:mm')} · ${user.name ?? user.email}`;
+  const meta = `${formatFactoryDateTime(new Date(), zone)} · ${user.name ?? user.email}`;
 
   return (
     <ReceiveScreen
@@ -30,6 +33,7 @@ export default async function StoreReceivePage() {
       suppliers={suppliers.map((s) => ({ id: s.id, name: s.name }))}
       openPos={openPos}
       canSetRate={canSetRate}
+      canOverride={canOverride}
     />
   );
 }

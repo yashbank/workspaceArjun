@@ -14,8 +14,9 @@ export default async function GrnDetailPage({ params }: { params: Promise<{ id: 
   await requireMisAccess();
   const grn = await getGRN(id);
   if (!grn) notFound();
-  const [canWrite, canSeeMoney] = await Promise.all([checkPermission('grn.write'), checkPermission('wages.read'), clearGrnAlertsFor(id).catch(() => undefined)]);
+  // `supplier_invoice.write` is held by exactly Owner and Admin: the roles that may override the 2% receipt limit.
+  const [canWrite, canSeeMoney, canOverride] = await Promise.all([checkPermission('grn.write'), checkPermission('wages.read'), checkPermission('supplier_invoice.write'), clearGrnAlertsFor(id).catch(() => undefined)]);
   // Money is formatted here, on the server (MIS invariant); the raw figure travels only to the Owner's edit form.
   const invoiceAmountFormatted = canSeeMoney && grn.supplierInvoiceAmount != null ? formatMoney(grn.supplierInvoiceAmount) : null;
-  return <GrnDetailScreen grn={toPlain(grn)} canWrite={canWrite} canSeeMoney={canSeeMoney} invoiceAmountFormatted={invoiceAmountFormatted} />;
+  return <GrnDetailScreen grn={toPlain(grn)} canWrite={canWrite} canOverride={canWrite && canOverride} canSeeMoney={canSeeMoney} invoiceAmountFormatted={invoiceAmountFormatted} />;
 }

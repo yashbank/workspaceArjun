@@ -1,5 +1,5 @@
-import { format } from 'date-fns';
-
+import { formatFactoryDateTime } from '@/lib/mis/factory-time';
+import { getFactoryTimezone } from '@/server/mis/business-rules';
 import { RequestScreen } from '@/components/mis/store/request-screen';
 import { requireMisAccess } from '@/server/mis/guard';
 import { listIssueTargets, listPickerItems } from '@/server/mis/store';
@@ -8,6 +8,6 @@ import { listIssueTargets, listPickerItems } from '@/server/mis/store';
 export default async function NewMaterialRequestPage() {
   const user = await requireMisAccess();
   const [items, targets] = await Promise.all([listPickerItems(), listIssueTargets()]);
-  const meta = `${format(new Date(), 'EEE d MMM · HH:mm')} · ${user.name ?? user.email}`;
+  const meta = `${formatFactoryDateTime(new Date(), await getFactoryTimezone())} · ${user.name ?? user.email}`;
   return <RequestScreen header={{ title: 'Request material', meta }} items={items} orders={targets.orders} departments={targets.departments} />;
 }

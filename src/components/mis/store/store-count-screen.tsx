@@ -34,14 +34,16 @@ type Props = {
   items: ItemOption[];
   counts: CountRow[];
   canCount: boolean;
+  /** Today as the factory reads it (`YYYY-MM-DD`), from the server. */
+  today: string;
 };
 
-export function StoreCountScreen({ items, counts, canCount }: Props) {
+export function StoreCountScreen({ items, counts, canCount, today }: Props) {
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState('');
   const [physQty, setPhysQty] = useState('');
-  const [countDate, setCountDate] = useState(new Date().toISOString().slice(0, 10));
+  const [countDate, setCountDate] = useState(today);
   const [notes, setNotes] = useState('');
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState('');
@@ -90,12 +92,12 @@ export function StoreCountScreen({ items, counts, canCount }: Props) {
     setError('');
     startTransition(async () => {
       try {
-        await physicalCountAction({
+        unwrap(await physicalCountAction({
           itemId: selectedItemId,
           physicalQty: qty,
           countDate,
           notes: notes || undefined,
-        });
+        }));
         setSuccess(`Physical count recorded for ${selectedItem?.name ?? ''}`);
         setOpen(false);
         setSelectedItemId('');
@@ -118,7 +120,7 @@ export function StoreCountScreen({ items, counts, canCount }: Props) {
       header: 'Count Date',
       render: (r) => (
         <span className="text-sm text-slate-600">
-          {new Date(r.countDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+          {String(r.countDate).slice(8, 10)}/{String(r.countDate).slice(5, 7)}/{String(r.countDate).slice(0, 4)}
         </span>
       ),
     },
