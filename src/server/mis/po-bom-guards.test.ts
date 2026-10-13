@@ -47,7 +47,9 @@ const db: Row = {
     findMany: async ({ where }: Row) =>
       state.boms.filter((b) => b.status === where.status).map((b) => ({ order: state.orders.find((o) => o.id === b.orderId) })),
   },
-  $transaction: async (ops: unknown[]) => Promise.all(ops as Promise<unknown>[]),
+  // R3-MST B28: cancelPO now reads the GRN count and writes the status inside one interactive transaction.
+  misItem: { findFirst: async ({ where }: Row) => (where.id === 'i-gone' ? null : { id: where.id }) },
+  $transaction: async (arg: unknown) => (typeof arg === 'function' ? (arg as (tx: Row) => Promise<unknown>)(db) : Promise.all(arg as Promise<unknown>[])),
 };
 vi.mock('@/server/db', () => ({ get db() { return db; } }));
 
@@ -73,8 +75,10 @@ beforeEach(() => {
 });
 
 const draftWithLine = async (qty = 5) => {
-  const created = await po.createPO({ purpose: 'BUFFER_STOCK' });
-  await po.addPOItem(created.id, { description: 'Kraft', quantity: qty, ratePerUnit: 10 });
+  // R3-MST B26/B27: a submittable PO needs a supplier and an item on every line, and a line quantity above zero.
+  const created = await po.createPO({ purpose: 'BUFFER_STOCK', supplierId: 's1' });
+  if (qty > 0) await po.addPOItem(created.id, { itemId: 'i1', description: 'Kraft', quantity: qty, ratePerUnit: 10 });
+  else state.items.push({ id: nextId(), poId: created.id, itemId: 'i1', description: 'Kraft', quantity: 0, ratePerUnit: 0, sortOrder: 1 });
   return created;
 };
 

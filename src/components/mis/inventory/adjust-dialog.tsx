@@ -11,12 +11,15 @@ export function AdjustDialog({ itemId, itemName, currentBalance, unit }: Props) 
   const [open, setOpen] = useState(false);
   const [changeQty, setChangeQty] = useState('');
   const [notes, setNotes] = useState('');
+  const [error, setError] = useState('');
   const [isPending, startTransition] = useTransition();
 
   const handleSave = () => startTransition(async () => {
     const qty = parseFloat(changeQty);
     if (isNaN(qty) || qty === 0) return;
-    await adjustInventoryAction(itemId, qty, notes || undefined);
+    const res = await adjustInventoryAction(itemId, qty, notes.trim());
+    if (!res.ok) { setError(res.detail); return; }
+    setError('');
     setChangeQty(''); setNotes(''); setOpen(false);
   });
 
@@ -44,10 +47,10 @@ export function AdjustDialog({ itemId, itemName, currentBalance, unit }: Props) 
             <NumberInput label="Change Quantity" value={changeQty} onChange={(e) => setChangeQty(e.target.value)} placeholder="+10 or -5" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Notes (optional)</label>
-            <Input label="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Reason for adjustment…" />
+            <Input label="Reason (required)" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Reason for adjustment…" />
           </div>
-          <Button onClick={handleSave} disabled={isPending || !changeQty || parseFloat(changeQty) === 0}>
+          {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+          <Button onClick={handleSave} disabled={isPending || !changeQty || parseFloat(changeQty) === 0 || notes.trim().length < 3}>
             {isPending ? 'Saving…' : 'Save Adjustment'}
           </Button>
         </div>

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireMisAccess } from '@/server/mis/guard';
+import { requirePermission } from '@/server/mis/auth';
 
 // Pre-built minimal XLSX template (openpyxl-generated, base64-encoded)
 // Columns: Code | Name | SKU | Category | Unit | Price Per Unit
@@ -8,6 +9,12 @@ const TEMPLATE_B64 =
 
 export async function GET() {
   await requireMisAccess();
+  try {
+    await requirePermission('masters.write');
+  } catch (e) {
+    if ((e as { digest?: string } | null)?.digest === 'MIS_FORBIDDEN') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    throw e;
+  }
   const buf = Buffer.from(TEMPLATE_B64, 'base64');
   return new NextResponse(buf, {
     headers: {

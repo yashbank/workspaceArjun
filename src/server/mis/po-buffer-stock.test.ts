@@ -207,7 +207,7 @@ describe('buffer PO end to end (MIS-279 case 1) — never surfaces as an error (
 
 describe('classification-on-issue (MIS-279 case 4)', () => {
   it("a buffer PO's received line gets the same GENERAL type any PO's line gets — the buffer/for-order split lives on the PO's own bomRef, not the GRN line", async () => {
-    const bufferPo = await createPO({ purpose: 'BUFFER_STOCK' });
+    const bufferPo = await createPO({ purpose: 'BUFFER_STOCK', supplierId: 's1' });
     await fakeDb.misPoItem.create({ data: { poId: bufferPo.id, itemId: 'i1', quantity: 10, ratePerUnit: 5 } });
     await commitReceipt([{ itemId: 'i1', qty: 10, rate: 5 }], { poId: bufferPo.id });
     expect(state.grnItems).toHaveLength(1);
@@ -243,9 +243,9 @@ describe('partial-receipt arithmetic, to the paisa (this phase\'s own acceptance
 
 describe('approval chain (Phase 21 · D1/D2/D34)', () => {
   it('a buffer-stock PO and an order-linked PO of the SAME value take the identical approval path (D2\'s own acceptance check)', async () => {
-    const orderPo = await createPO({ bomRef: 'ORD-202610-00700' });
+    const orderPo = await createPO({ bomRef: 'ORD-202610-00700', supplierId: 's1' });
     await fakeDb.misPoItem.create({ data: { poId: orderPo.id, itemId: 'i1', quantity: 10, ratePerUnit: 1000 } }); // 10,000
-    const bufferPo = await createPO({ purpose: 'BUFFER_STOCK' });
+    const bufferPo = await createPO({ purpose: 'BUFFER_STOCK', supplierId: 's1' });
     await fakeDb.misPoItem.create({ data: { poId: bufferPo.id, itemId: 'i1', quantity: 10, ratePerUnit: 1000 } }); // 10,000
 
     const submittedOrder = await submitForApproval(orderPo.id);
@@ -255,7 +255,7 @@ describe('approval chain (Phase 21 · D1/D2/D34)', () => {
   });
 
   it('below the threshold: ADMIN_ONLY, a single step an Admin can complete alone', async () => {
-    const po = await createPO({ bomRef: 'ORD-202610-00701' });
+    const po = await createPO({ bomRef: 'ORD-202610-00701', supplierId: 's1' });
     await fakeDb.misPoItem.create({ data: { poId: po.id, itemId: 'i1', quantity: 1, ratePerUnit: 100 } }); // 100
     const submitted = await submitForApproval(po.id);
     expect(submitted.approvalMode).toBe('ADMIN_ONLY');
@@ -268,7 +268,7 @@ describe('approval chain (Phase 21 · D1/D2/D34)', () => {
   });
 
   it('at/above the threshold: BOTH — an Admin\'s first step does not itself approve, and only the Owner can give the second', async () => {
-    const po = await createPO({ bomRef: 'ORD-202610-00702' });
+    const po = await createPO({ bomRef: 'ORD-202610-00702', supplierId: 's1' });
     await fakeDb.misPoItem.create({ data: { poId: po.id, itemId: 'i1', quantity: 100, ratePerUnit: 1000 } }); // 100,000
     const submitted = await submitForApproval(po.id);
     expect(submitted.approvalMode).toBe('BOTH');
@@ -289,7 +289,7 @@ describe('approval chain (Phase 21 · D1/D2/D34)', () => {
   });
 
   it('OWNER_ONLY is a manual override only an Owner can invoke, and only an Owner can then approve it', async () => {
-    const po = await createPO({ bomRef: 'ORD-202610-00703' });
+    const po = await createPO({ bomRef: 'ORD-202610-00703', supplierId: 's1' });
     await fakeDb.misPoItem.create({ data: { poId: po.id, itemId: 'i1', quantity: 1, ratePerUnit: 100 } }); // 100 — would otherwise be ADMIN_ONLY
 
     getMisRole.mockResolvedValue('ADMIN');
@@ -308,7 +308,7 @@ describe('approval chain (Phase 21 · D1/D2/D34)', () => {
   });
 
   it('a threshold change after submission never reopens a PO already decided (frozen at submission, D34)', async () => {
-    const po = await createPO({ bomRef: 'ORD-202610-00704' });
+    const po = await createPO({ bomRef: 'ORD-202610-00704', supplierId: 's1' });
     await fakeDb.misPoItem.create({ data: { poId: po.id, itemId: 'i1', quantity: 100, ratePerUnit: 1000 } }); // 100,000 -> BOTH today
     const submitted = await submitForApproval(po.id);
     expect(submitted.approvalMode).toBe('BOTH');
