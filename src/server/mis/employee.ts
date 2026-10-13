@@ -1,5 +1,7 @@
+import type { Prisma } from '@/generated/prisma/client';
 import { db } from '@/server/db';
 import { assignableRoles, isMisRole, type MisRoleName } from '@/lib/mis/roles';
+import { can } from '@/lib/mis/permissions';
 import { MisForbiddenError, requirePermission, type MisActor } from './auth';
 import { logAuditEvent } from './audit';
 import { resolveVisibleEmployeeWhere, wouldCreateManagerCycle } from './visibility';
@@ -64,9 +66,56 @@ export async function listEmployeeRoster() {
   });
 }
 
-export async function getEmployee(id: string) {
-  await requirePermission('employees.read');
-  return db.misEmployee.findUnique({ where: { id }, include: { userProfile: true } });
+export async function getEmployee(id: string): Promise<Awaited<ReturnType<typeof getEmployeeFull>>>;
+export async function getEmployee(id: string, view: 'payslip'): Promise<Awaited<ReturnType<typeof getEmployeePayslip>>>;
+export async function getEmployee(id: string, view?: 'payslip') {
+  const actor = await requirePermission('employees.read');
+  // R3 B36: scope in the where, so an out-of-pool id is indistinguishable from an unknown one.
+  const visible = await resolveVisibleEmployeeWhere(actor);
+  if (view === 'payslip') return getEmployeePayslip(id, visible);
+  return getEmployeeFull(id, visible);
+}
+
+function getEmployeeFull(id: string, visible: Prisma.MisEmployeeWhereInput) {
+  return db.misEmployee.findUnique({ where: { id, AND: [visible] }, include: { userProfile: true } });
+}
+
+function getEmployeePayslip(id: string, visible: Prisma.MisEmployeeWhereInput) {
+  // R3 B49: a payslip needs a name, a code and a role label - not the whole row and its login.
+  return db.misEmployee.findUnique({
+    where: { id, AND: [visible] },
+    select: { id: true, name: true, employeeCode: true, role: true, department: { select: { name: true } } },
+  });
+}
+
+/** R3 B36: the one lookup every write goes through — pool-scoped, and the same message for unknown and hidden. */
+async function findVisibleEmployee(actor: MisActor, id: string) {
+  const visible = await resolveVisibleEmployeeWhere(actor);
+  const row = await db.misEmployee.findUnique({ where: { id, AND: [visible] } });
+  if (!row) throw new Error(`Employee ${id} not found`);
+  return row;
+}
+
+/** R3 B35: only an Owner may touch an Owner's record. */
+function assertMayTouchTarget(actor: MisActor, target: { role: string }) {
+  if (target.role === 'OWNER' && actor.role !== 'OWNER') throw new MisForbiddenError('users.invite', 'an Owner record');
+}
+
+/**
+ * R3 B33: wage STRUCTURE (code, pay type, Sunday pay) is OWNER-only on the server. An unchanged
+ * value passes (the Admin edit form re-posts every field); a different one needs `wages.read`.
+ */
+function assertWageFieldsAllowed(
+  actor: MisActor,
+  input: { wageTypeCode?: string | null; payType?: 'MONTHLY' | 'DAILY'; sundayPaid?: boolean },
+  current: { wageTypeCode: string | null; payType: string; sundayPaid: boolean },
+) {
+  if (can(actor.role, 'wages.read')) return;
+  const changed =
+    (input.wageTypeCode !== undefined && (input.wageTypeCode ?? null) !== current.wageTypeCode) ||
+    (input.payType !== undefined && input.payType !== current.payType) ||
+    (input.sundayPaid !== undefined && input.sundayPaid !== current.sundayPaid);
+  if (changed) throw new MisForbiddenError('wages.read');
 }
 
 /**
@@ -92,14 +141,16 @@ function assertMayAssignRole(actor: MisActor, role: string | null | undefined) {
  * exceptions, on the theory that a human scanning audit rows for "wage" should never have to
  * wonder whether a hit is real. The field itself is unaffected — only what reaches the audit row.
  */
-function auditSafeEmployee<T extends { wageTypeCode?: string | null }>(row: T): Omit<T, 'wageTypeCode'> {
-  const { wageTypeCode: _wageTypeCode, ...rest } = row;
-  return rest;
+function auditSafeEmployee<T extends { wageTypeCode?: string | null }>(row: T): Omit<T, 'wageTypeCode'> & { payCode: string | null } {
+  // R3 B34: the CODE (never an amount) goes in as `payCode`, so a wage-code change is auditable.
+  const { wageTypeCode, ...rest } = row;
+  return { ...rest, payCode: wageTypeCode ?? null };
 }
 
 export async function createEmployee(input: EmployeeInput) {
   const actor = await requirePermission('employees.write');
   assertMayAssignRole(actor, input.role);
+  assertWageFieldsAllowed(actor, input, { wageTypeCode: null, payType: 'DAILY', sundayPaid: false });
   const created = await db.misEmployee.create({
     data: {
       employeeCode: input.employeeCode.trim().toUpperCase(),
@@ -117,8 +168,9 @@ export async function createEmployee(input: EmployeeInput) {
 
 export async function updateEmployee(id: string, patch: Partial<EmployeeInput>) {
   const actor = await requirePermission('employees.write');
-  const before = await db.misEmployee.findUnique({ where: { id } });
-  if (!before) throw new Error(`Employee ${id} not found`);
+  const before = await findVisibleEmployee(actor, id);
+  assertMayTouchTarget(actor, before);
+  assertWageFieldsAllowed(actor, patch, before);
   // The employee screen resends the row's current role on every edit, so only a role CHANGE is
   // a grant. Restating the role a person already has hands out nothing.
   if (patch.role !== before.role) assertMayAssignRole(actor, patch.role);
@@ -147,8 +199,9 @@ export async function updateEmployee(id: string, patch: Partial<EmployeeInput>) 
 
 export async function deleteEmployee(id: string) {
   const actor = await requirePermission('employees.write');
-  const before = await db.misEmployee.findUnique({ where: { id } });
-  if (!before) throw new Error(`Employee ${id} not found`);
+  const before = await findVisibleEmployee(actor, id);
+  assertMayTouchTarget(actor, before);
+  if (before.userProfileId && before.userProfileId === actor.userId) throw new Error('You cannot delete your own record');
   const after = await db.misEmployee.update({ where: { id }, data: { deletedAt: new Date(), isActive: false } });
   await logAuditEvent({ actorId: actor.userId, action: 'employee.delete', entity: 'MisEmployee', entityId: id, before: auditSafeEmployee(before), after: auditSafeEmployee(after) });
   return after;
@@ -156,6 +209,8 @@ export async function deleteEmployee(id: string) {
 
 export async function restoreEmployee(id: string) {
   const actor = await requirePermission('employees.write');
+  const before = await findVisibleEmployee(actor, id);
+  assertMayTouchTarget(actor, before);
   const after = await db.misEmployee.update({ where: { id }, data: { deletedAt: null, isActive: true } });
   await logAuditEvent({ actorId: actor.userId, action: 'employee.restore', entity: 'MisEmployee', entityId: id, after: auditSafeEmployee(after) });
   return after;

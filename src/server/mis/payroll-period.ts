@@ -1,7 +1,9 @@
+import { factoryDateKey } from '@/lib/mis/factory-time';
 import { db } from '@/server/db';
 
 import { requirePermission } from './auth';
 import { logAuditEvent } from './audit';
+import { getFactoryTimezone } from './business-rules';
 import { calculateMonthlyPayroll } from './payroll';
 
 /**
@@ -80,50 +82,78 @@ export async function getPayrollPreflight(year: number, month: number): Promise<
  * separate, deliberate act this phase does not build (D27 leaves it for a later phase; closing
  * again silently would defeat the whole point).
  */
-export async function closePayrollPeriod(year: number, month: number): Promise<PayrollPeriod> {
+export async function closePayrollPeriod(
+  year: number,
+  month: number,
+  /** OWNER only: close despite preflight blockers, with a reason of at least 3 characters. */
+  override?: { reason: string },
+): Promise<PayrollPeriod> {
   const actor = await requirePermission('wages.read');
-  const existing = await db.misPayrollPeriod.findUnique({ where: { year_month: { year, month } } });
-  if (existing?.status === 'CLOSED') throw new Error(`${year}-${month} is already closed.`);
+  // R3 B46: a real month, in the past. The current (still-accruing) or a future month cannot be frozen.
+  if (!Number.isInteger(year) || year < 2000 || year > 2100) throw new Error('Choose a year between 2000 and 2100.');
+  if (!Number.isInteger(month) || month < 1 || month > 12) throw new Error('Choose a month between 1 and 12.');
+  const todayKey = factoryDateKey(new Date(), await getFactoryTimezone());
+  const [ty, tm] = todayKey.split('-').map(Number);
+  if (year * 12 + month >= ty * 12 + tm) throw new Error('The current or a future month cannot be closed yet.');
 
-  const rows = await calculateMonthlyPayroll(year, month);
-  const now = new Date();
-
-  const period = await db.$transaction(async (tx) => {
-    const p = existing
-      ? await tx.misPayrollPeriod.update({ where: { id: existing.id }, data: { status: 'CLOSED', closedById: actor.userId, closedAt: now } })
-      : await tx.misPayrollPeriod.create({ data: { year, month, status: 'CLOSED', closedById: actor.userId, closedAt: now } });
-
-    await tx.misPayrollSnapshotLine.deleteMany({ where: { periodId: p.id } });
-    if (rows.length > 0) {
-      await tx.misPayrollSnapshotLine.createMany({
-        data: rows.map((r) => ({
-          periodId: p.id,
-          employeeId: r.employeeId,
-          employeeCode: r.employeeCode,
-          employeeName: r.employeeName,
-          payType: r.payType,
-          workingDays: r.workingDays,
-          present: r.present,
-          halfDay: r.halfDay,
-          absent: r.absent,
-          leave: r.leave,
-          otMinutes: r.totalOTMinutes,
-          lateMinutes: r.totalLateMinutes,
-          allowanceDays: r.allowanceDays,
-          basicWage: r.basicWage,
-          hra: r.hra,
-          allowance: r.allowance,
-          otPay: r.otPay,
-          bonus: r.bonus,
-          extraPay: r.extraPay,
-          latePenalty: r.latePenalty,
-          grossPay: r.grossPay,
-          wageTypeCode: r.wageTypeCode,
-        })),
-      });
+  const overrideReason = override?.reason?.trim() ?? '';
+  const blockers = (await getPayrollPreflight(year, month)).filter((i) => !i.ok);
+  if (blockers.length > 0) {
+    if (!override || actor.role !== 'OWNER' || overrideReason.length < 3) {
+      throw new Error('Fix first: ' + blockers.map((b) => b.label).join('; ') + '. An Owner can override with a reason.');
     }
-    return p;
-  });
+  }
+
+  // Existence check, compute and write share ONE transaction under an advisory lock, so two
+  // concurrent closes serialise: the second sees CLOSED and is refused instead of double-writing.
+  // Compute reads the month's attendance and wage tables once; keep the whole tx under the 10 s
+  // timeout below (measured time: not measurable in the agent shell - check on the first real close).
+  const lockKey = 'payroll-close-' + year + '-' + String(month).padStart(2, '0');
+  const { period, lineCount, existing } = await db.$transaction(
+    async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+      const existing = await tx.misPayrollPeriod.findUnique({ where: { year_month: { year, month } } });
+      if (existing?.status === 'CLOSED') throw new Error(`${year}-${month} is already closed.`);
+
+      const rows = await calculateMonthlyPayroll(year, month, tx);
+      const now = new Date();
+      const p = existing
+        ? await tx.misPayrollPeriod.update({ where: { id: existing.id }, data: { status: 'CLOSED', closedById: actor.userId, closedAt: now } })
+        : await tx.misPayrollPeriod.create({ data: { year, month, status: 'CLOSED', closedById: actor.userId, closedAt: now } });
+
+      await tx.misPayrollSnapshotLine.deleteMany({ where: { periodId: p.id } });
+      if (rows.length > 0) {
+        await tx.misPayrollSnapshotLine.createMany({
+          data: rows.map((r) => ({
+            periodId: p.id,
+            employeeId: r.employeeId,
+            employeeCode: r.employeeCode,
+            employeeName: r.employeeName,
+            payType: r.payType,
+            workingDays: r.workingDays,
+            present: r.present,
+            halfDay: r.halfDay,
+            absent: r.absent,
+            leave: r.leave,
+            otMinutes: r.totalOTMinutes,
+            lateMinutes: r.totalLateMinutes,
+            allowanceDays: r.allowanceDays,
+            basicWage: r.basicWage,
+            hra: r.hra,
+            allowance: r.allowance,
+            otPay: r.otPay,
+            bonus: r.bonus,
+            extraPay: r.extraPay,
+            latePenalty: r.latePenalty,
+            grossPay: r.grossPay,
+            wageTypeCode: r.wageTypeCode,
+          })),
+        });
+      }
+      return { period: p, lineCount: rows.length, existing };
+    },
+    { timeout: 10_000, maxWait: 5_000 },
+  );
 
   // D24: the audit row names the period and how many lines it froze, never a figure.
   await logAuditEvent({
@@ -132,7 +162,13 @@ export async function closePayrollPeriod(year: number, month: number): Promise<P
     entity: 'MisPayrollPeriod',
     entityId: period.id,
     before: existing ? { year, month, status: existing.status } : { year, month, status: 'OPEN' },
-    after: { year, month, status: 'CLOSED', lineCount: rows.length },
+    after: {
+      year,
+      month,
+      status: 'CLOSED',
+      lineCount,
+      ...(blockers.length > 0 ? { overrideReason, overriddenChecks: blockers.map((b) => b.id) } : {}),
+    },
   });
 
   return getPayrollPeriod(year, month);

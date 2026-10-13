@@ -8,7 +8,7 @@ import { Input, NumberInput, DateInput } from '@/components/mis/kit/input';
 import { Select } from '@/components/mis/kit/select';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
-import { DEFAULT_FACTORY_TIMEZONE, formatFactoryDate } from '@/lib/mis/factory-time';
+import { DEFAULT_FACTORY_TIMEZONE, factoryDateKey, formatFactoryDate } from '@/lib/mis/factory-time';
 import type { WageTypeCode, WageTypeRow } from '@/server/mis/wage-type';
 
 import {
@@ -27,7 +27,7 @@ const UNIT_OPTIONS = [
 ];
 
 function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  return factoryDateKey(new Date(), DEFAULT_FACTORY_TIMEZONE);
 }
 
 export function WageTypeScreen({
@@ -92,6 +92,7 @@ export function WageTypeScreen({
     setRateHra('');
     setRateAllowance('');
     setRateBonus('');
+    setSaveError(null);
     setRateOpen(true);
   };
 
@@ -116,20 +117,22 @@ export function WageTypeScreen({
   const handleAddRate = () => {
     if (!rateCode) return;
     startTransition(async () => {
-      await addWageRateAction(rateCode, Number.parseFloat(rateAmount) || 0, rateEffectiveFrom, {
+      const r = await addWageRateAction(rateCode, Number.parseFloat(rateAmount) || 0, rateEffectiveFrom, {
         otRatePerHour: numOrUndefined(rateOtRate),
         multiplierBasis: rateBasis as WageTypeRow['multiplierBasis'],
         hraAmount: numOrUndefined(rateHra),
         allowanceAmount: numOrUndefined(rateAllowance),
         bonusAmount: numOrUndefined(rateBonus),
       });
+      if (!r.ok) { setSaveError(r.detail); return; }
       setRateOpen(false);
     });
   };
 
   const toggleActive = (row: WageTypeRow) => {
     startTransition(async () => {
-      await setWageTypeActiveAction(row.code, !row.isActive);
+      const r = await setWageTypeActiveAction(row.code, !row.isActive);
+      if (!r.ok) setSaveError(r.detail);
     });
   };
 
@@ -206,6 +209,7 @@ export function WageTypeScreen({
         </div>
       </div>
 
+      {saveError && !addOpen && !rateOpen && <p role="alert" className="text-sm text-red-600">{saveError}</p>}
       <DataTable
         columns={columns}
         rows={wageTypes}
@@ -274,6 +278,7 @@ export function WageTypeScreen({
           <p className="text-sm text-slate-500">
             The old rate stays on record for pay periods already decided — this adds a new one, it never overwrites history. Any field left blank here carries over from the code&apos;s current row.
           </p>
+          {saveError && <p role="alert" className="text-sm text-red-600">{saveError}</p>}
           <div className="flex gap-2 pt-2">
             <Button onClick={handleAddRate} disabled={isPending || !rateCode || !rateAmount}>
               {isPending ? 'Saving…' : 'Save'}

@@ -2,7 +2,7 @@ import { db } from '@/server/db';
 import { getSeatUsage } from '@/server/users';
 import { inviteUser as inviteWorkspaceUser } from '@/server/admin';
 
-import type { MisRoleName } from '@/lib/mis/roles';
+import { isMisRole, type MisRoleName } from '@/lib/mis/roles';
 
 import { requirePermission } from './auth';
 import { logAuditEvent } from './audit';
@@ -82,9 +82,20 @@ async function uniqueEmployeeCode(email: string): Promise<string> {
 }
 
 async function linkOrCreateMisEmployee(userProfileId: string, role: MisRoleName, actorId: string) {
+  // R3 B40: a role must be a real MIS role, the person must be an active login, and the
+  // factory must never be left without an active Owner.
+  if (!isMisRole(role)) throw new Error('Unknown role');
+  const profile = await db.userProfile.findUniqueOrThrow({ where: { id: userProfileId } });
+  if (profile?.status && profile.status !== 'active') throw new Error('Reactivate the user first');
   const existing = await db.misEmployee.findUnique({ where: { userProfileId } });
 
   if (existing) {
+    if (existing.role === 'OWNER' && role !== 'OWNER') {
+      const otherOwners = await db.misEmployee.count({
+        where: { role: 'OWNER', isActive: true, deletedAt: null, id: { not: existing.id } },
+      });
+      if (!otherOwners) throw new Error('There must be at least one active Owner. Make someone else Owner first.');
+    }
     const after = await db.misEmployee.update({
       where: { id: existing.id },
       data: { role, deletedAt: null, isActive: true },
@@ -100,7 +111,6 @@ async function linkOrCreateMisEmployee(userProfileId: string, role: MisRoleName,
     return after;
   }
 
-  const profile = await db.userProfile.findUniqueOrThrow({ where: { id: userProfileId } });
   const created = await db.misEmployee.create({
     data: {
       userProfileId,
@@ -148,6 +158,7 @@ export type InviteMisUserResult =
  */
 export async function inviteMisUser(email: string, role: MisRoleName): Promise<InviteMisUserResult> {
   const actor = await requirePermission('users.invite');
+  if (!isMisRole(role)) throw new Error('Unknown role');
   const normalized = email.trim().toLowerCase();
   if (!normalized) throw new Error('Email is required');
 
@@ -190,5 +201,6 @@ export async function listPendingMisGrants(): Promise<PendingMisGrant[]> {
 /** Grant a MIS role to a workspace user who does not have one yet. Owner only. */
 export async function grantMisRole(userProfileId: string, role: MisRoleName): Promise<void> {
   const actor = await requirePermission('users.invite');
+  if (!isMisRole(role)) throw new Error('Unknown role');
   await linkOrCreateMisEmployee(userProfileId, role, actor.userId);
 }

@@ -183,8 +183,9 @@ describe('F-10 (fixed in 14F, D25) — only an Owner may grant the Owner role', 
     expect(world.people.find((p) => p.id === 'w1')).toMatchObject({ name: 'Same', role: 'WORKER' });
   });
 
-  it("an Admin can still rename the Owner's row when the form resends the role unchanged — restating a role grants nothing", async () => {
-    await expect(employee.updateEmployee('e-own', { name: 'Renamed', role: 'OWNER' })).resolves.toMatchObject({ name: 'Renamed', role: 'OWNER' });
+  // R3 B35: contract changed - an Admin may no longer touch the Owner's row at all, even to rename it.
+  it("an Admin cannot rename the Owner's row, even when the form resends the role unchanged (R3 B35)", async () => {
+    await expect(employee.updateEmployee('e-own', { name: 'Renamed', role: 'OWNER' })).rejects.toThrow(/Not permitted/);
   });
 
   it('but a form that also renames someone whose role is NOT already OWNER cannot smuggle OWNER in with the rename', async () => {

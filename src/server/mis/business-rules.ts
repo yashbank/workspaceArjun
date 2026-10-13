@@ -219,6 +219,26 @@ export async function getCorrectionWindowDays(): Promise<number> {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 3;
 }
 
+/** R3 B37: keys that move money or the attendance register are Owner-level (`wages.read`) even though Admin holds `settings.write`. */
+const ATTENDANCE_CORRECTION_KEY = 'ATTENDANCE_CORRECTION_DAYS';
+const OWNER_ONLY_RULE_KEYS: readonly string[] = [PO_APPROVAL_THRESHOLD_KEY, ATTENDANCE_CORRECTION_KEY];
+const INTEGER_RULE_KEYS: readonly string[] = [ATTENDANCE_CORRECTION_KEY, OFFLINE_SKEW_KEY, OFFLINE_MAX_AGE_KEY, LINE_CLEARANCE_MAX_MINUTES_KEY];
+const RULE_RANGES: Record<string, [number, number]> = {
+  [PO_APPROVAL_THRESHOLD_KEY]: [0, 10_000_000],
+  [ATTENDANCE_CORRECTION_KEY]: [0, 60],
+};
+
+/** R3 B37: a number rule must be a finite number (an integer for the integer keys) inside its range. */
+function assertRuleValueValid(ruleKey: string, ruleValue: string, valueType: string) {
+  if (valueType !== 'number') return;
+  const text = String(ruleValue).trim();
+  const n = text === '' ? Number.NaN : Number(text);
+  if (!Number.isFinite(n)) throw new Error('Enter a number for this rule.');
+  if (INTEGER_RULE_KEYS.includes(ruleKey) && !Number.isInteger(n)) throw new Error('This rule must be a whole number.');
+  const range = RULE_RANGES[ruleKey];
+  if (range && (n < range[0] || n > range[1])) throw new Error(`This rule must be between ${range[0]} and ${range[1]}.`);
+}
+
 async function createRuleRevision(
   ruleKey: string,
   ruleValue: string,
@@ -228,6 +248,7 @@ async function createRuleRevision(
 ) {
   const existing = await db.misBusinessRule.findFirst({ where: { ruleKey }, orderBy: { effectiveFrom: 'desc' } });
   if (!existing) throw new Error(`Rule ${ruleKey} not found`);
+  assertRuleValueValid(ruleKey, ruleValue, existing.valueType);
   // The audit "before" is the value this row REPLACES: the row in force on the day the new one starts. With an
   // upcoming row already on file the newest row is not it (2.0 in force, 1.5 due in October; a change starting in
   // September replaces 2.0, not 1.5).
@@ -290,13 +311,19 @@ export async function updateBusinessRule(ruleKey: string, ruleValue: string) {
   // this an Admin could rewrite the rates and thresholds that the dedicated Owner-only screens
   // exist to protect (F-03).
   if (isAqlRuleKey(ruleKey)) await requirePermission('aql.read', ruleKey);
-  else if (isWageRuleKey(ruleKey)) await requirePermission('wages.read', ruleKey);
+  else if (isWageRuleKey(ruleKey) || OWNER_ONLY_RULE_KEYS.includes(ruleKey)) await requirePermission('wages.read', ruleKey);
   // A timezone that is not a real IANA name would silently mis-file every punch from
   // now on, so it is refused here rather than discovered in a payroll dispute (D22).
   if (ruleKey === FACTORY_TIMEZONE_KEY && !isValidTimeZone(ruleValue)) {
     throw new Error('The factory timezone must be a full IANA name such as Asia/Kolkata — not an abbreviation like IST.');
   }
-  return createRuleRevision(ruleKey, ruleValue, actor.userId);
+  try {
+    return await createRuleRevision(ruleKey, ruleValue, actor.userId);
+  } catch (error) {
+    // R3 B37: a second revision on the same day hits (ruleKey, effectiveFrom) - say it in words.
+    if ((error as { code?: unknown } | null)?.code === 'P2002') throw new Error('A change for this rule is already scheduled for today; edit that one.');
+    throw error;
+  }
 }
 
 /**

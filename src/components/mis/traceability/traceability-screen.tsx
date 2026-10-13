@@ -3,6 +3,7 @@ import { useState, useTransition } from 'react';
 import { Select } from '@/components/mis/kit/select';
 import { StatusBadge, type BadgeTone } from '@/components/mis/kit/status-badge';
 import { fmtDate } from '@/lib/mis/client-dates';
+import { safeHref } from '@/lib/mis/document-library';
 
 type Order = { id: string; orderNumber: string; description: string | null; status: string };
 
@@ -234,7 +235,11 @@ export function TraceabilityScreen({ orders }: { orders: Order[] }) {
                 {trace.documents.map((doc) => (
                   <div key={doc.id} className="flex items-center gap-3 text-sm">
                     <span className="font-medium">{doc.name}</span>
-                    <a href={doc.filePath} target="_blank" rel="noopener" className="text-blue-600 hover:underline text-xs">Download</a>
+                    {safeHref(doc.filePath) ? (
+                      <a href={safeHref(doc.filePath) ?? undefined} target="_blank" rel="noopener" className="text-blue-600 hover:underline text-xs">Download</a>
+                    ) : (
+                      <span className="text-slate-500 text-xs">{doc.filePath}</span>
+                    )}
                   </div>
                 ))}
               </div>

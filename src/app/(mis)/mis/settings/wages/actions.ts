@@ -35,11 +35,15 @@ export async function addWageRateAction(
     bonusAmount?: number | null;
   },
 ) {
-  await addWageRate(code, amount, effectiveFrom ? new Date(effectiveFrom) : undefined, extra);
-  revalidatePath('/mis/settings/wages');
+  return asResult(async () => {
+    await addWageRate(code, amount, effectiveFrom ? new Date(effectiveFrom) : undefined, extra);
+    revalidatePath('/mis/settings/wages');
+  }, { entity: 'Wage rate' });
 }
 
 export async function setWageTypeActiveAction(code: string, isActive: boolean) {
-  await setWageTypeActive(code, isActive);
-  revalidatePath('/mis/settings/wages');
+  return asResult(async () => {
+    await setWageTypeActive(code, isActive);
+    revalidatePath('/mis/settings/wages');
+  }, { entity: 'Wage type' });
 }

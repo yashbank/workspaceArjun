@@ -1,7 +1,10 @@
 import type { MisExtraPayDay, MisExtraPayKind, MisExtraPayScope } from '@/generated/prisma/client';
+import { addDaysToDateKey, dateKeyToDbDate, factoryDateKey } from '@/lib/mis/factory-time';
 import { db } from '@/server/db';
 
-import { requirePermission } from './auth';
+import { getFactoryTimezone } from './business-rules';
+
+import { requirePermission, type MisActor } from './auth';
 import { logAuditEvent } from './audit';
 
 /**
@@ -19,7 +22,8 @@ import { logAuditEvent } from './audit';
  */
 
 export type ExtraPayDayInput = {
-  date: Date;
+  /** A `YYYY-MM-DD` key (preferred), or an instant that is read as the FACTORY's calendar day. */
+  date: Date | string;
   kind: MisExtraPayKind;
   /** The multiplier (e.g. 2.0) or the flat rupee amount, per `kind`. */
   value: number;
@@ -69,9 +73,36 @@ async function toRow(row: MisExtraPayDay): Promise<ExtraPayDayRow> {
   };
 }
 
+const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
+const MAX_MULTIPLIER = 5;
+const MAX_FLAT_AMOUNT = 100_000;
+const MAX_DAYS_FROM_TODAY = 400;
+
+/** R3 B45/B48: a valid factory-calendar day key, normalised, or a refusal. */
+function normaliseDateKey(input: Date | string, timeZone: string): string {
+  let key: string;
+  if (typeof input === 'string') {
+    if (!DATE_KEY.test(input)) throw new Error('The date must be in YYYY-MM-DD form.');
+    key = input;
+  } else {
+    if (Number.isNaN(input.getTime())) throw new Error('The date is not valid.');
+    key = factoryDateKey(input, timeZone);
+  }
+  const db = dateKeyToDbDate(key);
+  if (Number.isNaN(db.getTime()) || db.toISOString().slice(0, 10) !== key) throw new Error('The date is not a real calendar day.');
+  return key;
+}
+
 /** Admin or Super Attendance Operator propose; an Owner (who holds every action) may too. */
 export async function proposeExtraPayDay(input: ExtraPayDayInput): Promise<ExtraPayDayRow> {
   const actor = await requirePermission('attendance.write');
+  const timeZone = await getFactoryTimezone();
+  const dateKey = normaliseDateKey(input.date, timeZone);
+  const todayKey = factoryDateKey(new Date(), timeZone);
+  if (dateKey < addDaysToDateKey(todayKey, -MAX_DAYS_FROM_TODAY) || dateKey > addDaysToDateKey(todayKey, MAX_DAYS_FROM_TODAY)) {
+    throw new Error(`The date must be within ${MAX_DAYS_FROM_TODAY} days of today.`);
+  }
+  const date = dateKeyToDbDate(dateKey);
   if (input.scope === 'EMPLOYEES' && !(input.employeeIds && input.employeeIds.length > 0)) {
     throw new Error('An EMPLOYEES-scoped extra-pay day needs at least one employee.');
   }
@@ -79,12 +110,24 @@ export async function proposeExtraPayDay(input: ExtraPayDayInput): Promise<Extra
     throw new Error('A DEPARTMENTS-scoped extra-pay day needs at least one department.');
   }
   if (!input.reason.trim()) throw new Error('A reason is required.');
-  if (!(input.value > 0)) throw new Error('Value must be a positive number.');
+  if (!Number.isFinite(input.value) || !(input.value > 0)) throw new Error('Value must be a positive number.');
+  if (input.kind === 'MULTIPLIER' && input.value > MAX_MULTIPLIER) throw new Error(`A multiplier is at most ${MAX_MULTIPLIER}.`);
+  if (input.kind === 'FLAT_AMOUNT' && input.value > MAX_FLAT_AMOUNT) throw new Error(`A flat amount is at most ${MAX_FLAT_AMOUNT}.`);
+  if (input.scope === 'EMPLOYEES') {
+    const ids = [...new Set(input.employeeIds)];
+    const found = await db.misEmployee.findMany({ where: { id: { in: ids }, isActive: true, deletedAt: null }, select: { id: true } });
+    if (found.length !== ids.length) throw new Error('Every named employee must exist and be active.');
+  }
+  // An APPROVED day on the same date with an overlapping scope would pay twice.
+  const sameDay = await db.misExtraPayDay.findMany({ where: { date: { gte: date, lte: date }, status: 'APPROVED' } });
+  for (const other of sameDay) {
+    if (await scopesOverlap(input, other)) throw new Error('An approved extra-pay day already covers this date for some of the same people.');
+  }
 
   const created = await db.$transaction(async (tx) => {
     const row = await tx.misExtraPayDay.create({
       data: {
-        date: input.date,
+        date,
         kind: input.kind,
         value: input.value,
         scope: input.scope,
@@ -110,6 +153,16 @@ export async function proposeExtraPayDay(input: ExtraPayDayInput): Promise<Extra
   return toRow(created);
 }
 
+/** Two days overlap when either is ALL_PRESENT, or both name a common employee / department. */
+async function scopesOverlap(a: ExtraPayDayInput, other: MisExtraPayDay): Promise<boolean> {
+  if (a.scope === 'ALL_PRESENT' || other.scope === 'ALL_PRESENT') return true;
+  if (a.scope !== other.scope) return false; // EMPLOYEES vs DEPARTMENTS: no way to tell cheaply, and no double pay is proven
+  const row = await toRow(other);
+  const mine = new Set(a.scope === 'EMPLOYEES' ? a.employeeIds : a.departmentIds);
+  const theirs = a.scope === 'EMPLOYEES' ? row.employeeIds : row.departmentIds;
+  return theirs.some((id) => mine.has(id));
+}
+
 /** Every extra-pay day, most recent first — Owner only (this includes the rupee/multiplier value). */
 export async function listExtraPayDays(status?: 'PENDING' | 'APPROVED' | 'REJECTED'): Promise<ExtraPayDayRow[]> {
   await requirePermission('wages.read');
@@ -132,29 +185,32 @@ export async function listApprovedExtraPayDaysForMonth(year: number, month: numb
   return Promise.all(rows.map(toRow));
 }
 
-/** Owner approves — D28: "it counts only once the Owner approves." */
-export async function approveExtraPayDay(id: string): Promise<ExtraPayDayRow> {
-  const actor = await requirePermission('wages.read');
+/** The single PENDING -> decided transition: `updateMany where status PENDING`, so a double decision loses cleanly. */
+async function decide(actor: MisActor, id: string, status: 'APPROVED' | 'REJECTED', action: string): Promise<ExtraPayDayRow> {
   const before = await db.misExtraPayDay.findUnique({ where: { id } });
   if (!before) throw new Error(`Extra-pay day ${id} not found`);
-  if (before.status !== 'PENDING') throw new Error(`Extra-pay day is already ${before.status.toLowerCase()}.`);
-  const after = await db.misExtraPayDay.update({
-    where: { id },
-    data: { status: 'APPROVED', approvedById: actor.userId, approvedAt: new Date() },
+  const { count } = await db.misExtraPayDay.updateMany({
+    where: { id, status: 'PENDING' },
+    // R3 B48: a rejection records its decider and time as well.
+    data: { status, approvedById: actor.userId, approvedAt: new Date() },
   });
-  await logAuditEvent({ actorId: actor.userId, action: 'extraPayDay.approve', entity: 'MisExtraPayDay', entityId: id, before: auditSafe(before), after: auditSafe(after) });
+  if (count === 0) throw new Error('Already decided.');
+  const after = await db.misExtraPayDay.findUnique({ where: { id } });
+  if (!after) throw new Error(`Extra-pay day ${id} not found`);
+  await logAuditEvent({ actorId: actor.userId, action, entity: 'MisExtraPayDay', entityId: id, before: auditSafe(before), after: auditSafe(after) });
   return toRow(after);
 }
 
-/** Owner rejects — the proposer sees why via `reason`/status, never a second approval path. */
+/** Owner approves - D28: "it counts only once the Owner approves." */
+export async function approveExtraPayDay(id: string): Promise<ExtraPayDayRow> {
+  const actor = await requirePermission('wages.read');
+  return decide(actor, id, 'APPROVED', 'extraPayDay.approve');
+}
+
+/** Owner rejects - the proposer sees why via `reason`/status, never a second approval path. */
 export async function rejectExtraPayDay(id: string): Promise<ExtraPayDayRow> {
   const actor = await requirePermission('wages.read');
-  const before = await db.misExtraPayDay.findUnique({ where: { id } });
-  if (!before) throw new Error(`Extra-pay day ${id} not found`);
-  if (before.status !== 'PENDING') throw new Error(`Extra-pay day is already ${before.status.toLowerCase()}.`);
-  const after = await db.misExtraPayDay.update({ where: { id }, data: { status: 'REJECTED' } });
-  await logAuditEvent({ actorId: actor.userId, action: 'extraPayDay.reject', entity: 'MisExtraPayDay', entityId: id, before: auditSafe(before), after: auditSafe(after) });
-  return toRow(after);
+  return decide(actor, id, 'REJECTED', 'extraPayDay.reject');
 }
 
 /**

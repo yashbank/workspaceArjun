@@ -23,5 +23,9 @@ export async function uploadEmployeePhotoAction(id: string, formData: FormData) 
     revalidatePath('/mis/kiosk');
   });
 }
-export async function deleteEmployeeAction(id: string) { await deleteEmployee(id); revalidatePath('/mis/employees'); }
-export async function restoreEmployeeAction(id: string) { await restoreEmployee(id); revalidatePath('/mis/employees'); }
+export async function deleteEmployeeAction(id: string) {
+  return asResult(async () => { await deleteEmployee(id); revalidatePath('/mis/employees'); }, { entity: 'Employee' });
+}
+export async function restoreEmployeeAction(id: string) {
+  return asResult(async () => { await restoreEmployee(id); revalidatePath('/mis/employees'); }, { entity: 'Employee' });
+}

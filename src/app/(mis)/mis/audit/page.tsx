@@ -17,9 +17,14 @@ export default async function AuditPage({ searchParams }: Props) {
 
   const sp = await searchParams;
   const entity = sp.entity;
-  const limit = Math.min(parseInt(sp.limit ?? '100', 10), 500);
-  const from = sp.from ? new Date(sp.from) : null;
-  const to = sp.to ? new Date(`${sp.to}T23:59:59.999`) : null;
+  // R3 B39: clamp the limit to 1..500 (NaN -> 100) and ignore anything that is not a YYYY-MM-DD date.
+  const parsedLimit = Number.parseInt(sp.limit ?? '', 10);
+  const limit = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 500) : 100;
+  const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
+  const fromKey = sp.from && DATE_KEY.test(sp.from) && !Number.isNaN(new Date(sp.from).getTime()) ? sp.from : null;
+  const toKey = sp.to && DATE_KEY.test(sp.to) && !Number.isNaN(new Date(sp.to).getTime()) ? sp.to : null;
+  const from = fromKey ? new Date(fromKey) : null;
+  const to = toKey ? new Date(`${toKey}T23:59:59.999`) : null;
 
   await requirePermission('settings.read');
   const logs = await db.misAuditLog.findMany({
@@ -52,8 +57,8 @@ export default async function AuditPage({ searchParams }: Props) {
         actorName: l.actor?.name ?? 'System',
         createdAt: l.createdAt,
       }))}
-      initialFrom={sp.from ?? ''}
-      initialTo={sp.to ?? ''}
+      initialFrom={fromKey ?? ''}
+      initialTo={toKey ?? ''}
     />
   );
 }
