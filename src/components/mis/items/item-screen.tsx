@@ -1,17 +1,16 @@
 'use client';
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { Button } from '@/components/mis/kit/button';
 import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import { Input } from '@/components/mis/kit/input';
-import { Select, type SelectOption } from '@/components/mis/kit/select';
+import { ItemOptionFields } from '@/components/mis/items/item-option-fields';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { saveItemAction, deleteItemAction, restoreItemAction } from '@/app/(mis)/mis/masters/items/actions';
+import { getItemFormOptionsAction, type ItemFormOptions } from '@/app/(mis)/mis/inventory/actions';
 
 type Item = { id: string; code: string; name: string; gsm: string | null; size: string | null; substrate: string | null; coating: string | null; unit: string; isActive: boolean; deletedAt: Date | null };
 type Props = { items: Item[]; canWrite: boolean };
-
-const UNIT_OPTIONS: SelectOption[] = [{ value: 'KG', label: 'KG' }, { value: 'PCS', label: 'PCS' }, { value: 'MTR', label: 'MTR' }, { value: 'SHEET', label: 'SHEET' }];
 
 export function ItemScreen({ items, canWrite }: Props) {
   const [open, setOpen] = useState(false);
@@ -19,6 +18,15 @@ export function ItemScreen({ items, canWrite }: Props) {
   const [editing, setEditing] = useState<Item | null>(null);
   const [vals, setVals] = useState({ code: '', name: '', gsm: '', size: '', substrate: '', coating: '', unit: 'KG' });
   const [search, setSearch] = useState('');
+  const [options, setOptions] = useState<ItemFormOptions | null>(null);
+
+  // GSM / Size / Unit are master dropdowns (R3-MST B32); load them when the form first opens.
+  useEffect(() => {
+    if (!open || options) return;
+    let live = true;
+    void getItemFormOptionsAction().then((r) => { if (live && r.ok) setOptions(r.value); });
+    return () => { live = false; };
+  }, [open, options]);
   const [isPending, startTransition] = useTransition();
 
   const filtered = search.trim()
@@ -66,16 +74,20 @@ export function ItemScreen({ items, canWrite }: Props) {
       <DataTable columns={columns} rows={filtered} rowKey={(r) => r.id} emptyTitle="No items yet" emptyBody="Add stock items to manage inventory." />
       <SlideOver open={open} onClose={() => setOpen(false)} title={editing ? 'Edit Item' : 'Add Item'}>
         <div className="flex flex-col gap-4 p-4">
-          <Input label="Code" value={vals.code} onChange={set('code')} required />
+          <Input label={editing ? 'Code' : 'Code (auto if blank)'} value={vals.code} onChange={set('code')} placeholder="ITM-XXXX" />
           <Input label="Name" value={vals.name} onChange={set('name')} required />
-          <Input label="GSM" value={vals.gsm} onChange={set('gsm')} />
-          <Input label="Size" value={vals.size} onChange={set('size')} />
           <Input label="Substrate" value={vals.substrate} onChange={set('substrate')} />
           <Input label="Coating" value={vals.coating} onChange={set('coating')} />
-          <Select label="Unit" value={vals.unit} options={UNIT_OPTIONS} onChange={(v) => setVals(p => ({ ...p, unit: v }))} />
+          <ItemOptionFields
+            options={options}
+            gsm={vals.gsm} size={vals.size} unit={vals.unit}
+            onGsm={(v) => setVals(p => ({ ...p, gsm: v }))}
+            onSize={(v) => setVals(p => ({ ...p, size: v }))}
+            onUnit={(v) => setVals(p => ({ ...p, unit: v }))}
+          />
           {saveError && <p role="alert" className="text-sm text-red-600">{saveError}</p>}
           <div className="flex gap-2 pt-2">
-            <Button onClick={handleSave} disabled={isPending || !vals.name || !vals.code}>{isPending ? 'Saving…' : 'Save'}</Button>
+            <Button onClick={handleSave} disabled={isPending || !vals.name.trim() || (!!editing && !vals.code.trim())}>{isPending ? 'Saving…' : 'Save'}</Button>
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
           </div>
         </div>

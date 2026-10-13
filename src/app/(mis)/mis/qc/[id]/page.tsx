@@ -9,8 +9,13 @@ import { db } from '@/server/db';
 import { factoryDateKey } from '@/lib/mis/factory-time';
 import { getFactoryTimezone } from '@/server/mis/business-rules';
 import { stageOptions } from '@/lib/mis/production-form';
+import { isOrderClosed } from '@/lib/mis/order-status';
 import { notFound } from 'next/navigation';
 import { QcDetailScreen } from '@/components/mis/qc/qc-detail-screen';
+
+/** Mirrors `editQcCheck`'s 24 h window (server/mis/qc.ts), which is the real gate; this only decides whether to show "Edit". */
+const QC_EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
+const withinEditWindow = (createdAt: Date | string) => Date.now() - new Date(createdAt).valueOf() <= QC_EDIT_WINDOW_MS;
 
 export default async function QcDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -43,7 +48,13 @@ export default async function QcDetailPage({ params }: { params: Promise<{ id: s
     <QcDetailScreen
       order={{ id: order.id, orderNumber: order.orderNumber, status: order.status, customer: order.customer }}
       // `getQcForOrder` returns the relation as `bomStage`; the table reads `stage` (it never showed one).
-      checks={checks.map((c) => ({ ...c, stage: c.bomStage, defectQty: c.defectQty != null ? Number(c.defectQty) : null }))}
+      // `editable` (B84) is decided here on the server clock: within 24 h, not acknowledged, order open.
+      checks={checks.map((c) => ({
+        ...c,
+        stage: c.bomStage,
+        defectQty: c.defectQty != null ? Number(c.defectQty) : null,
+        editable: canWrite && !isOrderClosed(order.status) && !c.acknowledgedAt && withinEditWindow(c.createdAt),
+      }))}
       stages={stageOptions(stages)}
       summary={summary}
       canWrite={canWrite}

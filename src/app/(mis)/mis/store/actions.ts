@@ -24,13 +24,15 @@ import type {
 } from '@/server/mis/store';
 
 export async function storeInAction(input: StoreInInput) {
-  const result = await createStoreIn(input);
-  revalidatePath('/mis/store');
-  revalidatePath('/mis/store/stock');
-  revalidatePath('/mis/store/dashboard');
-  revalidatePath('/mis/store/transactions');
-  revalidatePath(`/mis/store/ledger/${input.itemId}`);
-  return result;
+  return asResult(async () => {
+    const result = await createStoreIn(input);
+    revalidatePath('/mis/store');
+    revalidatePath('/mis/store/stock');
+    revalidatePath('/mis/store/dashboard');
+    revalidatePath('/mis/store/transactions');
+    revalidatePath(`/mis/store/ledger/${input.itemId}`);
+    return result;
+  });
 }
 
 export async function storeOutAction(input: StoreOutInput) {
@@ -48,9 +50,11 @@ export async function storeOutAction(input: StoreOutInput) {
 }
 
 export async function physicalCountAction(input: PhysicalCountInput) {
-  const result = await recordPhysicalCount(input);
-  revalidatePath('/mis/store/stock');
-  return result;
+  return asResult(async () => {
+    const result = await recordPhysicalCount(input);
+    revalidatePath('/mis/store/stock');
+    return result;
+  });
 }
 
 export async function reconcileCountAction(countId: string, reason: string): Promise<ActionResult<{ adjustment: number }>> {
@@ -65,17 +69,21 @@ export async function reconcileCountAction(countId: string, reason: string): Pro
 }
 
 export async function updateStoreItemAction(id: string, patch: StoreItemUpdateInput) {
-  await updateStoreItemProps(id, patch);
-  revalidatePath('/mis/store');
-  revalidatePath('/mis/store/stock');
-  revalidatePath('/mis/store/dashboard');
+  return asResult(async () => {
+    await updateStoreItemProps(id, patch);
+    revalidatePath('/mis/store');
+    revalidatePath('/mis/store/stock');
+    revalidatePath('/mis/store/dashboard');
+  });
 }
 
 export async function deactivateStoreItemAction(id: string) {
-  await deactivateStoreItem(id);
-  revalidatePath('/mis/store');
-  revalidatePath('/mis/store/stock');
-  revalidatePath('/mis/store/dashboard');
+  return asResult(async () => {
+    await deactivateStoreItem(id);
+    revalidatePath('/mis/store');
+    revalidatePath('/mis/store/stock');
+    revalidatePath('/mis/store/dashboard');
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -103,9 +111,10 @@ function revalidateStock(): void {
 export async function commitReceiptAction(
   lines: CartLineInput[],
   meta: ReceiptMeta,
+  idempotencyKey?: string,
 ): Promise<ActionResult<CartCommitResult>> {
   return asResult(async () => {
-    const result = await commitReceipt(lines, meta);
+    const result = await commitReceipt(lines, { ...meta, idempotencyKey: idempotencyKey ?? meta.idempotencyKey });
     revalidateStock();
     return result;
   });
@@ -115,10 +124,11 @@ export async function commitReceiptAction(
 export async function commitIssueAction(
   lines: CartLineInput[],
   meta: IssueMeta,
+  idempotencyKey?: string,
 ): Promise<ActionResult<CartCommitResult>> {
   // The stock-balance and order-allocation refusals are the message the storekeeper needs to read.
   return asResult(async () => {
-    const result = await commitIssue(lines, meta);
+    const result = await commitIssue(lines, { ...meta, idempotencyKey: idempotencyKey ?? meta.idempotencyKey });
     revalidateStock();
     return result;
   });

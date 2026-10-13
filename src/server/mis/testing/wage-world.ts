@@ -58,6 +58,7 @@ export const state: {
 
 const match = (row: Row, where: Row = {}): boolean =>
   Object.entries(where).every(([key, cond]) => {
+    if (key === 'AND') return (cond as Row[]).every((c) => match(row, c)); // R3-SEC
     const value = row[key];
     if (cond !== null && typeof cond === 'object' && !(cond instanceof Date)) {
       const ops = Object.keys(cond);
@@ -146,6 +147,8 @@ export const fakeDb = {
   misEmployee: {
     findUnique: async () => ({ ...EMP, role: 'WORKER', isActive: true, deletedAt: null, userProfile: null }),
     count: async (args: Row = {}) => state.employees.filter((r) => match(r, args.where)).length,
+    // R3-SEC (B44/B48): payroll now seeds zero-row employees, and extra-pay validates employee ids.
+    findMany: async (args: Row = {}) => state.employees.filter((r) => match(r, args.where)),
   },
   misAuditLog: {
     create: async ({ data }: Row) => {
@@ -190,6 +193,11 @@ export const fakeDb = {
     findUnique: async ({ where }: Row) => state.extraPayDays.find((r) => r.id === where.id) ?? null,
     create: async ({ data }: Row) => { const row = { id: nextId(), ...data }; state.extraPayDays.push(row); return row; },
     update: async ({ where, data }: Row) => { const row = state.extraPayDays.find((r) => r.id === where.id)!; Object.assign(row, data); return row; },
+    updateMany: async ({ where, data }: Row) => {
+      const rows = state.extraPayDays.filter((r) => match(r, where));
+      rows.forEach((r) => Object.assign(r, data));
+      return { count: rows.length };
+    },
     count: async (args: Row = {}) => state.extraPayDays.filter((r) => match(r, args.where)).length,
   },
   misExtraPayDayEmployee: {
@@ -204,7 +212,8 @@ export const fakeDb = {
   // Phase 25's writers use the callback form (`$transaction(async (tx) => ...)`) as well as the
   // array form; the fixture has no real isolation, so a callback just runs against the same fake
   // db (fine for a test — nothing here needs rollback semantics).
-  $transaction: (ops: unknown[] | ((tx: unknown) => Promise<unknown>)) =>
+  $executeRaw: async () => 0, // the payroll-close advisory lock
+  $transaction: (ops: unknown[] | ((tx: unknown) => Promise<unknown>), _opts?: unknown) =>
     typeof ops === 'function' ? ops(fakeDb) : Promise.all(ops),
 };
 

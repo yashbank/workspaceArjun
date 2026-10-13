@@ -70,6 +70,8 @@ export function seedPeople(opts: { flat?: boolean } = {}) {
 
 const matches = (row: Person, where: Person = {}): boolean =>
   Object.entries(where).every(([key, cond]) => {
+    // R3-SEC: Prisma's `AND: [..]` (how a lookup by id composes with the D4 visibility fragment).
+    if (key === 'AND') return (cond as Person[]).every((c) => matches(row, c));
     const value = row[key];
     if (cond !== null && typeof cond === 'object' && !(cond instanceof Date)) {
       const ops = Object.keys(cond);

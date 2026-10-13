@@ -16,10 +16,12 @@ import {
 import { revalidatePath } from 'next/cache';
 import { asResult, type ActionResult } from '@/lib/mis/action-result';
 
-export async function createBomAction(orderId: string) {
-  await createBom(orderId);
-  revalidatePath('/mis/orders');
-  revalidatePath('/mis/bom', 'layout');
+export async function createBomAction(orderId: string): Promise<ActionResult> {
+  return asResult(async () => {
+    await createBom(orderId);
+    revalidatePath('/mis/orders');
+    revalidatePath('/mis/bom', 'layout');
+  });
 }
 export async function addStageAction(bomId: string, data: { stageName: string; processId?: string; seq: number }): Promise<ActionResult> {
   return asResult(async () => {

@@ -1,4 +1,5 @@
 'use client';
+import { formatQtyByUnit } from '@/lib/mis/qty-by-unit';
 import { useState, useTransition, type ReactNode } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/mis/kit/button';
@@ -7,6 +8,7 @@ import { SlideOver } from '@/components/mis/kit/slide-over';
 import { StatusBadge, type BadgeTone } from '@/components/mis/kit/status-badge';
 import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { addOrderDocumentAction, reopenOrderAction } from '@/app/(mis)/mis/orders/actions';
+import { useToast } from '@/components/ui/toast';
 import { useT } from '@/components/mis/shell/locale-provider';
 import { isOrderClosed } from '@/lib/mis/order-status';
 import { validateDocumentInput } from '@/lib/mis/document-library';
@@ -38,7 +40,7 @@ type Props = {
   phases: JobPhase[];
   bom: Bom;
   productionLogs: ProductionLog[];
-  productionSummary: { totalProduced: number; totalWaste: number; entries: number };
+  productionSummary: { totalProduced: number; totalWaste: number; entries: number; byUnit?: { unit: string; produced: number }[] };
   qcLogs: QcLog[];
   qcSummary: { total: number; pass: number; fail: number };
   /** Includes the customer's PO once attached — a document, not a field (E5-09, S6-Documents.png). */
@@ -51,6 +53,8 @@ type Props = {
   canSeeWages: boolean;
   canProduction: boolean;
   canQc: boolean;
+  /** False for a role without phase.read: the Phases card is left out, not shown as "No phase plan". */
+  showPhases?: boolean;
 };
 
 /** REOPENED reads as a warning, not as signed — it is not a signature (Appendix A §A.2). */
@@ -77,7 +81,7 @@ function statusTone(s: string): BadgeTone {
 
 export function OrderDetailScreen({
   order, phases, bom, productionLogs, productionSummary, qcLogs, qcSummary, documents, allocations = [],
-  statusActions, canWrite, canSeeWages: _canSeeWages, canProduction, canQc,
+  statusActions, canWrite, canSeeWages: _canSeeWages, canProduction, canQc, showPhases = true,
 }: Props) {
   const [tab, setTab] = useState<Tab>('overview');
   const t = useT();
@@ -93,13 +97,15 @@ export function OrderDetailScreen({
   const [docPath, setDocPath] = useState('');
   const [docError, setDocError] = useState<string | null>(null);
   const [docPending, startDoc] = useTransition();
+  const { toast } = useToast();
 
   const handleAddDocument = () => {
     const message = validateDocumentInput({ orderId: order.id, name: docName, description: docDesc, link: docPath });
     if (message) { setDocError(message); return; }
     setDocError(null);
     startDoc(async () => {
-      await addOrderDocumentAction(order.id, { name: docName.trim(), description: docDesc.trim() || undefined, filePath: docPath.trim() });
+      const res = await addOrderDocumentAction(order.id, { name: docName.trim(), description: docDesc.trim() || undefined, filePath: docPath.trim() });
+      if (!res.ok) { setDocError(res.detail); toast('error', res.detail); return; }
       setDocName(''); setDocDesc(''); setDocPath(''); setDocOpen(false);
     });
   };
@@ -187,7 +193,7 @@ export function OrderDetailScreen({
       </div>
 
       {/* Phases — the handover gate, or an honest statement that there is none (D10) */}
-      <div className="mb-6 rounded-xl border border-slate-200 bg-white p-4">
+      {showPhases && <div className="mb-6 rounded-xl border border-slate-200 bg-white p-4">
         <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Phases</p>
         {phases.length === 0 ? (
           <>
@@ -227,7 +233,7 @@ export function OrderDetailScreen({
             ))}
           </ul>
         )}
-      </div>
+      </div>}
 
       {/* Quick stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
@@ -241,7 +247,7 @@ export function OrderDetailScreen({
         </div>
         <div className="bg-slate-50 rounded-lg p-3">
           <p className="text-xs text-slate-500">Produced</p>
-          <p className="font-medium mt-0.5">{productionSummary.totalProduced.toLocaleString('en-IN')} kg</p>
+          <p className="font-medium mt-0.5">{formatQtyByUnit((productionSummary.byUnit ?? []).map((u) => ({ unit: u.unit, qty: u.produced })))}</p>
         </div>
         <div className="bg-slate-50 rounded-lg p-3">
           <p className="text-xs text-slate-500">QC Pass Rate</p>

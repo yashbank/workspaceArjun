@@ -5,6 +5,7 @@ import { MisForbiddenError } from '@/server/mis/auth';
 import { calculateMonthlyPayroll } from '@/server/mis/payroll';
 import { getPayrollPeriod, getPayrollPreflight } from '@/server/mis/payroll-period';
 import { PayrollScreen } from '@/components/mis/payroll/payroll-screen';
+import { DEFAULT_FACTORY_TIMEZONE, zonedParts } from '@/lib/mis/factory-time';
 
 type Props = { searchParams: Promise<{ year?: string; month?: string }> };
 
@@ -15,9 +16,12 @@ export default async function PayrollPage({ searchParams }: Props) {
   if (!can(role, 'wages.read')) throw new MisForbiddenError('wages.read');
 
   const sp = await searchParams;
-  const now = new Date();
-  const year = parseInt(sp.year ?? String(now.getFullYear()), 10);
-  const month = parseInt(sp.month ?? String(now.getMonth() + 1), 10);
+  // R3 B46: today is the factory's; a hand-typed ?year / ?month is clamped, never trusted.
+  const today = zonedParts(new Date(), DEFAULT_FACTORY_TIMEZONE);
+  const parsedYear = Number.parseInt(sp.year ?? '', 10);
+  const parsedMonth = Number.parseInt(sp.month ?? '', 10);
+  const year = Number.isFinite(parsedYear) ? Math.min(Math.max(parsedYear, 2000), 2100) : today.year;
+  const month = Number.isFinite(parsedMonth) ? Math.min(Math.max(parsedMonth, 1), 12) : today.month;
 
   const [payroll, period, preflight] = await Promise.all([
     calculateMonthlyPayroll(year, month),

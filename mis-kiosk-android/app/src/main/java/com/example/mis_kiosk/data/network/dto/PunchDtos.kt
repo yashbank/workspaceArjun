@@ -44,6 +44,8 @@ data class PunchResultDto(
     val workDate: String? = null,
     val dayRebuilt: Boolean = false,
     val dayHeld: String? = null,
+    /** R3-ATT: `ALREADY_IN` | `NO_OPEN_IN` | absent (older server, or nothing to say). */
+    val note: String? = null,
 )
 
 /**

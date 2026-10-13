@@ -23,6 +23,8 @@ vi.mock('@/server/mis/guard', () => ({ requireMisAccess: () => requireMisAccess(
 vi.mock('@/server/mis/orders', () => ({ getOrder: () => getOrder() }));
 vi.mock('@/server/mis/qc', () => ({ getQcForOrder: () => getQcForOrder() }));
 vi.mock('@/components/mis/print/print-button', () => ({ PrintButton: () => null }));
+// R3-QCR B81: the page formats dates in the factory's zone, so it now reads the timezone rule.
+vi.mock('@/server/mis/business-rules', () => ({ getFactoryTimezone: async () => 'Asia/Kolkata' }));
 
 const { default: CoaPrintPage } = await import('./[id]/page');
 
@@ -65,7 +67,8 @@ describe('/mis/print/coa/[id]', () => {
     const tree = await page(ORDER_ID);
     const text = textContent(tree);
     expect(text).toContain('A. Bhaskar');
-    expect(text).toContain('5/9/2026'); // en-IN, unpadded — the real fix is that this is a real date, not "Invalid Date"
+    // R3-QCR B81 changed this contract: factory-zone `dd/mm/yyyy hh:mm` (04:30Z = 10:00 IST), not browser-locale `5/9/2026`.
+    expect(text).toContain('05/09/2026 10:00');
     expect(text).not.toContain('Invalid Date');
   });
 

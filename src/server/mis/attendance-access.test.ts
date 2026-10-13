@@ -19,13 +19,27 @@ const audit = vi.fn();
 vi.mock('@/server/mis/audit', () => ({ logAuditEvent: (...a: unknown[]) => audit(...a) }));
 
 const leave = { id: 'l1', employeeId: 'e1', date: new Date('2026-01-01'), status: 'PENDING' };
-vi.mock('@/server/db', () => ({
-  db: {
+// R3 B52/B53: approveLeave now reads the request, checks it is PENDING, and decides it in a transaction that also writes
+// the register, so the fixture models those calls too. The permission contract under test is unchanged.
+vi.mock('@/server/db', () => {
+  const tx = {
     misLeaveRequest: {
-      update: async ({ data }: { data: Record<string, unknown> }) => ({ ...leave, ...data }),
+      updateMany: async () => ({ count: 1 }),
     },
-  },
-}));
+    misAttendance: {
+      findUnique: async () => null,
+      upsert: async () => ({}),
+    },
+  };
+  return {
+    db: {
+      misLeaveRequest: { findUnique: async () => ({ ...leave }) },
+      misEmployee: { findFirst: async () => null },
+      misPayrollPeriod: { findUnique: async () => null },
+      $transaction: async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx),
+    },
+  };
+});
 
 const { approveLeave } = await import('./attendance');
 

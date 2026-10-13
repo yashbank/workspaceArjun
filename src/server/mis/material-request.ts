@@ -122,8 +122,8 @@ export type ApproveLineInput = { lineId: string; actualIssuedQty: number };
 
 /**
  * Approve and issue. Each line is capped at what was asked; a line issued at 0 is recorded as
- * such and left out of the cart. The status flips to APPROVED before the stock moves so two
- * storekeepers cannot both issue the same note; if the issue then fails, the flip is undone.
+ * such and left out of the cart. The status flips to APPROVED inside the issue's own transaction, so two
+ * storekeepers cannot both issue the same note and a failed issue claims nothing.
  */
 export async function approveMaterialRequest(id: string, decisions: ApproveLineInput[], note?: string | null) {
   const actor = await requirePermission('store.write');
@@ -139,35 +139,24 @@ export async function approveMaterialRequest(id: string, decisions: ApproveLineI
   const cart: CartLineInput[] = issued.filter((l) => l.qty > 0).map((l) => ({ itemId: l.itemId, qty: l.qty }));
   if (cart.length === 0) throw new Error('Nothing to issue — set at least one quantity above zero, or reject the request.');
 
-  const claimed = await db.misMaterialRequest.updateMany({
-    where: { id, status: 'PENDING' },
-    data: { status: 'APPROVED', decidedById: actor.userId, decidedAt: new Date(), decisionNote: note?.trim() || null },
+  // B20 — the PENDING -> APPROVED claim, the stock movement and the per-line quantities are ONE transaction (the issue's
+  // own). If the issue fails (short stock, a closed order) nothing is claimed: the note stays PENDING and no audit row
+  // is written. Two storekeepers racing for one note: the second claim finds it decided, throws, and rolls its issue back.
+  const result = await commitIssue(cart, {
+    orderId: req.orderId,
+    departmentId: req.departmentId,
+    notes: `${req.requestNumber}${note?.trim() ? ` · ${note.trim()}` : ''}`,
+    inTransaction: async (tx) => {
+      const claimed = await tx.misMaterialRequest.updateMany({
+        where: { id, status: 'PENDING' },
+        data: { status: 'APPROVED', decidedById: actor.userId, decidedAt: new Date(), decisionNote: note?.trim() || null },
+      });
+      if (claimed.count !== 1) throw new Error('Request was decided by someone else just now.');
+      for (const l of issued) {
+        await tx.misMaterialRequestLine.update({ where: { id: l.lineId }, data: { actualIssuedQty: l.qty } });
+      }
+    },
   });
-  if (claimed.count !== 1) throw new Error('Request was decided by someone else just now.');
-
-  let result;
-  try {
-    // The per-line quantities are written on the issue's own transaction: the stock movement and
-    // the note's record of it commit together or not at all (a crash can no longer leave an
-    // APPROVED note with no issued quantities).
-    result = await commitIssue(cart, {
-      orderId: req.orderId,
-      departmentId: req.departmentId,
-      notes: `${req.requestNumber}${note?.trim() ? ` · ${note.trim()}` : ''}`,
-      inTransaction: async (tx) => {
-        for (const l of issued) {
-          await tx.misMaterialRequestLine.update({ where: { id: l.lineId }, data: { actualIssuedQty: l.qty } });
-        }
-      },
-    });
-  } catch (error) {
-    // The whole issue rolled back (ledger and line quantities alike), so the note re-opens.
-    await db.misMaterialRequest.updateMany({
-      where: { id, status: 'APPROVED' },
-      data: { status: 'PENDING', decidedById: null, decidedAt: null, decisionNote: null },
-    });
-    throw error;
-  }
   await logAuditEvent({
     actorId: actor.userId,
     action: 'material_request.approve',

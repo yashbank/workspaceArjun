@@ -50,8 +50,12 @@ describe('addOrderDocumentAction', () => {
     expect(revalidatePath).toHaveBeenCalledWith('/mis/orders/order-7');
   });
 
-  it('a rejection from addDocument (e.g. a role without orders.write) propagates rather than being swallowed', async () => {
+  // R3 B112 changed the contract: a refusal now comes back as data (ActionResult). A real MIS
+  // forbidden error (digest MIS_FORBIDDEN) is still thrown to the error boundary.
+  it('a refusal from addDocument comes back as { ok: false, detail }; a forbidden error still throws', async () => {
     addDocument.mockRejectedValue(new Error('Forbidden'));
-    await expect(addOrderDocumentAction('order-1', { name: 'X', filePath: 'https://x' })).rejects.toThrow('Forbidden');
+    expect(await addOrderDocumentAction('order-1', { name: 'X', filePath: 'https://x' })).toEqual({ ok: false, detail: 'Forbidden' });
+    addDocument.mockRejectedValue(Object.assign(new Error('Not permitted'), { digest: 'MIS_FORBIDDEN' }));
+    await expect(addOrderDocumentAction('order-1', { name: 'X', filePath: 'https://x' })).rejects.toThrow('Not permitted');
   });
 });

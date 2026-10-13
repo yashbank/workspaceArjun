@@ -1,7 +1,7 @@
 import { requireMisAccess } from '@/server/mis/guard';
 import { getMisRole } from '@/server/mis/roles';
 import { can } from '@/lib/mis/permissions';
-import { listShifts } from '@/server/mis/attendance';
+import { listAllShifts } from '@/server/mis/attendance';
 import { ShiftsScreen } from '@/components/mis/attendance/shifts-screen';
 import { PageBack } from '@/components/mis/common/page-back';
 
@@ -9,7 +9,7 @@ export default async function ShiftsPage() {
   const user = await requireMisAccess();
   const role = await getMisRole(user.id);
   const canWrite = can(role, 'attendance.write');
-  const shifts = await listShifts();
+  const shifts = await listAllShifts();
   return (
     <>
       <PageBack href="/mis/attendance" label="Attendance" />

@@ -149,7 +149,7 @@ export function StoreItemScreen({ items, canWrite, isOwner }: Props) {
     startTransition(async () => {
       try {
         if (slideMode === 'in') {
-          await storeInAction({ itemId: slideItem.id, quantity, referenceNo: refNo || undefined });
+          unwrap(await storeInAction({ itemId: slideItem.id, quantity, referenceNo: refNo || undefined }));
         } else {
           unwrap(await storeOutAction({
             itemId: slideItem.id,
@@ -175,11 +175,11 @@ export function StoreItemScreen({ items, canWrite, isOwner }: Props) {
     setError('');
     startTransition(async () => {
       try {
-        await updateStoreItemAction(slideItem.id, {
+        unwrap(await updateStoreItemAction(slideItem.id, {
           category: editCategory || undefined,
           reorderLevel: editReorder !== '' ? parseFloat(editReorder) : null,
           ...(isOwner ? { pricePerUnit: editPrice !== '' ? parseFloat(editPrice) : null } : {}),
-        });
+        }));
         setSuccess(`${slideItem.name} updated`);
         closeSlide();
       } catch (e: unknown) {
@@ -193,7 +193,7 @@ export function StoreItemScreen({ items, canWrite, isOwner }: Props) {
     if (!deactivateItem) return;
     startTransition(async () => {
       try {
-        await deactivateStoreItemAction(deactivateItem.id);
+        unwrap(await deactivateStoreItemAction(deactivateItem.id));
         setSuccess(`${deactivateItem.name} deactivated`);
         setDeactivateItem(null);
       } catch (e: unknown) {

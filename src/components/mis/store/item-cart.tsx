@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { EmptyState } from '@/components/mis/kit/empty-state';
+import { SlideOver } from '@/components/mis/kit/slide-over';
 import { cn } from '@/lib/utils';
 
 import { InfoCard, Mono, SectionLabel } from '../home/cards';
@@ -48,7 +49,13 @@ type Props = {
   items: PickerItem[];
   /** REQUEST (V2 Epic 3) is an ask, not a ledger move: the balance is shown but never enforced. */
   mode: 'RECEIVE' | 'ISSUE' | 'REQUEST';
-  onCommit: (lines: CartLine[]) => Promise<void>;
+  /**
+   * `key` is one UUID per cart open (R3-STK B11): pressing Confirm twice, or retrying after a dropped connection, books
+   * once. `overReceiptReason` is set only after an Admin/Owner chose "Override with reason" (B03).
+   */
+  onCommit: (lines: CartLine[], key: string, overReceiptReason?: string) => Promise<void>;
+  /** RECEIVE, ADMIN/OWNER only: offer "Override with reason" when the server refuses a line past the order + 2%. */
+  canOverride?: boolean;
   /** RECEIVE: who delivered. Rendered as a chip row when passed. */
   suppliers?: SupplierOption[];
   supplierId?: string | null;
@@ -76,12 +83,17 @@ export function ItemCart({
   supplierId = null,
   onSupplierChange,
   canSetRate = false,
+  canOverride = false,
   children,
 }: Props) {
   const [query, setQuery] = useState('');
   const [lines, setLines] = useState<DraftLine[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [overOpen, setOverOpen] = useState(false);
+  const [overDraft, setOverDraft] = useState('');
+  // A fresh key after every success; the same key for a retry of the same cart.
+  const commitKey = useRef<string>(newKey());
 
   const searchRef = useRef<HTMLInputElement | null>(null);
   const qtyRefs = useRef(new Map<string, HTMLInputElement>());
@@ -168,7 +180,7 @@ export function ItemCart({
   const canConfirm =
     lines.length > 0 && shortLines.length === 0 && blankLines.length === 0 && !busy;
 
-  async function confirm() {
+  async function confirm(overReceiptReason?: string) {
     if (!canConfirm) return;
     setBusy(true);
     setError(null);
@@ -179,7 +191,10 @@ export function ItemCart({
           qty: round2(Number(line.qty) || 0),
           rate: isReceive && canSetRate && line.rate.trim() !== '' ? Number(line.rate) : null,
         })),
+        commitKey.current,
+        overReceiptReason,
       );
+      commitKey.current = newKey();
       setLines([]);
       setQuery('');
       searchRef.current?.focus();
@@ -363,8 +378,37 @@ export function ItemCart({
         <section className="rounded-2xl border border-red-200 bg-red-50 p-4">
           <SectionLabel>Not saved</SectionLabel>
           <p className="mt-1 font-semibold text-slate-900">{error}</p>
+          {canOverride && isReceive && /more than 2%/.test(error) && (
+            <button
+              type="button"
+              onClick={() => { setOverDraft(''); setOverOpen(true); }}
+              className="mt-3 min-h-11 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-900"
+            >
+              Override with reason
+            </button>
+          )}
         </section>
       )}
+
+      <SlideOver open={overOpen} onClose={() => setOverOpen(false)} title="Override the 2% limit">
+        <div className="flex flex-col gap-4 p-4">
+          <p className="text-sm text-slate-600">This delivery is more than the order plus 2%. Give a reason; it is recorded.</p>
+          <input
+            value={overDraft}
+            onChange={(event) => setOverDraft(event.target.value)}
+            aria-label="Reason for the override"
+            className="min-h-12 rounded-xl border border-slate-300 bg-white px-3 text-base text-slate-900"
+          />
+          <button
+            type="button"
+            disabled={overDraft.trim().length < 3 || busy}
+            onClick={() => { setOverOpen(false); void confirm(overDraft.trim()); }}
+            className="min-h-12 rounded-xl bg-indigo-600 px-4 text-base font-semibold text-white disabled:bg-slate-300"
+          >
+            Override and confirm
+          </button>
+        </div>
+      </SlideOver>
 
       {/* Zone 3 — the sticky foot, above the tab bar. */}
       <div className="fixed inset-x-0 bottom-14 z-40 mx-auto max-w-[420px] border-t border-slate-200 bg-white px-4 py-3">
@@ -381,7 +425,7 @@ export function ItemCart({
         </div>
         <button
           type="button"
-          onClick={confirm}
+          onClick={() => void confirm()}
           disabled={!canConfirm}
           aria-busy={busy || undefined}
           className={cn(
@@ -394,6 +438,10 @@ export function ItemCart({
       </div>
     </>
   );
+}
+
+function newKey(): string {
+  return typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
 }
 
 function round2(value: number): number {

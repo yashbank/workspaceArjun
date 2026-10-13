@@ -6,6 +6,7 @@ import { SlideOver } from '@/components/mis/kit/slide-over';
 import { updateOrderStatusAction } from '@/app/(mis)/mis/orders/actions';
 import { MIN_REASON_LENGTH, type CloseGate } from '@/lib/mis/order-transitions';
 import { fmtDateTime } from '@/lib/mis/client-dates';
+import { useToast } from '@/components/ui/toast';
 
 type Props = {
   orderId: string;
@@ -38,17 +39,28 @@ export function OrderStatusActions({ orderId, orderNumber, status, gates: initia
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const { toast } = useToast();
+  // R3 B104: what a cancel would drop (pending BOM, open material requests), from the server's refusal.
+  const [openItems, setOpenItems] = useState<string[]>([]);
 
   const unmet = gates.filter((g) => !g.passed);
   const reasonOk = reason.trim().length >= MIN_REASON_LENGTH;
 
-  const close = () => { setPanel(null); setFreshGates(null); setReason(''); setError(null); };
-  const run = (next: string, why?: string, done?: () => void) => start(async () => {
+  const close = () => { setPanel(null); setFreshGates(null); setReason(''); setError(null); setOpenItems([]); };
+  const run = (next: string, why?: string, done?: () => void, confirmOpenItems?: boolean) => start(async () => {
     setError(null);
-    const result = await updateOrderStatusAction(orderId, next, why);
-    if (result.ok) { (done ?? close)(); } else {
-      setError(result.detail);
-      if (result.gates) setFreshGates(result.gates);
+    try {
+      const result = await updateOrderStatusAction(orderId, next, why, confirmOpenItems);
+      if (result.ok) { (done ?? close)(); } else {
+        setError(result.detail);
+        toast('error', result.detail);
+        if (result.gates) setFreshGates(result.gates);
+        if (result.openItems) setOpenItems(result.openItems);
+      }
+    } catch {
+      const detail = 'That did not save. Try again.';
+      setError(detail);
+      toast('error', detail);
     }
   });
 
@@ -121,9 +133,16 @@ export function OrderStatusActions({ orderId, orderNumber, status, gates: initia
         <div className="flex flex-col gap-4 p-4">
           <p className="text-sm text-slate-600">{orderNumber}</p>
           <Input label="Why is this order being cancelled?" value={reason} onChange={(e) => setReason(e.target.value)} />
+          {openItems.length > 0 && (
+            <ul className="list-disc rounded-2xl border border-amber-200 bg-amber-50 p-3 pl-7 text-sm text-amber-900">
+              {openItems.map((item) => <li key={item}>{item}</li>)}
+            </ul>
+          )}
           {error && <div role="alert" className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900">{error}</div>}
           <div className="flex gap-2 pt-2">
-            <Button variant="danger" onClick={() => run('CANCELLED', reason)} disabled={pending || !reasonOk}>Cancel order</Button>
+            <Button variant="danger" onClick={() => run('CANCELLED', reason, undefined, openItems.length > 0)} disabled={pending || !reasonOk}>
+              {openItems.length > 0 ? 'Cancel anyway' : 'Cancel order'}
+            </Button>
             <Button variant="ghost" onClick={close}>Keep order</Button>
           </div>
         </div>

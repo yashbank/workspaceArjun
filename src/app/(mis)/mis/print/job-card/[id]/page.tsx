@@ -1,5 +1,6 @@
 import { isUuid } from '@/lib/mis/ids';
-import { formatFactoryDateTime } from '@/lib/mis/factory-time';
+import { dateKeyToDbDate, formatFactoryDate, formatFactoryDateTime } from '@/lib/mis/factory-time';
+import { formatQty } from '@/lib/mis/qty-by-unit';
 import { requireMisAccess } from '@/server/mis/guard';
 import { PrintButton } from '@/components/mis/print/print-button';
 import { getOrder } from '@/server/mis/orders';
@@ -7,6 +8,7 @@ import { getBom } from '@/server/mis/bom';
 import { getProductionSummary } from '@/server/mis/production';
 import { getFactoryTimezone } from '@/server/mis/business-rules';
 import { getPhasesForOrder } from '@/server/mis/job-phases';
+import { getCrewForOrder } from '@/server/mis/worker-allocation';
 import { notFound } from 'next/navigation';
 
 /**
@@ -32,18 +34,25 @@ export default async function JobCardPrintPage({ params }: { params: Promise<{ i
   const order = await getOrder(id);
   if (!order) notFound();
 
-  // Not caught to an empty list: every role that can reach `getOrder` (orders.read)
-  // also holds `phase.read` (OWNER/ADMIN/SUPERVISOR/QC — the only four), so a
-  // failure here is a real bug, not a permission gap to paper over with a lie.
-  const [bom, prodSummary, phases, timeZone] = await Promise.all([
-    getBom(id).catch(() => null),
-    getProductionSummary(id).catch(() => ({ totalProduced: 0, totalWaste: 0, entries: 0 })),
+  // R3 B125: nothing here is caught to an empty value. A batch record that silently prints 0
+  // produced or no BOM is a false legal document, so a load error reaches `error.tsx`
+  // ("Could not load the batch record - do not print"). Every role that can reach `getOrder`
+  // (orders.read) also holds `phase.read` and `production.read`.
+  const [bom, prodSummary, phases, crew, timeZone] = await Promise.all([
+    getBom(id),
+    getProductionSummary(id),
     getPhasesForOrder(id),
+    getCrewForOrder(id),
     getFactoryTimezone(),
   ]);
 
-  const printDate = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  const deliveryDate = order.deliveryDate ? new Date(order.deliveryDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—';
+  const printDate = formatFactoryDate(new Date(), timeZone);
+  const deliveryDate = order.deliveryDate ? formatFactoryDate(new Date(order.deliveryDate), timeZone) : '—';
+  // R3 B124: per-unit totals, never one mixed sum and never a hard-coded "kg".
+  const unitTotals =
+    prodSummary.byUnit && prodSummary.byUnit.length > 0
+      ? prodSummary.byUnit
+      : [{ unit: '', produced: Number(prodSummary.totalProduced), waste: Number(prodSummary.totalWaste), wastePercent: null }];
 
   return (
     <div className="p-8 max-w-[794px] mx-auto font-sans text-sm text-gray-900">
@@ -111,7 +120,7 @@ export default async function JobCardPrintPage({ params }: { params: Promise<{ i
                     {stage.materials.map((m) => (
                       <tr key={m.id} className="border-b border-gray-100">
                         <td className="py-1">{m.description}</td>
-                        <td className="py-1 text-right">{Number(m.quantity).toLocaleString('en-IN')}</td>
+                        <td className="py-1 text-right">{formatQty(Number(m.quantity))}</td>
                         <td className="py-1 pl-2">{m.unit}</td>
                       </tr>
                     ))}
@@ -171,6 +180,29 @@ export default async function JobCardPrintPage({ params }: { params: Promise<{ i
                 </tbody>
               </table>
             </div>
+            {/* R3 B125 - who worked each section (names and codes only; no rates). */}
+            <ul className="mt-3 space-y-1 text-xs" data-testid="crew-lines">
+              {phases
+                .filter((p) => p.status !== 'NOT_APPLICABLE')
+                .map((phase) => {
+                  const groups = crew.filter((g) => g.jobPhaseId === phase.id);
+                  return (
+                    <li key={phase.id}>
+                      <span className="font-medium">Crew — {phase.process.name}:</span>{' '}
+                      {groups.length === 0
+                        ? '—'
+                        : groups
+                            .map(
+                              (g) =>
+                                `${g.machineName} · ${formatFactoryDate(dateKeyToDbDate(g.dateKey), timeZone)}${g.shiftName ? ` · ${g.shiftName}` : ''}: ${g.people
+                                  .map((person) => `${person.name} (${person.employeeCode})${person.released ? ' (released)' : ''}`)
+                                  .join(', ')}`,
+                            )
+                            .join(' | ')}
+                    </li>
+                  );
+                })}
+            </ul>
             <p className="mt-3 text-[11px] italic text-gray-600">
               Section receiving BPR should not accept BPR if it is not signed by previous section.
             </p>
@@ -188,11 +220,15 @@ export default async function JobCardPrintPage({ params }: { params: Promise<{ i
           </div>
           <div className="border border-gray-200 rounded p-3 text-center">
             <p className="text-gray-500 text-xs">Total Produced</p>
-            <p className="font-bold text-lg">{Number(prodSummary.totalProduced).toLocaleString('en-IN')} kg</p>
+            {unitTotals.map((u) => (
+              <p key={u.unit} className="font-bold text-lg">{formatQty(u.produced)} {u.unit}</p>
+            ))}
           </div>
           <div className="border border-gray-200 rounded p-3 text-center">
             <p className="text-gray-500 text-xs">Total Waste</p>
-            <p className="font-bold text-lg">{Number(prodSummary.totalWaste).toLocaleString('en-IN')} kg</p>
+            {unitTotals.map((u) => (
+              <p key={u.unit} className="font-bold text-lg">{formatQty(u.waste)} {u.unit}</p>
+            ))}
           </div>
         </div>
       </div>

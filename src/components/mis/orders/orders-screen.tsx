@@ -8,6 +8,7 @@ import { Input, DateInput } from '@/components/mis/kit/input';
 import { Select } from '@/components/mis/kit/select';
 import { StatusBadge, type BadgeTone } from '@/components/mis/kit/status-badge';
 import { saveOrderAction, updateOrderStatusAction } from '@/app/(mis)/mis/orders/actions';
+import { useToast } from '@/components/ui/toast';
 
 type Order = { id: string; orderNumber: string; status: string; description: string | null; deliveryDate: Date | null; createdAt: Date; customer: { id: string; name: string } | null };
 type Customer = { id: string; name: string };
@@ -32,6 +33,7 @@ export function OrdersScreen({ orders, customers, canWrite, initialCustomerId }:
   const [deliveryDate, setDeliveryDate] = useState('');
   const [notes, setNotes] = useState('');
   const [isPending, startTransition] = useTransition();
+  const { toast } = useToast();
 
   const openAdd = () => { setEditing(null); setCustomerId(initialCustomerId ?? ''); setDescription(''); setDeliveryDate(''); setNotes(''); setOpen(true); };
   const openEdit = (o: Order) => {
@@ -45,8 +47,11 @@ export function OrdersScreen({ orders, customers, canWrite, initialCustomerId }:
 
   const handleSave = () => {
     startTransition(async () => {
-      await saveOrderAction(editing?.id ?? null, { customerId: customerId || null, description: description || null, deliveryDate: deliveryDate || null, notes: notes || null });
-      setOpen(false);
+      try {
+        const res = await saveOrderAction(editing?.id ?? null, { customerId: customerId || null, description: description || null, deliveryDate: deliveryDate || null, notes: notes || null });
+        if (!res.ok) { toast('error', res.detail); return; }
+        setOpen(false);
+      } catch { toast('error', 'That did not save. Try again.'); }
     });
   };
 
@@ -85,7 +90,12 @@ export function OrdersScreen({ orders, customers, canWrite, initialCustomerId }:
         <Link href={`/mis/orders/${r.id}`} className="inline-flex min-h-11 items-center px-3 text-sm font-medium text-indigo-700 hover:underline">View</Link>
         {canWrite && <Button variant="ghost" onClick={() => openEdit(r)}>Edit</Button>}
         {canWrite && r.status === 'DRAFT' && (
-          <Button variant="ghost" onClick={() => startTransition(async () => { await updateOrderStatusAction(r.id, 'CONFIRMED'); })}>Confirm</Button>
+          <Button variant="ghost" onClick={() => startTransition(async () => {
+            try {
+              const res = await updateOrderStatusAction(r.id, 'CONFIRMED');
+              if (!res.ok) toast('error', res.detail);
+            } catch { toast('error', 'That did not save. Try again.'); }
+          })}>Confirm</Button>
         )}
       </div>
     )},

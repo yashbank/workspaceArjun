@@ -67,7 +67,8 @@ const NAV: NavDefinition[] = [
   // Settings sub-pages are gated as their parent is, so a phone never offers what Settings would not.
   // Crew is the worker board: its data (machine board, worker availability) gates on production.read, so the
   // menu must too — attendance roles used to be offered a screen that refused them (coverage sweep, 2026-10).
-  { id: 'crew', labelKey: 'nav.crew', href: '/mis/crew', icon: 'users', primary: false, requires: 'production.read', phoneOnly: true },
+  // R3 B101: also in the desktop sidebar now; the crew board was unreachable from a desktop.
+  { id: 'crew', labelKey: 'nav.crew', href: '/mis/crew', icon: 'users', primary: false, requires: 'production.read' },
   { id: 'leave', labelKey: 'nav.leave', href: '/mis/attendance/leave', icon: 'users', primary: false, requires: 'attendance.read', phoneOnly: true },
   { id: 'settings-users', labelKey: 'nav.users', href: '/mis/settings/users', icon: 'users', primary: false, requires: 'settings.read', phoneOnly: true },
   // The page 404s for anyone without wages.read (D30): Owner only.
@@ -144,12 +145,16 @@ export async function getNavBadges(
         const { listShifts } = await import('./attendance');
         const { getWorkerAvailability } = await import('./worker-allocation');
         const { resolveShiftAt } = await import('@/lib/mis/shift-window');
+        const { shiftDateKeyFor } = await import('@/lib/mis/crew-hours');
         const shifts = await listShifts();
         const { getFactoryTimezone } = await import('./business-rules');
-        const shift = resolveShiftAt(shifts, new Date(), await getFactoryTimezone());
+        const tz = await getFactoryTimezone();
+        const now = new Date();
+        const shift = resolveShiftAt(shifts, now, tz);
         if (!shift) return { crew: 0 };
-        const availability = await getWorkerAvailability(shift.id, new Date());
-        return { crew: availability.filter((w) => !w.allocation).length };
+        const availability = await getWorkerAvailability(shift.id, shiftDateKeyFor(shift, now, tz));
+        // R3 B95: free hands = on the floor (presence IN) and on no machine.
+        return { crew: availability.filter((w) => w.allocations.length === 0 && w.presence === 'IN').length };
       }
       case 'QC': {
         const { getTodayQcBoard } = await import('./qc');

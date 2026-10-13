@@ -57,6 +57,15 @@ const db: Row = {
   misMaterialRequest: { count: async ({ where }: Row) => state.requests.filter((r) => r.orderId === where.orderId).length },
   $transaction: async (ops: unknown[]) => Promise.all(ops as Promise<unknown>[]),
 };
+// R3-ORD fixtures: the new guards read the order's status and count stage/material/usage rows.
+Object.assign(db, {
+  misOrder: { findUnique: async () => ({ orderNumber: 'ORD-1', status: 'CONFIRMED' }) },
+  misProductionLog: { count: async () => 0 },
+  misQcCheck: { count: async () => 0 },
+  misJobPhase: { count: async () => 0 },
+});
+Object.assign(db.misBomStage, { count: async () => 1 });
+Object.assign(db.misBomMaterial, { count: async () => 1 });
 vi.mock('@/server/db', () => ({ get db() { return db; } }));
 
 const bomApi = await import('./bom');

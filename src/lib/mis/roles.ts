@@ -60,7 +60,9 @@ export function roleTone(role: MisRoleName): BadgeTone {
 /**
  * Which roles may this role hand out?
  *
- * An Admin cannot mint an Owner — that is the whole point. Evaluated on the
+ * An Owner may assign any role. An Admin may assign only roles strictly below Admin
+ * (SUPERVISOR, QC, ATTENDANCE_OPERATOR, SUPER_ATTENDANCE_OPERATOR, STORE_GUY, WORKER) —
+ * an Admin cannot mint an Owner or another Admin (R3 B41). Evaluated on the
  * server; only the resulting list is sent to the browser, never this rule.
  */
 export function assignableRoles(actor: MisRoleName | null): MisRoleName[] {
@@ -68,7 +70,8 @@ export function assignableRoles(actor: MisRoleName | null): MisRoleName[] {
     return [...MIS_ROLES];
   }
   if (actor === 'ADMIN') {
-    return MIS_ROLES.filter((r) => r !== 'OWNER');
+    // R3 B41: an Admin assigns only roles strictly BELOW Admin (never Owner, never another Admin).
+    return MIS_ROLES.filter((r) => r !== 'OWNER' && r !== 'ADMIN');
   }
   return [];
 }

@@ -206,3 +206,17 @@ Changed (all under `mis-kiosk-android/`, no Room schema change, no version bump,
 
 Verification: `:app:compileDebugKotlin --rerun-tasks` and `:app:testDebugUnitTest` (new `FactoryDayTest`, `NextKindTest`) pass; debug APK installed on the emulator and launched (pairing screen, no crash).
 Code-verified only (needs a real tablet or a paired emulator): #55 wipe on a live revoke, #53/#52 across a real 06:00 rollover, #59 live shift removal, #54 memory effect, #56 front/back combinations, #58 OEM lock-task policy, #60 keyboard in landscape, #61 `adb backup` exclusion, QR decode speed.
+
+## Round 5 (R3, cluster R3-AND, branch `fix/r3-and`, backlog B65-B71)
+
+Consumes only OPTIONAL server fields (R3-ATT): pull `factoryTimezone`, punch result `workDate` / `note`, HTTP 413 `PAYLOAD_TOO_LARGE`. Missing -> today's behaviour.
+- **B65** `wipeAll` first runs ONE bounded flush (20 s, `drainThenWipe`) with the still-valid token, then clears credentials. Rows that still do not go stay queued. The drain passes `allowWipe=false` so it cannot start a second wipe. The revoked screen says "N punches could not be sent from this tablet. Re-pair to send them." (with a "Re-pair this tablet" button when N > 0).
+- **B66** queue DB v2->v3 (`attempts`, `lastError`, status `STUCK`). 401 -> flush stops, `RosterPreferences.needsRepair`, banner "This tablet must be paired again (HTTP 401)", nothing counted. 400/404/413 -> that row STUCK, flush continues. 5xx / network / RETRY -> `attempts+1`, STUCK at 10. Health screen lists STUCK rows (name, time, error) with Retry (attempts reset, back to PENDING). Note: network failures count too (spec), so a server outage longer than ~10 flushes parks rows as STUCK (nothing is lost; use Retry).
+- **B67** `punch_state.lastPunchedAtMillis` = the tap time (`clientRecordedAt`), not the flush time.
+- **B68** roster DB v5->v6 (`punch_state.lastWorkDate`). `FactoryDay.zoneFrom(factoryTimezone)`; `WorkDate.workDateFor` is a Kotlin port of the server's `workDateFor`; `decideNextKind` defaults to IN only when the last IN's work date < the work date of now (same shift hint) or it is > 14 h old. No cached shifts (older server) -> the old 06:00 rule.
+- **B69** `PunchFlushWorker` returns `Result.retry()` when the stop was a transient failure and rows remain; scheduler backoff is exponential from 30 s.
+- **B70** both DBs `exportSchema=true` (`app/schemas`, queue 1-3, roster 3-6, regenerated from the historical entity definitions; roster v3 is the 952be92 shape, which already has `photoUrl`). `fallbackToDestructiveMigrationFrom(1, 2)` only. Any roster/queue version bump needs a Migration + a hop in `MigrationTest`. `kotlinxSerializationJson` 1.7.3 -> 1.8.1 (needed at runtime by `room-testing`).
+- **B71** result card shows ALREADY_IN -> "Already clocked IN (no change)", NO_OPEN_IN -> "OUT recorded without an IN today"; 413 -> STUCK "Punch too large".
+
+Verified: `:app:compileDebugKotlin --rerun-tasks`, `:app:testDebugUnitTest` (49 pass), `:app:connectedDebugAndroidTest` `MigrationTest` (6 pass, emulator API 35 AVD kiosk_phone), `assembleDebug` + install + launch (no app crash).
+Not verified: a live revoke drain, a real 401 re-pair, STUCK rows on a tablet with real traffic, a QR scan smoke, `TestListenableWorkerBuilder` (the worker decision is a pure function, `shouldRetryFlush`, unit-tested instead).

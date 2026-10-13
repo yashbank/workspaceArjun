@@ -1,11 +1,64 @@
-import { addDaysToDateKey, dateKeyToDbDate, friendlyWhen } from '@/lib/mis/factory-time';
+import { instantAtAxisMinute, shiftDateKeyFor } from '@/lib/mis/crew-hours';
+import { addDaysToDateKey, dateKeyToDbDate, factoryDateKey, factoryMinuteOfDay, friendlyWhen } from '@/lib/mis/factory-time';
 import { buildMachineTimeline, weekStartKey, type MachineTimeline } from '@/lib/mis/machine-timeline';
+import { classifyLogAgainstBookings, worstFlag, type SyncFlag } from '@/lib/mis/machine-sync';
+import { isOrderClosed } from '@/lib/mis/order-status';
+import { isMinuteInShiftWindow } from '@/lib/mis/shift-window';
 import { db } from '@/server/db';
 import { requirePermission } from '@/server/mis/auth';
+import { AllocationNotFoundError, flushReleaseAudit, releaseMachineAllocations, type ReleaseAuditEvent } from '@/server/mis/allocation-release';
 import { logAuditEvent } from '@/server/mis/audit';
 import { getFactoryTimezone } from '@/server/mis/business-rules';
 import { isActiveStatus } from '@/server/mis/job-phases';
 import { getFactoryShiftWindow } from '@/server/mis/shift-view';
+import { lockStockKeys } from '@/server/mis/stock-lock';
+
+type BoardSync = { lastLog: { orderNumber: string | null; at: Date } | null; syncFlag: SyncFlag | null };
+
+/**
+ * Today's production logs against the bookings, per machine (R3 B99): the last log of the factory
+ * day and the worst sync flag. WARN ONLY. This is decoration on the board, so a failure here
+ * degrades to "no flag" and is reported to the server log rather than taking the board down.
+ *
+ * A booking released AFTER a log was written still covers that log (sign-off releases the machine
+ * at the end of the job; the log it was running for was legitimate when written).
+ */
+async function boardSync(machineIds: string[], now: Date): Promise<Map<string, BoardSync>> {
+  const out = new Map<string, BoardSync>();
+  if (machineIds.length === 0) return out;
+  try {
+    const tz = await getFactoryTimezone();
+    const key = factoryDateKey(now, tz);
+    const dayStart = instantAtAxisMinute(key, 0, tz);
+    const dayEnd = instantAtAxisMinute(addDaysToDateKey(key, 1), 0, tz);
+    const logs = await db.misProductionLog.findMany({
+      where: { machineId: { in: machineIds }, loggedAt: { gte: dayStart, lt: dayEnd } },
+      select: { machineId: true, orderId: true, loggedAt: true, order: { select: { orderNumber: true } } },
+      orderBy: { loggedAt: 'asc' },
+    });
+    if (!logs || logs.length === 0) return out;
+    const loggedMachines = [...new Set(logs.map((l) => l.machineId).filter((m): m is string => !!m))];
+    const bookings = await db.misMachineAllocation.findMany({
+      where: { machineId: { in: loggedMachines }, startsAt: { lt: dayEnd }, endsAt: { gt: dayStart } },
+      select: { machineId: true, orderId: true, startsAt: true, endsAt: true, releasedAt: true },
+    });
+    for (const machineId of loggedMachines) {
+      const mine = logs.filter((l) => l.machineId === machineId);
+      const flags = mine.map((l) =>
+        classifyLogAgainstBookings(
+          { machineId, orderId: l.orderId, at: l.loggedAt },
+          (bookings ?? []).map((b) => ({ ...b, releasedAt: b.releasedAt && b.releasedAt > l.loggedAt ? null : b.releasedAt })),
+        ),
+      );
+      const last = mine[mine.length - 1];
+      out.set(machineId, { lastLog: { orderNumber: last.order?.orderNumber ?? null, at: last.loggedAt }, syncFlag: worstFlag(flags) });
+    }
+  } catch (error) {
+    console.error('[mis-machine-board] could not compute the log sync flags', error);
+    out.clear();
+  }
+  return out;
+}
 
 export async function getMachineBoard() {
   await requirePermission('production.read');
@@ -20,19 +73,27 @@ export async function getMachineBoard() {
     include: {
       order: { select: { orderNumber: true } },
       jobPhase: { select: { id: true, process: { select: { name: true } } } },
+      workerAllocations: { where: { releasedAt: null, deletedAt: null }, select: { employee: { select: { name: true } } } },
     },
   });
   const allocMap = new Map<string, (typeof allocations)[number]>(
     allocations.map((a) => [a.machineId, a]),
   );
-  return machines.map(m => ({
-    ...m,
-    status: (allocMap.has(m.id) ? 'BUSY' : m.isActive ? 'FREE' : 'OFFLINE') as
-      | 'FREE'
-      | 'BUSY'
-      | 'OFFLINE',
-    currentAllocation: allocMap.get(m.id) ?? null,
-  }));
+  const sync = await boardSync(machines.map((m) => m.id), now);
+  return machines.map(m => {
+    const alloc = allocMap.get(m.id);
+    const { workerAllocations, ...rest } = (alloc ?? {}) as Partial<(typeof allocations)[number]>;
+    return {
+      ...m,
+      status: (alloc ? 'BUSY' : m.isActive ? 'FREE' : 'OFFLINE') as 'FREE' | 'BUSY' | 'OFFLINE',
+      // The names of the open crew ride along so the board can say who a release frees (R3 B101).
+      currentAllocation: alloc
+        ? { ...(rest as Omit<(typeof allocations)[number], 'workerAllocations'>), crewNames: (workerAllocations ?? []).map((w) => w.employee.name) }
+        : null,
+      lastLog: sync.get(m.id)?.lastLog ?? null,
+      syncFlag: sync.get(m.id)?.syncFlag ?? null,
+    };
+  });
 }
 
 export async function getMachineAllocations(machineId: string) {
@@ -49,7 +110,7 @@ export async function getMachineAllocations(machineId: string) {
 }
 
 export type MachineDayTimeline = {
-  shift: { name: string; dateKey: string; startMinute: number; endMinute: number };
+  shift: { id?: string; name: string; dateKey: string; startMinute: number; endMinute: number };
   timeline: MachineTimeline;
 };
 
@@ -119,7 +180,7 @@ export async function getMachineDayTimeline(now: Date = new Date()): Promise<Mac
     now,
   );
 
-  return { shift: { name: shift.name, dateKey: shift.dateKey, startMinute: shift.startMinute, endMinute: shift.endMinute }, timeline };
+  return { shift: { id: shift.id, name: shift.name, dateKey: shift.dateKey, startMinute: shift.startMinute, endMinute: shift.endMinute }, timeline };
 }
 
 /**
@@ -139,6 +200,19 @@ export async function getOrderSchedule(orderId: string): Promise<
 > {
   await requirePermission('production.read');
 
+  // R3 B96: "operators" is who is on it NOW: open rows for the factory's current shift day (and the
+  // running shift when one is active), on a booking that has not ended (B86).
+  const now = new Date();
+  const tz = await getFactoryTimezone();
+  const shifts = await db.misShift.findMany({
+    where: { isActive: true },
+    select: { id: true, startTime: true, endTime: true },
+    orderBy: { startTime: 'asc' },
+  });
+  const minute = factoryMinuteOfDay(now, tz);
+  const running = (shifts ?? []).find((s) => isMinuteInShiftWindow(minute, s)) ?? null;
+  const dayKey = running ? shiftDateKeyFor(running, now, tz) : factoryDateKey(now, tz);
+
   const rows = await db.misMachineAllocation.findMany({
     where: { orderId, releasedAt: null, jobPhaseId: { not: null } },
     select: {
@@ -146,7 +220,19 @@ export async function getOrderSchedule(orderId: string): Promise<
       startsAt: true,
       endsAt: true,
       machine: { select: { name: true } },
-      _count: { select: { workerAllocations: { where: { releasedAt: null, deletedAt: null } } } },
+      _count: {
+        select: {
+          workerAllocations: {
+            where: {
+              releasedAt: null,
+              deletedAt: null,
+              allocationDate: dateKeyToDbDate(dayKey),
+              ...(running ? { shiftId: running.id } : {}),
+              machineAllocation: { releasedAt: null, endsAt: { gte: now } },
+            },
+          },
+        },
+      },
     },
     orderBy: { startsAt: 'asc' },
   });
@@ -184,6 +270,21 @@ export async function allocateMachine(data: {
 }) {
   const actor = await requirePermission('production.write');
 
+  // R3 B97: a booking is a real window on a real, running machine for a live order.
+  const startMs = data.startsAt.getTime();
+  const endMs = data.endsAt.getTime();
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
+    throw new Error('The end time must be after the start time.');
+  }
+  if (endMs - startMs > 7 * 24 * 3600_000) throw new Error('A booking can be at most 7 days long.');
+
+  const machine = await db.misMachine.findFirst({
+    where: { id: data.machineId },
+    select: { id: true, isActive: true, deletedAt: true },
+  });
+  if (!machine || machine.deletedAt) throw new Error('That machine no longer exists.');
+  if (!machine.isActive) throw new Error('That machine is switched off, so it cannot be booked.');
+
   let orderId = data.orderId;
   if (data.jobPhaseId) {
     const phase = await db.misJobPhase.findFirst({
@@ -203,31 +304,42 @@ export async function allocateMachine(data: {
     orderId = orderId ?? phase.orderId;
   }
 
-  // Check for overlap
-  const overlap = await db.misMachineAllocation.findFirst({
-    where: {
-      machineId: data.machineId,
-      releasedAt: null,
-      startsAt: { lt: data.endsAt },
-      endsAt: { gt: data.startsAt },
-    },
-  });
-  if (overlap) {
-    const tz = await getFactoryTimezone();
-    throw new Error(`Machine already allocated from ${friendlyWhen(overlap.startsAt, tz)} to ${friendlyWhen(overlap.endsAt, tz)}`);
+  if (orderId) {
+    const order = await db.misOrder.findFirst({ where: { id: orderId }, select: { status: true } });
+    if (!order) throw new Error('That order no longer exists.');
+    if (order.status === 'DRAFT' || isOrderClosed(order.status)) {
+      throw new Error(`That order is ${order.status.toLowerCase().replace('_', ' ')}, so a machine cannot be booked for it.`);
+    }
   }
 
-  const rec = await db.misMachineAllocation.create({
-    data: {
-      machineId: data.machineId,
-      orderId,
-      jobPhaseId: data.jobPhaseId ?? null,
-      jobRef: data.jobRef,
-      startsAt: data.startsAt,
-      endsAt: data.endsAt,
-      notes: data.notes,
-      allocatedById: actor.userId,
-    },
+  const tz = await getFactoryTimezone();
+  // The overlap check and the create share one transaction and a per-machine lock: two supervisors
+  // booking the same machine at once cannot both pass the check.
+  const rec = await db.$transaction(async (tx) => {
+    await lockStockKeys(tx, [`machine-${data.machineId}`]);
+    const overlap = await tx.misMachineAllocation.findFirst({
+      where: {
+        machineId: data.machineId,
+        releasedAt: null,
+        startsAt: { lt: data.endsAt },
+        endsAt: { gt: data.startsAt },
+      },
+    });
+    if (overlap) {
+      throw new Error(`Machine already allocated from ${friendlyWhen(overlap.startsAt, tz)} to ${friendlyWhen(overlap.endsAt, tz)}`);
+    }
+    return tx.misMachineAllocation.create({
+      data: {
+        machineId: data.machineId,
+        orderId,
+        jobPhaseId: data.jobPhaseId ?? null,
+        jobRef: data.jobRef,
+        startsAt: data.startsAt,
+        endsAt: data.endsAt,
+        notes: data.notes,
+        allocatedById: actor.userId,
+      },
+    });
   });
   await logAuditEvent({ actorId: actor.userId, action: 'ALLOCATE_MACHINE', entity: 'MisMachineAllocation', entityId: rec.id, after: rec });
   return rec;
@@ -251,12 +363,24 @@ export async function machineForOrder(orderId: string, at: Date = new Date()): P
 
 export async function releaseMachine(allocationId: string) {
   const actor = await requirePermission('production.write');
-  const rec = await db.misMachineAllocation.update({
-    where: { id: allocationId },
-    data: { releasedAt: new Date() },
+  let auditEvents: ReleaseAuditEvent[] = [];
+  const outcome = await db.$transaction(async (tx) => {
+    const rec = await tx.misMachineAllocation.findUnique({ where: { id: allocationId } });
+    if (!rec) throw new AllocationNotFoundError();
+    // Releasing twice is not an error and must not move the first timestamp (R3 B85).
+    if (rec.releasedAt) return { alreadyReleased: true as const, allocation: rec, workers: 0 };
+
+    const at = new Date();
+    const res = await releaseMachineAllocations(tx, [allocationId], {
+      reason: 'MACHINE_RELEASED',
+      actorUserId: actor.userId,
+      at,
+    });
+    auditEvents = res.auditEvents;
+    return { alreadyReleased: false as const, allocation: { ...rec, releasedAt: at }, workers: res.workers };
   });
-  await logAuditEvent({ actorId: actor.userId, action: 'RELEASE_MACHINE', entity: 'MisMachineAllocation', entityId: rec.id, after: rec });
-  return rec;
+  await flushReleaseAudit(auditEvents);
+  return outcome;
 }
 
 export type MachineStatusCounts = {

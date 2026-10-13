@@ -35,6 +35,24 @@ interface PunchQueueDao {
     @Query("UPDATE punch_queue SET status = :status, detail = :detail WHERE key = :key")
     suspend fun updateStatus(key: String, status: String, detail: String?)
 
+    @Query("SELECT attempts FROM punch_queue WHERE key = :key")
+    suspend fun attemptsOf(key: String): Int?
+
+    /** R3 B66 - a 5xx / network failure: counts toward the 10-attempt cap, row stays PENDING. */
+    @Query("UPDATE punch_queue SET attempts = :attempts, lastError = :error WHERE key = :key")
+    suspend fun recordFailure(key: String, attempts: Int, error: String?)
+
+    /** R3 B66 - this row can never be sent as-is; park it so the rows behind it can flow. */
+    @Query("UPDATE punch_queue SET status = 'STUCK', attempts = :attempts, lastError = :error, detail = :error WHERE key = :key")
+    suspend fun markStuck(key: String, attempts: Int, error: String?)
+
+    @Query("SELECT * FROM punch_queue WHERE status = 'STUCK' ORDER BY clientRecordedAt ASC")
+    suspend fun stuckOrdered(): List<PunchQueueEntity>
+
+    /** R3 B66 - the Health screen's "Retry": back to PENDING with a clean slate. */
+    @Query("UPDATE punch_queue SET status = 'PENDING', attempts = 0, lastError = NULL, detail = NULL WHERE key = :key AND status = 'STUCK'")
+    suspend fun retryStuck(key: String)
+
     @Query("DELETE FROM punch_queue WHERE key = :key")
     suspend fun delete(key: String)
 }

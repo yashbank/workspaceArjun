@@ -57,6 +57,8 @@ function makeDb(): Row {
         return row;
       },
       update: async ({ where, data }: Row) => { const row = state.pos.find((p) => p.id === where.id)!; Object.assign(row, data); return row; },
+      // R3 review: the PO row lock — matches only while the PO is open for goods (APPROVED / RECEIVING / PARTIAL).
+      updateMany: async ({ where }: Row) => ({ count: state.pos.filter((p) => p.id === where.id && where.status.in.includes(p.status)).length }),
       findUnique: async ({ where, include }: Row) => {
         const po = state.pos.find((p) => p.id === where.id);
         if (!po) return null;
@@ -89,6 +91,7 @@ function makeDb(): Row {
     },
     misGrn: {
       create: async ({ data }: Row) => { const row = { id: nextId(), ...data }; state.grns.push(row); return row; },
+      findUnique: async ({ where }: Row) => state.grns.find((g) => g.grnNumber === where.grnNumber) ?? null,
     },
     misGrnItem: {
       create: async ({ data }: Row) => { const row = { id: nextId(), ...data }; state.grnItems.push(row); return row; },
@@ -124,6 +127,8 @@ function makeDb(): Row {
   };
   return db;
 }
+// R3-STK B02: goods are received only against an open (approved) PO; createPO leaves a DRAFT.
+const openPo = (id: string) => { state.pos.find((p) => p.id === id)!.status = 'APPROVED'; };
 const round = (n: number) => Math.round(n * 100) / 100;
 
 let fakeDb = makeDb();
@@ -193,6 +198,8 @@ describe('buffer PO end to end (MIS-279 case 1) — never surfaces as an error (
 
     const poItem = await fakeDb.misPoItem.create({ data: { poId: po.id, itemId: 'i1', quantity: 50, ratePerUnit: 12 } });
 
+    openPo(po.id);
+
     const result = await commitReceipt([{ itemId: 'i1', qty: 50, rate: 12 }], { poId: po.id });
     expect(result.totalQty).toBe(50);
 
@@ -207,8 +214,9 @@ describe('buffer PO end to end (MIS-279 case 1) — never surfaces as an error (
 
 describe('classification-on-issue (MIS-279 case 4)', () => {
   it("a buffer PO's received line gets the same GENERAL type any PO's line gets — the buffer/for-order split lives on the PO's own bomRef, not the GRN line", async () => {
-    const bufferPo = await createPO({ purpose: 'BUFFER_STOCK' });
+    const bufferPo = await createPO({ purpose: 'BUFFER_STOCK', supplierId: 's1' });
     await fakeDb.misPoItem.create({ data: { poId: bufferPo.id, itemId: 'i1', quantity: 10, ratePerUnit: 5 } });
+    openPo(bufferPo.id);
     await commitReceipt([{ itemId: 'i1', qty: 10, rate: 5 }], { poId: bufferPo.id });
     expect(state.grnItems).toHaveLength(1);
     expect(state.grnItems[0].type).toBe('GENERAL');
@@ -220,12 +228,15 @@ describe('partial-receipt arithmetic, to the paisa (this phase\'s own acceptance
     const po = await createPO({ bomRef: 'ORD-202610-00500' });
     const poItem = await fakeDb.misPoItem.create({ data: { poId: po.id, itemId: 'i1', quantity: 100, ratePerUnit: 20 } });
 
+    openPo(po.id);
+
     await commitReceipt([{ itemId: 'i1', qty: 40, rate: 20 }], { poId: po.id });
     let item = state.poItems.find((i) => i.id === poItem.id)!;
     expect(item.receivedQuantity).toBe(40);
     expect(item.quantity - item.receivedQuantity).toBe(60); // outstanding
     expect(state.ledger[0].balanceQty).toBe(40);
     expect(state.pos.find((p) => p.id === po.id)!.status).toBe('PARTIAL');
+
 
     await commitReceipt([{ itemId: 'i1', qty: 35, rate: 20 }], { poId: po.id });
     item = state.poItems.find((i) => i.id === poItem.id)!;
@@ -243,9 +254,9 @@ describe('partial-receipt arithmetic, to the paisa (this phase\'s own acceptance
 
 describe('approval chain (Phase 21 · D1/D2/D34)', () => {
   it('a buffer-stock PO and an order-linked PO of the SAME value take the identical approval path (D2\'s own acceptance check)', async () => {
-    const orderPo = await createPO({ bomRef: 'ORD-202610-00700' });
+    const orderPo = await createPO({ bomRef: 'ORD-202610-00700', supplierId: 's1' });
     await fakeDb.misPoItem.create({ data: { poId: orderPo.id, itemId: 'i1', quantity: 10, ratePerUnit: 1000 } }); // 10,000
-    const bufferPo = await createPO({ purpose: 'BUFFER_STOCK' });
+    const bufferPo = await createPO({ purpose: 'BUFFER_STOCK', supplierId: 's1' });
     await fakeDb.misPoItem.create({ data: { poId: bufferPo.id, itemId: 'i1', quantity: 10, ratePerUnit: 1000 } }); // 10,000
 
     const submittedOrder = await submitForApproval(orderPo.id);
@@ -255,7 +266,7 @@ describe('approval chain (Phase 21 · D1/D2/D34)', () => {
   });
 
   it('below the threshold: ADMIN_ONLY, a single step an Admin can complete alone', async () => {
-    const po = await createPO({ bomRef: 'ORD-202610-00701' });
+    const po = await createPO({ bomRef: 'ORD-202610-00701', supplierId: 's1' });
     await fakeDb.misPoItem.create({ data: { poId: po.id, itemId: 'i1', quantity: 1, ratePerUnit: 100 } }); // 100
     const submitted = await submitForApproval(po.id);
     expect(submitted.approvalMode).toBe('ADMIN_ONLY');
@@ -268,7 +279,7 @@ describe('approval chain (Phase 21 · D1/D2/D34)', () => {
   });
 
   it('at/above the threshold: BOTH — an Admin\'s first step does not itself approve, and only the Owner can give the second', async () => {
-    const po = await createPO({ bomRef: 'ORD-202610-00702' });
+    const po = await createPO({ bomRef: 'ORD-202610-00702', supplierId: 's1' });
     await fakeDb.misPoItem.create({ data: { poId: po.id, itemId: 'i1', quantity: 100, ratePerUnit: 1000 } }); // 100,000
     const submitted = await submitForApproval(po.id);
     expect(submitted.approvalMode).toBe('BOTH');
@@ -289,7 +300,7 @@ describe('approval chain (Phase 21 · D1/D2/D34)', () => {
   });
 
   it('OWNER_ONLY is a manual override only an Owner can invoke, and only an Owner can then approve it', async () => {
-    const po = await createPO({ bomRef: 'ORD-202610-00703' });
+    const po = await createPO({ bomRef: 'ORD-202610-00703', supplierId: 's1' });
     await fakeDb.misPoItem.create({ data: { poId: po.id, itemId: 'i1', quantity: 1, ratePerUnit: 100 } }); // 100 — would otherwise be ADMIN_ONLY
 
     getMisRole.mockResolvedValue('ADMIN');
@@ -308,7 +319,7 @@ describe('approval chain (Phase 21 · D1/D2/D34)', () => {
   });
 
   it('a threshold change after submission never reopens a PO already decided (frozen at submission, D34)', async () => {
-    const po = await createPO({ bomRef: 'ORD-202610-00704' });
+    const po = await createPO({ bomRef: 'ORD-202610-00704', supplierId: 's1' });
     await fakeDb.misPoItem.create({ data: { poId: po.id, itemId: 'i1', quantity: 100, ratePerUnit: 1000 } }); // 100,000 -> BOTH today
     const submitted = await submitForApproval(po.id);
     expect(submitted.approvalMode).toBe('BOTH');

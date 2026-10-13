@@ -1,3 +1,4 @@
+import { isOrderClosed } from '@/lib/mis/order-status';
 import { formatRupees, rollUp, withoutRates } from '@/lib/mis/bom-costing';
 import { forRole } from '@/lib/mis/money-fields';
 import { can } from '@/lib/mis/permissions';
@@ -19,16 +20,25 @@ function assertDraft(status: string | null | undefined) {
   }
 }
 
+/** R3 B106: a closed order's BOM is frozen until the order is reopened. */
+function assertOrderOpen(order: { orderNumber: string; status: string } | null | undefined) {
+  if (order && isOrderClosed(order.status)) {
+    throw new Error(`Order ${order.orderNumber} is ${statusWords(order.status)}. Reopen it first.`);
+  }
+}
+
 async function requireDraftBom(bomId: string) {
-  const bom = await db.misBom.findUnique({ where: { id: bomId } });
+  const bom = await db.misBom.findUnique({ where: { id: bomId }, include: { order: { select: { orderNumber: true, status: true } } } });
   if (!bom) throw new Error(`BOM ${bomId} not found`);
+  assertOrderOpen(bom.order);
   assertDraft(bom.status);
   return bom;
 }
 
 async function requireDraftStage(stageId: string) {
-  const stage = await db.misBomStage.findUnique({ where: { id: stageId }, include: { bom: { select: { status: true } } } });
+  const stage = await db.misBomStage.findUnique({ where: { id: stageId }, include: { bom: { select: { status: true, order: { select: { orderNumber: true, status: true } } } } } });
   if (!stage) throw new Error(`BOM stage ${stageId} not found`);
+  assertOrderOpen(stage.bom?.order);
   assertDraft(stage.bom?.status);
   return stage;
 }
@@ -131,6 +141,9 @@ export async function createBom(orderId: string, notes?: string) {
   const actor = await requirePermission('orders.write');
   const existing = await db.misBom.findUnique({ where: { orderId } });
   if (existing) return existing;
+  const order = await db.misOrder.findUnique({ where: { id: orderId }, select: { orderNumber: true, status: true } });
+  if (!order) throw new Error('Order not found');
+  assertOrderOpen(order);
   const rec = await db.misBom.create({ data: { orderId, notes, createdById: actor.userId } });
   await logAuditEvent({ actorId: actor.userId, action: 'CREATE_BOM', entity: 'MisBom', entityId: rec.id, after: rec });
   return rec;
@@ -138,8 +151,12 @@ export async function createBom(orderId: string, notes?: string) {
 
 export async function addBomStage(bomId: string, data: { stageName: string; processId?: string; seq: number; notes?: string }) {
   const actor = await requirePermission('orders.write');
-  await requireDraftBom(bomId);
-  const rec = await db.misBomStage.create({ data: { bomId, ...data } });
+  const bom = await requireDraftBom(bomId);
+  if (!data.stageName?.trim()) throw new Error('A stage needs a name.');
+  // R3 B107: named fields only; bomId always comes from the validated record, never the input.
+  const rec = await db.misBomStage.create({
+    data: { bomId: bom.id, stageName: data.stageName.trim(), processId: data.processId || undefined, seq: data.seq, notes: data.notes?.trim() || undefined },
+  });
   await logAuditEvent({ actorId: actor.userId, action: 'ADD_BOM_STAGE', entity: 'MisBomStage', entityId: rec.id, after: rec });
   return rec;
 }
@@ -163,12 +180,42 @@ export async function reorderBomStages(bomId: string, stageIdsInOrder: string[])
 
 export async function addBomMaterial(stageId: string, data: { description: string; itemId?: string; quantity: number; unit: string; ratePerUnit?: number; seq: number }) {
   const actor = await requirePermission('orders.write');
-  await requireDraftStage(stageId);
-  // D5: a rate is the Owner's to set; an Admin's value is dropped, not stored.
-  const { ratePerUnit, ...rest } = data;
-  const rec = await db.misBomMaterial.create({ data: { stageId, ...rest, ...(can(actor.role, 'wages.read') && ratePerUnit !== undefined ? { ratePerUnit } : {}) } });
+  const stage = await requireDraftStage(stageId);
+  // R3 B107: the update-path validation, plus an existing active item when one is named.
+  if (!data.description?.trim()) throw new Error('A material needs a description.');
+  if (!Number.isFinite(data.quantity) || !(data.quantity > 0)) throw new Error('Quantity must be more than zero.');
+  if (!data.unit?.trim()) throw new Error('A material needs a unit.');
+  if (data.itemId) {
+    const item = await db.misItem.findUnique({ where: { id: data.itemId }, select: { id: true, isActive: true } });
+    if (!item || item.isActive === false) throw new Error('That item does not exist or is inactive.');
+  }
+  // D5: a rate is the Owner's to set; an Admin's value is dropped, not stored. Named fields only:
+  // stageId comes from the validated record, never the input.
+  const rec = await db.misBomMaterial.create({
+    data: {
+      stageId: stage.id,
+      description: data.description.trim(),
+      itemId: data.itemId || undefined,
+      quantity: data.quantity,
+      unit: data.unit.trim(),
+      seq: data.seq,
+      ...(can(actor.role, 'wages.read') && data.ratePerUnit !== undefined ? { ratePerUnit: data.ratePerUnit } : {}),
+    },
+  });
   await logAuditEvent({ actorId: actor.userId, action: 'ADD_BOM_MATERIAL', entity: 'MisBomMaterial', entityId: rec.id, after: rec });
   return forRole(actor.role, rec);
+}
+
+/** R3 B108: a BOM goes for approval (and gets approved) only with a stage, a material and an open order. */
+async function assertBomComplete(bomId: string, orderId: string) {
+  const [stages, materials, order] = await Promise.all([
+    db.misBomStage.count({ where: { bomId } }),
+    db.misBomMaterial.count({ where: { stage: { bomId } } }),
+    db.misOrder.findUnique({ where: { id: orderId }, select: { orderNumber: true, status: true } }),
+  ]);
+  assertOrderOpen(order);
+  if (stages < 1) throw new Error('Add at least one stage before this BOM goes for approval.');
+  if (materials < 1) throw new Error('Add at least one material before this BOM goes for approval.');
 }
 
 /**
@@ -184,6 +231,7 @@ export async function submitBomForApproval(bomId: string) {
   if (before.status !== 'DRAFT') {
     throw new Error(`This BOM is ${before.status.toLowerCase().replace(/_/g, ' ')}, not a draft — there is nothing to submit.`);
   }
+  await assertBomComplete(before.id, before.orderId);
   const rec = await db.misBom.update({ where: { id: bomId }, data: { status: 'PENDING_APPROVAL' } });
   await logAuditEvent({ actorId: actor.userId, action: 'SUBMIT_BOM', entity: 'MisBom', entityId: rec.id, before, after: rec });
   return rec;
@@ -197,6 +245,7 @@ export async function approveBom(bomId: string) {
   if (before.status !== 'PENDING_APPROVAL') {
     throw new Error(`This BOM is ${before.status.toLowerCase().replace(/_/g, ' ')}, not pending approval.`);
   }
+  await assertBomComplete(before.id, before.orderId);
   const rec = await db.misBom.update({
     where: { id: bomId },
     data: { status: 'APPROVED', approvedById: actor.userId, approvedAt: new Date() },
@@ -208,6 +257,14 @@ export async function approveBom(bomId: string) {
 export async function deleteBomStage(stageId: string) {
   const actor = await requirePermission('orders.write');
   await requireDraftStage(stageId);
+  const [logs, checks, phases] = await Promise.all([
+    db.misProductionLog.count({ where: { bomStageId: stageId } }),
+    db.misQcCheck.count({ where: { bomStageId: stageId } }),
+    db.misJobPhase.count({ where: { bomStageId: stageId } }),
+  ]);
+  if (logs + checks + phases > 0) {
+    throw new Error(`Stage is used by ${logs} production entries / ${checks} QC checks / ${phases} phases`);
+  }
   await db.misBomStage.delete({ where: { id: stageId } });
   await logAuditEvent({ actorId: actor.userId, action: 'DELETE_BOM_STAGE', entity: 'MisBomStage', entityId: stageId });
 }

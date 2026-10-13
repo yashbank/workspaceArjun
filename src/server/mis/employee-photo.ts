@@ -6,6 +6,8 @@ import { getObject, putObject } from '@/server/storage';
 import { logAuditEvent } from './audit';
 import { requirePermission } from './auth';
 import { authenticateDevice } from './kiosk-device';
+import { resolveVisibleEmployeeWhere } from './visibility';
+import type { Prisma } from '@/generated/prisma/client';
 
 /**
  * V2 Epic 7 — the face on the badge.
@@ -44,8 +46,8 @@ export async function setEmployeePhoto(employeeId: string, bytes: Uint8Array, mi
   return { photoUrl };
 }
 
-async function readPhoto(employeeId: string): Promise<Uint8Array | null> {
-  const employee = await db.misEmployee.findUnique({ where: { id: employeeId }, select: { photoUrl: true } });
+async function readPhoto(employeeId: string, visible: Prisma.MisEmployeeWhereInput = {}): Promise<Uint8Array | null> {
+  const employee = await db.misEmployee.findUnique({ where: { id: employeeId, AND: [visible] }, select: { photoUrl: true } });
   if (!employee?.photoUrl) return null;
   try {
     return (await getObject(photoKey(employeeId))).bytes;
@@ -56,8 +58,9 @@ async function readPhoto(employeeId: string): Promise<Uint8Array | null> {
 
 /** A signed-in reader's copy. */
 export async function getEmployeePhoto(employeeId: string): Promise<Uint8Array | null> {
-  await requirePermission('employees.read');
-  return readPhoto(employeeId);
+  const actor = await requirePermission('employees.read');
+  // R3 B36: a photo outside the caller's pool reads as "no photo", same as an unknown id.
+  return readPhoto(employeeId, await resolveVisibleEmployeeWhere(actor));
 }
 
 /** A paired tablet's copy: device-token door (D18), like `pullForDevice`. */

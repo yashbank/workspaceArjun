@@ -36,6 +36,8 @@ function exportedBodies(file: string): { name: string; body: string }[] {
 /** Writers that deliberately carry no audit row, each with its reason. Adding here is a review decision. */
 const REVIEWED_UNAUDITED: Record<string, string> = {
   'audit.ts#logAuditEvent': 'this IS the audit writer',
+  'allocation-release.ts#releaseWorkerRows': 'returns auditEvents; the caller logs them with flushReleaseAudit after commit (no global-db call inside a tx)',
+  'allocation-release.ts#releaseMachineAllocations': 'returns auditEvents; the caller logs them with flushReleaseAudit after commit (no global-db call inside a tx)',
   'dashboard.ts#saveDashboardLayout': "a person's own widget layout, not factory data",
   'dashboard.ts#resetDashboardLayout': "a person's own widget layout, not factory data",
   'preferences.ts#setLocale': "a person's own language toggle",

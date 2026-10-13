@@ -7,11 +7,17 @@ import { calculateMonthlyPayroll } from '@/server/mis/payroll';
 import { getEmployee } from '@/server/mis/employee';
 import { getMisRole } from '@/server/mis/roles';
 import { notFound } from 'next/navigation';
+import { DEFAULT_FACTORY_TIMEZONE, formatFactoryDate, zonedParts } from '@/lib/mis/factory-time';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 function fmtCurrency(n: number) {
-  return `₹${n.toLocaleString('en-IN')}`;
+  // Indian digit grouping done by hand (1,23,456).
+  const digits = String(Math.abs(Math.round(n)));
+  const last3 = digits.slice(-3);
+  const rest = digits.slice(0, -3);
+  const grouped = rest ? `${rest.replace(/\B(?=(\d{2})+(?!\d))/g, ',')},${last3}` : last3;
+  return `₹${n < 0 ? '-' : ''}${grouped}`;
 }
 
 export default async function PayslipPage({
@@ -30,12 +36,14 @@ export default async function PayslipPage({
   // the page's own line, so its gate no longer depends on which permission payroll happens to use.
   if (!can(await getMisRole(user.id), 'wages.read')) throw new MisForbiddenError('wages.read');
 
-  const now = new Date();
-  const year = parseInt(sp.year ?? String(now.getFullYear()), 10);
-  const month = parseInt(sp.month ?? String(now.getMonth() + 1), 10);
+  // R3 B49: year and month are clamped; anything that is not a real month is a 404.
+  const today = zonedParts(new Date(), DEFAULT_FACTORY_TIMEZONE);
+  const year = sp.year === undefined ? today.year : Number(sp.year);
+  const month = sp.month === undefined ? today.month : Number(sp.month);
+  if (!Number.isInteger(year) || year < 2000 || year > 2100 || !Number.isInteger(month) || month < 1 || month > 12) notFound();
 
   const [employee, allPayroll] = await Promise.all([
-    getEmployee(employeeId),
+    getEmployee(employeeId, 'payslip'),
     calculateMonthlyPayroll(year, month),
   ]);
 
@@ -54,7 +62,7 @@ export default async function PayslipPage({
         </div>
         <div className="text-right">
           <div className="text-sm font-medium text-gray-700">{MONTHS[month - 1]} {year}</div>
-          <div className="text-xs text-gray-400">Generated: {new Date().toLocaleDateString('en-IN')}</div>
+          <div className="text-xs text-gray-400">Generated: {formatFactoryDate(new Date(), DEFAULT_FACTORY_TIMEZONE)}</div>
         </div>
       </div>
 

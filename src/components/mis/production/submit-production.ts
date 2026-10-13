@@ -2,7 +2,7 @@ import { submitProductionLiveAction } from '@/app/(mis)/mis/production/actions';
 import { getDeviceId } from '@/lib/mis/offline/device';
 import { type ParkReason, type QueuedWriteEnvelope } from '@/lib/mis/offline/idempotency';
 import { getOfflineQueue, type OfflineQueue } from '@/lib/mis/offline/queue';
-import type { ProductionLogPayload } from '@/server/mis/production';
+import type { ProductionLogPayload, ProductionWarning } from '@/server/mis/production';
 
 /**
  * What happened to a production entry, in the terms a screen needs.
@@ -18,7 +18,7 @@ import type { ProductionLogPayload } from '@/server/mis/production';
  *    values, because the entry exists nowhere else.
  */
 export type SubmitOutcome =
-  | { kind: 'APPLIED' }
+  | { kind: 'APPLIED'; warnings?: ProductionWarning[] }
   | { kind: 'QUEUED' }
   | { kind: 'BLOCKED'; reason?: ParkReason; detail: string }
   | { kind: 'NOT_SAVED'; detail: string };
@@ -124,7 +124,8 @@ export async function submitProduction(
   switch (result.outcome) {
     case 'APPLIED':
     case 'DUPLICATE':
-      return { kind: 'APPLIED' };
+      // R3 B122/B123: warnings are advice, never a refusal; the entry has landed.
+      return { kind: 'APPLIED', warnings: result.result?.warnings };
     case 'RETRY':
       // A transient server-side failure, or a signed-out session. Keep it.
       return enqueue();

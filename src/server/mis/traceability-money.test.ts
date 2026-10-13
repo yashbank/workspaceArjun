@@ -49,7 +49,7 @@ vi.mock('@/server/mis/documents', () => ({ withUploaderNames: async (rows: unkno
 
 const { getOrderTrace } = await import('./traceability');
 
-const READERS: MisRoleName[] = ['OWNER', 'ADMIN', 'SUPERVISOR', 'QC'];
+const READERS: MisRoleName[] = ['OWNER', 'ADMIN', 'SUPERVISOR', 'QC', 'STORE_GUY']; // R3 B64: STORE_GUY holds orders.read
 const RATE = 159.35;
 const as = (role: MisRoleName) => {
   getCurrentUser.mockResolvedValue({ id: 'u1' });

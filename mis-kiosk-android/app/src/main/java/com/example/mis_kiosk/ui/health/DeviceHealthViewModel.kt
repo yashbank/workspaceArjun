@@ -10,6 +10,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.mis_kiosk.BuildConfig
 import com.example.mis_kiosk.data.local.EmployeeDao
 import com.example.mis_kiosk.data.local.PunchQueueDatabase
+import com.example.mis_kiosk.data.local.PunchQueueEntity
 import com.example.mis_kiosk.data.local.RosterDatabase
 import com.example.mis_kiosk.data.local.RosterPreferences
 import com.example.mis_kiosk.data.network.ApiClient
@@ -17,6 +18,7 @@ import com.example.mis_kiosk.data.repository.RosterRepository
 import com.example.mis_kiosk.data.repository.RosterSyncResult
 import com.example.mis_kiosk.data.security.DeviceCredentialStore
 import com.example.mis_kiosk.data.work.PunchFlushScheduler
+import java.time.ZoneId
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -36,6 +38,12 @@ data class DeviceHealthState(
     val syncMessage: String? = null,
     val syncFailed: Boolean = false,
     val syncing: Boolean = false,
+    /** R3 B66: rows that cannot be sent as they are; each has a "Retry" on the screen. */
+    val stuck: List<PunchQueueEntity> = emptyList(),
+    /** R3 B66: the server answered 401 - this tablet must be paired again. */
+    val needsRepair: Boolean = false,
+    /** The zone the stuck rows' times are shown in (the factory's, else the device's). */
+    val zone: ZoneId = ZoneId.systemDefault(),
 )
 
 class DeviceHealthViewModel(application: Application) : AndroidViewModel(application) {
@@ -87,7 +95,19 @@ class DeviceHealthViewModel(application: Application) : AndroidViewModel(applica
                 batteryPercent = batteryPercent,
                 isCharging = isCharging,
                 freeStorageGb = freeGb,
+                stuck = punchQueueDao.stuckOrdered(),
+                needsRepair = rosterPreferences.needsRepair,
+                zone = rosterPreferences.factoryZone,
             )
+        }
+    }
+
+    /** R3 B66: puts one STUCK punch back in the queue with its failure count reset. */
+    fun retryStuck(key: String) {
+        viewModelScope.launch {
+            punchQueueDao.retryStuck(key)
+            PunchFlushScheduler.schedule(getApplication())
+            refresh()
         }
     }
 

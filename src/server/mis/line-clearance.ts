@@ -1,6 +1,7 @@
 import type { MisLineClearance } from '@/generated/prisma/client';
 import type { MisLineClearanceMode } from '@/generated/prisma/enums';
 import { friendlyWhen } from '@/lib/mis/factory-time';
+import { rejectable } from '@/lib/mis/offline/idempotency';
 import { minuteOfDay, isMinuteInShiftWindow, resolveShiftAt, shiftDurationMinutes } from '@/lib/mis/shift-window';
 import { db } from '@/server/db';
 import { requirePermission } from '@/server/mis/auth';
@@ -65,8 +66,12 @@ async function currentOrderIdForMachine(machineId: string): Promise<string | nul
  * called from production.ts after its own production.write check, the same
  * way getRuleValue/getAqlThresholds are used unguarded elsewhere.
  */
-export async function assertLineCleared(machineId: string): Promise<void> {
-  const machine = await db.misMachine.findUnique({ where: { id: machineId }, select: { name: true } });
+export async function assertLineCleared(machineId: string, orderId?: string): Promise<void> {
+  const machine = await db.misMachine.findUnique({ where: { id: machineId }, select: { name: true, isActive: true, deletedAt: true } });
+  // R3 B121 - an inactive or deleted machine cannot run, so it cannot be logged against.
+  if (machine && (machine.isActive === false || machine.deletedAt)) {
+    throw rejectable('MALFORMED', `${machine.name} is inactive, so production cannot be logged against it.`);
+  }
   const machineName = machine?.name ?? 'This machine';
 
   const latest = await db.misLineClearance.findFirst({ where: { machineId }, orderBy: { clearedAt: 'desc' } });
@@ -79,6 +84,11 @@ export async function assertLineCleared(machineId: string): Promise<void> {
   }
 
   if (latest.mode === 'JOB') {
+    // R3 B121 - a JOB clearance covers one order. When the caller names the log's order, a
+    // clearance for another order is not valid, whether or not the machine has a booking.
+    if (orderId && latest.orderId && latest.orderId !== orderId) {
+      throw new LineClearanceBlockedError(machineId, machineName, 'EXPIRED', latest.clearedAt, timeZone);
+    }
     const currentOrderId = await currentOrderIdForMachine(machineId);
     if (latest.orderId && currentOrderId && currentOrderId !== latest.orderId) {
       throw new LineClearanceBlockedError(machineId, machineName, 'EXPIRED', latest.clearedAt, timeZone);

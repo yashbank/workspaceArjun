@@ -4,6 +4,8 @@ import { getMisRole } from '@/server/mis/roles';
 import { can } from '@/lib/mis/permissions';
 import { listInventoryLedger, getInventoryBalance } from '@/server/mis/inventory';
 import { db } from '@/server/db';
+import { formatFactoryDate } from '@/lib/mis/factory-time';
+import { getFactoryTimezone } from '@/server/mis/business-rules';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { AdjustDialog } from '@/components/mis/inventory/adjust-dialog';
@@ -15,6 +17,7 @@ export default async function InventoryItemPage({ params }: { params: Promise<{ 
   const role = await getMisRole(user.id);
   const canWrite = can(role, 'inventory.write');
 
+  const zone = await getFactoryTimezone();
   const item = await db.misItem.findUnique({ where: { id: itemId } });
   if (!item) notFound();
 
@@ -93,7 +96,7 @@ export default async function InventoryItemPage({ params }: { params: Promise<{ 
                   return (
                     <tr key={entry.id} className="hover:bg-slate-50">
                       <td className="px-4 py-2 text-slate-500 whitespace-nowrap">
-                        {new Date(entry.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                        {formatFactoryDate(new Date(entry.createdAt), zone)}
                       </td>
                       <td className="px-4 py-2 text-slate-700">
                         {entry.source === 'GRN' && entry.sourceId && grnNumberById.has(entry.sourceId) ? (

@@ -38,9 +38,11 @@ type Props = {
   openPos: ReceivePo[];
   /** Owner only (D5): may type what the delivery charged. */
   canSetRate?: boolean;
+  /** Admin/Owner: may take more than the order + 2% with a reason. */
+  canOverride?: boolean;
 };
 
-export function ReceiveScreen({ header, items, suppliers, openPos, canSetRate = false }: Props) {
+export function ReceiveScreen({ header, items, suppliers, openPos, canSetRate = false, canOverride = false }: Props) {
   const [supplierId, setSupplierId] = useState<string | null>(null);
   const [poId, setPoId] = useState<string | null>(null);
   const [invoiceNo, setInvoiceNo] = useState('');
@@ -68,12 +70,13 @@ export function ReceiveScreen({ header, items, suppliers, openPos, canSetRate = 
     if (po?.supplierId) setSupplierId(po.supplierId);
   }
 
-  async function commit(lines: CartLine[]) {
+  async function commit(lines: CartLine[], key: string, overReceiptReason?: string) {
     const result = unwrap(await commitReceiptAction(lines, {
       supplierId,
       poId,
       invoiceNo: invoiceNo.trim() || null,
-    }));
+      overReceiptReason: overReceiptReason ?? null,
+    }, key));
     setDone(result);
     setInvoiceNo('');
     setPoId(null);
@@ -105,6 +108,7 @@ export function ReceiveScreen({ header, items, suppliers, openPos, canSetRate = 
         supplierId={supplierId}
         onSupplierChange={chooseSupplier}
         canSetRate={canSetRate}
+        canOverride={canOverride}
       >
         {visiblePos.length > 0 && (
           <InfoCard>

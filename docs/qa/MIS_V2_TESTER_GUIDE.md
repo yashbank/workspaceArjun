@@ -157,6 +157,59 @@ Re-run only these rows; the earlier sections are unchanged.
 Note: invoices created through the Store cart receipt stay **pending review** until someone
 presses Re-check match (known, intentional for now).
 
+## §11. Round 3 — tester round 2 fixes (October 2026) — re-test only this
+
+| # | Role | Where | Expected |
+|---|---|---|---|
+| 11.1 | STORE_GUY | GRN with a received line that has no catalog item → **Confirm** | Refused; the message names the line ("Line N …") |
+| 11.2 | STORE_GUY | Confirm a good GRN → Store → Stock / Transactions | The receipt shows as an IN row; stock balance matches |
+| 11.3 | STORE_GUY | Store out more than the balance | Refused with "Cannot issue more than the stock balance (X available)"; no reason field |
+| 11.4 | STORE_GUY | Physical count → **Reconcile** (needs a reason) | Stock adjusts once; a second reconcile of the same count is refused |
+| 11.5 | STORE_GUY | Draft GRN: edit / remove a line; **Discard draft** | Works on DRAFT only; confirmed GRNs refuse |
+| 11.6 | STORE_GUY | Raise a material request | Store Guy, Admin and Owner all get the bell; Admin/Owner can approve |
+| 11.7 | ADMIN | Create a PO for an order whose BOM is not approved | Popup "BOM is not approved"; BOM Ref is a picker of approved orders only |
+| 11.8 | ADMIN | PO: submit with no lines; edit header; delete a draft; cancel a received PO | No-lines submit disabled; edit/delete work on DRAFT; cancel refused once receiving |
+| 11.9 | ADMIN / OWNER | BOM: reject a pending BOM with a reason; edit/delete a DRAFT stage or material | Back to DRAFT with the reason; edits only on DRAFT |
+| 11.10 | ADMIN | Order → Start production / Mark complete / Cancel | Complete lists unmet gates; override needs a reason (Owner/Admin); cancel needs a reason |
+| 11.11 | STORE_GUY / ADMIN | Receive goods and Add Item | No rate / price field (Owner only) |
+| 11.12 | QC | Open PO / GRN URLs | Denied; no PO/GRN menu |
+| 11.13 | ADMIN | Order traceability | Shows linked POs/GRNs and issued materials, no rupee amounts |
+| 11.14 | SUPERVISOR | Production log / QC check | Unit is a dropdown; optional BOM stage; operators are floor staff only; machine pre-filled |
+| 11.15 | SUPERVISOR | Sign off a phase | Its machine shows FREE on the board |
+| 11.16 | any | Create a duplicate supplier / customer / master code | Clear message ("… already exists"), no technical error |
+| 11.17 | any | Master / detail screens | Back button present; Day Timeline has a machine-name search; login shows a show-password eye |
+| 11.18 | ADMIN | Employees list | Department column; manager dropdown shows name, code and role |
+| 11.19 | KIOSK | New APK: retry sync, revoked device, stale IN after a new day | Retry shows success/failure; revoked device returns to pairing; next day defaults to IN with a toggle |
+
+## §13. Round 4 (R3 deploy 1) — re-test only this
+
+| # | Role | Where | Expected |
+|---|---|---|---|
+| 13.1 | STORE_GUY | GRN receiving 2% over the PO qty, then 3% over | 2% allowed; 3% refused with the max shown |
+| 13.2 | STORE_GUY | Receive the last of a PO | PO shows COMPLETE and leaves the GRN picker |
+| 13.3 | STORE_GUY | Issue more than stock; double-tap Confirm on the cart | Refused; books once |
+| 13.4 | STORE_GUY | Inventory adjust without a reason | Reason required (3+ characters) |
+| 13.5 | STORE_GUY | Orders / Customers / Dashboard / Order detail | All open, read-only, no prices, no error page |
+| 13.6 | ADMIN | Over-receipt override | Needs a reason |
+| 13.7 | ADMIN | Create a PO line with a rate | Rate ignored (unpriced); PO needs Owner approval |
+| 13.8 | OWNER | Approve that PO | Refused until every line is priced; Owner can set rates while PENDING |
+| 13.9 | ADMIN | Change an employee wage code / pay type; deactivate the Owner row; assign Admin role | All refused |
+| 13.10 | ADMIN | Business rules (PO approval threshold) | Not editable by Admin |
+| 13.11 | ADMIN | Import a sheet with Name + Code only | Category and unit unchanged |
+| 13.12 | ADMIN | New item | Next ITM- code; code editable; GSM / Size / Unit are dropdowns |
+| 13.13 | ADMIN / OWNER | Cancel an order with a machine and crew booked | Machine and crew freed; stock reservations released |
+| 13.14 | ADMIN | Complete an order with no production logged | Refused unless Owner/Admin override with reason |
+| 13.15 | OWNER | Payroll for a month incl. MONTHLY staff with no attendance; department extra-pay day; half-day festival pay; closing a future month | Staff listed; dept day paid; half pay; future close refused |
+| 13.16 | OWNER | Legacy issues report | Lists the old STORE_ISSUE rows (about 36) |
+| 13.17 | OWNER | CoA for an order whose failure was later fixed; for a non-completed order | PASS; DRAFT banner |
+| 13.18 | SUPERVISOR | Crew: staff tomorrow, move a worker, assign someone on leave or double-booked, copy yesterday | Works; overlap and leave blocked (Admin can override with reason) |
+| 13.19 | SUPERVISOR | Sign off a phase | Machine AND crew freed |
+| 13.20 | SUPERVISOR | Production entry: edit within 24h; log on an unbooked machine; mixed units | Edit works then refused; amber warning; totals per unit |
+| 13.21 | SUPERVISOR | Add an attendance note; add a QC check | Allowed |
+| 13.22 | QC | AQL sample size 0; edit a check within 24h; pass rate with N/A rows | Refused; allowed; N/A ignored |
+| 13.23 | ATTENDANCE | Duplicate leave; self-approve leave; mark-absent after punches; edit outside the correction window | Refused; skips people who punched; refused |
+| 13.24 | KIOSK (new APK) | Night-shift worker at 05:30; revoked tablet with queued punches; stuck entry | Defaults to OUT; queued punches sent before wipe; stuck row listed with Retry |
+
 ## §9. Report
 Use the Bug template from `EXTERNAL_TESTER_GUIDE.md` §8: what you did, what you expected, what
 happened, role, device/width, time.

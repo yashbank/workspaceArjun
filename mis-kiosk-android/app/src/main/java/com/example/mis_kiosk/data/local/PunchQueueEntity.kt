@@ -1,5 +1,6 @@
 package com.example.mis_kiosk.data.local
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
@@ -11,6 +12,9 @@ object PunchQueueStatus {
     const val PARKED = "PARKED"
     /** Server said REJECTED — that key is permanently poisoned; kept only for visibility. */
     const val REJECTED = "REJECTED"
+    /** R3 B66 - this one row cannot be sent (HTTP 400/404/413, or 10 failed flushes). It never
+     *  blocks the rows behind it; the Health screen lists it with a "Retry" button. */
+    const val STUCK = "STUCK"
 }
 
 /**
@@ -34,4 +38,8 @@ data class PunchQueueEntity(
     val detail: String? = null,
     /** Operator who captured this punch (null = none/legacy row). Fixed at insert; sent on every flush/retry. */
     val operatorId: String? = null,
+    /** R3 B66 - failed flushes so far (5xx / network). 401 never counts. */
+    @ColumnInfo(defaultValue = "0") val attempts: Int = 0,
+    /** R3 B66 - why the last attempt failed, shown next to a STUCK row. */
+    val lastError: String? = null,
 )

@@ -29,6 +29,9 @@ vi.mock('@/server/mis/bom', () => ({ getBom: () => getBom() }));
 vi.mock('@/server/mis/production', () => ({ getProductionSummary: () => getProductionSummary() }));
 vi.mock('@/server/mis/business-rules', () => ({ getFactoryTimezone: () => getFactoryTimezone() }));
 vi.mock('@/server/mis/job-phases', () => ({ getPhasesForOrder: () => getPhasesForOrder() }));
+// R3 B125: the page now also reads the crew per phase; this suite is about the section table, so the
+// crew read is stubbed empty (mock plumbing only, no expectation changed).
+vi.mock('@/server/mis/worker-allocation', () => ({ getCrewForOrder: async () => [] }));
 vi.mock('@/components/mis/print/print-button', () => ({ PrintButton: () => null }));
 
 const { default: JobCardPrintPage } = await import('./[id]/page');

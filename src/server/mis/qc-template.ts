@@ -160,5 +160,5 @@ export async function recordChecklistCheck(input: { orderId: string; templateId:
     notes: input.notes,
     templateId: input.templateId,
     slotTime: input.slotTime,
-  });
+  }, { requireFailReason: false });
 }

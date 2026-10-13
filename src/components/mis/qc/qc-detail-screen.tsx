@@ -8,7 +8,7 @@ import { Input, NumberInput } from '@/components/mis/kit/input';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { AqlBreakdown } from '@/components/mis/qc/aql-breakdown';
-import { addQcCheckAction, recordAqlSampleAction } from '@/app/(mis)/mis/qc/actions';
+import { addQcCheckAction, editQcCheckAction, recordAqlSampleAction } from '@/app/(mis)/mis/qc/actions';
 import type { AqlResult } from '@/lib/mis/aql';
 import type { QcTemplateRow } from '@/server/mis/qc-template';
 import { QcChecklist } from '@/components/mis/qc/qc-checklist';
@@ -26,9 +26,11 @@ type Check = {
   checkBy?: { name: string } | null;
   templateId?: string | null;
   slotTime?: string | null;
+  /** Server-computed (B84): within 24 h, not acknowledged, order open. Never derived from the browser clock. */
+  editable?: boolean;
 };
 
-type Summary = { total: number; pass: number; fail: number; totalDefectQty: number };
+type Summary = { total: number; pass: number; fail: number; na?: number; totalDefectQty: number };
 type Order = { id: string; orderNumber: string; status: string; customer: { name: string } | null };
 type DefectTypeOption = { id: string; code: string; name: string; severity: string };
 type AqlLine = { defectTypeId: string; qty: string };
@@ -88,7 +90,20 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes, 
   const [aqlResult, setAqlResult] = useState<AqlResult | null>(null);
   const [aqlPending, startAqlTransition] = useTransition();
 
-  const passRate = summary.total > 0 ? Math.round((summary.pass / summary.total) * 100) : 0;
+  const [error, setError] = useState<string | null>(null);
+  const [aqlError, setAqlError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<Check | null>(null);
+  const [editResult, setEditResult] = useState<'PASS' | 'FAIL' | 'NA'>('PASS');
+  const [editParameter, setEditParameter] = useState('');
+  const [editDefectType, setEditDefectType] = useState('');
+  const [editDefectQty, setEditDefectQty] = useState('');
+  const [editNotes, setEditNotes] = useState('');
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editPending, startEditTransition] = useTransition();
+
+  // R3-QCR B79: N/A is neither a pass nor a fail, so it is left out of the rate (and shown on its own).
+  const decided = summary.pass + summary.fail;
+  const passRate = decided > 0 ? Math.round((summary.pass / decided) * 100) : null;
 
   const plainDefectTypeOptions: SelectOption[] = [
     { value: OTHER_DEFECT, label: 'Not listed — describe below' },
@@ -96,7 +111,8 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes, 
   ];
 
   const handleAdd = () => startTransition(async () => {
-    await addQcCheckAction({
+    setError(null);
+    const outcome = await addQcCheckAction({
       orderId: order.id,
       result,
       bomStageId: stageId ?? undefined,
@@ -105,6 +121,7 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes, 
       defectQty: defectQty ? parseFloat(defectQty) : undefined,
       notes: notes || undefined,
     });
+    if (!outcome.ok) { setError(outcome.detail); return; }
     setResult('PASS'); setStageId(null); setParameterName(''); setDefectTypeCode(OTHER_DEFECT); setDefectTypeOther(''); setDefectQty(''); setNotes('');
     setOpen(false);
   });
@@ -115,19 +132,48 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes, 
     setAqlLines((lines) => lines.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
 
   const handleRunAql = () => startAqlTransition(async () => {
+    setAqlError(null);
+    // R3-QCR B72: a blank is a blank, never a silent 0.
+    if (aqlSampleSize.trim() === '') { setAqlError('Enter the sample size'); return; }
     const defects = aqlLines
       .filter((l) => l.defectTypeId && Number(l.qty) > 0)
       .map((l) => ({ defectTypeId: l.defectTypeId, qty: Number(l.qty) }));
     const outcome = await recordAqlSampleAction({
       orderId: order.id,
-      sampleSize: Number(aqlSampleSize) || 0,
+      sampleSize: Number(aqlSampleSize),
       defects,
     });
-    setAqlResult(outcome);
+    if (!outcome.ok) { setAqlError(outcome.detail); return; }
+    setAqlResult(outcome.value);
     closeAql();
   });
 
+  const openEdit = (c: Check) => {
+    setEditing(c);
+    setEditResult((c.result === 'PASS' || c.result === 'FAIL' ? c.result : 'NA') as 'PASS' | 'FAIL' | 'NA');
+    setEditParameter(c.parameterName ?? '');
+    setEditDefectType(c.defectType ?? '');
+    setEditDefectQty(c.defectQty == null ? '' : String(c.defectQty));
+    setEditNotes(c.notes ?? '');
+    setEditError(null);
+  };
+
+  const handleEdit = () => startEditTransition(async () => {
+    if (!editing) return;
+    setEditError(null);
+    const outcome = await editQcCheckAction(editing.id, {
+      result: editResult,
+      parameterName: editParameter.trim() || undefined,
+      defectType: editDefectType.trim() || null,
+      defectQty: editDefectQty.trim() === '' ? null : Number(editDefectQty),
+      notes: editNotes.trim() || null,
+    });
+    if (!outcome.ok) { setEditError(outcome.detail); return; }
+    setEditing(null);
+  });
+
   const closeAql = () => {
+    setAqlError(null);
     setAqlOpen(false);
     setAqlSampleSize('32');
     setAqlLines([{ defectTypeId: '', qty: '1' }]);
@@ -166,10 +212,11 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes, 
       {aqlResult && <AqlBreakdown result={aqlResult} />}
 
       {/* Summary stats */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
         <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
           <div className="text-2xl font-bold text-gray-900">{summary.total}</div>
           <div className="text-xs text-gray-500 mt-0.5">Total Checks</div>
+          {(summary.na ?? 0) > 0 && <div className="text-xs text-gray-400">N/A: {summary.na}</div>}
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
           <div className="text-2xl font-bold text-green-600">{summary.pass}</div>
@@ -180,10 +227,14 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes, 
           <div className="text-xs text-gray-500 mt-0.5">Fail</div>
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-          <div className={`text-2xl font-bold ${passRate >= 90 ? 'text-green-600' : passRate >= 70 ? 'text-yellow-600' : 'text-red-600'}`}>
-            {passRate}%
+          <div className={`text-2xl font-bold ${passRate === null ? 'text-gray-400' : passRate >= 90 ? 'text-green-600' : passRate >= 70 ? 'text-yellow-600' : 'text-red-600'}`}>
+            {passRate === null ? '—' : `${passRate}%`}
           </div>
           <div className="text-xs text-gray-500 mt-0.5">Pass Rate</div>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
+          <div className="text-2xl font-bold text-gray-900">{summary.totalDefectQty}</div>
+          <div className="text-xs text-gray-500 mt-0.5">Defects (failed checks)</div>
         </div>
       </div>
 
@@ -191,11 +242,11 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes, 
       <div className="bg-white rounded-xl border border-gray-200 p-4">
         <div className="flex justify-between text-sm mb-2">
           <span className="font-medium text-gray-700">Overall Quality</span>
-          <span className="text-gray-500">{passRate}% pass rate</span>
+          <span className="text-gray-500">{passRate === null ? '—' : `${passRate}% pass rate`}</span>
         </div>
         <div className="h-3 bg-gray-100 rounded-full overflow-hidden flex">
-          <div className="bg-green-500 h-full" style={{ width: `${passRate}%` }} />
-          <div className="bg-red-400 h-full" style={{ width: `${summary.total > 0 ? (summary.fail / summary.total) * 100 : 0}%` }} />
+          <div className="bg-green-500 h-full" style={{ width: `${passRate ?? 0}%` }} />
+          <div className="bg-red-400 h-full" style={{ width: `${decided > 0 ? (summary.fail / decided) * 100 : 0}%` }} />
         </div>
       </div>
 
@@ -225,6 +276,7 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes, 
                 <th className="px-5 py-3 text-left font-medium">Stage</th>
                 <th className="px-5 py-3 text-left font-medium">Checked By</th>
                 <th className="px-5 py-3 text-left font-medium">Notes</th>
+                {canWrite && <th className="px-5 py-3 text-left font-medium"><span className="sr-only">Actions</span></th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
@@ -239,6 +291,11 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes, 
                   <td className="px-5 py-3 text-gray-500">{c.stage?.stageName ?? '—'}</td>
                   <td className="px-5 py-3 text-gray-500">{c.checkBy?.name ?? '—'}</td>
                   <td className="px-5 py-3 text-gray-400 max-w-xs truncate">{c.notes ?? '—'}</td>
+                  {canWrite && (
+                    <td className="px-5 py-3">
+                      {c.editable && <Button variant="ghost" onClick={() => openEdit(c)}>Edit</Button>}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -268,9 +325,26 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes, 
             </>
           )}
           <Input label="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
+          {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
           <div className="flex gap-2 pt-2">
             <Button onClick={handleAdd} disabled={isPending}>{isPending ? 'Saving…' : 'Save'}</Button>
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+          </div>
+        </div>
+      </SlideOver>
+
+      {/* Edit check slide-over (B84: within 24 h) */}
+      <SlideOver open={editing !== null} onClose={() => setEditing(null)} title="Edit QC Check">
+        <div className="flex flex-col gap-4 p-4">
+          <Select label="Result" value={editResult} options={resultOptions} onChange={(v) => setEditResult(v as 'PASS' | 'FAIL' | 'NA')} />
+          <Input label="Parameter Name" value={editParameter} onChange={(e) => setEditParameter(e.target.value)} />
+          <Input label="Defect type" value={editDefectType} onChange={(e) => setEditDefectType(e.target.value)} />
+          <NumberInput label="Defect Qty" value={editDefectQty} onChange={(e) => setEditDefectQty(e.target.value)} />
+          <Input label="Notes" value={editNotes} onChange={(e) => setEditNotes(e.target.value)} />
+          {editError && <p role="alert" className="text-sm text-red-700">{editError}</p>}
+          <div className="flex gap-2 pt-2">
+            <Button onClick={handleEdit} disabled={editPending}>{editPending ? 'Saving…' : 'Save'}</Button>
+            <Button variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
           </div>
         </div>
       </SlideOver>
@@ -282,6 +356,7 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes, 
             Order: <span className="font-medium text-gray-800">{order.orderNumber}</span>
           </div>
           <NumberInput label="Sample Size" value={aqlSampleSize} onChange={(e) => setAqlSampleSize(e.target.value)} />
+          {aqlError && <p role="alert" className="text-sm text-red-700">{aqlError}</p>}
 
           <div className="flex flex-col gap-3">
             <div className="text-sm font-medium text-slate-700">Defects found</div>

@@ -8,6 +8,8 @@ import { SlideOver } from '@/components/mis/kit/slide-over';
 import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { requestLeaveAction, approveLeaveAction } from '@/app/(mis)/mis/attendance/actions';
+import { useToast } from '@/components/ui/toast';
+import { formatFactoryDate } from '@/lib/mis/factory-time';
 
 type Employee = { id: string; name: string; employeeCode: string };
 type LeaveRow = {
@@ -39,6 +41,7 @@ export function LeaveScreen({ leaves, employees, canApprove, initialEmployeeId }
   const [filter, setFilter] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'>('ALL');
   const [empSearch, setEmpSearch] = useState('');
   const [isPending, startTransition] = useTransition();
+  const { toast } = useToast();
 
   const empOptions: SelectOption[] = [
     { value: '', label: '— Select Employee —' },
@@ -50,12 +53,15 @@ export function LeaveScreen({ leaves, employees, canApprove, initialEmployeeId }
     .filter((l) => !empSearch.trim() || (l.employee?.name ?? '').toLowerCase().includes(empSearch.toLowerCase()) || (l.employee?.employeeCode ?? '').toLowerCase().includes(empSearch.toLowerCase()));
 
   const handleRequest = () => startTransition(async () => {
-    await requestLeaveAction(empId, date, reason || undefined);
+    const res = await requestLeaveAction(empId, date, reason || undefined);
+    if (!res.ok) { toast('error', res.detail); return; }
     setEmpId(''); setDate(''); setReason(''); setOpen(false);
   });
 
   const handleApprove = (id: string, approve: boolean) => startTransition(async () => {
-    await approveLeaveAction(id, approve);
+    const res = await approveLeaveAction(id, approve);
+    if (!res.ok) { toast('error', res.detail); return; }
+    if (res.value.skippedDates.length > 0) toast('info', `Register not changed for ${res.value.skippedDates.join(', ')} (already has a punch, an edit, or a closed month)`);
   });
 
   const columns: Column<LeaveRow>[] = [
@@ -72,7 +78,8 @@ export function LeaveScreen({ leaves, employees, canApprove, initialEmployeeId }
     {
       key: 'date',
       header: 'Date',
-      render: (r) => new Date(r.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+      // A leave day is a date-only value (UTC midnight), so it is read in UTC to keep the same calendar day.
+      render: (r) => formatFactoryDate(new Date(r.date), 'UTC'),
     },
     { key: 'reason', header: 'Reason', render: (r) => r.reason ?? '—' },
     {

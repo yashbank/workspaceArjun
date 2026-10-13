@@ -12,6 +12,7 @@ import { getMonthWageBill } from '@/server/mis/payroll';
 import { countPhasesForOrders } from '@/server/mis/job-phases';
 import { getDayProductionSummary, getProductionSeries } from '@/server/mis/production';
 import { getMisRole } from '@/server/mis/roles';
+import { can } from '@/lib/mis/permissions';
 import { getCrewSummary } from '@/server/mis/worker-allocation';
 import { shortAge } from '@/lib/mis/relative-age';
 
@@ -61,7 +62,7 @@ export default async function MisDashboardPage() {
   ]);
 
   const shownOrders = orders.slice(0, 6);
-  const phaseCounts = shownOrders.length > 0 ? await countPhasesForOrders(shownOrders.map((o) => o.id)) : new Map();
+  const phaseCounts = shownOrders.length > 0 && can(role, 'phase.read') ? await countPhasesForOrders(shownOrders.map((o) => o.id)) : new Map();
   const despatched = orders.filter((o) => o.status === 'DESPATCHED' || o.status === 'COMPLETED').length;
   const daysInMonth = new Date(Date.UTC(now.getFullYear(), now.getMonth() + 1, 0)).getUTCDate();
 

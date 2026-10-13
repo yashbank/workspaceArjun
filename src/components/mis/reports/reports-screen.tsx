@@ -1,10 +1,17 @@
 'use client';
 import { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { StatusBadge, type BadgeTone } from '@/components/mis/kit/status-badge';
+import { formatQty } from '@/lib/mis/qty-by-unit';
 
-type ProductionData = { rows: { orderNumber: string; description: string | null; produced: number; waste: number; entries: number }[]; raw: unknown[] };
+type ProductionData = {
+  rows: { orderNumber: string; description: string | null; unit: string; produced: number; waste: number; entries: number }[];
+  /** Per unit (B76): never one mixed figure. */
+  totals?: { unit: string; produced: number; waste: number; wastePct: number | null }[];
+  raw: unknown[];
+};
 type AttendanceData = { rows: { name: string; code: string; dept: string; present: number; absent: number; late: number; ot: number }[]; raw: unknown[] };
 type QcData = { rows: { orderNumber: string; pass: number; fail: number; na: number }[]; raw: unknown[] };
 type StoreItemRow = { id: string; name: string; code: string; unit: string; pricePerUnit?: number | null; totalIn: number; totalOut: number; txnCount: number };
@@ -14,8 +21,32 @@ type MachineData = { rows: MachineUtilisationRow[]; availableMinutes: number; to
 type OrderRow = { id: string; orderNumber: string; customer: { name: string } | null; description: string | null; status: string; deliveryDate: string | Date | null };
 
 type Tab = 'production' | 'attendance' | 'qc' | 'orders' | 'store' | 'machines';
+export type ReportSection = Tab;
+
+const SECTION_LABEL: Record<Tab, string> = {
+  production: 'production',
+  attendance: 'attendance',
+  qc: 'quality',
+  orders: 'orders',
+  store: 'store',
+  machines: 'machines',
+};
+
+const INR_2DP = new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2 });
+const INR_0DP = new Intl.NumberFormat('en-IN', { minimumFractionDigits: 0 });
+
+/** `dd/mm/yyyy` of a stored calendar date (UTC midnight in the DB), with no browser-zone shift. */
+function dayLabel(d: string | Date | null | undefined): string {
+  if (!d) return '';
+  const key = (typeof d === 'string' ? d : d.toISOString()).slice(0, 10);
+  return `${key.slice(8, 10)}/${key.slice(5, 7)}/${key.slice(0, 4)}`;
+}
 
 type Props = {
+  /** B78: sections whose query failed; the others still render. */
+  failed?: Partial<Record<Tab, string>>;
+  /** B83: set only for a holder of both reports.read and inventory.read. */
+  legacyIssuesHref?: string;
   production: ProductionData;
   attendance: AttendanceData;
   qc: QcData;
@@ -53,7 +84,7 @@ function downloadCsv(filename: string, rows: string[][], headers: string[]) {
   URL.revokeObjectURL(url);
 }
 
-export function ReportsScreen({ production, attendance, qc, orders, store, machines, canSeeWages: _canSeeWages, isOwner, rangeLabel, year, month }: Props) {
+export function ReportsScreen({ production, attendance, qc, orders, store, machines, canSeeWages: _canSeeWages, isOwner, rangeLabel, year, month, failed = {}, legacyIssuesHref }: Props) {
   const [tab, setTab] = useState<Tab>('production');
   const router = useRouter();
 
@@ -83,8 +114,8 @@ export function ReportsScreen({ production, attendance, qc, orders, store, machi
   const prodCols: Column<(typeof production.rows)[0]>[] = [
     { key: 'orderNumber', header: 'Order', render: r => <span className="font-mono text-sm">{r.orderNumber}</span> },
     { key: 'description', header: 'Description', render: r => r.description ?? '—' },
-    { key: 'produced', header: 'Produced', render: r => <span className="font-medium">{r.produced.toLocaleString('en-IN')} kg</span> },
-    { key: 'waste', header: 'Waste', render: r => `${r.waste.toLocaleString('en-IN')} kg` },
+    { key: 'produced', header: 'Produced', render: r => <span className="font-medium">{formatQty(r.produced)} {r.unit}</span> },
+    { key: 'waste', header: 'Waste', render: r => `${formatQty(r.waste)} ${r.unit}` },
     { key: 'entries', header: 'Log Entries', render: r => r.entries.toString() },
     { key: 'yield', header: 'Yield %', render: r => {
       if (!r.produced) return '—';
@@ -119,14 +150,14 @@ export function ReportsScreen({ production, attendance, qc, orders, store, machi
     { key: 'customer', header: 'Customer', render: r => r.customer?.name ?? '—' },
     { key: 'description', header: 'Description', render: r => r.description ?? '—' },
     { key: 'status', header: 'Status', render: r => <StatusBadge tone={statusTone(r.status)}>{r.status.replace(/_/g,' ')}</StatusBadge> },
-    { key: 'deliveryDate', header: 'Delivery', render: r => r.deliveryDate ? new Date(r.deliveryDate).toLocaleDateString('en-IN') : '—' },
+    { key: 'deliveryDate', header: 'Delivery', render: r => dayLabel(r.deliveryDate) || '—' },
   ];
 
-  const totProd = production.rows.reduce((s, r) => s + r.produced, 0);
-  const totWaste = production.rows.reduce((s, r) => s + r.waste, 0);
-  const totPresent = attendance.rows.reduce((s, r) => s + r.present, 0);
+  const prodTotals = production.totals ?? [];
+  const totPresent =attendance.rows.reduce((s, r) => s + r.present, 0);
   const totAbsent = attendance.rows.reduce((s, r) => s + r.absent, 0);
   const totQcPass = qc.rows.reduce((s, r) => s + r.pass, 0);
+  const totQcNa = qc.rows.reduce((s, r) => s + r.na, 0);
   const totQcFail = qc.rows.reduce((s, r) => s + r.fail, 0);
   const totStoreIn = store.rows.reduce((s, r) => s + r.totalIn, 0);
   const totStoreOut = store.rows.reduce((s, r) => s + r.totalOut, 0);
@@ -152,14 +183,14 @@ export function ReportsScreen({ production, attendance, qc, orders, store, machi
     { key: 'name', header: 'Item', render: r => <span className="font-medium">{r.name}</span> },
     { key: 'code', header: 'Code', render: r => <span className="font-mono text-sm">{r.code}</span> },
     { key: 'unit', header: 'Unit', render: r => r.unit || '—' },
-    { key: 'totalIn', header: 'IN Qty', render: r => <span className="text-green-600 font-medium">{r.totalIn.toLocaleString('en-IN')}</span> },
-    { key: 'totalOut', header: 'OUT Qty', render: r => <span className="text-amber-600 font-medium">{r.totalOut.toLocaleString('en-IN')}</span> },
+    { key: 'totalIn', header: 'IN Qty', render: r => <span className="text-green-600 font-medium">{formatQty(r.totalIn)}</span> },
+    { key: 'totalOut', header: 'OUT Qty', render: r => <span className="text-amber-600 font-medium">{formatQty(r.totalOut)}</span> },
     { key: 'txnCount', header: 'Txns', render: r => r.txnCount.toString() },
     ...(isOwner ? [{
       key: 'value' as const,
       header: 'IN Value (₹)',
       render: (r: StoreItemRow) => r.pricePerUnit != null
-        ? `₹${(r.pricePerUnit * r.totalIn).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
+        ? `₹${INR_2DP.format(r.pricePerUnit * r.totalIn)}`
         : '—',
     }] : []),
   ];
@@ -167,9 +198,9 @@ export function ReportsScreen({ production, attendance, qc, orders, store, machi
   function handleExport() {
     const filename = `report-${year}-${String(month).padStart(2, '0')}-${tab}.csv`;
     if (tab === 'production') {
-      const headers = ['Order', 'Description', 'Produced (kg)', 'Waste (kg)', 'Log Entries', 'Yield %'];
+      const headers = ['Order', 'Description', 'Unit', 'Produced', 'Waste', 'Log Entries', 'Yield %'];
       const rows = production.rows.map(r => [
-        r.orderNumber, r.description ?? '', String(r.produced), String(r.waste), String(r.entries),
+        r.orderNumber, r.description ?? '', r.unit, String(r.produced), String(r.waste), String(r.entries),
         r.produced ? (((r.produced - r.waste) / r.produced) * 100).toFixed(1) : '0',
       ]);
       downloadCsv(filename, rows, headers);
@@ -202,7 +233,7 @@ export function ReportsScreen({ production, attendance, qc, orders, store, machi
       const headers = ['Order #', 'Customer', 'Description', 'Status', 'Delivery Date'];
       const rows = orders.map(r => [
         r.orderNumber, r.customer?.name ?? '', r.description ?? '', r.status,
-        r.deliveryDate ? new Date(r.deliveryDate).toLocaleDateString('en-IN') : '',
+        dayLabel(r.deliveryDate),
       ]);
       downloadCsv(filename, rows, headers);
     }
@@ -235,17 +266,24 @@ export function ReportsScreen({ production, attendance, qc, orders, store, machi
         </div>
       </div>
 
+      {legacyIssuesHref && (
+        <p className="mb-4 text-sm">
+          <Link href={legacyIssuesHref} className="inline-flex min-h-11 items-center text-indigo-700 hover:underline">Legacy store issues not linked to an order →</Link>
+        </p>
+      )}
+
       {/* Summary stat tiles */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         <div className="bg-white border border-slate-200 rounded-lg p-4">
           <p className="text-xs text-slate-500 uppercase tracking-wide">Production</p>
-          <p className="text-2xl font-bold mt-1">{totProd.toLocaleString('en-IN')}</p>
-          <p className="text-xs text-slate-400">kg produced</p>
+          {/* B76: one figure per unit, never a mixed total. */}
+          <p className="text-2xl font-bold mt-1">{prodTotals.length === 0 ? '0' : prodTotals.map(t => formatQty(t.produced)).join(' / ')}</p>
+          <p className="text-xs text-slate-400">{prodTotals.length === 0 ? 'produced' : `${prodTotals.map(t => t.unit).join(' / ')} produced`}</p>
         </div>
         <div className="bg-white border border-slate-200 rounded-lg p-4">
           <p className="text-xs text-slate-500 uppercase tracking-wide">Waste</p>
-          <p className="text-2xl font-bold mt-1">{totWaste.toLocaleString('en-IN')}</p>
-          <p className="text-xs text-slate-400">kg waste</p>
+          <p className="text-2xl font-bold mt-1">{prodTotals.length === 0 ? '0' : prodTotals.map(t => formatQty(t.waste)).join(' / ')}</p>
+          <p className="text-xs text-slate-400">{prodTotals.length === 0 ? 'waste' : prodTotals.map(t => `${t.unit}${t.wastePct == null ? '' : ` (${t.wastePct}%)`}`).join(' / ')} waste</p>
         </div>
         <div className="bg-white border border-slate-200 rounded-lg p-4">
           <p className="text-xs text-slate-500 uppercase tracking-wide">Attendance</p>
@@ -255,22 +293,22 @@ export function ReportsScreen({ production, attendance, qc, orders, store, machi
         <div className="bg-white border border-slate-200 rounded-lg p-4">
           <p className="text-xs text-slate-500 uppercase tracking-wide">QC Pass Rate</p>
           <p className="text-2xl font-bold mt-1">{totQcPass + totQcFail === 0 ? '—' : `${((totQcPass / (totQcPass + totQcFail)) * 100).toFixed(0)}%`}</p>
-          <p className="text-xs text-slate-400">{totQcPass} pass / {totQcFail} fail</p>
+          <p className="text-xs text-slate-400">{totQcPass} pass / {totQcFail} fail{totQcNa > 0 ? ` · N/A: ${totQcNa}` : ''}</p>
         </div>
         <div className="bg-white border border-slate-200 rounded-lg p-4">
           <p className="text-xs text-slate-500 uppercase tracking-wide">Store IN</p>
-          <p className="text-2xl font-bold mt-1 text-green-600">{totStoreIn.toLocaleString('en-IN')}</p>
+          <p className="text-2xl font-bold mt-1 text-green-600">{formatQty(totStoreIn)}</p>
           <p className="text-xs text-slate-400">units received this month</p>
         </div>
         <div className="bg-white border border-slate-200 rounded-lg p-4">
           <p className="text-xs text-slate-500 uppercase tracking-wide">Store OUT</p>
-          <p className="text-2xl font-bold mt-1 text-amber-600">{totStoreOut.toLocaleString('en-IN')}</p>
+          <p className="text-2xl font-bold mt-1 text-amber-600">{formatQty(totStoreOut)}</p>
           <p className="text-xs text-slate-400">units issued this month</p>
         </div>
         {isOwner && totStoreValue !== null && (
           <div className="bg-white border border-slate-200 rounded-lg p-4">
             <p className="text-xs text-slate-500 uppercase tracking-wide">Store IN Value</p>
-            <p className="text-2xl font-bold mt-1">₹{totStoreValue.toLocaleString('en-IN', { minimumFractionDigits: 0 })}</p>
+            <p className="text-2xl font-bold mt-1">₹{INR_0DP.format(totStoreValue)}</p>
             <p className="text-xs text-slate-400">value of items received</p>
           </div>
         )}
@@ -299,16 +337,21 @@ export function ReportsScreen({ production, attendance, qc, orders, store, machi
         ))}
       </div>
 
-      {tab === 'production' && (
+      {failed[tab] && (
+        <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          Could not load {SECTION_LABEL[tab]}. The other sections are unaffected; reload to try again.
+        </p>
+      )}
+      {tab === 'production' && !failed.production && (
         <DataTable
           columns={prodCols}
           rows={production.rows}
-          rowKey={r => r.orderNumber}
+          rowKey={r => `${r.orderNumber}|${r.unit}`}
           emptyTitle="No production data"
           emptyBody="No logs found for this period."
         />
       )}
-      {tab === 'attendance' && (
+      {tab === 'attendance' && !failed.attendance && (
         <DataTable
           columns={attCols}
           rows={attendance.rows}
@@ -317,7 +360,7 @@ export function ReportsScreen({ production, attendance, qc, orders, store, machi
           emptyBody="No attendance records found for this period."
         />
       )}
-      {tab === 'qc' && (
+      {tab === 'qc' && !failed.qc && (
         <DataTable
           columns={qcCols}
           rows={qc.rows}
@@ -326,7 +369,7 @@ export function ReportsScreen({ production, attendance, qc, orders, store, machi
           emptyBody="No QC checks found for this period."
         />
       )}
-      {tab === 'orders' && (
+      {tab === 'orders' && !failed.orders && (
         <DataTable
           columns={orderCols}
           rows={orders}
@@ -335,7 +378,7 @@ export function ReportsScreen({ production, attendance, qc, orders, store, machi
           emptyBody="No orders created in this period."
         />
       )}
-      {tab === 'store' && (
+      {tab === 'store' && !failed.store && (
         <DataTable
           columns={storeCols}
           rows={store.rows}
@@ -344,7 +387,7 @@ export function ReportsScreen({ production, attendance, qc, orders, store, machi
           emptyBody="No store movements found for this period."
         />
       )}
-      {tab === 'machines' && (
+      {tab === 'machines' && !failed.machines && (
         <>
           <p className="text-xs text-slate-500 mb-3">
             Booked time against the available hours in {rangeLabel} — not actual running time, and not a claim about when a machine was down (no record exists for that yet).

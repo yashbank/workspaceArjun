@@ -104,6 +104,15 @@ class PunchViewModel @JvmOverloads constructor(
     private val syncing = MutableStateFlow(false)
     private val syncError = MutableStateFlow<String?>(null)
     private val revoked = MutableStateFlow(false)
+    private val unsentAfterRevoke = MutableStateFlow(0)
+
+    /** R3 B66: polled - the flag lives in SharedPreferences, which has no change stream. */
+    private val needsRepairFlow: Flow<Boolean> = flow {
+        while (true) {
+            emit(rosterPreferences.needsRepair)
+            kotlinx.coroutines.delay(3_000)
+        }
+    }.distinctUntilChanged()
 
     private val rosterSnapshot: StateFlow<RosterSnapshot> = combine(
         rosterRepository.employees,
@@ -120,7 +129,7 @@ class PunchViewModel @JvmOverloads constructor(
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     private val clockedInCountFlow: Flow<Int> = flow {
         while (true) {
-            emit(FactoryDay.startMillis())
+            emit(FactoryDay.startMillis(zone = rosterPreferences.factoryZone))
             kotlinx.coroutines.delay(60_000)
         }
     }.distinctUntilChanged().flatMapLatest { dayStart -> database.punchStateDao().observeClockedInCount(dayStart) }
@@ -128,9 +137,11 @@ class PunchViewModel @JvmOverloads constructor(
     val uiState: StateFlow<PunchUiState> = combine(
         rosterSnapshot,
         clockedInCountFlow,
-    ) { snapshot, clockedIn ->
+        needsRepairFlow,
+        unsentAfterRevoke,
+    ) { snapshot, clockedIn, needsRepair, unsent ->
         when {
-            snapshot.revoked -> PunchUiState.Revoked
+            snapshot.revoked -> PunchUiState.Revoked(unsent)
             snapshot.employees.isEmpty() && snapshot.syncError != null -> PunchUiState.Error(snapshot.syncError)
             snapshot.employees.isEmpty() && snapshot.syncing -> PunchUiState.Loading
             else -> PunchUiState.Ready(
@@ -140,6 +151,7 @@ class PunchViewModel @JvmOverloads constructor(
                 syncError = if (snapshot.employees.isNotEmpty()) snapshot.syncError else null,
                 queuedCount = snapshot.queuedCount,
                 clockedInCount = clockedIn,
+                needsRepair = needsRepair,
             )
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PunchUiState.Loading)
@@ -343,7 +355,11 @@ class PunchViewModel @JvmOverloads constructor(
     private fun onRevoked() {
         endShift()
         pending = null
-        revoked.value = true
+        viewModelScope.launch {
+            // The wipe already tried one drain (R3 B65); whatever is still PENDING stays queued.
+            unsentAfterRevoke.value = punchQueueDao.pendingCount()
+            revoked.value = true
+        }
     }
 
     fun refresh() {
@@ -401,7 +417,7 @@ class PunchViewModel @JvmOverloads constructor(
                 }
                 return@launch
             }
-            val next = punchRepository.nextKindFor(employee.id)
+            val next = punchRepository.nextKindFor(employee.id, _selectedShift.value?.id)
             _mode.value = PunchMode.Confirming(withPhoto(employee), next.kind, next.hint)
         }
     }
@@ -461,7 +477,7 @@ class PunchViewModel @JvmOverloads constructor(
     fun confirmManualEntry() {
         val employee = _manualMatch.value ?: return
         viewModelScope.launch {
-            val next = punchRepository.nextKindFor(employee.id)
+            val next = punchRepository.nextKindFor(employee.id, _selectedShift.value?.id)
             _mode.value = PunchMode.Confirming(withPhoto(employee), next.kind, next.hint)
         }
     }
@@ -550,6 +566,7 @@ class PunchViewModel @JvmOverloads constructor(
                     employeeName = result.result.employeeName,
                     direction = result.result.direction,
                     wasDuplicate = result.wasDuplicate,
+                    note = result.result.note,
                 )
             }
             is PunchAttemptResult.Parked -> {
@@ -559,6 +576,17 @@ class PunchViewModel @JvmOverloads constructor(
             is PunchAttemptResult.Rejected -> {
                 pending = null
                 PunchSubmission.Invalid(result.detail ?: "This punch could not be recorded.")
+            }
+            is PunchAttemptResult.Stuck -> {
+                // R3 B66/B71: this exact punch can never be sent (e.g. "Punch too large"). It is
+                // parked as STUCK on the Health screen; the operator is told, not left retrying.
+                pending = null
+                PunchSubmission.Invalid(result.detail ?: "This punch could not be sent. It is on the Health screen.")
+            }
+            PunchAttemptResult.NeedsRepair -> {
+                // R3 B66: the punch stays PENDING (a re-pair lets it through); say why it waits.
+                pending = null
+                PunchSubmission.Invalid("This tablet must be paired again (HTTP 401). The punch is saved and will send after re-pairing.")
             }
             is PunchAttemptResult.RetryNeeded -> {
                 PunchFlushScheduler.schedule(getApplication())

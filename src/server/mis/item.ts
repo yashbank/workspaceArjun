@@ -4,6 +4,23 @@ import { db } from '@/server/db';
 import { requirePermission } from './auth';
 import { logAuditEvent } from './audit';
 import { MisItemUnit } from '@/generated/prisma/enums';
+import { createWithItemCode } from './item-code';
+
+const MAX_NAME = 120;
+const MAX_CODE = 40;
+
+function cleanName(name: string | undefined): string {
+  const n = (name ?? '').trim();
+  if (n.length < 1 || n.length > MAX_NAME) throw new Error(`Item name is required (1 to ${MAX_NAME} characters).`);
+  return n;
+}
+
+function cleanCode(code: string): string {
+  const c = code.trim().toUpperCase();
+  if (!c) throw new Error('Item code cannot be empty.');
+  if (c.length > MAX_CODE) throw new Error(`Item code is too long (max ${MAX_CODE} characters).`);
+  return c;
+}
 
 export type ItemInput = {
   code: string;
@@ -51,17 +68,20 @@ export async function searchItems(query: string) {
 
 export async function createItem(input: ItemInput) {
   const actor = await requirePermission('masters.write');
-  const created = await db.misItem.create({
-    data: {
-      code: input.code.trim().toUpperCase(),
-      name: input.name.trim(),
-      gsm: input.gsm?.trim() || null,
-      size: input.size?.trim() || null,
-      substrate: input.substrate?.trim() || null,
-      coating: input.coating?.trim() || null,
-      unit: toItemUnit(input.unit, MisItemUnit.KG),
-    },
-  });
+  const name = cleanName(input.name);
+  const unit = toItemUnit(input.unit, MisItemUnit.KG);
+  const data = {
+    name,
+    gsm: input.gsm?.trim() || null,
+    size: input.size?.trim() || null,
+    substrate: input.substrate?.trim() || null,
+    coating: input.coating?.trim() || null,
+    unit,
+  };
+  // A blank code is allocated (next ITM-NNNN, deleted items counted); a typed one is used as given.
+  const created = input.code?.trim()
+    ? await db.misItem.create({ data: { code: cleanCode(input.code), ...data } })
+    : await createWithItemCode(db, (code) => db.misItem.create({ data: { code, ...data } }));
   await logAuditEvent({ actorId: actor.userId, action: 'item.create', entity: 'MisItem', entityId: created.id, after: created });
   return forRole(actor.role, created);
 }
@@ -71,8 +91,8 @@ export async function updateItem(id: string, patch: Partial<ItemInput>) {
   const before = await db.misItem.findUnique({ where: { id } });
   if (!before) throw new Error(`Item ${id} not found`);
   const after = await db.misItem.update({ where: { id }, data: {
-    ...(patch.code !== undefined ? { code: patch.code.trim().toUpperCase() } : {}),
-    ...(patch.name !== undefined ? { name: patch.name.trim() } : {}),
+    ...(patch.code !== undefined ? { code: cleanCode(patch.code) } : {}),
+    ...(patch.name !== undefined ? { name: cleanName(patch.name) } : {}),
     ...(patch.gsm !== undefined ? { gsm: patch.gsm?.trim() || null } : {}),
     ...(patch.size !== undefined ? { size: patch.size?.trim() || null } : {}),
     ...(patch.substrate !== undefined ? { substrate: patch.substrate?.trim() || null } : {}),

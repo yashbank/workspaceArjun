@@ -281,6 +281,15 @@ export async function runIdempotent<T>(
   }
   // The entry itself is wrong. A new key is the fix, never a replay of this one.
   if (existing?.status === 'REJECTED') return storedVerdict(existing);
+  // R3 B114 - a row a person has resolved (discarded in the inbox, or fixed from the tablet) is
+  // closed for good: never applied again, whatever `retry` says. (APPLIED was answered above.)
+  if (existing?.resolvedAt) {
+    return {
+      outcome: 'REJECTED',
+      reason: (existing.parkReason ?? undefined) as ParkReason | undefined,
+      detail: existing.resolutionNote ? `Resolved: ${existing.resolutionNote}` : 'This write was already resolved.',
+    };
+  }
   if (existing?.status === 'PARKED') {
     // Already in front of a human. A plain retry only for a reason whose blocker was a state
     // of the world (D17). `override` is the inbox's own audited path past everything else —
@@ -544,7 +553,7 @@ export async function discardParkedWrite(key: string, reason: string): Promise<P
 
   const updated = await db.misQueuedWrite.update({
     where: { key },
-    data: { resolvedById: actor.userId, resolvedAt: new Date(), resolutionNote: trimmed },
+    data: { status: 'REJECTED', resolvedById: actor.userId, resolvedAt: new Date(), resolutionNote: trimmed },
   });
   await logAuditEvent({
     actorId: actor.userId,

@@ -22,7 +22,7 @@ const state: { grns: Row[]; grnItems: Row[]; poItems: Row[]; ledger: Row[] } = {
 
 const view = (g: Row): Row => ({
   ...g,
-  po: { bomRef: null, supplierId: 's1', items: state.poItems.filter((p) => p.poId === g.poId).map((p) => ({ id: p.id, quantity: D(p.quantity), receivedQuantity: D(p.receivedQuantity) })) },
+  po: { poNumber: 'PO-1', status: 'APPROVED', bomRef: null, supplierId: 's1', items: state.poItems.filter((p) => p.poId === g.poId).map((p) => ({ id: p.id, quantity: D(p.quantity), receivedQuantity: D(p.receivedQuantity) })) },
   items: state.grnItems.filter((i) => i.grnId === g.id).map((i) => ({
     ...i, receivedQty: D(i.receivedQty), damageQuantity: D(i.damageQuantity), dcQuantity: i.dcQuantity == null ? null : D(i.dcQuantity),
     poItem: { ...state.poItems.find((p) => p.id === i.poItemId), item: kraft },
@@ -76,6 +76,8 @@ const db: Row = {
   // C1: confirming a GRN now also writes the storekeeper's book; this fake only needs to accept it.
   misStoreTransaction: { findFirst: async () => null, create: async () => null },
   misSupplierInvoice: { upsert: async () => null },
+  // R3-STK B02/B01: the PO status is read with the GRN (an open PO) and moved on after a receipt.
+  misPurchaseOrder: { update: async () => null, updateMany: async () => ({ count: 1 }) },
   misOrder: { findFirst: async () => null },
   misOrderStockAllocation: { create: async () => null },
   misAuditLog: { create: async ({ data }: Row) => data },
@@ -147,14 +149,16 @@ describe('B. only a DRAFT GRN of the right PO takes lines', () => {
 describe('C. receipts are capped at what is outstanding; an empty GRN cannot be confirmed', () => {
   it('refuses more than the PO line still has outstanding, but allows exactly that', async () => {
     state.poItems[0].receivedQuantity = 70;
-    await expect(addGRNItem('g1', { poItemId: 'pi1', receivedQty: 30.01 })).rejects.toThrow(/only 30 .*outstanding/i);
-    await expect(addGRNItem('g1', { poItemId: 'pi1', receivedQty: 30 })).resolves.toBeTruthy();
+    // R3-STK B03 changed the contract: ordered + 2% (here 102) is allowed, so the refusal moves from 30.01 to 32.01.
+    await expect(addGRNItem('g1', { poItemId: 'pi1', receivedQty: 32.01 })).rejects.toThrow(/more than 2%.*max 102/i);
+    await expect(addGRNItem('g1', { poItemId: 'pi1', receivedQty: 32 })).resolves.toBeTruthy();
   });
 
   it('legitimate partial receipts keep working: 60 now, the remaining 40 on a later GRN', async () => {
     await addGRNItem('g1', { poItemId: 'pi1', receivedQty: 60 });
     await confirmGRN('g1');
-    await expect(addGRNItem('g2', { poItemId: 'pi1', receivedQty: 41 })).rejects.toThrow(/only 40/);
+    // R3-STK B03: 60 + 43 = 103 is past 102; 60 + 40 is exactly the order.
+    await expect(addGRNItem('g2', { poItemId: 'pi1', receivedQty: 43 })).rejects.toThrow(/more than 2%.*max 102/i);
     await addGRNItem('g2', { poItemId: 'pi1', receivedQty: 40 });
     await confirmGRN('g2');
     expect(state.poItems[0].receivedQuantity).toBe(100);
@@ -163,7 +167,8 @@ describe('C. receipts are capped at what is outstanding; an empty GRN cannot be 
 
   it('an edit that pushes a line over the outstanding quantity is refused', async () => {
     state.grnItems = [line('g1', 'pi1', 10)];
-    await expect(updateGRNItem('g1-pi1', { receivedQty: 100.5 })).rejects.toThrow(/outstanding/i);
+    // R3-STK B03: the cap is ordered + 2%.
+    await expect(updateGRNItem('g1-pi1', { receivedQty: 102.5 })).rejects.toThrow(/more than 2%/i);
     await expect(updateGRNItem('g1-pi1', { receivedQty: 100 })).resolves.toBeTruthy();
   });
 

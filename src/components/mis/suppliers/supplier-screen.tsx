@@ -2,6 +2,7 @@
 import Link from 'next/link';
 import { useState, useTransition } from 'react';
 import { Button } from '@/components/mis/kit/button';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import { Input, NumberInput } from '@/components/mis/kit/input';
@@ -18,6 +19,15 @@ export function SupplierScreen({ suppliers, canWrite }: Props) {
   const [vals, setVals] = useState({ code: '', name: '', phone: '', address: '', city: '', gstNo: '', paymentDays: '' });
   const [search, setSearch] = useState('');
   const [isPending, startTransition] = useTransition();
+  const [listError, setListError] = useState<string | null>(null);
+  const { confirm, confirmDialog } = useConfirm();
+
+  // R3-MST B29/B31: a refusal comes back as a value and is shown inline; delete asks first.
+  const removeRow = async (r: Supplier) => {
+    if (!(await confirm({ title: 'Delete this supplier?', message: `${r.name} will be hidden from pickers. It can be restored later.`, confirmLabel: 'Delete', destructive: true }))) return;
+    startTransition(async () => { const res = await deleteSupplierAction(r.id); setListError(res.ok ? null : res.detail); });
+  };
+  const restoreRow = (r: Supplier) => startTransition(async () => { const res = await restoreSupplierAction(r.id); setListError(res.ok ? null : res.detail); });
 
   const filtered = search.trim()
     ? suppliers.filter(s => s.code.toLowerCase().includes(search.toLowerCase()) || s.name.toLowerCase().includes(search.toLowerCase()) || (s.city ?? '').toLowerCase().includes(search.toLowerCase()) || (s.phone ?? '').toLowerCase().includes(search.toLowerCase()))
@@ -57,8 +67,8 @@ export function SupplierScreen({ suppliers, canWrite }: Props) {
       <div className="flex gap-2 justify-end">
         <Link href={`/mis/suppliers/${r.id}`}><Button variant="ghost">View</Button></Link>
         {!r.deletedAt && canWrite && <Button variant="ghost" onClick={() => openEdit(r)}>Edit</Button>}
-        {!r.deletedAt && canWrite && <Button variant="ghost" onClick={() => startTransition(async () => { await deleteSupplierAction(r.id); })}>Delete</Button>}
-        {r.deletedAt && canWrite && <Button variant="ghost" onClick={() => startTransition(async () => { await restoreSupplierAction(r.id); })}>Restore</Button>}
+        {!r.deletedAt && canWrite && <Button variant="ghost" onClick={() => removeRow(r)}>Delete</Button>}
+        {r.deletedAt && canWrite && <Button variant="ghost" onClick={() => restoreRow(r)}>Restore</Button>}
       </div>
     )},
   ];
@@ -75,6 +85,8 @@ export function SupplierScreen({ suppliers, canWrite }: Props) {
       <div>
         <input type="search" placeholder="Search suppliers…" value={search} onChange={e => setSearch(e.target.value)} className="w-full max-w-sm min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500" />
       </div>
+      {listError && <p role="alert" className="text-sm text-red-600">{listError}</p>}
+      {confirmDialog}
       <DataTable columns={columns} rows={filtered} rowKey={(r) => r.id} emptyTitle="No suppliers yet" emptyBody="Add suppliers to raise purchase orders." />
       <SlideOver open={open} onClose={() => setOpen(false)} title={editing ? 'Edit Supplier' : 'Add Supplier'}>
         <div className="flex flex-col gap-4 p-4">

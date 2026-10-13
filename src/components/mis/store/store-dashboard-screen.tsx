@@ -185,7 +185,7 @@ export function StoreDashboardScreen({ stats, isOwner }: Props) {
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
           <div className="text-xs font-medium text-blue-600 uppercase tracking-wide mb-1">Total Stock Value</div>
           <div className="text-3xl font-bold text-blue-800 tabular-nums">
-            ₹{stats.totalStockValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            {stats.totalStockValueLabel ?? `₹${stats.totalStockValue.toFixed(2)}`}
           </div>
           {stats.hasDemo && (
             <div className="text-xs text-blue-400 mt-1">* Includes demo prices — not exact</div>

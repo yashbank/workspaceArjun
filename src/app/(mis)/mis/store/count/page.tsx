@@ -1,6 +1,8 @@
 import { requireMisAccess } from '@/server/mis/guard';
 import { checkPermission } from '@/server/mis/auth';
 import { listStockSummary, listPhysicalCounts } from '@/server/mis/store';
+import { factoryDateKey } from '@/lib/mis/factory-time';
+import { getFactoryTimezone } from '@/server/mis/business-rules';
 import { StoreCountScreen } from '@/components/mis/store/store-count-screen';
 
 export default async function StoreCountPage() {
@@ -21,5 +23,6 @@ export default async function StoreCountPage() {
     stockBalance: s.stockBalance,
   }));
 
-  return <StoreCountScreen items={items} counts={counts} canCount={canCount} />;
+  const today = factoryDateKey(new Date(), await getFactoryTimezone());
+  return <StoreCountScreen items={items} counts={counts} canCount={canCount} today={today} />;
 }

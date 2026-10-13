@@ -131,8 +131,8 @@ describe('the catalogue per role', () => {
   // A STORE_GUY holds none of production/orders/qc/attendance.read, so today the desktop
   // dashboard has nothing to offer them. That is the permission matrix being honest, not a
   // bug — but it IS an open product question, recorded as D29.
-  it('a STORE_GUY has no dashboard widgets yet (D29 — an open question, not an accident)', () => {
-    expect(widgetsFor('STORE_GUY')).toEqual([]);
+  it('a STORE_GUY has only the two order-count widgets (D29; R3 B64 gave them orders.read)', () => {
+    expect(widgetsFor('STORE_GUY').map((w) => w.key).sort()).toEqual(['orders.inFlight', 'orders.onTime']);
   });
 
   it('an ADMIN gets the thirteen non-money widgets; a SUPERVISOR twelve — "Waiting on you" reads the approvals inbox (approvals.read, F-13) and a layout that carried it refused the whole dashboard', () => {

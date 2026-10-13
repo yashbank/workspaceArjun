@@ -6,6 +6,7 @@ import { useState, useTransition } from 'react';
 import { Button } from '@/components/mis/kit/button';
 import { DateInput, Input, NumberInput } from '@/components/mis/kit/input';
 import { Select } from '@/components/mis/kit/select';
+import { DEFAULT_FACTORY_TIMEZONE, factoryDateKey } from '@/lib/mis/factory-time';
 import { proposeExtraPayDayAction } from '@/app/(mis)/mis/attendance/extra-pay/actions';
 
 /**
@@ -18,7 +19,7 @@ import { proposeExtraPayDayAction } from '@/app/(mis)/mis/attendance/extra-pay/a
 type EmployeeOption = { id: string; name: string; employeeCode: string };
 
 function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  return factoryDateKey(new Date(), DEFAULT_FACTORY_TIMEZONE);
 }
 
 export function ExtraPayProposeScreen({ employees }: { employees: EmployeeOption[] }) {
@@ -57,19 +58,16 @@ export function ExtraPayProposeScreen({ employees }: { employees: EmployeeOption
       return;
     }
     startTransition(async () => {
-      try {
-        await proposeExtraPayDayAction({
-          date,
-          kind,
-          value: v,
-          scope,
-          employeeIds: scope === 'EMPLOYEES' ? [...employeeIds] : undefined,
-          reason: reason.trim(),
-        });
-        setSubmitted(true);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'Could not submit.');
-      }
+      const result = await proposeExtraPayDayAction({
+        date,
+        kind,
+        value: v,
+        scope,
+        employeeIds: scope === 'EMPLOYEES' ? [...employeeIds] : undefined,
+        reason: reason.trim(),
+      });
+      if (result.ok) setSubmitted(true);
+      else setError(result.detail);
     });
   };
 

@@ -19,6 +19,7 @@ vi.mock('@/server/db', () => ({
   db: {
     misItem: {
       count: async () => state.items.length,
+      findMany: async () => state.items.map((i) => ({ code: i.code })), // R3-MST B24: blank codes are allocated from existing codes
       findFirst: async ({ where }: Row) => {
         const or: Row[] = where.OR;
         return state.items.find((i) => or.some((cond) => Object.entries(cond).every(([k, v]) => i[k] === v))) ?? null;

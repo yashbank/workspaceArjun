@@ -1,6 +1,8 @@
 package com.example.mis_kiosk.ui.health
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -29,6 +31,11 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.mis_kiosk.ui.queue.QueueScreen
 import com.example.mis_kiosk.ui.shifts.ShiftsScreen
 import com.example.mis_kiosk.ui.theme.KioskColors
+import com.example.mis_kiosk.data.local.PunchQueueEntity
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 @Composable
@@ -72,7 +79,7 @@ fun DeviceHealthScreen(
             }
             HorizontalDivider(color = KioskColors.Border)
 
-            Column(modifier = Modifier.fillMaxWidth().padding(24.dp)) {
+            Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp)) {
                 Text("Device status", style = MaterialTheme.typography.headlineSmall, color = KioskColors.TextPrimary)
                 Spacer(Modifier.height(20.dp))
 
@@ -106,6 +113,32 @@ fun DeviceHealthScreen(
                         HealthRow("Storage", "%.1f GB free".format(state.freeStorageGb))
                         HorizontalDivider(color = KioskColors.Border)
                         HealthRow("App version", state.appVersion)
+                    }
+                }
+
+                if (state.needsRepair) {
+                    Spacer(Modifier.height(20.dp))
+                    Surface(color = KioskColors.ErrorContainer, shape = MaterialTheme.shapes.medium) {
+                        Text(
+                            "This tablet must be paired again (HTTP 401). Queued punches are kept and will send after re-pairing.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = KioskColors.Error,
+                            modifier = Modifier.padding(16.dp),
+                        )
+                    }
+                }
+
+                if (state.stuck.isNotEmpty()) {
+                    Spacer(Modifier.height(20.dp))
+                    Text(
+                        "Stuck punches (${state.stuck.size})",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = KioskColors.Amber,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    state.stuck.forEach { row ->
+                        StuckRow(row, state.zone, onRetry = { viewModel.retryStuck(row.key) })
+                        HorizontalDivider(color = KioskColors.Border)
                     }
                 }
 
@@ -160,6 +193,33 @@ fun DeviceHealthScreen(
                 }
             }
         }
+    }
+}
+
+/** R3 B66: one STUCK punch - who, when it was tapped, why it is stuck, and a Retry. */
+@Composable
+private fun StuckRow(row: PunchQueueEntity, zone: ZoneId, onRetry: () -> Unit) {
+    val whenText = runCatching {
+        Instant.parse(row.clientRecordedAt).atZone(zone).format(DateTimeFormatter.ofPattern("d MMM HH:mm", Locale.ENGLISH))
+    }.getOrDefault(row.clientRecordedAt)
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                "${row.employeeName} · ${if (row.kind.endsWith("in")) "IN" else "OUT"} · $whenText",
+                style = MaterialTheme.typography.bodyMedium,
+                color = KioskColors.TextPrimary,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                row.lastError ?: "Could not be sent",
+                style = MaterialTheme.typography.bodySmall,
+                color = KioskColors.TextSecondary,
+            )
+        }
+        OutlinedButton(onClick = onRetry) { Text("Retry", color = KioskColors.TextPrimary) }
     }
 }
 
