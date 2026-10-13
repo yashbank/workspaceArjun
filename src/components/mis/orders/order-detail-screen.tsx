@@ -1,4 +1,5 @@
 'use client';
+import { formatQtyByUnit } from '@/lib/mis/qty-by-unit';
 import { useState, useTransition, type ReactNode } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/mis/kit/button';
@@ -39,7 +40,7 @@ type Props = {
   phases: JobPhase[];
   bom: Bom;
   productionLogs: ProductionLog[];
-  productionSummary: { totalProduced: number; totalWaste: number; entries: number };
+  productionSummary: { totalProduced: number; totalWaste: number; entries: number; byUnit?: { unit: string; produced: number }[] };
   qcLogs: QcLog[];
   qcSummary: { total: number; pass: number; fail: number };
   /** Includes the customer's PO once attached — a document, not a field (E5-09, S6-Documents.png). */
@@ -246,7 +247,7 @@ export function OrderDetailScreen({
         </div>
         <div className="bg-slate-50 rounded-lg p-3">
           <p className="text-xs text-slate-500">Produced</p>
-          <p className="font-medium mt-0.5">{productionSummary.totalProduced.toLocaleString('en-IN')} kg</p>
+          <p className="font-medium mt-0.5">{formatQtyByUnit((productionSummary.byUnit ?? []).map((u) => ({ unit: u.unit, qty: u.produced })))}</p>
         </div>
         <div className="bg-slate-50 rounded-lg p-3">
           <p className="text-xs text-slate-500">QC Pass Rate</p>

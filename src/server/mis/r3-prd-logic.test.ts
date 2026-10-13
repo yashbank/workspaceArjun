@@ -9,6 +9,8 @@ vi.mock('@/server/auth', () => ({ getCurrentUser: (...a: unknown[]) => getCurren
 const getMisRole = vi.fn();
 vi.mock('@/server/mis/roles', () => ({ getMisRole: (...a: unknown[]) => getMisRole(...a) }));
 vi.mock('@/server/mis/audit', () => ({ logAuditEvent: vi.fn() }));
+const assertLineCleared = vi.fn();
+vi.mock('@/server/mis/line-clearance', () => ({ assertLineCleared: (...a: unknown[]) => assertLineCleared(...a) }));
 
 const fn = {
   logFindUnique: vi.fn(), logFindMany: vi.fn(), logUpdate: vi.fn(),
@@ -172,6 +174,16 @@ describe('B126 editProductionLog', () => {
     await expect(editProductionLog('l', { employeeId: 'e' }, NOW)).rejects.toThrow('Operator not found.');
     fn.stageFindFirst.mockResolvedValue(null);
     await expect(editProductionLog('l', { bomStageId: 's' }, NOW)).rejects.toThrow(/BOM/);
+  });
+  it('changing the machine requires a clearance for that machine and this order', async () => {
+    fn.logFindUnique.mockResolvedValue(logAt(H, { machineId: 'm1' }));
+    fn.machineFindUnique.mockResolvedValue({ id: 'm2', isActive: true, deletedAt: null });
+    assertLineCleared.mockRejectedValueOnce(new Error('Coater 2 needs a line clearance'));
+    await expect(editProductionLog('l', { machineId: 'm2' }, NOW)).rejects.toThrow(/line clearance/);
+    expect(assertLineCleared).toHaveBeenCalledWith('m2', 'o');
+    expect(fn.logUpdate).not.toHaveBeenCalled();
+    await editProductionLog('l', { machineId: 'm1' }, NOW);
+    expect(assertLineCleared).toHaveBeenCalledTimes(1);
   });
   it('writes the edit and audits quantities only', async () => {
     const { logAuditEvent } = await import('@/server/mis/audit');

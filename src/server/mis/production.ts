@@ -618,6 +618,8 @@ export async function editProductionLog(id: string, patch: ProductionLogPatch, n
   if (patch.machineId) {
     const machine = await db.misMachine.findUnique({ where: { id: patch.machineId }, select: { id: true, isActive: true, deletedAt: true } });
     if (!machine || machine.isActive === false || machine.deletedAt) throw new Error('Machine not found.');
+    // Same gate as create: a different machine must hold a valid clearance for this order.
+    if (patch.machineId !== log.machineId) await assertLineCleared(patch.machineId, log.orderId);
   }
 
   const rec = await db.misProductionLog.update({
