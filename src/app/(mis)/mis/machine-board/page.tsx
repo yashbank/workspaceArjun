@@ -37,7 +37,9 @@ export default async function MachineBoardPage() {
     .filter((o) => !isOrderClosed(o.status))
     .map((o) => ({ id: o.id, orderNumber: o.orderNumber }));
 
-  const grid = <MachineBoardScreen machines={toPlain(machines)} canWrite={canWrite} orders={openOrders} />;
+  // "Assign crew" opens the crew board on the current shift and its day (R3 B101).
+  const crewLink = timeline?.shift.id ? { dateKey: timeline.shift.dateKey, shiftId: timeline.shift.id } : null;
+  const grid = <MachineBoardScreen machines={toPlain(machines)} canWrite={canWrite} orders={openOrders} crewLink={canWrite ? crewLink : null} timeZone={timeZone} />;
 
   // "07/09": the shift's own day when there is one, otherwise the factory's today (D22).
   const key = timeline?.shift.dateKey ?? factoryDateKey(now, timeZone);

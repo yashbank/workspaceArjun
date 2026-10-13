@@ -10,15 +10,18 @@ const machineAllocationFindFirst = vi.fn();
 const machineAllocationCreate = vi.fn();
 const jobPhaseFindFirst = vi.fn();
 
-vi.mock('@/server/db', () => ({
-  db: {
-    misMachineAllocation: {
-      findFirst: (...a: unknown[]) => machineAllocationFindFirst(...a),
-      create: (...a: unknown[]) => machineAllocationCreate(...a),
-    },
-    misJobPhase: { findFirst: (...a: unknown[]) => jobPhaseFindFirst(...a) },
+// R3 B97 harness additions: allocateMachine now checks the machine and the order, and runs in a transaction.
+const fakeDb = {
+  misMachineAllocation: {
+    findFirst: (...a: unknown[]) => machineAllocationFindFirst(...a),
+    create: (...a: unknown[]) => machineAllocationCreate(...a),
   },
-}));
+  misJobPhase: { findFirst: (...a: unknown[]) => jobPhaseFindFirst(...a) },
+  misMachine: { findFirst: async () => ({ id: 'm1', isActive: true, deletedAt: null }) },
+  misOrder: { findFirst: async () => ({ status: 'IN_PRODUCTION' }) },
+  $transaction: async (fn: (tx: unknown) => unknown) => fn(fakeDb),
+};
+vi.mock('@/server/db', () => ({ db: fakeDb }));
 
 vi.mock('@/server/mis/business-rules', () => ({ getFactoryTimezone: async () => 'Asia/Kolkata' }));
 
