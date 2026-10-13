@@ -10,7 +10,7 @@ import { Select } from '@/components/mis/kit/select';
 import { StatusBadge, type BadgeTone } from '@/components/mis/kit/status-badge';
 import { Card, CardRow } from '@/components/mis/kit/card';
 import { useRouter } from 'next/navigation';
-import { addPoItemAction, removePoItemAction, submitPoAction, approvePoAction, cancelPoAction, deletePoAction, updatePoAction } from '@/app/(mis)/mis/po/actions';
+import { addPoItemAction, removePoItemAction, setPoLineRateAction, submitPoAction, approvePoAction, cancelPoAction, deletePoAction, updatePoAction } from '@/app/(mis)/mis/po/actions';
 import { poPurpose, poPurposeLabel, type PoPurpose } from '@/lib/mis/po-purpose';
 import { isBomNotApprovedDetail } from '@/lib/mis/po-errors';
 import { useConfirm } from '@/components/ui/confirm-dialog';
@@ -112,7 +112,9 @@ export function PoDetailScreen({ po, formattedItems, total, catalogItems, canWri
     { key: 'actions', header: '', render: (r) => (
       po.status === 'DRAFT' && canWrite
         ? <Button variant="ghost" onClick={() => startTransition(async () => { await settle(await removePoItemAction(r.id, po.id)); })}>Remove</Button>
-        : null
+        : po.status === 'PENDING_APPROVAL' && seesMoney && canApprove
+          ? <RateEditor key={r.id + String(r.ratePerUnit)} initial={r.ratePerUnit ?? 0} disabled={isPending} onSave={(v) => run(() => setPoLineRateAction(r.id, po.id, v))} />
+          : null
     )},
   ];
 
@@ -300,6 +302,17 @@ export function PoDetailScreen({ po, formattedItems, total, catalogItems, canWri
         </div>
       </SlideOver>
       {confirmDialog}
+    </div>
+  );
+}
+
+/** Owner-only inline rate entry for a line on a PO awaiting approval. */
+function RateEditor({ initial, disabled, onSave }: { initial: number; disabled: boolean; onSave: (v: number) => void }) {
+  const [v, setV] = useState(initial > 0 ? String(initial) : '');
+  return (
+    <div className="flex items-end gap-2">
+      <NumberInput label="Rate (₹)" value={v} onChange={(e) => setV(e.target.value)} />
+      <Button variant="ghost" disabled={disabled || !(parseFloat(v) > 0)} onClick={() => onSave(parseFloat(v))}>Set rate</Button>
     </div>
   );
 }

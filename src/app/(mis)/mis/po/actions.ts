@@ -1,6 +1,6 @@
 'use server';
 import { revalidatePath } from 'next/cache';
-import { createPO, updatePO, deleteDraftPO, addPOItem, updatePOItem, removePOItem, submitForApproval, approvePO, cancelPO } from '@/server/mis/po';
+import { createPO, updatePO, deleteDraftPO, addPOItem, updatePOItem, removePOItem, setPoLineRate, submitForApproval, approvePO, cancelPO } from '@/server/mis/po';
 import type { PoPurpose } from '@/lib/mis/po-purpose';
 import { asResult, type ActionResult } from '@/lib/mis/action-result';
 
@@ -72,5 +72,12 @@ export async function cancelPoAction(poId: string): Promise<ActionResult> {
     await cancelPO(poId);
     revalidatePath(`/mis/po/${poId}`);
     revalidatePath('/mis/po');
+  });
+}
+
+export async function setPoLineRateAction(id: string, poId: string, ratePerUnit: number): Promise<ActionResult> {
+  return asResult(async () => {
+    await setPoLineRate(id, ratePerUnit);
+    revalidatePath(`/mis/po/${poId}`);
   });
 }

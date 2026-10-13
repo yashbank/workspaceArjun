@@ -24,7 +24,7 @@ vi.mock('@/server/db', () => ({
       update: async ({ data }: { data: Record<string, unknown> }) => ({ ...po, ...data }),
     },
     // approvePO now also requires at least one line (tester round 2, C2).
-    misPoItem: { findMany: async () => [{ quantity: { toNumber: () => 1 } }] },
+    misPoItem: { findMany: async () => [{ quantity: { toNumber: () => 1 }, ratePerUnit: { toNumber: () => 5 } }] },
   },
 }));
 

@@ -275,6 +275,22 @@ export async function updatePOItem(id: string, patch: Partial<PoItemInput>) {
   return forRole(actor.role, after);
 }
 
+/**
+ * The Owner prices a line while the PO awaits approval (R3-MST follow-up). Rate only: quantity, item and
+ * description are untouched. `wages.read` is the Owner's permission, so no other role gets here.
+ */
+export async function setPoLineRate(id: string, ratePerUnit: number) {
+  const actor = await requirePermission('wages.read');
+  if (!Number.isFinite(ratePerUnit) || ratePerUnit <= 0) throw new Error('Rate must be a number above zero.');
+  const before = await db.misPoItem.findUnique({ where: { id } });
+  if (!before) throw new Error(`PO Item ${id} not found`);
+  const po = await loadPo(before.poId);
+  if (po.status !== 'PENDING_APPROVAL') throw new Error(`This PO is ${statusWords(po.status)}; rates can only be set while it awaits approval.`);
+  const after = await db.misPoItem.update({ where: { id }, data: { ratePerUnit: Math.round(ratePerUnit * 100) / 100 } });
+  await logAuditEvent({ actorId: actor.userId, action: 'po_item.set_rate', entity: 'MisPoItem', entityId: id, before, after });
+  return forRole(actor.role, after);
+}
+
 export async function removePOItem(id: string) {
   const actor = await requirePermission('po.write');
   const existing = await db.misPoItem.findUnique({ where: { id } });
@@ -353,6 +369,9 @@ export async function approvePO(poId: string) {
   if (before.approvalMode === 'BOTH' && actor.role !== 'OWNER') {
     throw new Error('Only the owner can give the final approval on this PO.');
   }
+  // An unpriced line (rate 0) cannot be approved: the Owner sets the rates first (setPoLineRate).
+  const unpricedCount = (await db.misPoItem.findMany({ where: { poId } })).filter((l) => l.ratePerUnit.toNumber() <= 0).length;
+  if (unpricedCount > 0) throw new Error(`Set rates on ${unpricedCount} unpriced line${unpricedCount === 1 ? '' : 's'} first.`);
   const after = await casWrite(() => db.misPurchaseOrder.update({
     where: { id: poId, status: 'PENDING_APPROVAL' },
     data: { status: 'APPROVED', approvedById: actor.userId, approvedAt: new Date() },

@@ -227,3 +227,29 @@ describe('B31 PO actions return refusals as values', () => {
     expect(r).toMatchObject({ ok: false, detail: expect.stringMatching(/not a draft/i) });
   });
 });
+
+describe('Owner prices unpriced lines before final approval', () => {
+  it('Admin PO -> Owner approval refused until priced -> price -> approve OK', async () => {
+    const p = await draft();
+    await line(p.id, { ratePerUnit: 9 }); // ADMIN: stored unpriced
+    await line(p.id, { ratePerUnit: 9 });
+    await po.submitForApproval(p.id); // BOTH
+    await po.approvePO(p.id); // Admin first step is allowed
+    as('OWNER');
+    await expect(po.approvePO(p.id)).rejects.toThrow('Set rates on 2 unpriced lines first.');
+    await po.setPoLineRate(state.lines[0].id, 12);
+    await expect(po.approvePO(p.id)).rejects.toThrow('Set rates on 1 unpriced line first.');
+    await po.setPoLineRate(state.lines[1].id, 8.5);
+    expect(state.lines.map((l) => [l.quantity, l.itemId, l.ratePerUnit])).toEqual([[5, 'i1', 12], [5, 'i1', 8.5]]);
+    expect((await po.approvePO(p.id)).status).toBe('APPROVED');
+  });
+
+  it('a non-Owner cannot set rates, and rates are locked outside PENDING_APPROVAL', async () => {
+    const p = await draft();
+    await line(p.id);
+    await expect(po.setPoLineRate(state.lines[0].id, 5)).rejects.toThrow(/Not permitted/);
+    as('OWNER');
+    await expect(po.setPoLineRate(state.lines[0].id, 5)).rejects.toThrow(/awaits approval/);
+    await expect(po.setPoLineRate(state.lines[0].id, 0)).rejects.toThrow(/above zero/);
+  });
+});
