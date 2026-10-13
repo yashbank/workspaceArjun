@@ -11,7 +11,7 @@ import { addDaysToDateKey, dateKeyToDbDate, factoryDateKey } from '@/lib/mis/fac
 import { presenceOf, type Presence } from '@/lib/mis/presence';
 import { db } from '@/server/db';
 import { requirePermission, type MisActor } from '@/server/mis/auth';
-import { releaseWorkerRows } from '@/server/mis/allocation-release';
+import { flushReleaseAudit, releaseWorkerRows, type ReleaseAuditEvent } from '@/server/mis/allocation-release';
 import { logAuditEvent, type AuditEntry } from '@/server/mis/audit';
 import { getFactoryTimezone } from '@/server/mis/business-rules';
 import { isActiveStatus } from '@/server/mis/job-phases';
@@ -340,7 +340,8 @@ async function assignCore(actor: MisActor, input: AssignWorkersInput, now: Date)
  */
 export async function releaseWorker(workerAllocationId: string) {
   const actor = await requirePermission('production.write');
-  return db.$transaction(async (tx) => {
+  let releaseAudit: ReleaseAuditEvent[] = [];
+  const result = await db.$transaction(async (tx) => {
     const row = await tx.misWorkerAllocation.findFirst({
       where: { id: workerAllocationId, deletedAt: null },
     });
@@ -356,9 +357,11 @@ export async function releaseWorker(workerAllocationId: string) {
     if (!visible || visible.length === 0) throw new Error(`Not found or not in your team: ${row.employeeId}`);
 
     const at = new Date();
-    await releaseWorkerRows(tx, { ids: [row.id] }, { reason: 'MANUAL', actorUserId: actor.userId, at });
+    releaseAudit = (await releaseWorkerRows(tx, { ids: [row.id] }, { reason: 'MANUAL', actorUserId: actor.userId, at })).auditEvents;
     return { ...row, releasedAt: at };
   });
+  await flushReleaseAudit(releaseAudit);
+  return result;
 }
 
 /**
@@ -399,7 +402,7 @@ export async function moveWorker(input: { workerAllocationId: string; toMachineA
     }
 
     await lockStockKeys(tx, [workerLockKey(row.employeeId, dateKey, row.shiftId)]);
-    await releaseWorkerRows(tx, { ids: [row.id] }, { reason: 'MOVED', actorUserId: actor.userId, at: now });
+    pendingAudit.push(...(await releaseWorkerRows(tx, { ids: [row.id] }, { reason: 'MOVED', actorUserId: actor.userId, at: now })).auditEvents);
 
     const moved = await tx.misWorkerAllocation.create({
       data: {

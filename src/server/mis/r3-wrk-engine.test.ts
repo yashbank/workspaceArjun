@@ -200,8 +200,8 @@ describe('B85 releaseMachine', () => {
 
   it('the shared helpers touch only open rows and refuse an empty filter', async () => {
     const tx = fakeTx as never;
-    expect(await releaseWorkerRows(tx, {}, { reason: 'MANUAL', actorUserId: null, at: NOW })).toEqual({ workerAllocationIds: [] });
-    expect(await releaseMachineAllocations(tx, [], { reason: 'ORDER_CLOSED', actorUserId: null, at: NOW })).toEqual({ machines: 0, workers: 0, workerAllocationIds: [] });
+    expect(await releaseWorkerRows(tx, {}, { reason: 'MANUAL', actorUserId: null, at: NOW })).toEqual({ workerAllocationIds: [], auditEvents: [] });
+    expect(await releaseMachineAllocations(tx, [], { reason: 'ORDER_CLOSED', actorUserId: null, at: NOW })).toEqual({ machines: 0, workers: 0, workerAllocationIds: [], auditEvents: [] });
     expect(state.workers.every((w) => w.releasedAt === null)).toBe(true);
   });
 });

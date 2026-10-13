@@ -56,7 +56,7 @@ export function BomScreen({ bom, orderId, canWrite, isOwner }: { bom: Bom; order
         <p className="text-slate-500">No BOM yet for this order.</p>
         {canWrite && (
           <Button
-            onClick={() => startTransition(async () => { await createBomAction(orderId); })}
+            onClick={() => startTransition(async () => { settle(await createBomAction(orderId)); })}
             disabled={isPending}
           >
             Create BOM

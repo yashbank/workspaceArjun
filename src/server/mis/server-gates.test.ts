@@ -58,6 +58,7 @@ const REVIEWED_UNGATED: Record<string, Reviewed> = {
   // R3 WRK: tx helpers run inside the caller's transaction, after its production.write gate (cancel, sign-off, release).
   'allocation-release.ts#releaseWorkerRows': { reason: 'internal tx helper; callers (worker-allocation.ts, machines-board.ts, job-phases.ts, orders.ts) are gated' },
   'allocation-release.ts#releaseMachineAllocations': { reason: 'internal tx helper; callers are gated' },
+  'allocation-release.ts#flushReleaseAudit': { reason: 'internal helper that logs events a gated caller collected; callers are gated' },
   'stock-lock.ts#lockStockKeys': { reason: 'internal tx helper; callers (store.ts, grn.ts) are gated' },
   // R3-MST B24: item-code allocation, run on the caller's db/tx after createItem / createItemAction / the import route gate.
   'item-code.ts#allocateItemCode': { reason: 'internal helper; callers (item.ts, inventory actions, import route) are gated' },

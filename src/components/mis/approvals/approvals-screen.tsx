@@ -24,6 +24,8 @@ type Pending = {
   // never a redacted one (D24).
   extraPayDays: ExtraPayDay[];
   total: number;
+  /** One line per query that failed (R3 B110); the screen must not read as "all caught up". */
+  errors?: string[];
 };
 
 type Props = { pending: Pending; isOwner: boolean; canWrite: boolean };
@@ -43,10 +45,25 @@ export function ApprovalsScreen({ pending, isOwner, canWrite: _canWrite }: Props
     });
   };
   const approveBom = (id: string) => startTransition(async () => { settle(await approveBomAction(id)); });
-  const approveLeave = (id: string, approve: boolean) => startTransition(async () => { await approveLeaveAction(id, approve); });
+  const approveLeave = (id: string, approve: boolean) => startTransition(async () => { settle(await approveLeaveAction(id, approve)); });
   const approvePO = (id: string) => startTransition(async () => { settle(await approvePOAction(id)); });
-  const approveExtraPay = (id: string) => startTransition(async () => { await approveExtraPayDayAction(id); });
-  const rejectExtraPay = (id: string) => startTransition(async () => { await rejectExtraPayDayAction(id); });
+  const approveExtraPay = (id: string) => startTransition(async () => { settle(await approveExtraPayDayAction(id)); });
+  const rejectExtraPay = (id: string) => startTransition(async () => { settle(await rejectExtraPayDayAction(id)); });
+
+  const errorLines = pending.errors?.length ? (
+    <div role="alert" className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900">
+      {pending.errors.map((e) => <p key={e}>{e}</p>)}
+    </div>
+  ) : null;
+
+  if (pending.total === 0 && errorLines) {
+    return (
+      <div className="p-6 max-w-3xl mx-auto">
+        <h1 className="text-2xl font-semibold text-slate-900 mb-6">Approval Queue</h1>
+        {errorLines}
+      </div>
+    );
+  }
 
   if (pending.total === 0) {
     return (
@@ -67,6 +84,8 @@ export function ApprovalsScreen({ pending, isOwner, canWrite: _canWrite }: Props
         <h1 className="text-2xl font-semibold text-slate-900">Approval Queue</h1>
         <span className="bg-red-100 text-red-700 text-sm font-bold rounded-full px-2.5 py-0.5">{pending.total}</span>
       </div>
+
+      {errorLines}
 
       {/* BOM Approvals */}
       {isOwner && pending.boms.length > 0 && (
