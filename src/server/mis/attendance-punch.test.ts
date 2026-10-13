@@ -219,10 +219,12 @@ describe('out of order — the day is derived, so arrival order cannot matter (D
     expect((fake.state.attendance[0].date as Date).toISOString().slice(0, 10)).toBe('2026-09-21');
   });
 
-  it('ignores a shift hint that names no real shift, rather than trusting it', async () => {
+  it('refuses a shift hint that names no real shift, rather than trusting it', async () => {
+    // R3 B57 changed this contract: it used to be applied with the hint dropped; now it is REJECTED BAD_SHIFT.
     const out = await send(punchBody('in', ist(21, 6, 4), { shiftId: '99999999-9999-4999-8999-999999999999' }));
-    expect(out.outcome).toBe('APPLIED');
-    expect(fake.state.punches[0].shiftId).toBeNull();
+    expect(out.outcome).toBe('REJECTED');
+    expect(out.reason).toBe('BAD_SHIFT');
+    expect(fake.state.punches).toHaveLength(0);
   });
 
   it('a superseded punch is ignored: the correction, not the original, decides the day (D21)', async () => {
@@ -428,6 +430,9 @@ describe('the tablet door — a device token, and only that (D18)', () => {
   });
 
   it('records the operator who confirmed the face when one is sent, and does not require one yet (D21)', async () => {
+    // R3 B57: the operator must now be an active employee with an operator role. The fake looks employees up by
+    // employeeCode only, so a row with no code is what `findFirst({ where: { id } })` resolves to here.
+    fake.state.employees.push({ id: OPERATOR, role: 'ATTENDANCE_OPERATOR', isActive: true, deletedAt: null });
     await send(punchBody('in', ist(21, 6, 4), { operatorId: OPERATOR }));
     expect(fake.state.punches[0].operatorId).toBe(OPERATOR);
     await send(punchBody('out', ist(20, 14, 0)));

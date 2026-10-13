@@ -65,7 +65,7 @@ type Action = (typeof MIS_ACTIONS)[number];
 
 const ADMIN_GRANTS: Action[] = [
   'masters.read', 'masters.write', 'employees.read', 'employees.write', 'orders.read', 'orders.write',
-  'production.read', 'production.write', 'qc.read', 'qc.write', 'attendance.read', 'attendance.write',
+  'production.read', 'production.write', 'qc.read', 'qc.write', 'attendance.read', 'attendance.write', 'attendance.note',
   'reports.read', 'settings.read', 'settings.write', 'inventory.read', 'inventory.write', 'po.read', 'po.write',
   'grn.read', 'grn.write', 'supplier_invoice.read', 'supplier_invoice.write', 'store.read', 'store.write', 'store.count', 'clearance.read', 'clearance.write',
   'phase.read', 'phase.write', 'kiosk.manage', 'queue.review', 'approvals.read',
@@ -75,21 +75,24 @@ const EXPECTED: Record<Role, Action[]> = {
   OWNER: [...MIS_ACTIONS],
   ADMIN: ADMIN_GRANTS,
   SUPERVISOR: [
-    'masters.read', 'employees.read', 'orders.read', 'production.read', 'production.write', 'qc.read',
-    'attendance.read', 'reports.read', 'inventory.read', 'grn.read', 'store.read', 'clearance.read',
+    // R3 B64: SUPERVISOR gains qc.write and attendance.note.
+    'masters.read', 'employees.read', 'orders.read', 'production.read', 'production.write', 'qc.read', 'qc.write',
+    'attendance.read', 'attendance.note', 'reports.read', 'inventory.read', 'grn.read', 'store.read', 'clearance.read',
     'clearance.write', 'phase.read', 'phase.write',
   ],
   QC: ['masters.read', 'orders.read', 'production.read', 'qc.read', 'qc.write', 'reports.read', 'phase.read'],
-  ATTENDANCE_OPERATOR: ['employees.read', 'attendance.read', 'attendance.write'],
-  SUPER_ATTENDANCE_OPERATOR: ['employees.read', 'attendance.read', 'attendance.write', 'reports.read', 'queue.review'],
+  // R3 B64: both attendance operators gain attendance.note.
+  ATTENDANCE_OPERATOR: ['employees.read', 'attendance.read', 'attendance.write', 'attendance.note'],
+  SUPER_ATTENDANCE_OPERATOR: ['employees.read', 'attendance.read', 'attendance.write', 'attendance.note', 'reports.read', 'queue.review'],
   WORKER: [],
-  STORE_GUY: ['inventory.read', 'grn.read', 'grn.write', 'supplier_invoice.read', 'po.read', 'store.read', 'store.write', 'store.count'],
+  // R3 B64: STORE_GUY gains orders.read (read-only Orders tab; money is still redacted server-side).
+  STORE_GUY: ['orders.read', 'inventory.read', 'grn.read', 'grn.write', 'supplier_invoice.read', 'po.read', 'store.read', 'store.write', 'store.count'],
 };
 
 describe('the full matrix — every role × every action, against a hand-written copy', () => {
   it('the copy names every action and every role exactly once (a new action cannot slip past unlisted)', () => {
     expect(Object.keys(EXPECTED).sort()).toEqual([...MIS_ROLES].sort());
-    expect(MIS_ACTIONS.length).toBe(37);
+    expect(MIS_ACTIONS.length).toBe(38); // R3 B64 added attendance.note
     expect(new Set(MIS_ACTIONS).size).toBe(MIS_ACTIONS.length);
     for (const role of MIS_ROLES) {
       for (const a of EXPECTED[role]) expect(MIS_ACTIONS, `${role} lists unknown action ${a}`).toContain(a);
@@ -144,8 +147,10 @@ describe('MIS_UI_SPEC §4.5 — what each role is meant to reach', () => {
     expect(allowedActions('WORKER')).toEqual([]);
   });
 
-  it('STORE_GUY never touches people, attendance, QC or orders', () => {
-    for (const a of ['employees.read', 'attendance.read', 'attendance.write', 'qc.read', 'orders.read', 'production.read'] as const) {
+  it('STORE_GUY never touches people, attendance, QC or writes orders', () => {
+    // R3 B64: orders.read left this list (STORE_GUY now has a read-only Orders tab); orders.write stays denied.
+    expect(can('STORE_GUY', 'orders.read')).toBe(true);
+    for (const a of ['employees.read', 'attendance.read', 'attendance.write', 'qc.read', 'orders.write', 'production.read'] as const) {
       expect(can('STORE_GUY', a), a).toBe(false);
     }
   });

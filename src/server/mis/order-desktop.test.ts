@@ -64,7 +64,7 @@ vi.mock('./order-allocation', () => ({ getOrderAllocations: async () => { calls.
 const { getOrderDesktopView } = await import('./order-desktop');
 void spy;
 
-const READERS: MisRoleName[] = ['OWNER', 'ADMIN', 'SUPERVISOR', 'QC'];
+const READERS: MisRoleName[] = ['OWNER', 'ADMIN', 'SUPERVISOR', 'QC', 'STORE_GUY']; // R3 B64: STORE_GUY holds orders.read
 const REFUSED = MIS_ROLES.filter((r) => !READERS.includes(r));
 const as = (role: MisRoleName) => {
   getCurrentUser.mockResolvedValue({ id: 'u1' });
@@ -286,9 +286,13 @@ describe('the page cannot throw for a role it lets in', () => {
     const { can } = await import('@/lib/mis/permissions');
     const openers = MIS_ROLES.filter((r) => can(r, 'orders.read'));
     expect(openers.sort()).toEqual([...READERS].sort()); // the four this file treats as readers
+    // R3 B64: STORE_GUY holds orders.read but not production/qc/phase.read. The view now skips those sections instead
+    // of throwing for such a role (proved in r3-att-store-guy.test.ts), so the invariant is: a role that lacks one of
+    // the three is the narrow, money-free case that file covers; everyone else still holds all three.
     for (const role of openers) {
       for (const action of ['production.read', 'qc.read', 'phase.read'] as const) {
-        expect(can(role, action), `${role} may open the order but lacks ${action}`).toBe(true);
+        if (role === 'STORE_GUY') expect(can(role, action)).toBe(false);
+        else expect(can(role, action), `${role} may open the order but lacks ${action}`).toBe(true);
       }
     }
   });

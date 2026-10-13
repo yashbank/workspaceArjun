@@ -51,6 +51,8 @@ type Props = {
   canSeeWages: boolean;
   canProduction: boolean;
   canQc: boolean;
+  /** False for a role without phase.read: the Phases card is left out, not shown as "No phase plan". */
+  showPhases?: boolean;
 };
 
 /** REOPENED reads as a warning, not as signed — it is not a signature (Appendix A §A.2). */
@@ -77,7 +79,7 @@ function statusTone(s: string): BadgeTone {
 
 export function OrderDetailScreen({
   order, phases, bom, productionLogs, productionSummary, qcLogs, qcSummary, documents, allocations = [],
-  statusActions, canWrite, canSeeWages: _canSeeWages, canProduction, canQc,
+  statusActions, canWrite, canSeeWages: _canSeeWages, canProduction, canQc, showPhases = true,
 }: Props) {
   const [tab, setTab] = useState<Tab>('overview');
   const t = useT();
@@ -187,7 +189,7 @@ export function OrderDetailScreen({
       </div>
 
       {/* Phases — the handover gate, or an honest statement that there is none (D10) */}
-      <div className="mb-6 rounded-xl border border-slate-200 bg-white p-4">
+      {showPhases && <div className="mb-6 rounded-xl border border-slate-200 bg-white p-4">
         <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Phases</p>
         {phases.length === 0 ? (
           <>
@@ -227,7 +229,7 @@ export function OrderDetailScreen({
             ))}
           </ul>
         )}
-      </div>
+      </div>}
 
       {/* Quick stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">

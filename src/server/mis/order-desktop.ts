@@ -61,14 +61,18 @@ export async function getOrderDesktopView(orderId: string, now: Date = new Date(
   const order = await getOrder(orderId);
   if (!order) return null;
 
+  // R3 B64: orders.read alone (STORE_GUY) must not throw. Each section behind another permission is skipped, not thrown.
+  const canPhase = can(actor.role, 'phase.read');
+  const canQc = can(actor.role, 'qc.read');
+  const canProd = can(actor.role, 'production.read');
   const [phases, bom, qcChecks, docs, logs, schedule, shift, timeZone, allocations] = await Promise.all([
-    getPhasesForOrder(orderId),
+    canPhase ? getPhasesForOrder(orderId) : Promise.resolve([] as Awaited<ReturnType<typeof getPhasesForOrder>>),
     getBom(orderId),
-    getQcForOrder(orderId),
+    canQc ? getQcForOrder(orderId) : Promise.resolve([] as Awaited<ReturnType<typeof getQcForOrder>>),
     listDocuments(orderId),
-    getProductionForOrder(orderId),
-    getOrderSchedule(orderId),
-    getFactoryShiftWindow(now),
+    canProd ? getProductionForOrder(orderId) : Promise.resolve([] as Awaited<ReturnType<typeof getProductionForOrder>>),
+    canProd ? getOrderSchedule(orderId) : Promise.resolve(new Map() as Awaited<ReturnType<typeof getOrderSchedule>>),
+    canProd ? getFactoryShiftWindow(now) : Promise.resolve(null),
     getFactoryTimezone(),
     getOrderAllocations(orderId),
   ]);

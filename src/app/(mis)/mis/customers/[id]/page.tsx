@@ -3,7 +3,7 @@ import { requireMisAccess } from '@/server/mis/guard';
 import { getMisRole } from '@/server/mis/roles';
 import { can } from '@/lib/mis/permissions';
 import { db } from '@/server/db';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { CustomerDetailScreen } from '@/components/mis/customers/customer-detail-screen';
 import { requirePermission } from '@/server/mis/auth';
 
@@ -14,6 +14,8 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
   const role = await getMisRole(user.id);
   const canWrite = can(role, 'masters.write');
 
+  // R3 B64: STORE_GUY reaches the list (orders.read) but not the detail (masters.read): back to the list, no throw.
+  if (!can(role, 'masters.read')) redirect('/mis/customers');
   await requirePermission('masters.read');
   const customer = await db.misCustomer.findUnique({
     where: { id },

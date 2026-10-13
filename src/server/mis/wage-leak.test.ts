@@ -472,7 +472,7 @@ describe('F-06 · material rates and stock prices — Owner-only (D24)', () => {
   // Asserted for ALL seven non-Owner roles at the server function: the three who may read a BOM
   // get the structure with no rate; the other four are refused outright.
   describe('F-06 (BOM half, fixed) · getBom for every non-Owner role', () => {
-    const READERS = ['ADMIN', 'SUPERVISOR', 'QC'] as const;
+    const READERS = ['ADMIN', 'SUPERVISOR', 'QC', 'STORE_GUY'] as const; // R3 B64: STORE_GUY holds orders.read
 
     it.each(READERS)('%s receives the BOM structure and NO ratePerUnit anywhere in it', async (role) => {
       as(role);

@@ -1,11 +1,13 @@
 import { requireMisAccess } from '@/server/mis/guard';
 import { listAttendance, getMonthSummary, listShifts } from '@/server/mis/attendance';
-import { getAttendanceMonthView } from '@/server/mis/attendance-month';
+import { getAttendanceMonthView, resolveRegisterQuery } from '@/server/mis/attendance-month';
 import { AttendanceScreen } from '@/components/mis/attendance/attendance-screen';
 import { AttendanceMonthDesktop } from '@/components/mis/desktop/attendance-month-desktop';
 import { can } from '@/lib/mis/permissions';
 import type { AttendanceMonthView } from '@/lib/mis/attendance-month';
 import { getMisRole } from '@/server/mis/roles';
+import { getFactoryTimezone } from '@/server/mis/business-rules';
+import { factoryDateKey } from '@/lib/mis/factory-time';
 
 export default async function AttendancePage({
   searchParams,
@@ -15,21 +17,23 @@ export default async function AttendancePage({
   const user = await requireMisAccess();
   const role = await getMisRole(user.id);
   const canWrite = can(role, 'attendance.write');
+  const canNote = can(role, 'attendance.note');
   const sp = await searchParams;
   // D8 is the reading view at `/mis/attendance` with no `view`. ANY explicit `view` — `classic`, or the register's
   // own `daily` / `monthly` tabs — is the register (clock-in, mark absent, edit) at every width, so its tabs
   // never throw a desktop user back to D8. On a phone the register is the only layout anyway.
   const view = !sp.view || sp.view === 'classic' ? 'daily' : sp.view;
-  const date = sp.date;
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth() + 1;
+  // R3 B62: the factory's today and month, never the server's; a malformed ?date= falls back to today.
+  const timeZone = await getFactoryTimezone();
+  const todayKey = factoryDateKey(new Date(), timeZone);
+  const q = resolveRegisterQuery({ date: sp.date, month: sp.month }, todayKey);
+  const date = q.date;
   const [records, summary, shifts] = await Promise.all([
     view === 'daily' ? listAttendance(date) : [],
-    view === 'monthly' ? getMonthSummary(year, month) : [],
+    view === 'monthly' ? getMonthSummary(q.month) : [],
     listShifts(),
   ]);
-  const phone = <AttendanceScreen records={records} summary={summary} shifts={shifts} canWrite={canWrite} view={view} year={year} month={month} date={date} />;
+  const phone = <AttendanceScreen records={records} summary={summary} shifts={shifts} canWrite={canWrite} canNote={canNote} view={view} monthKey={q.month} date={date} timeZone={timeZone} />;
 
   if (sp.view) return phone;
 

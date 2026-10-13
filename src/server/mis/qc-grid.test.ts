@@ -109,7 +109,8 @@ describe('getQcHourlyGrid — who may read it', () => {
 
   it.each(READERS)('%s: canWrite follows qc.write', async (role) => {
     as(role);
-    expect((await getQcHourlyGrid({}, NOW)).canWrite).toBe(role === 'OWNER' || role === 'ADMIN' || role === 'QC');
+    // R3 B64: SUPERVISOR now holds qc.write, so every reader may write.
+    expect((await getQcHourlyGrid({}, NOW)).canWrite).toBe(true);
   });
 
   it.each(READERS)('%s: there is no money anywhere in the payload', async (role) => {

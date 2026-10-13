@@ -38,7 +38,7 @@ const { getBomDesktopView } = await import('./bom-desktop');
 
 const OWNER_ONLY: MisRoleName = 'OWNER';
 const NON_OWNER = MIS_ROLES.filter((r) => r !== OWNER_ONLY);
-const READERS: MisRoleName[] = ['OWNER', 'ADMIN', 'SUPERVISOR', 'QC']; // hold orders.read
+const READERS: MisRoleName[] = ['OWNER', 'ADMIN', 'SUPERVISOR', 'QC', 'STORE_GUY']; // hold orders.read (R3 B64: STORE_GUY added)
 const NON_OWNER_READERS = READERS.filter((r) => r !== 'OWNER');
 const NON_READERS = MIS_ROLES.filter((r) => !READERS.includes(r));
 

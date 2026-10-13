@@ -1,8 +1,8 @@
 import { db } from '@/server/db';
-import { requirePermission } from '@/server/mis/auth';
+import { requirePermission, type MisActor } from '@/server/mis/auth';
 import { logAuditEvent } from '@/server/mis/audit';
 import { getCorrectionWindowDays, getFactoryTimezone } from '@/server/mis/business-rules';
-import { deriveDays } from '@/lib/mis/attendance-day';
+import { deriveDays, isWithinCorrectionWindow } from '@/lib/mis/attendance-day';
 import { addDaysToDateKey, dateKeyToDbDate, factoryDateKey } from '@/lib/mis/factory-time';
 import { resolveShiftAt } from '@/lib/mis/shift-window';
 
@@ -100,21 +100,108 @@ export async function listAttendanceLive(date?: string) {
   });
 }
 
-export async function getMonthlyAttendance(employeeId: string, year: number, month: number) {
+/** The statuses a register row may hold (the UI picker, `DAY_FRACTION` in payroll, and the LATE label). */
+export const ATTENDANCE_STATUSES = ['PRESENT', 'ABSENT', 'HALF_DAY', 'LEAVE', 'HOLIDAY', 'LATE'] as const;
+
+const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
+const MONTH_KEY = /^\d{4}-(0[1-9]|1[0-2])$/;
+const TIME_OF_DAY = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** A real calendar date in `YYYY-MM-DD` form (rejects 2026-02-31). */
+export function isValidDateKey(value: unknown): value is string {
+  if (typeof value !== 'string' || !DATE_KEY.test(value)) return false;
+  const d = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === value;
+}
+
+const keyOfDbDate = (d: Date) => d.toISOString().slice(0, 10);
+
+/** R3 B62: half-open `[first of month, first of next month)` bounds as `@db.Date` values. */
+export function monthBounds(monthKey: string): { gte: Date; lt: Date } {
+  const [y, m] = monthKey.split('-').map(Number);
+  const nextKey = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
+  return { gte: dateKeyToDbDate(`${monthKey}-01`), lt: dateKeyToDbDate(`${nextKey}-01`) };
+}
+
+function toMonthKey(a: string | number, month?: number): string {
+  if (typeof a === 'string') {
+    if (!MONTH_KEY.test(a)) throw new Error('Month must look like 2026-10');
+    return a;
+  }
+  if (!Number.isInteger(a) || !month || month < 1 || month > 12) throw new Error('Month must look like 2026-10');
+  return `${a}-${String(month).padStart(2, '0')}`;
+}
+
+export async function getMonthlyAttendance(employeeId: string, monthOrYear: string | number, month?: number) {
   await requirePermission('attendance.read');
-  const start = new Date(year, month - 1, 1);
-  const end = new Date(year, month, 0);
+  const bounds = monthBounds(toMonthKey(monthOrYear, month));
   return db.misAttendance.findMany({
-    where: { employeeId, date: { gte: start, lte: end } },
+    where: { employeeId, date: bounds },
     orderBy: { date: 'asc' },
   });
 }
 
+/** The signed-in user's own employee row id, if they have one (used to stop self-approval). */
+async function actorEmployeeId(userId: string): Promise<string | null> {
+  const row = await db.misEmployee.findFirst({ where: { userProfileId: userId }, select: { id: true } });
+  return row?.id ?? null;
+}
+
+export type CloseOverride = { reason: string };
+
+/**
+ * R3 B51: the guard every register write passes. The row's day must be inside the correction window and its
+ * month must not be CLOSED. Only the OWNER, with a reason of 3+ characters, may write into a closed month;
+ * that writes `EDIT_ATTENDANCE_AFTER_CLOSE` and bumps the period's `correctionsAfterClose`.
+ */
+async function guardRegisterDate(actor: MisActor, dateKey: string, entityId: string, override?: CloseOverride) {
+  const [timeZone, windowDays] = await Promise.all([getFactoryTimezone(), getCorrectionWindowDays()]);
+  const year = Number(dateKey.slice(0, 4));
+  const monthNo = Number(dateKey.slice(5, 7));
+  const period = await db.misPayrollPeriod.findUnique({ where: { year_month: { year, month: monthNo } } });
+  if (period?.status === 'CLOSED') {
+    const reason = override?.reason?.trim() ?? '';
+    if (actor.role !== 'OWNER' || reason.length < 3) {
+      throw new Error(`${year}-${String(monthNo).padStart(2, '0')} payroll is closed. Only the Owner can correct it, with a reason.`);
+    }
+    await db.misPayrollPeriod.update({ where: { id: period.id }, data: { correctionsAfterClose: period.correctionsAfterClose + 1 } });
+    await logAuditEvent({
+      actorId: actor.userId,
+      action: 'EDIT_ATTENDANCE_AFTER_CLOSE',
+      entity: 'MisAttendance',
+      entityId,
+      after: { date: dateKey, reason },
+    });
+    return;
+  }
+  if (!isWithinCorrectionWindow(dateKey, new Date(), windowDays, timeZone)) {
+    throw new Error(`Outside the correction window (${windowDays} days)`);
+  }
+}
+
+async function isMonthClosed(dateKey: string): Promise<boolean> {
+  const period = await db.misPayrollPeriod.findUnique({
+    where: { year_month: { year: Number(dateKey.slice(0, 4)), month: Number(dateKey.slice(5, 7)) } },
+  });
+  return period?.status === 'CLOSED';
+}
+
+async function loadRow(attendanceId: string) {
+  const row = await db.misAttendance.findUnique({ where: { id: attendanceId } });
+  if (!row) throw new Error('Attendance record not found');
+  return row;
+}
+
 export async function clockIn(employeeId: string, shiftId?: string) {
   const actor = await requirePermission('attendance.write');
-  const d = dateKeyToDbDate(await today());
+  const employee = await db.misEmployee.findFirst({ where: { id: employeeId }, select: { id: true, isActive: true, deletedAt: true } });
+  if (!employee) throw new Error('Employee not found');
+  if (!employee.isActive || employee.deletedAt) throw new Error('This employee is not active');
+  const todayKey = await today();
+  const d = dateKeyToDbDate(todayKey);
   const existing = await db.misAttendance.findUnique({ where: { employeeId_date: { employeeId, date: d } } });
   if (existing?.clockIn) throw new Error('Already clocked in today');
+  await guardRegisterDate(actor, todayKey, existing?.id ?? `${employeeId}:${todayKey}`);
   const rec = await db.misAttendance.upsert({
     where: { employeeId_date: { employeeId, date: d } },
     create: { employeeId, date: d, shiftId: shiftId ?? null, clockIn: new Date(), status: 'PRESENT' },
@@ -126,16 +213,23 @@ export async function clockIn(employeeId: string, shiftId?: string) {
 
 export async function clockOut(attendanceId: string) {
   const actor = await requirePermission('attendance.write');
-  const rec = await db.misAttendance.update({
-    where: { id: attendanceId },
-    data: { clockOut: new Date() },
-  });
+  const row = await loadRow(attendanceId);
+  if (!row.clockIn) throw new Error('Not clocked in yet');
+  if (row.clockOut) throw new Error('Already clocked out');
+  const out = new Date();
+  if (out.getTime() <= row.clockIn.getTime()) throw new Error('Clock-out must be after clock-in');
+  await guardRegisterDate(actor, keyOfDbDate(row.date), row.id);
+  const rec = await db.misAttendance.update({ where: { id: attendanceId }, data: { clockOut: out } });
   await logAuditEvent({ actorId: actor.userId, action: 'CLOCK_OUT', entity: 'MisAttendance', entityId: rec.id, after: rec });
   return rec;
 }
 
 export async function approveClockOut(attendanceId: string) {
   const actor = await requirePermission('attendance.write');
+  const row = await loadRow(attendanceId);
+  if (!row.clockOut) throw new Error('There is no clock-out to approve');
+  if ((await actorEmployeeId(actor.userId)) === row.employeeId) throw new Error('You cannot approve your own clock-out');
+  await guardRegisterDate(actor, keyOfDbDate(row.date), row.id);
   const rec = await db.misAttendance.update({
     where: { id: attendanceId },
     data: { approvedOut: true, approvedById: actor.userId },
@@ -144,9 +238,15 @@ export async function approveClockOut(attendanceId: string) {
   return rec;
 }
 
-export async function editAttendance(attendanceId: string, data: { status?: string; clockIn?: Date; clockOut?: Date; notes?: string }) {
+export async function editAttendance(
+  attendanceId: string,
+  data: { status?: string; clockIn?: Date; clockOut?: Date; notes?: string },
+  override?: CloseOverride,
+) {
   const actor = await requirePermission('attendance.write');
-  const before = await db.misAttendance.findUnique({ where: { id: attendanceId } });
+  if (data.status !== undefined && !(ATTENDANCE_STATUSES as readonly string[]).includes(data.status)) throw new Error('Unknown status');
+  const before = await loadRow(attendanceId);
+  await guardRegisterDate(actor, keyOfDbDate(before.date), before.id, override);
   const rec = await db.misAttendance.update({
     where: { id: attendanceId },
     data: { ...data, editedAt: new Date(), editedById: actor.userId },
@@ -155,26 +255,59 @@ export async function editAttendance(attendanceId: string, data: { status?: stri
   return rec;
 }
 
+export type SkippedAbsent = { employeeId: string; reason: string };
+
 export async function markAbsentBulk(employeeIds: string[], date?: string) {
   const actor = await requirePermission('attendance.write');
-  const d = date ? new Date(date) : dateKeyToDbDate(await today());
-  const records = await Promise.all(
-    employeeIds.map((employeeId) =>
-      db.misAttendance.upsert({
-        where: { employeeId_date: { employeeId, date: d } },
-        create: { employeeId, date: d, status: 'ABSENT' },
-        update: { status: 'ABSENT' },
-      }),
-    ),
-  );
+  const todayKey = await today();
+  const key = date ?? todayKey;
+  if (!isValidDateKey(key)) throw new Error('Date must look like 2026-10-13');
+  if (key > todayKey) throw new Error('Cannot mark absent for a future date');
+  const ids = [...new Set(employeeIds)];
+  if (ids.length === 0) throw new Error('Select at least one employee');
+  await guardRegisterDate(actor, key, 'bulk');
+
+  const people = await db.misEmployee.findMany({
+    where: { id: { in: ids }, isActive: true, deletedAt: null },
+    select: { id: true },
+  });
+  if (people.length !== ids.length) throw new Error('One or more employees were not found or are not active');
+
+  const d = dateKeyToDbDate(key);
+  const existing = await db.misAttendance.findMany({ where: { date: d, employeeId: { in: ids } } });
+  const byEmp = new Map(existing.map((r) => [r.employeeId, r]));
+  const skipped: SkippedAbsent[] = [];
+  const toWrite: string[] = [];
+  for (const id of ids) {
+    const row = byEmp.get(id);
+    if (row && (row.clockIn || row.clockOut)) skipped.push({ employeeId: id, reason: 'Has a punch' });
+    else if (row?.status === 'LEAVE') skipped.push({ employeeId: id, reason: 'On leave' });
+    else if (row?.editedAt) skipped.push({ employeeId: id, reason: 'Edited by hand' });
+    else toWrite.push(id);
+  }
+
+  const stamp = { editedAt: new Date(), editedById: actor.userId };
+  const records = await db.$transaction(async (tx) => {
+    const out = [];
+    for (const employeeId of toWrite) {
+      out.push(
+        await tx.misAttendance.upsert({
+          where: { employeeId_date: { employeeId, date: d } },
+          create: { employeeId, date: d, status: 'ABSENT', ...stamp },
+          update: { status: 'ABSENT', ...stamp },
+        }),
+      );
+    }
+    return out;
+  });
   await logAuditEvent({
     actorId: actor.userId,
     action: 'MARK_ABSENT_BULK',
     entity: 'MisAttendance',
-    entityId: employeeIds.join(','),
-    after: { employeeIds, date: d },
+    entityId: 'bulk',
+    after: { date: key, count: toWrite.length, employeeIds: toWrite },
   });
-  return records;
+  return { records, skipped };
 }
 
 export async function listShifts() {
@@ -182,24 +315,64 @@ export async function listShifts() {
   return db.misShift.findMany({ where: { isActive: true }, orderBy: { name: 'asc' } });
 }
 
+/** Every shift, active or not: the Shifts screen needs the inactive ones to offer Activate. */
+export async function listAllShifts() {
+  await requirePermission('attendance.read');
+  return db.misShift.findMany({ orderBy: { name: 'asc' } });
+}
+
 export async function saveShift(id: string | null, data: { name: string; startTime: string; endTime: string; isDefault?: boolean }) {
   const actor = await requirePermission('attendance.write');
-  if (id) {
-    const rec = await db.misShift.update({ where: { id }, data: { name: data.name, startTime: data.startTime, endTime: data.endTime } });
-    await logAuditEvent({ actorId: actor.userId, action: 'UPDATE_SHIFT', entity: 'MisShift', entityId: rec.id, after: rec });
-    return rec;
+  const name = (data.name ?? '').trim();
+  if (!name) throw new Error('Shift name is required');
+  if (!TIME_OF_DAY.test(data.startTime ?? '') || !TIME_OF_DAY.test(data.endTime ?? '')) throw new Error('Times must look like 06:00');
+  if (data.startTime === data.endTime) throw new Error('Start and end time cannot be the same');
+
+  const active = await db.misShift.findMany({ where: { isActive: true }, select: { id: true, name: true } });
+  if (active.some((s) => s.id !== id && s.name.trim().toLowerCase() === name.toLowerCase())) {
+    throw new Error('A shift with this name already exists');
   }
-  const rec = await db.misShift.create({ data: { name: data.name, startTime: data.startTime, endTime: data.endTime, isDefault: data.isDefault ?? false } });
-  await logAuditEvent({ actorId: actor.userId, action: 'CREATE_SHIFT', entity: 'MisShift', entityId: rec.id, after: rec });
+  if (id) {
+    const existing = await db.misShift.findUnique({ where: { id } });
+    if (!existing) throw new Error('Shift not found');
+  }
+
+  const rec = await db.$transaction(async (tx) => {
+    if (data.isDefault) await tx.misShift.updateMany({ where: id ? { id: { not: id }, isDefault: true } : { isDefault: true }, data: { isDefault: false } });
+    if (id) {
+      return tx.misShift.update({
+        where: { id },
+        data: { name, startTime: data.startTime, endTime: data.endTime, ...(data.isDefault !== undefined ? { isDefault: data.isDefault } : {}) },
+      });
+    }
+    return tx.misShift.create({ data: { name, startTime: data.startTime, endTime: data.endTime, isDefault: data.isDefault ?? false } });
+  });
+  await logAuditEvent({ actorId: actor.userId, action: id ? 'UPDATE_SHIFT' : 'CREATE_SHIFT', entity: 'MisShift', entityId: rec.id, after: rec });
   return rec;
 }
 
-export async function getMonthSummary(year: number, month: number) {
+export async function setShiftActive(id: string, isActive: boolean) {
+  const actor = await requirePermission('attendance.write');
+  const before = await db.misShift.findUnique({ where: { id } });
+  if (!before) throw new Error('Shift not found');
+  if (!isActive && before.isDefault) throw new Error('This is the default shift. Make another shift the default first.');
+  const rec = await db.misShift.update({ where: { id }, data: { isActive } });
+  await logAuditEvent({
+    actorId: actor.userId,
+    action: isActive ? 'ACTIVATE_SHIFT' : 'DEACTIVATE_SHIFT',
+    entity: 'MisShift',
+    entityId: id,
+    before: { isActive: before.isActive },
+    after: { isActive: rec.isActive },
+  });
+  return rec;
+}
+
+export async function getMonthSummary(monthOrYear: string | number, month?: number) {
   await requirePermission('attendance.read');
-  const start = new Date(year, month - 1, 1);
-  const end = new Date(year, month, 0);
+  const bounds = monthBounds(toMonthKey(monthOrYear, month));
   const records = await db.misAttendance.findMany({
-    where: { date: { gte: start, lte: end } },
+    where: { date: bounds },
     include: { employee: { select: { id: true, name: true, employeeCode: true } } },
   });
   // Group by employee
@@ -217,18 +390,60 @@ export async function getMonthSummary(year: number, month: number) {
 
 export async function requestLeave(employeeId: string, date: string, reason?: string) {
   const actor = await requirePermission('attendance.write');
-  const rec = await db.misLeaveRequest.create({ data: { employeeId, date: new Date(date), reason, status: 'PENDING' } });
+  if (!isValidDateKey(date)) throw new Error('Date must look like 2026-10-13');
+  const employee = await db.misEmployee.findFirst({ where: { id: employeeId }, select: { id: true, isActive: true, deletedAt: true } });
+  if (!employee || !employee.isActive || employee.deletedAt) throw new Error('Employee not found or not active');
+  const d = dateKeyToDbDate(date);
+  const clash = await db.misLeaveRequest.findFirst({ where: { employeeId, date: d, status: { in: ['PENDING', 'APPROVED'] } } });
+  if (clash) throw new Error('A leave request for this day already exists');
+  const rec = await db.misLeaveRequest.create({ data: { employeeId, date: d, reason, status: 'PENDING' } });
   await logAuditEvent({ actorId: actor.userId, action: 'REQUEST_LEAVE', entity: 'MisLeaveRequest', entityId: rec.id, after: rec });
   return rec;
 }
 
 export async function approveLeave(leaveId: string, approve: boolean) {
   const actor = await requirePermission('attendance.write');
-  const rec = await db.misLeaveRequest.update({
-    where: { id: leaveId },
-    data: { status: approve ? 'APPROVED' : 'REJECTED', approvedById: actor.userId, approvedAt: new Date() },
+  const leave = await db.misLeaveRequest.findUnique({ where: { id: leaveId } });
+  if (!leave) throw new Error('Leave request not found');
+  const decided = 'This leave was already decided';
+  if (leave.status !== 'PENDING') throw new Error(decided);
+  if ((await actorEmployeeId(actor.userId)) === leave.employeeId) throw new Error('You cannot decide your own leave request');
+
+  const beforeStatus = leave.status;
+  const status = approve ? 'APPROVED' : 'REJECTED';
+  const approvedAt = new Date();
+  const dateKey = keyOfDbDate(leave.date);
+  const closed = approve ? await isMonthClosed(dateKey) : false;
+
+  const skippedDates: string[] = [];
+  await db.$transaction(async (tx) => {
+    const changed = await tx.misLeaveRequest.updateMany({
+      where: { id: leaveId, status: 'PENDING' },
+      data: { status, approvedById: actor.userId, approvedAt },
+    });
+    if (changed.count === 0) throw new Error(decided);
+    if (!approve) return;
+    // B53: an approved leave is a LEAVE row in the register, unless the day already has real data.
+    const row = await tx.misAttendance.findUnique({ where: { employeeId_date: { employeeId: leave.employeeId, date: leave.date } } });
+    if (closed || row?.clockIn || row?.clockOut || row?.editedAt) {
+      skippedDates.push(dateKey);
+      return;
+    }
+    await tx.misAttendance.upsert({
+      where: { employeeId_date: { employeeId: leave.employeeId, date: leave.date } },
+      create: { employeeId: leave.employeeId, date: leave.date, status: 'LEAVE' },
+      update: { status: 'LEAVE' },
+    });
   });
-  await logAuditEvent({ actorId: actor.userId, action: approve ? 'APPROVE_LEAVE' : 'REJECT_LEAVE', entity: 'MisLeaveRequest', entityId: rec.id, after: rec });
+  const rec = { ...leave, status, approvedById: actor.userId, approvedAt, skippedDates };
+  await logAuditEvent({
+    actorId: actor.userId,
+    action: approve ? 'APPROVE_LEAVE' : 'REJECT_LEAVE',
+    entity: 'MisLeaveRequest',
+    entityId: leaveId,
+    before: { status: beforeStatus },
+    after: { status, skippedDates },
+  });
   return rec;
 }
 

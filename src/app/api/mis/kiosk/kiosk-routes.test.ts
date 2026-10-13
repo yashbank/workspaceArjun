@@ -98,9 +98,11 @@ describe('POST /api/mis/kiosk/enrol/claim refuses a caller without the poll secr
     expect(deviceWrites).not.toHaveBeenCalled();
   });
 
-  it('ignores an oversized body rather than parsing it', async () => {
+  it('refuses an oversized body rather than parsing it', async () => {
+    // R3 B59 changed this contract: an over-limit body is 413 PAYLOAD_TOO_LARGE, no longer coerced to {} (then 401).
     const res = await claim.POST(post('/api/mis/kiosk/enrol/claim', { body: { deviceId: 'x'.repeat(50_000) } }));
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({ error: 'PAYLOAD_TOO_LARGE' });
   });
 });
 

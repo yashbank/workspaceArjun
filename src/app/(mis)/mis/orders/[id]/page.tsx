@@ -44,7 +44,8 @@ export default async function OrderDetailPage({
     // here would make the screen claim a gate is absent when it may not be.
     // Every role that can reach this page holds phase.read; if that ever stops
     // being true, this should break loudly rather than lie.
-    getPhasesForOrder(id),
+    // R3 B64: a role without phase.read (STORE_GUY) gets no phase section at all, rather than a false "No phase plan".
+    can(role, 'phase.read') ? getPhasesForOrder(id) : Promise.resolve([]),
     listDocuments(id).catch(() => []),
     getOrderAllocations(id).catch(() => []),
   ]);
@@ -98,6 +99,7 @@ export default async function OrderDetailPage({
       canSeeWages={canSeeWages}
       canProduction={canProduction}
       canQc={canQc}
+      showPhases={can(role, 'phase.read')}
     />
   );
 

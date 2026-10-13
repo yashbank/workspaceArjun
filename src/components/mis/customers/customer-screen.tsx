@@ -10,9 +10,9 @@ import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { saveCustomerAction, deleteCustomerAction, restoreCustomerAction } from '@/app/(mis)/mis/customers/actions';
 
 type Customer = { id: string; code: string; name: string; nameHi: string | null; phone: string | null; city: string | null; gstNo: string | null; isActive: boolean; deletedAt: Date | null };
-type Props = { customers: Customer[]; canWrite: boolean };
+type Props = { customers: Customer[]; canWrite: boolean; canView?: boolean };
 
-export function CustomerScreen({ customers, canWrite }: Props) {
+export function CustomerScreen({ customers, canWrite, canView = true }: Props) {
   const [open, setOpen] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Customer | null>(null);
@@ -65,7 +65,7 @@ export function CustomerScreen({ customers, canWrite }: Props) {
     { key: 'isActive', header: 'Active', render: (r) => <StatusBadge tone={r.isActive ? 'good' : 'neutral'}>{r.isActive ? 'Active' : 'Inactive'}</StatusBadge> },
     { key: 'actions', header: '', render: (r) => (
       <div className="flex gap-2 justify-end">
-        <Link href={`/mis/customers/${r.id}`}><Button variant="ghost">View</Button></Link>
+        {canView && <Link href={`/mis/customers/${r.id}`}><Button variant="ghost">View</Button></Link>}
         {!r.deletedAt && canWrite && <Button variant="ghost" onClick={() => openEdit(r)}>Edit</Button>}
         {!r.deletedAt && canWrite && <Button variant="ghost" onClick={() => removeRow(r)}>Delete</Button>}
         {r.deletedAt && canWrite && <Button variant="ghost" onClick={() => restoreRow(r)}>Restore</Button>}
