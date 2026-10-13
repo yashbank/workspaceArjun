@@ -293,6 +293,9 @@ async function SupervisorScreen({
         absent: crew.absent,
         onLeave: crew.onLeave,
         recorded: crew.recorded,
+        onMachines: crew.onMachines,
+        free: crew.free,
+        unstaffedBookings: crew.unstaffedBookings,
       }}
     />
   );

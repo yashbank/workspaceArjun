@@ -1,51 +1,76 @@
+import { WorkerBoardScreen } from '@/components/mis/machines/worker-board-screen';
+import { Forbidden } from '@/components/mis/forbidden';
+import { isDateKey, shiftDateKeyFor } from '@/lib/mis/crew-hours';
+import { addDaysToDateKey, factoryDateKey } from '@/lib/mis/factory-time';
+import { can } from '@/lib/mis/permissions';
 import { resolveShiftAt } from '@/lib/mis/shift-window';
 import { getFactoryTimezone } from '@/server/mis/business-rules';
-import { can } from '@/lib/mis/permissions';
-import { listShifts } from '@/server/mis/attendance';
 import { requireMisAccess } from '@/server/mis/guard';
-import { getMachineBoard } from '@/server/mis/machines-board';
 import { getMisRole } from '@/server/mis/roles';
-import { getWorkerAvailability } from '@/server/mis/worker-allocation';
-import { WorkerBoardScreen } from '@/components/mis/machines/worker-board-screen';
+import { getWorkerAvailability, listActiveShifts, listCrewBookings } from '@/server/mis/worker-allocation';
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The crew board for one date and shift (R3 B93).
+ *
+ * `?date=YYYY-MM-DD&shift=<uuid>&allocation=<uuid>`; a bad value falls back to the default rather
+ * than failing (R3 B94): today and the current shift. `allocation` opens that booking's Assign
+ * slide-over. The page needs `production.read`; anyone else gets the calm Forbidden screen, not
+ * the error boundary.
+ */
 export default async function CrewPage({
   searchParams,
 }: {
-  searchParams: Promise<{ shift?: string }>;
+  searchParams: Promise<{ date?: string; shift?: string; allocation?: string }>;
 }) {
-  const { shift: shiftParam } = await searchParams;
+  const params = await searchParams;
   const user = await requireMisAccess();
   const role = await getMisRole(user.id);
+  if (!can(role, 'production.read')) return <Forbidden />;
   const canWrite = can(role, 'production.write');
 
-  // The machine column needs production.read; attendance roles (who reach this via attendance.read) get the
-  // worker list without it rather than a refusal.
-  const [machines, shifts] = await Promise.all([can(role, 'production.read') ? getMachineBoard() : Promise.resolve([]), listShifts()]);
-
   const now = new Date();
-  const currentShift = resolveShiftAt(shifts, now, await getFactoryTimezone());
-  const shiftId = shiftParam ?? currentShift?.id ?? shifts[0]?.id ?? null;
+  const tz = await getFactoryTimezone();
+  const shifts = await listActiveShifts();
 
-  const availability = shiftId ? await getWorkerAvailability(shiftId, now) : [];
+  const requested = params.shift && UUID.test(params.shift) ? shifts.find((s) => s.id === params.shift) : undefined;
+  const shift = requested ?? resolveShiftAt(shifts, now, tz) ?? shifts[0] ?? null;
 
-  const staffedMachines = machines
-    .filter((m) => m.currentAllocation)
-    .map((m) => ({
-      machineId: m.id,
-      machineAllocationId: m.currentAllocation!.id,
-      machineName: m.name,
-      orderNumber: m.currentAllocation!.order?.orderNumber ?? null,
-      jobRef: m.currentAllocation!.jobRef ?? null,
-    }));
+  const today = factoryDateKey(now, tz);
+  const defaultDate = shift ? shiftDateKeyFor(shift, now, tz) : today;
+  const minDate = defaultDate < today ? defaultDate : today;
+  const maxDate = addDaysToDateKey(today, 7);
+  const dateKey =
+    params.date && isDateKey(params.date) && params.date >= minDate && params.date <= maxDate ? params.date : defaultDate;
+
+  const [bookings, availability] = shift
+    ? await Promise.all([listCrewBookings(dateKey, shift.id), getWorkerAvailability(shift.id, dateKey)])
+    : [[], []];
+
+  const openAllocationId =
+    params.allocation && UUID.test(params.allocation) && bookings.some((b) => b.machineAllocationId === params.allocation)
+      ? params.allocation
+      : null;
 
   return (
     <WorkerBoardScreen
       shifts={shifts.map((s) => ({ id: s.id, name: s.name }))}
-      currentShiftId={shiftId}
-      machines={staffedMachines}
+      currentShiftId={shift?.id ?? null}
+      dateKey={dateKey}
+      minDate={minDate}
+      maxDate={maxDate}
+      machines={bookings.map((b) => ({
+        machineId: b.machineId,
+        machineAllocationId: b.machineAllocationId,
+        machineName: b.machineName,
+        orderNumber: b.orderNumber,
+        jobRef: b.jobRef,
+      }))}
       availability={availability}
       canWrite={canWrite}
-      allocationDate={now.toISOString()}
+      canOverride={role === 'OWNER' || role === 'ADMIN'}
+      openAllocationId={openAllocationId}
     />
   );
 }

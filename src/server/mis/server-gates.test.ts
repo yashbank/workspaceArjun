@@ -55,6 +55,9 @@ const REVIEWED_UNGATED: Record<string, Reviewed> = {
   'store-books.ts#nextTxnSeq': { reason: 'internal tx helper; callers (store.ts, grn.ts) are gated' },
   'store-books.ts#lastLedgerBalance': { reason: 'internal tx helper; callers (store.ts, grn.ts) are gated' },
   'store-books.ts#lastTxnBalance': { reason: 'internal tx helper; callers (store.ts, grn.ts) are gated' },
+  // R3 WRK: tx helpers run inside the caller's transaction, after its production.write gate (cancel, sign-off, release).
+  'allocation-release.ts#releaseWorkerRows': { reason: 'internal tx helper; callers (worker-allocation.ts, machines-board.ts, job-phases.ts, orders.ts) are gated' },
+  'allocation-release.ts#releaseMachineAllocations': { reason: 'internal tx helper; callers are gated' },
   'stock-lock.ts#lockStockKeys': { reason: 'internal tx helper; callers (store.ts, grn.ts) are gated' },
   // V2 Epic 4: a writer, not a reader — called by confirmGRN after its gate; best-effort like logAuditEvent.
   'grn-alerts.ts#notifyGrnConfirmed': { reason: 'internal; called only by confirmGRN after its grn.write gate' },

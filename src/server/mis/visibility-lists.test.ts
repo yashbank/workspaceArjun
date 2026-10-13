@@ -17,6 +17,12 @@ import type { MisRoleName } from '@/lib/mis/roles';
 import { importsOf } from './testing/ast';
 import { fakePeopleDb, rolesModule, seedPeople, world } from './testing/people-world';
 
+// R3 WRK harness additions: the crew functions now read the factory zone, a shift and the bookings.
+Object.assign(fakePeopleDb, {
+  misShift: { findFirst: async () => ({ id: 'shift-1', name: 'S1', startTime: '06:00', endTime: '14:00' }) },
+  misMachineAllocation: { findMany: async () => [] },
+});
+vi.mock('@/server/mis/business-rules', () => ({ getFactoryTimezone: async () => 'Asia/Kolkata' }));
 vi.mock('@/server/db', () => ({ db: fakePeopleDb }));
 const getCurrentUser = vi.fn();
 vi.mock('@/server/auth', () => ({ getCurrentUser: (...a: unknown[]) => getCurrentUser(...a) }));
@@ -114,14 +120,14 @@ describe('D4 — the people lists on the supervisor home (crew and availability)
 
   it('getWorkerAvailability lists exactly the same pool, by id', async () => {
     login('u-supA');
-    expect((await getWorkerAvailability('shift-1', today)).map((r) => r.employeeId).sort()).toEqual(['w1', 'w2']);
+    expect((await getWorkerAvailability('shift-1', '2026-09-20') /* R3 B88: date key */).map((r) => r.employeeId).sort()).toEqual(['w1', 'w2']);
     login('u-supB');
-    expect((await getWorkerAvailability('shift-1', today)).map((r) => r.employeeId)).toEqual(['w3']);
+    expect((await getWorkerAvailability('shift-1', '2026-09-20') /* R3 B88: date key */).map((r) => r.employeeId)).toEqual(['w3']);
   });
 
   it('a Supervisor never receives another Supervisor\'s worker in the picker (the leak the tree exists to stop)', async () => {
     login('u-supA');
-    const ids = (await getWorkerAvailability('shift-1', today)).map((r) => r.employeeId);
+    const ids = (await getWorkerAvailability('shift-1', '2026-09-20') /* R3 B88: date key */).map((r) => r.employeeId);
     expect(ids).not.toContain('w3');
     expect(ids).not.toContain('e-orphan');
   });

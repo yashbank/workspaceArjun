@@ -167,8 +167,11 @@ describe('getOrderSchedule', () => {
   it('asks for one order, excluding released bookings and rows with no phase — in ONE query', async () => {
     as('OWNER');
     await getOrderSchedule('o1');
-    expect(queries).toHaveLength(1);
-    expect(queries[0].where).toEqual({ orderId: 'o1', releasedAt: null, jobPhaseId: { not: null } });
+    // R3 B96: one extra constant-size lookup (the running shift) so "operators" means who is on it now.
+    const bookingQueries = queries.filter((q) => (q.where as Row | undefined)?.orderId === 'o1');
+    expect(queries).toHaveLength(2);
+    expect(bookingQueries).toHaveLength(1);
+    expect(bookingQueries[0].where).toEqual({ orderId: 'o1', releasedAt: null, jobPhaseId: { not: null } });
   });
 
   it('an order with no bookings yields an empty schedule, not an error', async () => {

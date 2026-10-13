@@ -47,7 +47,17 @@ export type SupervisorHomeProps = {
     total: number;
     rows: { id: string; processName: string; orderNumber: string; detail: string }[];
   };
-  crew: { present: number; headcount: number; absent: number; onLeave: number; recorded: boolean };
+  crew: {
+    present: number;
+    headcount: number;
+    absent: number;
+    onLeave: number;
+    recorded: boolean;
+    /** R3 B100: on a machine now / clocked in with no machine / live bookings with nobody on them. */
+    onMachines: number;
+    free: number;
+    unstaffedBookings: number;
+  };
 };
 
 /**
@@ -156,7 +166,12 @@ export function SupervisorHome({ header, clearanceBlocker, blocker, machines, si
       </InfoCard>
 
       <InfoCard>
-        <SectionLabel>My crew today</SectionLabel>
+        <div className="flex items-center justify-between gap-2">
+          <SectionLabel>My crew today</SectionLabel>
+          <Link href="/mis/crew" className="text-xs font-semibold text-indigo-600">
+            Open crew board
+          </Link>
+        </div>
         <div className="mt-2">
           {crew.recorded ? (
             <>
@@ -169,6 +184,9 @@ export function SupervisorHome({ header, clearanceBlocker, blocker, machines, si
           ) : (
             <EmptyNote>Nothing has been entered on today’s register yet.</EmptyNote>
           )}
+          <Link href="/mis/crew" className="mt-2 block text-sm text-slate-700">
+            On machines {crew.onMachines} · Free (in) {crew.free} · Unstaffed bookings {crew.unstaffedBookings}
+          </Link>
         </div>
       </InfoCard>
     </HomeStack>
