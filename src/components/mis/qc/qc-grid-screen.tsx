@@ -29,6 +29,7 @@ export function QcGridScreen({ orders, todayChecks, canWrite, defectTypes }: { o
   const [defectTypeCode, setDefectTypeCode] = useState(OTHER_DEFECT);
   const [defectTypeOther, setDefectTypeOther] = useState('');
   const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
 
   const orderOptions: SelectOption[] = orders.map(o => ({ value: o.id, label: o.orderNumber }));
   const defectTypeOptions: SelectOption[] = [
@@ -52,12 +53,14 @@ export function QcGridScreen({ orders, todayChecks, canWrite, defectTypes }: { o
   const handleAdd = () => {
     if (!selectedOrderId || addingHour === null) return;
     startTransition(async () => {
-      await addQcCheckAction({
+      setError(null);
+      const outcome = await addQcCheckAction({
         orderId: selectedOrderId,
         result,
         parameterName: param,
         defectType: result === 'FAIL' ? (defectTypeCode || defectTypeOther.trim()) || undefined : undefined,
       });
+      if (!outcome.ok) { setError(outcome.detail); return; }
       setAddingHour(null);
       setDefectTypeCode(OTHER_DEFECT);
       setDefectTypeOther('');
@@ -168,6 +171,7 @@ export function QcGridScreen({ orders, todayChecks, canWrite, defectTypes }: { o
                     </>
                   )}
                 </div>
+                {error && <p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}
                 <div className="flex gap-2 mt-6">
                   <Button onClick={handleAdd} disabled={isPending}>{isPending ? 'Saving…' : 'Save'}</Button>
                   <Button variant="ghost" onClick={() => setAddingHour(null)}>Cancel</Button>

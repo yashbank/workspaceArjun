@@ -171,7 +171,8 @@ describe('addQcCheck — a FAIL notifies supervisors; PASS and N/A do not (MIS-1
   it('a notification failure never fails — or is thrown past — the check itself', async () => {
     as('QC');
     notifySupervisorsOfQcDefect.mockRejectedValueOnce(new Error('boom'));
-    const rec = await addQcCheck({ orderId: 'ord-1', result: 'FAIL', parameterName: 'Shade' });
+    // R3-QCR B73: a FAIL now needs a defect type or a note (>= 3 chars); only this input changed.
+    const rec = await addQcCheck({ orderId: 'ord-1', result: 'FAIL', parameterName: 'Shade', notes: 'Colour off' });
     expect(rec.result).toBe('FAIL');
   });
 

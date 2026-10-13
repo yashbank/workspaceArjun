@@ -32,6 +32,7 @@ export function QcScreen({ orders, canWrite, defectTypes }: { orders: Order[]; c
   const [notes, setNotes] = useState('');
   const [isPending, startTransition] = useTransition();
   const [search, setSearch] = useState('');
+  const [error, setError] = useState<string | null>(null);
 
   const filtered = search.trim()
     ? orders.filter(o => o.orderNumber.toLowerCase().includes(search.toLowerCase()) || (o.customer?.name ?? '').toLowerCase().includes(search.toLowerCase()) || o.status.toLowerCase().includes(search.toLowerCase()))
@@ -52,7 +53,8 @@ export function QcScreen({ orders, canWrite, defectTypes }: { orders: Order[]; c
   ];
 
   const handleAdd = () => startTransition(async () => {
-    await addQcCheckAction({
+    setError(null);
+    const outcome = await addQcCheckAction({
       orderId,
       result,
       parameterName: parameterName || undefined,
@@ -60,6 +62,7 @@ export function QcScreen({ orders, canWrite, defectTypes }: { orders: Order[]; c
       defectQty: defectQty ? parseFloat(defectQty) : undefined,
       notes: notes || undefined,
     });
+    if (!outcome.ok) { setError(outcome.detail); return; }
     setParameterName(''); setDefectTypeCode(OTHER_DEFECT); setDefectTypeOther(''); setDefectQty(''); setNotes(''); setResult('PASS'); setOpen(false);
   });
 
@@ -125,6 +128,7 @@ export function QcScreen({ orders, canWrite, defectTypes }: { orders: Order[]; c
             </>
           )}
           <Input label="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
+          {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
           <div className="flex gap-2 pt-2">
             <Button onClick={handleAdd} disabled={isPending || !orderId}>{isPending ? 'Saving…' : 'Save'}</Button>
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>

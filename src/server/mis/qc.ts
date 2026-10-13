@@ -1,5 +1,6 @@
 import { evaluateAql, type AqlResult } from '@/lib/mis/aql';
 import { addDaysToDateKey, dateKeyToDbDate, factoryDateKey, factoryMinuteOfDay } from '@/lib/mis/factory-time';
+import { isOrderClosed } from '@/lib/mis/order-status';
 import { db } from '@/server/db';
 import { requirePermission } from '@/server/mis/auth';
 import { logAuditEvent } from '@/server/mis/audit';
@@ -17,19 +18,102 @@ export async function withCheckerNames<T extends { checkById: string | null }>(c
   return checks.map((c) => ({ ...c, checkBy: c.checkById ? { name: byId.get(c.checkById) ?? '—' } : null }));
 }
 
-export async function addQcCheck(data: {
-  orderId: string;
-  bomStageId?: string;
-  parameterName?: string;
-  result: 'PASS' | 'FAIL' | 'NA';
-  defectType?: string;
-  defectQty?: number;
-  notes?: string;
-  /** V2 Epic 5 — set when the check is a checklist tap (qc-template.ts). */
-  templateId?: string;
-  slotTime?: string;
-}) {
+/** The result values the grid, the checklist and the form all use. */
+const QC_RESULTS = ['PASS', 'FAIL', 'NA'] as const;
+const EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+type CheckFields = { result: string; defectType?: string | null; defectQty?: number | null; notes?: string | null };
+
+/**
+ * R3-QCR B73: the rules every QC check obeys, whether it is added, tapped on the checklist, or edited.
+ * `requireFailReason` is false only for the checklist's plain FAIL tap, which is a one-tap paper-form
+ * mark with no room for a reason (the Plate-error tap carries its own defectType).
+ */
+function validateCheckFields(f: CheckFields, requireFailReason: boolean) {
+  if (!(QC_RESULTS as readonly string[]).includes(f.result)) throw new Error('Result must be Pass, Fail or N/A');
+  if (f.defectQty != null && (!Number.isFinite(Number(f.defectQty)) || Number(f.defectQty) < 0)) {
+    throw new Error('Defect quantity must be 0 or more');
+  }
+  if (requireFailReason && f.result === 'FAIL' && !f.defectType?.trim() && (f.notes?.trim().length ?? 0) < 3) {
+    throw new Error('A failed check needs a defect type or a note of at least 3 characters');
+  }
+}
+
+async function assertOrderOpen(orderId: string) {
+  const order = await db.misOrder.findUnique({ where: { id: orderId }, select: { status: true } });
+  if (!order) throw new Error('Order not found');
+  if (isOrderClosed(order.status ?? '')) throw new Error(`Order is ${String(order.status).toLowerCase()}; QC checks can no longer be recorded`);
+}
+
+async function assertStageBelongsToOrder(orderId: string, bomStageId: string) {
+  const stage = await db.misBomStage.findFirst({ where: { id: bomStageId, bom: { orderId } }, select: { id: true } });
+  if (!stage) throw new Error('That process stage does not belong to this order');
+}
+
+/**
+ * R3-QCR B84: correct a check within 24 h of its creation, while it is not acknowledged and its
+ * order is open. Gated on `qc.write` (never a role name). The audit row carries before/after.
+ */
+export async function editQcCheck(
+  id: string,
+  patch: { result?: string; defectType?: string | null; defectQty?: number | null; notes?: string | null; parameterName?: string },
+  now: Date = new Date(),
+) {
   const actor = await requirePermission('qc.write');
+  const before = await db.misQcCheck.findUnique({ where: { id } });
+  if (!before) throw new Error('QC check not found');
+  const order = await db.misOrder.findUnique({ where: { id: before.orderId }, select: { status: true } });
+  const closed = !order || isOrderClosed(order.status ?? '');
+  const tooOld = now.getTime() - new Date(before.createdAt).getTime() > EDIT_WINDOW_MS;
+  if (tooOld || before.acknowledgedAt || closed) {
+    throw new Error('This check can no longer be edited (24 h / acknowledged / order closed)');
+  }
+  const merged = {
+    result: patch.result ?? before.result,
+    defectType: patch.defectType !== undefined ? patch.defectType : before.defectType,
+    defectQty: patch.defectQty !== undefined ? patch.defectQty : before.defectQty == null ? null : Number(before.defectQty),
+    notes: patch.notes !== undefined ? patch.notes : before.notes,
+  };
+  validateCheckFields(merged, true);
+  const data: Record<string, unknown> = {};
+  for (const key of ['result', 'defectType', 'defectQty', 'notes', 'parameterName'] as const) {
+    if (patch[key] !== undefined) data[key] = patch[key];
+  }
+  const pick = (r: Record<string, unknown>) => ({ result: r.result, defectType: r.defectType, defectQty: r.defectQty == null ? null : Number(r.defectQty), notes: r.notes, parameterName: r.parameterName });
+  const beforeSnapshot = pick(before as Record<string, unknown>);
+  const after = await db.misQcCheck.update({ where: { id }, data });
+  await logAuditEvent({
+    actorId: actor.userId,
+    action: 'QC_CHECK_EDIT',
+    entity: 'MisQcCheck',
+    entityId: id,
+    before: beforeSnapshot,
+    after: pick(after as Record<string, unknown>),
+  });
+  if (after.result === 'FAIL' && before.result !== 'FAIL') await notifyOfDefect(after);
+  return after;
+}
+
+export async function addQcCheck(
+  data: {
+    orderId: string;
+    bomStageId?: string;
+    parameterName?: string;
+    result: 'PASS' | 'FAIL' | 'NA';
+    defectType?: string;
+    defectQty?: number;
+    notes?: string;
+    /** V2 Epic 5: set when the check is a checklist tap (qc-template.ts). */
+    templateId?: string;
+    slotTime?: string;
+  },
+  /** Server-internal (the server action passes only `data`): the checklist's plain FAIL tap carries no reason. */
+  options: { requireFailReason?: boolean } = {},
+) {
+  const actor = await requirePermission('qc.write');
+  validateCheckFields(data, options.requireFailReason ?? true);
+  await assertOrderOpen(data.orderId);
+  if (data.bomStageId) await assertStageBelongsToOrder(data.orderId, data.bomStageId);
   const rec = await db.misQcCheck.create({
     data: { ...data, parameterName: data.parameterName ?? 'General', checkTime: new Date(), checkById: actor.userId },
   });
@@ -80,10 +164,19 @@ export async function recordAqlSample(input: {
 }): Promise<{ check: Awaited<ReturnType<typeof db.misQcCheck.create>>; result: AqlResult }> {
   const actor = await requirePermission('qc.write');
 
+  // R3-QCR B72: refuse nonsense before anything is written.
+  if (!Number.isInteger(input.sampleSize) || input.sampleSize < 1) throw new Error('Sample size must be a whole number of at least 1');
+  for (const line of input.defects) {
+    if (!Number.isFinite(line.qty) || line.qty < 0) throw new Error('Defect quantity must be 0 or more');
+  }
+  const thresholds = await getAqlThresholds();
+  if (input.sampleSize < thresholds.sampleSize) throw new Error(`Sample too small: inspect at least ${thresholds.sampleSize}`);
+
   const defectTypeIds = input.defects.map((d) => d.defectTypeId);
   const defectTypes = defectTypeIds.length
     ? await db.misDefectType.findMany({ where: { id: { in: defectTypeIds } } })
     : [];
+  if (new Set(defectTypeIds).size !== new Set(defectTypes.map((d) => d.id)).size) throw new Error('Unknown defect type');
   const severityById = new Map(defectTypes.map((dt) => [dt.id, dt.severity]));
 
   const counts = { critical: 0, major: 0, minor: 0 };
@@ -94,7 +187,6 @@ export async function recordAqlSample(input: {
     else if (severity === 'MINOR') counts.minor += line.qty;
   }
 
-  const thresholds = await getAqlThresholds();
   const result = evaluateAql(input.sampleSize, counts, thresholds);
   const totalDefectQty = counts.critical + counts.major + counts.minor;
 
@@ -148,8 +240,10 @@ export async function getQcSummary(orderId: string) {
   const checks = await db.misQcCheck.findMany({ where: { orderId } });
   const pass = checks.filter(c => c.result === 'PASS').length;
   const fail = checks.filter(c => c.result === 'FAIL').length;
+  const na = checks.length - pass - fail;
+  /** Labelled "Defects (failed checks)" wherever shown: it sums the defect quantity of FAILED checks only. */
   const totalDefectQty = checks.filter(c => c.result === 'FAIL').reduce((s, c) => s + Number(c.defectQty ?? 0), 0);
-  return { total: checks.length, pass, fail, totalDefectQty };
+  return { total: checks.length, pass, fail, na, totalDefectQty };
 }
 
 /** The hourly check rhythm the QC home is built around: 09:00 through 16:00. */

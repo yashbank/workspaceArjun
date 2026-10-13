@@ -20,11 +20,35 @@ export default async function QcChecklistPrintPage({ params, searchParams }: { p
   await requireMisAccess();
   const [order, templates, checks, timeZone] = await Promise.all([getOrder(id), listQcTemplates(true), getQcForOrder(id), getFactoryTimezone()]);
   if (!order) notFound();
-  const template = templates.find((t) => t.id === templateId) ?? templates[0];
-  if (!template) notFound();
+  // B80: an unknown or inactive ?template is a banner, never a silent fallback to the first form. With no
+  // ?template at all the first ACTIVE form is the default, as before.
+  const activeTemplates = templates.filter((t) => t.isActive);
+  const template = templateId ? activeTemplates.find((t) => t.id === templateId) : activeTemplates[0];
+  if (!template) {
+    return (
+      <div className="mx-auto max-w-4xl px-6 py-8 font-sans text-sm text-gray-900">
+        <div className="no-print mb-6">
+          <a href={`/mis/qc/${order.id}`} className="inline-flex min-h-11 items-center rounded border border-gray-200 px-4 py-2 text-sm hover:bg-gray-50">Back to QC</a>
+        </div>
+        <div role="alert" className="rounded border-2 border-amber-500 bg-amber-50 px-4 py-3 font-semibold text-amber-900">
+          Template not found — choose one
+        </div>
+        {activeTemplates.length > 0 && (
+          <ul className="mt-4 space-y-2">
+            {activeTemplates.map((t) => (
+              <li key={t.id}><a href={`/mis/print/qc-checklist/${order.id}?template=${t.id}`} className="inline-flex min-h-11 items-center text-blue-600 hover:underline">{t.name}</a></li>
+            ))}
+          </ul>
+        )}
+      </div>
+    );
+  }
   // One sheet is one factory day: today unless ?date=YYYY-MM-DD, so yesterday's taps never fill today's cells.
+  // B80: a future date is clamped to today (with a note); a malformed one falls back to today.
   const todayKey = factoryDateKey(new Date(), timeZone);
-  const dateKey = date && /^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(Date.parse(date)) ? date : todayKey;
+  const requestedKey = date && /^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(Date.parse(date)) ? date : todayKey;
+  const clampedFuture = requestedKey > todayKey;
+  const dateKey = clampedFuture ? todayKey : requestedKey;
   const sheetDate = `${dateKey.slice(8, 10)}/${dateKey.slice(5, 7)}/${dateKey.slice(0, 4)}`;
   const dayChecks = filterChecksToFactoryDay(checks, dateKey, timeZone);
   const dayHref = (key: string) => `/mis/print/qc-checklist/${order.id}?template=${template.id}&date=${key}`;
@@ -44,6 +68,11 @@ export default async function QcChecklistPrintPage({ params, searchParams }: { p
         {dateKey < todayKey && <a href={dayHref(addDaysToDateKey(dateKey, 1))} className="inline-flex min-h-11 items-center rounded border border-gray-200 px-4 py-2 text-sm hover:bg-gray-50">Next day →</a>}
         <a href={`/mis/qc/${order.id}`} className="rounded border border-gray-200 px-4 py-2 text-sm hover:bg-gray-50">Back to QC</a>
       </div>
+      {clampedFuture && (
+        <div className="no-print mb-4 rounded border border-amber-400 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          That date is in the future, so today ({sheetDate}) is shown.
+        </div>
+      )}
       <div className="mb-4 flex items-start justify-between border-b-2 border-gray-800 pb-3">
         <div>
           <div className="text-2xl font-bold">{companyName}</div>

@@ -3,10 +3,14 @@ import { requireMisAccess } from '@/server/mis/guard';
 import { PrintButton } from '@/components/mis/print/print-button';
 import { getOrder } from '@/server/mis/orders';
 import { getQcForOrder } from '@/server/mis/qc';
+import { getFactoryTimezone } from '@/server/mis/business-rules';
+import { formatFactoryDate, formatFactoryDateTime } from '@/lib/mis/factory-time';
+import { latestVerdict } from '@/lib/mis/qc-verdict';
 import { notFound } from 'next/navigation';
 
 type QcLogRow = {
   id: string;
+  bomStageId?: string | null;
   parameterName: string | null;
   result: string;
   defectType: string | null;
@@ -24,15 +28,27 @@ export default async function CoaPrintPage({ params }: { params: Promise<{ id: s
   // getQcForOrder's rows are checkTime/checkBy/defectType+notes — NOT checkedAt/checkedBy/
   // defectDescription, which this page was reading before (always undefined: "Invalid Date" in
   // the Date column, "—" in Checked By and Notes/Defect on every row of every COA ever printed).
-  const qcLogs = (await getQcForOrder(id).catch(() => [])) as QcLogRow[];
+  // B75: NO `.catch(() => [])`. A load failure reaches `error.tsx` ("do not issue this certificate"); an empty
+  // list here would print as a clean "No quality checks recorded".
+  const qcLogs = (await getQcForOrder(id)) as QcLogRow[];
+  const timeZone = await getFactoryTimezone();
 
-  const printDate = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const printDate = formatFactoryDate(new Date(), timeZone);
   const passCount = qcLogs.filter(q => q.result === 'PASS').length;
   const failCount = qcLogs.filter(q => q.result === 'FAIL').length;
-  const overallResult = failCount === 0 && passCount > 0 ? 'PASS' : failCount > 0 ? 'FAIL' : 'N/A';
+  // B74: only the LATEST check per stage + parameter counts, so a failure fixed by a later pass is resolved.
+  const verdict = latestVerdict(qcLogs).overall;
+  const overallResult = qcLogs.length === 0 ? 'N/A — no checks recorded' : verdict === 'NA' ? 'N/A' : verdict;
+  // B81: a certificate for an order that is not finished is a draft, and says so in red.
+  const isDraft = order.status !== 'COMPLETED' && order.status !== 'DELIVERED';
 
   return (
     <div className="p-8 max-w-[794px] mx-auto font-sans text-sm text-gray-900">
+      {isDraft && (
+        <div role="alert" className="mb-4 border-2 border-red-600 bg-red-50 px-4 py-2 text-center font-bold uppercase tracking-wide text-red-700">
+          {`DRAFT CERTIFICATE — order is ${order.status}`}
+        </div>
+      )}
       {/* Print button */}
       <div className="no-print mb-6 flex gap-3">
         <PrintButton />
@@ -66,12 +82,12 @@ export default async function CoaPrintPage({ params }: { params: Promise<{ id: s
         <div>
           <span className="text-xs text-gray-500 uppercase">Delivery Date</span>
           <p className="font-medium mt-0.5">
-            {order.deliveryDate ? new Date(order.deliveryDate).toLocaleDateString('en-IN') : '—'}
+            {order.deliveryDate ? formatFactoryDate(new Date(order.deliveryDate), timeZone) : '—'}
           </p>
         </div>
         <div>
           <span className="text-xs text-gray-500 uppercase">Overall Result</span>
-          <p className={`font-bold mt-0.5 text-lg ${overallResult === 'PASS' ? 'text-green-700' : overallResult === 'FAIL' ? 'text-red-700' : 'text-gray-500'}`}>
+          <p className={`font-bold mt-0.5 text-lg ${verdict === 'PASS' && qcLogs.length > 0 ? 'text-green-700' : verdict === 'FAIL' ? 'text-red-700' : 'text-gray-500'}`}>
             {overallResult}
           </p>
         </div>
@@ -105,7 +121,7 @@ export default async function CoaPrintPage({ params }: { params: Promise<{ id: s
                   </td>
                   <td className="p-2">{[q.defectType, q.notes].filter(Boolean).join(' · ') || '—'}</td>
                   <td className="p-2">{q.checkBy?.name ?? '—'}</td>
-                  <td className="p-2">{new Date(q.checkTime).toLocaleDateString('en-IN')}</td>
+                  <td className="p-2">{formatFactoryDateTime(new Date(q.checkTime), timeZone)}</td>
                 </tr>
               ))}
             </tbody>
