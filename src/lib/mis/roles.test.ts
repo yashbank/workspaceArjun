@@ -39,7 +39,9 @@ describe('assignableRoles', () => {
   it('never lets an admin create an owner', () => {
     const list = assignableRoles('ADMIN');
     expect(list).not.toContain('OWNER');
-    expect(list).toHaveLength(7);
+    // R3 B41: contract changed - an Admin may now assign only roles strictly below ADMIN (6, not 7).
+    expect(list).not.toContain('ADMIN');
+    expect(list).toHaveLength(6);
   });
 
   it('gives everyone else nothing to assign', () => {

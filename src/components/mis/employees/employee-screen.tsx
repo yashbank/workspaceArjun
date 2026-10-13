@@ -77,6 +77,7 @@ export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes
   const [payType, setPayType] = useState<'MONTHLY' | 'DAILY'>('DAILY');
   const [sundayPaid, setSundayPaid] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [rowError, setRowError] = useState<string | null>(null);
   const [photo, setPhoto] = useState<File | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -167,8 +168,8 @@ export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes
         <Link href={`/mis/employees/${r.id}`} className={actionLinkClass}>View</Link>
         <Link href={`/mis/print/badge/${r.id}`} target="_blank" className={actionLinkClass}>Badge</Link>
         {!r.deletedAt && canWrite && <Button variant="ghost" onClick={() => openEdit(r)}>Edit</Button>}
-        {!r.deletedAt && canWrite && <Button variant="ghost" onClick={() => startTransition(async () => { await deleteEmployeeAction(r.id); })}>Delete</Button>}
-        {r.deletedAt && canWrite && <Button variant="ghost" onClick={() => startTransition(async () => { await restoreEmployeeAction(r.id); })}>Restore</Button>}
+        {!r.deletedAt && canWrite && <Button variant="ghost" onClick={() => startTransition(async () => { setRowError(null); const res = await deleteEmployeeAction(r.id); if (!res.ok) setRowError(res.detail); })}>Delete</Button>}
+        {r.deletedAt && canWrite && <Button variant="ghost" onClick={() => startTransition(async () => { setRowError(null); const res = await restoreEmployeeAction(r.id); if (!res.ok) setRowError(res.detail); })}>Restore</Button>}
       </div>
     )},
   ];
@@ -182,6 +183,7 @@ export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes
           {canWrite && <Button onClick={openAdd}>+ Add Employee</Button>}
         </div>
       </div>
+      {rowError && <p role="alert" className="text-sm text-red-600">{rowError}</p>}
       <div className="flex items-center gap-3">
         <input
           type="search"

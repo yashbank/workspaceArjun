@@ -1,5 +1,6 @@
 import { resolveAsOf } from '@/lib/mis/effective-dated';
 import { daysInMonth, extraPayMultiplierUnit, isSunday, otPayForDay, perDayRate, type WageRowForCalc } from '@/lib/mis/pay-basis';
+import type { Prisma } from '@/generated/prisma/client';
 import { db } from '@/server/db';
 import { requirePermission } from '@/server/mis/auth';
 import { getWageRuleHistory } from '@/server/mis/business-rules';
@@ -49,8 +50,28 @@ type AttendanceRow = {
     payType?: 'MONTHLY' | 'DAILY' | null;
     sundayPaid?: boolean | null;
     wageTypeCode?: string | null;
+    /** R3 B43: DEPARTMENTS-scoped extra-pay days match on this. */
+    departmentId?: string | null;
   } | null;
 };
+
+/** The employee as `computeEmployeeMonth` needs it (an attendance row's `employee`, or a zero-row employee). */
+type PayrollEmployee = NonNullable<AttendanceRow['employee']>;
+
+/** R3 B47: only "the table does not exist yet" (a pre-migration database) reads as "no period". Anything else is a real failure. */
+function isMissingRelationError(error: unknown): boolean {
+  const e = error as { code?: unknown; message?: unknown } | null;
+  return e?.code === 'P2021' || (typeof e?.message === 'string' && /relation .* does not exist/i.test(e.message));
+}
+
+async function findPayrollPeriod(client: Prisma.TransactionClient, year: number, month: number) {
+  try {
+    return await client.misPayrollPeriod.findUnique({ where: { year_month: { year, month } } });
+  } catch (error) {
+    if (isMissingRelationError(error)) return null;
+    throw error;
+  }
+}
 
 function round(n: number): number {
   return Math.round(n);
@@ -99,6 +120,7 @@ function snapshotToRow(line: {
  * actually close on) rather than per attendance day.
  */
 function computeEmployeeMonth(
+  emp: PayrollEmployee,
   records: AttendanceRow[],
   year: number,
   month: number,
@@ -110,7 +132,6 @@ function computeEmployeeMonth(
   extraPayDays: ExtraPayDayRow[],
   workingDays: number,
 ): PayrollRow {
-  const emp = records[0].employee!;
   const payType: 'MONTHLY' | 'DAILY' = emp.payType === 'MONTHLY' ? 'MONTHLY' : 'DAILY';
   const monthEnd = new Date(Date.UTC(year, month, 0));
 
@@ -177,17 +198,24 @@ function computeEmployeeMonth(
   // deliberately a separate accumulator so a day with both never lets one silently absorb the other.
   let extraPay = 0;
   for (const day of extraPayDays) {
-    const inScope =
-      day.scope === 'ALL_PRESENT'
-        ? records.some((r) => r.date.getTime() === day.date.getTime() && DAY_FRACTION[r.status] > 0)
-        : day.scope === 'EMPLOYEES'
-          ? day.employeeIds.includes(emp.id)
-          : false; // DEPARTMENTS scope needs the employee's department, resolved by the caller (see note below)
+    // R3 B45: ALL_PRESENT pays by the attendance fraction (a HALF_DAY gets half); the other scopes pay in full.
+    let fraction = 1;
+    let inScope = false;
+    if (day.scope === 'ALL_PRESENT') {
+      const present = records.find((r) => r.date.getTime() === day.date.getTime() && DAY_FRACTION[r.status] > 0);
+      inScope = !!present;
+      fraction = present ? DAY_FRACTION[present.status] : 0;
+    } else if (day.scope === 'EMPLOYEES') {
+      inScope = day.employeeIds.includes(emp.id);
+    } else {
+      // R3 B43: DEPARTMENTS - the employee's own department, loaded with the payroll query.
+      inScope = !!emp.departmentId && day.departmentIds.includes(emp.departmentId);
+    }
     if (!inScope) continue;
     const row = rowOn(day.date);
     const dayRate = dayRateOn(day.date);
-    if (day.kind === 'FLAT_AMOUNT') extraPay += day.value;
-    else extraPay += day.value * extraPayMultiplierUnit(payType, dayRate, row?.multiplierBasis ?? 'PER_MONTH');
+    if (day.kind === 'FLAT_AMOUNT') extraPay += day.value * fraction;
+    else extraPay += day.value * fraction * extraPayMultiplierUnit(payType, dayRate, row?.multiplierBasis ?? 'PER_MONTH');
   }
 
   const basicWageOn = components.BASIC ? basicWage : 0;
@@ -238,12 +266,12 @@ function computeEmployeeMonth(
  * server-local `new Date(year, month, 0)` would drop the last day of the month on any server east
  * of Greenwich (D22; one of the Phase 13 sweep sites).
  */
-export async function calculateMonthlyPayroll(year: number, month: number): Promise<PayrollRow[]> {
+export async function calculateMonthlyPayroll(year: number, month: number, client: Prisma.TransactionClient = db): Promise<PayrollRow[]> {
   await requirePermission('wages.read');
 
-  const period = await db.misPayrollPeriod.findUnique({ where: { year_month: { year, month } } }).catch(() => null);
+  const period = await findPayrollPeriod(client, year, month);
   if (period?.status === 'CLOSED') {
-    const lines = await db.misPayrollSnapshotLine.findMany({ where: { periodId: period.id }, orderBy: { employeeName: 'asc' } });
+    const lines = await client.misPayrollSnapshotLine.findMany({ where: { periodId: period.id }, orderBy: { employeeName: 'asc' } });
     return lines.map(snapshotToRow);
   }
 
@@ -260,10 +288,10 @@ export async function calculateMonthlyPayroll(year: number, month: number): Prom
   const end = new Date(Date.UTC(year, month, 0));
   const workingDays = daysInMonth(year, month);
 
-  const attendance: AttendanceRow[] = await db.misAttendance.findMany({
+  const attendance: AttendanceRow[] = await client.misAttendance.findMany({
     where: { date: { gte: start, lte: end } },
     include: {
-      employee: { select: { id: true, name: true, employeeCode: true, payType: true, sundayPaid: true, wageTypeCode: true } },
+      employee: { select: { id: true, name: true, employeeCode: true, payType: true, sundayPaid: true, wageTypeCode: true, departmentId: true } },
       shift: { select: { name: true } },
     },
     orderBy: [{ employee: { name: 'asc' } }, { date: 'asc' }],
@@ -275,22 +303,36 @@ export async function calculateMonthlyPayroll(year: number, month: number): Prom
     if (!byEmployee[empId]) byEmployee[empId] = [];
     byEmployee[empId].push(a);
   }
-  const employeeIds = Object.keys(byEmployee).filter((id) => id !== 'unknown');
+  // R3 B44: every active, non-deleted employee with a wage code gets a line, even with no attendance
+  // rows at all (a MONTHLY employee is still paid Sundays, allowances and extra-pay days).
+  const rosterEmployees = (await client.misEmployee.findMany({
+    where: { deletedAt: null, isActive: true, wageTypeCode: { not: null } },
+    select: { id: true, name: true, employeeCode: true, payType: true, sundayPaid: true, wageTypeCode: true, departmentId: true },
+  })) as PayrollEmployee[];
+  const zeroRowEmployees = rosterEmployees.filter((e) => !byEmployee[e.id]);
+  const employeeIds = [...Object.keys(byEmployee).filter((id) => id !== 'unknown'), ...zeroRowEmployees.map((e) => e.id)];
 
   // Batch: every distinct wage code this run needs, and every employee's component toggles and
   // approved extra-pay days — one query each, never one per employee (§2A.13).
   const codes = new Set<string>();
   for (const recs of Object.values(byEmployee)) codes.add(recs[0].employee?.wageTypeCode || DEFAULT_DAILY_WAGE_CODE);
+  for (const e of zeroRowEmployees) codes.add(e.wageTypeCode || DEFAULT_DAILY_WAGE_CODE);
   const [wageHistories, componentsByEmployee, extraPayDays] = await Promise.all([
     getWageTypeRowsForCodes([...codes]),
     getPayComponentsForEmployees(employeeIds),
     listApprovedExtraPayDaysForMonth(year, month),
   ]);
 
-  return Object.values(byEmployee).map((records) => {
-    const emp = records[0].employee!;
+  const defaultComponents: PayComponentMap = { BASIC: true, HRA: true, ALLOWANCE: true, OT: true, BONUS: true };
+  const lines: { emp: PayrollEmployee; records: AttendanceRow[] }[] = [
+    ...Object.values(byEmployee).map((records) => ({ emp: records[0].employee!, records })),
+    ...zeroRowEmployees.map((emp) => ({ emp, records: [] as AttendanceRow[] })),
+  ];
+
+  return lines.map(({ emp, records }) => {
     const code = emp.wageTypeCode || DEFAULT_DAILY_WAGE_CODE;
     return computeEmployeeMonth(
+      emp,
       records,
       year,
       month,
@@ -298,7 +340,7 @@ export async function calculateMonthlyPayroll(year: number, month: number): Prom
       otMultiplierOn,
       latePenaltyOn,
       fallbackDailyWageOn,
-      componentsByEmployee.get(emp.id) ?? { BASIC: true, HRA: true, ALLOWANCE: true, OT: true, BONUS: true },
+      componentsByEmployee.get(emp.id) ?? defaultComponents,
       extraPayDays,
       workingDays,
     );

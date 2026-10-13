@@ -161,13 +161,14 @@ describe('F-11 — the pool is enforced on the LIST but not on a lookup by id', 
   // D4: "a user sees their own subtree only … not other Admins and not the Owner", applied "in
   // the Prisma query". getEmployee(id) has no scope: any employees.read holder can open any
   // row — and the payslip print page is built on it.
-  it.fails('F-11: SUPERVISOR A cannot open an employee outside their pool by id', async () => {
+  // R3 B36 fixed F-11: these two were `it.fails` while the bug stood; they are ordinary tests now.
+  it('F-11: SUPERVISOR A cannot open an employee outside their pool by id', async () => {
     login('u-supA');
     const row = await getEmployee('w3');
     expect(row).toBeNull();
   });
 
-  it.fails('F-11: an ADMIN cannot open the Owner\'s record by id', async () => {
+  it('F-11: an ADMIN cannot open the Owner\'s record by id', async () => {
     login('u-adm');
     expect(await getEmployee('e-own')).toBeNull();
   });

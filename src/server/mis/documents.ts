@@ -2,6 +2,7 @@ import { db } from '@/server/db';
 import { requirePermission } from '@/server/mis/auth';
 import { getCurrentUser } from '@/server/auth';
 import { logAuditEvent } from '@/server/mis/audit';
+import { safeHref } from '@/lib/mis/document-library';
 
 /** uploaded_by's FK targets auth.users(id) directly (Supabase's own id),
  * not user_profiles.id — the two are different UUIDs. Resolve display
@@ -47,9 +48,12 @@ export async function addDocument(orderId: string, data: {
   mimeType?: string;
 }) {
   const actor = await requirePermission('orders.write');
+  // R3 B38: the single choke point for every document write - an unsafe link never reaches the table.
+  const filePath = safeHref(data.filePath);
+  if (filePath === null) throw new Error('The link must be a full http(s) address or a path starting with /.');
   const user = await getCurrentUser();
   const rec = await db.misDocument.create({
-    data: { orderId, ...data, uploadedBy: user?.authId },
+    data: { orderId, ...data, filePath, uploadedBy: user?.authId },
   });
   await logAuditEvent({ actorId: actor.userId, action: 'ADD_DOCUMENT', entity: 'MisDocument', entityId: rec.id, after: auditSafeDocument(rec) });
   return rec;

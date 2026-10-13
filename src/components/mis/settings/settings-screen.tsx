@@ -11,9 +11,16 @@ export function RuleRow({ rule, canWrite, onSave }: { rule: Rule; canWrite: bool
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(rule.ruleValue);
   const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
 
   const save = () => startTransition(async () => {
-    await (onSave ?? updateRuleAction)(rule.ruleKey, val);
+    setError(null);
+    if (onSave) {
+      await onSave(rule.ruleKey, val);
+    } else {
+      const result = await updateRuleAction(rule.ruleKey, val);
+      if (!result.ok) { setError(result.detail); return; }
+    }
     setEditing(false);
   });
 
@@ -34,6 +41,7 @@ export function RuleRow({ rule, canWrite, onSave }: { rule: Rule; canWrite: bool
         ) : (
           <>
             <span className="font-mono text-sm bg-slate-50 border border-slate-200 rounded px-2 py-1">{rule.ruleValue}</span>
+            {error && <span role="alert" className="text-xs text-red-600">{error}</span>}
             {canWrite && <Button variant="ghost" onClick={() => setEditing(true)}>Edit</Button>}
           </>
         )}

@@ -32,6 +32,8 @@ vi.mock('@/server/db', () => ({
   },
 }));
 vi.mock('./audit', () => ({ logAuditEvent: async () => undefined }));
+// R3 B36: getEmployeePhoto is now pool-scoped; this test is about the bytes, so the pool is the whole factory.
+vi.mock('./visibility', () => ({ resolveVisibleEmployeeWhere: async () => ({}) }));
 const authenticateDevice = vi.fn();
 vi.mock('./kiosk-device', () => ({ authenticateDevice: (...a: unknown[]) => authenticateDevice(...a) }));
 const getCurrentUser = vi.fn();

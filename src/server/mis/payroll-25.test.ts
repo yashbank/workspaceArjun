@@ -3,7 +3,7 @@
  * baseline `payroll-figures.test.ts` already pins. Each case is worked by hand at the fixture
  * rates so a wrong number is caught, not just a wrong shape.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DAILY_WAGE, EMP, fakeDb, seedWorld, state } from './testing/wage-world';
 
@@ -24,10 +24,15 @@ const rec = (id: string, date: string, status: string, lateMinutes: number | nul
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // R3 B48: a proposed date must be within 400 days of today, so pin the clock (these fixtures are January 2026).
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-03-15T06:00:00Z'));
   seedWorld();
   getCurrentUser.mockResolvedValue({ id: 'u1' });
   getMisRole.mockResolvedValue('OWNER');
 });
+
+afterEach(() => vi.useRealTimers());
 
 describe('25.2/D26 — OT rate per hour on the wage code', () => {
   it('a code with otRatePerHour pays that rate directly, ignoring OT_MULTIPLIER', async () => {
@@ -109,6 +114,7 @@ describe('25.4/25.5 — extra-pay days (D28), including the OT-overlap case', ()
 
   it('a MULTIPLIER day and OT both apply on the same day — additive, neither absorbs the other', async () => {
     state.attendance = [rec('1', '2026-01-05', 'PRESENT', 0, 60)]; // 1 hour OT
+    state.employees = [{ id: EMP.id, wageTypeCode: null, isActive: true, deletedAt: null }]; // R3 B48: a named employee must exist and be active
     const proposed = await proposeExtraPayDay({ date: new Date('2026-01-05'), kind: 'MULTIPLIER', value: 2, scope: 'EMPLOYEES', employeeIds: [EMP.id], reason: 'Rush order' });
     await approveExtraPayDay(proposed.id);
     const [row] = await calculateMonthlyPayroll(2026, 1);
@@ -122,6 +128,7 @@ describe('25.4/25.5 — extra-pay days (D28), including the OT-overlap case', ()
   it('EMPLOYEES scope excludes anyone not named', async () => {
     const other = { id: 'e-other', name: 'Deva', employeeCode: 'E-020' };
     state.attendance = [rec('1', '2026-01-05', 'PRESENT', 0, 0), rec('2', '2026-01-05', 'PRESENT', 0, 0, other)];
+    state.employees = [{ id: EMP.id, wageTypeCode: null, isActive: true, deletedAt: null }]; // R3 B48: a named employee must exist and be active
     const proposed = await proposeExtraPayDay({ date: new Date('2026-01-05'), kind: 'FLAT_AMOUNT', value: 100, scope: 'EMPLOYEES', employeeIds: [EMP.id], reason: 'x' });
     await approveExtraPayDay(proposed.id);
     const rows = await calculateMonthlyPayroll(2026, 1);

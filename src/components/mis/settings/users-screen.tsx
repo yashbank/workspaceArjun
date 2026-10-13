@@ -51,7 +51,12 @@ export function UsersScreen({
   const handleInvite = () => {
     if (!role) return;
     startTransition(async () => {
-      const result = await inviteMisUserAction(email, role);
+      const outcome = await inviteMisUserAction(email, role);
+      if (!outcome.ok) {
+        setFeedback(outcome.detail);
+        return;
+      }
+      const result = outcome.value;
       if (result.kind === 'invited') {
         setFeedback(
           `Invite sent to ${email}. Once they accept, grant their MIS role from the list below.`,
@@ -64,7 +69,8 @@ export function UsersScreen({
 
   const handleGrant = (userProfileId: string, grantRole: MisRoleName) => {
     startTransition(async () => {
-      await grantMisRoleAction(userProfileId, grantRole);
+      const outcome = await grantMisRoleAction(userProfileId, grantRole);
+      if (!outcome.ok) setFeedback(outcome.detail);
     });
   };
 

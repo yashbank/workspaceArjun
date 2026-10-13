@@ -8,6 +8,7 @@ import { Button } from '@/components/mis/kit/button';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { DesktopPageHeader } from '@/components/mis/desktop/desktop-shell';
 import { useConfirm } from '@/components/ui/confirm-dialog';
+import { DEFAULT_FACTORY_TIMEZONE, formatFactoryDate } from '@/lib/mis/factory-time';
 import { closePayrollPeriodAction, recordPayrollExportAction } from '@/app/(mis)/mis/payroll/actions';
 
 /**
@@ -91,6 +92,8 @@ export function PayrollScreen({ rows: payroll, year, month, period, preflight }:
   const [isPending, startTransition] = useTransition();
   const { confirm, confirmDialog } = useConfirm();
   const [search, setSearch] = useState('');
+  const [closeError, setCloseError] = useState<string | null>(null);
+  const [overrideReason, setOverrideReason] = useState('');
 
   const filtered = useMemo(() => {
     if (!search.trim()) return payroll;
@@ -116,7 +119,17 @@ export function PayrollScreen({ rows: payroll, year, month, period, preflight }:
       destructive: true,
     });
     if (!ok) return;
-    startTransition(async () => { await closePayrollPeriodAction(year, month); });
+    runClose(undefined);
+  }
+
+  /** R3 B46: the server refuses with words (current month, blockers); show them, never the error page. */
+  function runClose(reason: string | undefined) {
+    setCloseError(null);
+    startTransition(async () => {
+      const result = await closePayrollPeriodAction(year, month, reason);
+      if (!result.ok) setCloseError(result.detail);
+      else router.refresh();
+    });
   }
 
   function handleExport() {
@@ -139,7 +152,7 @@ export function PayrollScreen({ rows: payroll, year, month, period, preflight }:
         <dl className="divide-y divide-slate-100 text-sm">
           <div className="flex justify-between py-2"><dt className="text-slate-500">Employees</dt><dd className="font-semibold text-slate-900">{payroll.length}</dd></div>
           <div className="flex justify-between py-2"><dt className="text-slate-500">Working days</dt><dd className="font-semibold text-slate-900">{payroll[0]?.workingDays ?? '—'}</dd></div>
-          <div className="flex justify-between py-2"><dt className="text-slate-500">Attendance rows</dt><dd className="font-semibold text-slate-900">{attendanceRows.toLocaleString('en-IN')}</dd></div>
+          <div className="flex justify-between py-2"><dt className="text-slate-500">Attendance rows</dt><dd className="font-semibold text-slate-900">{String(attendanceRows)}</dd></div>
           <div className="flex justify-between py-2"><dt className="text-slate-500">Corrections after close</dt><dd className="font-semibold text-slate-900">{period.correctionsAfterClose}</dd></div>
         </dl>
       </div>
@@ -188,8 +201,26 @@ export function PayrollScreen({ rows: payroll, year, month, period, preflight }:
         </button>
       ) : (
         <p className="text-center text-sm text-slate-500">
-          Closed {period.closedAt ? new Date(period.closedAt).toLocaleDateString('en-IN') : ''}. Figures are frozen.
+          Closed {period.closedAt ? formatFactoryDate(new Date(period.closedAt), DEFAULT_FACTORY_TIMEZONE) : ''}. Figures are frozen.
         </p>
+      )}
+      {closeError && (
+        <div role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">
+          <p>{closeError}</p>
+          {closeError.startsWith('Fix first') && (
+            <div className="mt-2 flex flex-col gap-2">
+              <input
+                className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900"
+                placeholder="Reason to close anyway (Owner)"
+                value={overrideReason}
+                onChange={(e) => setOverrideReason(e.target.value)}
+              />
+              <Button onClick={() => runClose(overrideReason)} disabled={isPending || overrideReason.trim().length < 3} className="min-h-11">
+                Close anyway
+              </Button>
+            </div>
+          )}
+        </div>
       )}
       {needsPayCodeCount > 0 && (
         <p className="rounded-lg bg-amber-50 px-3 py-2 text-center text-xs text-amber-800">
