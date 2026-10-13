@@ -6,7 +6,7 @@ import { isOrderClosed } from '@/lib/mis/order-status';
 import { isMinuteInShiftWindow } from '@/lib/mis/shift-window';
 import { db } from '@/server/db';
 import { requirePermission } from '@/server/mis/auth';
-import { AllocationNotFoundError, releaseMachineAllocations } from '@/server/mis/allocation-release';
+import { AllocationNotFoundError, flushReleaseAudit, releaseMachineAllocations, type ReleaseAuditEvent } from '@/server/mis/allocation-release';
 import { logAuditEvent } from '@/server/mis/audit';
 import { getFactoryTimezone } from '@/server/mis/business-rules';
 import { isActiveStatus } from '@/server/mis/job-phases';
@@ -363,7 +363,8 @@ export async function machineForOrder(orderId: string, at: Date = new Date()): P
 
 export async function releaseMachine(allocationId: string) {
   const actor = await requirePermission('production.write');
-  return db.$transaction(async (tx) => {
+  let auditEvents: ReleaseAuditEvent[] = [];
+  const outcome = await db.$transaction(async (tx) => {
     const rec = await tx.misMachineAllocation.findUnique({ where: { id: allocationId } });
     if (!rec) throw new AllocationNotFoundError();
     // Releasing twice is not an error and must not move the first timestamp (R3 B85).
@@ -375,8 +376,11 @@ export async function releaseMachine(allocationId: string) {
       actorUserId: actor.userId,
       at,
     });
+    auditEvents = res.auditEvents;
     return { alreadyReleased: false as const, allocation: { ...rec, releasedAt: at }, workers: res.workers };
   });
+  await flushReleaseAudit(auditEvents);
+  return outcome;
 }
 
 export type MachineStatusCounts = {

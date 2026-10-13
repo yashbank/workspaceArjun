@@ -4,7 +4,7 @@ import {
 } from '@/lib/mis/order-transitions';
 import { dateKeyToDbDate, factoryDateKey } from '@/lib/mis/factory-time';
 import { db } from '@/server/db';
-import { releaseMachineAllocations } from '@/server/mis/allocation-release';
+import { flushReleaseAudit, releaseMachineAllocations, type ReleaseAuditEvent } from '@/server/mis/allocation-release';
 import { getFactoryTimezone } from '@/server/mis/business-rules';
 import { requirePermission } from './auth';
 import { logAuditEvent } from './audit';
@@ -229,6 +229,7 @@ export async function updateOrderStatus(id: string, status: string, options: { r
   // the shared client and must never fail a save.)
   const closes = status === 'CANCELLED' || status === 'COMPLETED';
   const at = new Date();
+  let releaseAudit: ReleaseAuditEvent[] = [];
   const released = { releasedMachines: 0, releasedWorkers: 0, releasedReservations: 0 };
   await db.$transaction(async (tx) => {
     const { count } = await tx.misOrder.updateMany({ where: { id, status: before.status }, data: { status } });
@@ -238,21 +239,28 @@ export async function updateOrderStatus(id: string, status: string, options: { r
     if (!closes) return;
     const bookings = await tx.misMachineAllocation.findMany({ where: { orderId: id, releasedAt: null }, select: { id: true } });
     const freed = await releaseMachineAllocations(tx, bookings.map((b) => b.id), { reason: 'ORDER_CLOSED', actorUserId: actor.userId, at });
+    releaseAudit = freed.auditEvents;
     released.releasedMachines = freed.machines;
     released.releasedWorkers = freed.workers;
-    // The reservation has no released marker, so releasing it means removing the earmark row;
-    // the count goes on the audit row below.
-    released.releasedReservations = (await tx.misOrderStockAllocation.deleteMany({ where: { orderId: id } })).count;
     if (status === 'CANCELLED') {
-      if (openBomId) await tx.misBom.update({ where: { id: openBomId }, data: { status: 'DRAFT', approvedById: null, approvedAt: null } });
+      // No released marker exists, so releasing a reservation removes the earmark row. Only on
+      // CANCELLED: COMPLETED -> IN_PRODUCTION is reversible, so there the rows are just counted.
+      released.releasedReservations = (await tx.misOrderStockAllocation.deleteMany({ where: { orderId: id } })).count;
+      if (openBomId) {
+        await tx.misBom.updateMany({ where: { id: openBomId, status: 'PENDING_APPROVAL' }, data: { status: 'DRAFT', approvedById: null, approvedAt: null } });
+      }
       if (openRequests.length > 0) {
         await tx.misMaterialRequest.updateMany({
-          where: { id: { in: openRequests.map((r) => r.id) } },
+          where: { id: { in: openRequests.map((r) => r.id) }, status: { in: ['PENDING', 'APPROVED'] } },
           data: { status: 'REJECTED', decidedById: actor.userId, decidedAt: at, decisionNote: `Order ${before.orderNumber} cancelled` },
         });
       }
+    } else {
+      released.releasedReservations = await tx.misOrderStockAllocation.count({ where: { orderId: id } });
     }
   });
+  // Audit rows use the global client, so they are written only after the transaction committed.
+  await flushReleaseAudit(releaseAudit);
   if (status === 'CANCELLED') {
     if (openBomId) await logAuditEvent({ actorId: actor.userId, action: 'order.cancel_bom_reset', entity: 'MisBom', entityId: openBomId, before: { status: 'PENDING_APPROVAL' }, after: { status: 'DRAFT', reason: `Order ${before.orderNumber} cancelled` } });
     for (const r of openRequests) {

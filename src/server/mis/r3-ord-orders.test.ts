@@ -5,7 +5,12 @@ const getCurrentUser = vi.fn();
 vi.mock('@/server/auth', () => ({ getCurrentUser: (...a: unknown[]) => getCurrentUser(...a) }));
 const getMisRole = vi.fn();
 vi.mock('@/server/mis/roles', () => ({ getMisRole: (...a: unknown[]) => getMisRole(...a) }));
-vi.mock('@/server/mis/audit', () => ({ logAuditEvent: vi.fn() }));
+// Guard (like PR #83): a global-client call, including logAuditEvent, while the tx is open fails.
+let txOpen = false;
+const audit = vi.fn((entry: Record<string, unknown>) => {
+  if (txOpen) throw new Error(`logAuditEvent (${String(entry.action)}) called while a transaction is open`);
+});
+vi.mock('@/server/mis/audit', () => ({ logAuditEvent: (e: Record<string, unknown>) => audit(e) }));
 vi.mock('@/server/mis/business-rules', () => ({ getFactoryTimezone: async () => 'Asia/Kolkata' }));
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -41,11 +46,15 @@ const tx: Row = {
     updateMany: async () => { s.workers.forEach((w) => { w.releasedAt = 'x'; }); return { count: s.workers.length }; },
   },
   misOrderStockAllocation: {
+    count: async () => s.reservations,
     deleteMany: async () => { if (s.failReservationDelete) throw new Error('boom'); const count = s.reservations; s.reservations = 0; return { count }; },
   },
   misBom: {
     findUnique: async () => s.bom,
-    update: async ({ data }: Row) => { Object.assign(s.bom!, data); return s.bom; },
+    updateMany: async ({ where, data }: Row) => {
+      if (s.bom && s.bom.status === where.status) { Object.assign(s.bom, data); return { count: 1 }; }
+      return { count: 0 };
+    },
   },
   misMaterialRequest: {
     findMany: async () => s.requests,
@@ -53,10 +62,19 @@ const tx: Row = {
   },
   $transaction: async (fn: (t: unknown) => unknown) => {
     const before = snapshot();
-    try { return await fn(tx); } catch (e) { Object.assign(s, before); throw e; }
+    txOpen = true;
+    try { return await fn(tx); } catch (e) { Object.assign(s, before); throw e; } finally { txOpen = false; }
   },
 };
-vi.mock('@/server/db', () => ({ get db() { return tx; } }));
+// The global client: every model call fails while a transaction is open.
+const globalDb: Row = Object.fromEntries(Object.entries(tx).map(([k, v]) => [
+  k,
+  typeof v === 'function' ? v : Object.fromEntries(Object.entries(v as Row).map(([m, f]) => [m, (...a: unknown[]) => {
+    if (txOpen) throw new Error(`global db call (${k}.${m}) while a transaction is open`);
+    return (f as (...x: unknown[]) => unknown)(...a);
+  }])),
+]));
+vi.mock('@/server/db', () => ({ get db() { return globalDb; } }));
 
 const { updateOrderStatus, updateOrder, listOrdersNeedingAction } = await import('./orders');
 
@@ -100,10 +118,25 @@ describe('B104 — close/cancel side effects', () => {
     expect(s.status).toBe('CANCELLED');
   });
 
-  it('completing releases the bookings too', async () => {
+  it('completing releases the bookings but keeps the reservations (COMPLETED can be reopened)', async () => {
     await updateOrderStatus('o1', 'COMPLETED');
     expect(s.status).toBe('COMPLETED');
     expect(s.bookings[0].releasedAt).toBeTruthy();
+    expect(s.reservations).toBe(1);
+    expect(audit.mock.calls.find(([e]) => e.action === 'order.status_change')![0].after).toMatchObject({ releasedReservations: 1, releasedMachines: 1, releasedWorkers: 2 });
+  });
+
+  it('release audit rows are written after commit, never inside the transaction', async () => {
+    await updateOrderStatus('o1', 'CANCELLED', { reason: 'customer withdrew' });
+    const actions = audit.mock.calls.map(([e]) => e.action);
+    expect(actions.filter((a) => a === 'RELEASE_MACHINE')).toHaveLength(1);
+    expect(actions.filter((a) => a === 'RELEASE_WORKER')).toHaveLength(2);
+  });
+
+  it('a stale BOM (no longer pending) is not reset', async () => {
+    s.bom = { id: 'bom1', status: 'APPROVED' };
+    await updateOrderStatus('o1', 'CANCELLED', { reason: 'customer withdrew', confirmOpenItems: true });
+    expect(s.bom.status).toBe('APPROVED');
   });
 
   it('a plain forward move touches no bookings', async () => {
