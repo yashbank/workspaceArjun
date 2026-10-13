@@ -349,3 +349,19 @@ Deferred (needs owner SQL / product input): see "Deferred" in the README.
    silent) so you know your starting point is clean.
 4. On finishing a track: update its status line here with the PR number and date, in the same
    commit/PR if possible, so the tracker and the code never drift apart.
+
+## Tester round 3 (R3) — audits + deferred scope (2026-10-13)
+Specs: docs/specs/R3-README.md, R3-backlog.md, audits in docs/specs/audit/. Gate after wave 1: tsc clean, 5614 tests, eslint 6 known, build OK.
+| Cluster | Status |
+|---|---|
+| S0 SQL (3 files, pending, NOT applied) | MERGED #82 |
+| SEC | MERGED #83 |
+| WRK | MERGED #84 |
+| STK | MERGED #85 |
+| MST | MERGED #86 |
+| ATT | MERGED #87 |
+| AND (APK rebuild + 1-tablet pilot pending) | MERGED #88 |
+| QCR | MERGED #89 |
+| ORD, PRD (wave 2) | IN_PROGRESS |
+| SG, S1, S2 (schema; after owner SQL) | TODO |
+Next: wave-2 gate -> Deploy 1 (no schema) -> owner SQL -> SG -> wave 3 -> Deploy 2.
