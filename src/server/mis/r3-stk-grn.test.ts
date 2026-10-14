@@ -279,6 +279,15 @@ describe('B03 receipt cap, 2% tolerance, ADMIN override', () => {
     }
     expect(state.lockCalls.every((keys) => keys.length === 1)).toBe(true); // the fake lock sorts and takes them in order
   });
+
+  it('#15 rejects 0 or negative receivedQty', async () => {
+    await expect(addGRNItem('g1', { poItemId: 'pi1', receivedQty: 0 })).rejects.toThrow(
+      'A line needs a received or damaged quantity above zero.',
+    );
+    await expect(addGRNItem('g1', { poItemId: 'pi1', receivedQty: -50 })).rejects.toThrow(
+      'Quantities cannot be negative.',
+    );
+  });
 });
 
 describe('B04 the confirm books what is on the GRN after the claim', () => {
