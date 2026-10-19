@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { Button } from '@/components/mis/kit/button';
+import { Pagination, HiddenParams } from '@/components/mis/kit/pagination';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import { NumberInput, Input, Select } from '@/components/mis/kit/input';
 import { adjustInventoryAction, createItemAction, getItemFormOptionsAction, type ItemFormOptions } from '@/app/(mis)/mis/inventory/actions';
@@ -11,7 +12,9 @@ import { ItemOptionFields } from '@/components/mis/items/item-option-fields';
 import { MisItemCategory, MisItemUnit } from '@/generated/prisma/enums';
 
 type InventoryRow = { itemId: string; code: string; name: string; unit: string | null; balance: number; lastUpdated: Date | null };
-type Props = { summary: InventoryRow[]; canWrite?: boolean; /** Owner only (D5): the price field exists for no one else. */ canPrice?: boolean };
+type Props = { summary: InventoryRow[];
+  /** R2-83: the server-side page — total matching items, the page number, the URL params, and the whole-list out-of-stock count. */
+  paging?: { total: number; page: number; params: Record<string, string | undefined>; outOfStock: number }; canWrite?: boolean; /** Owner only (D5): the price field exists for no one else. */ canPrice?: boolean };
 
 const CATEGORIES = Object.values(MisItemCategory);
 
@@ -29,8 +32,8 @@ function downloadInventoryCsv(rows: InventoryRow[]) {
   URL.revokeObjectURL(url);
 }
 
-export function InventoryScreen({ summary, canWrite = false, canPrice = false }: Props) {
-  const [search, setSearch] = useState('');
+export function InventoryScreen({ summary, canWrite = false, canPrice = false, paging }: Props) {
+  const search = paging?.params.q ?? '';
   const [adjustItem, setAdjustItem] = useState<InventoryRow | null>(null);
   const [changeQty, setChangeQty] = useState('');
   const [adjNotes, setAdjNotes] = useState('');
@@ -47,6 +50,8 @@ export function InventoryScreen({ summary, canWrite = false, canPrice = false }:
   const [addUnit, setAddUnit] = useState<string>(MisItemUnit.PIECE);
   const [addGsm, setAddGsm] = useState('');
   const [addSize, setAddSize] = useState('');
+  const [addSubstrate, setAddSubstrate] = useState('');
+  const [addCoating, setAddCoating] = useState('');
   const [options, setOptions] = useState<ItemFormOptions | null>(null);
   const [addPrice, setAddPrice] = useState('');
   const [addError, setAddError] = useState('');
@@ -67,12 +72,10 @@ export function InventoryScreen({ summary, canWrite = false, canPrice = false }:
     return () => { live = false; };
   }, [showAddItem, options]);
 
-  const filtered = search.trim()
-    ? summary.filter(r => r.name.toLowerCase().includes(search.toLowerCase()) || r.code.toLowerCase().includes(search.toLowerCase()))
-    : summary;
+  const filtered = summary;
 
-  const lowStock = summary.filter(r => r.balance <= 0).length;
-  const totalItems = summary.length;
+  const lowStock = paging ? paging.outOfStock : summary.filter(r => r.balance <= 0).length;
+  const totalItems = paging ? paging.total : summary.length;
 
   const handleAdjust = () => {
     if (!adjustItem || !changeQty) return;
@@ -92,10 +95,10 @@ export function InventoryScreen({ summary, canWrite = false, canPrice = false }:
     if (!addName.trim()) { setAddError('Name is required'); return; }
     setAddError('');
     startTransition(async () => {
-      const res = await createItemAction({ name: addName, code: addCode || undefined, sku: addSku || undefined, category: addCategory, unit: addUnit as MisItemUnit, gsm: addGsm || undefined, size: addSize || undefined, pricePerUnit: canPrice ? addPrice || undefined : undefined });
+      const res = await createItemAction({ name: addName, code: addCode || undefined, sku: addSku || undefined, category: addCategory, unit: addUnit, gsm: addGsm || undefined, size: addSize || undefined, substrate: addSubstrate || undefined, coating: addCoating || undefined, pricePerUnit: canPrice ? addPrice || undefined : undefined });
       if (!res.ok) { setAddError(res.detail); return; }
       setSuccess(`Item ${res.value.code} created`);
-      setShowAddItem(false); setAddName(''); setAddCode(''); setAddSku(''); setAddPrice(''); setAddGsm(''); setAddSize(''); setAddCategory(MisItemCategory.OTHER); setAddUnit(MisItemUnit.PIECE);
+      setShowAddItem(false); setAddName(''); setAddCode(''); setAddSku(''); setAddPrice(''); setAddGsm(''); setAddSize(''); setAddSubstrate(''); setAddCoating(''); setAddCategory(MisItemCategory.OTHER); setAddUnit(MisItemUnit.PIECE);
     });
   };
 
@@ -154,13 +157,17 @@ export function InventoryScreen({ summary, canWrite = false, canPrice = false }:
           row that wraps evenly instead of one lonely button next to the search
           box and a stray full-width one below it. */}
       <div className="flex flex-col gap-2">
-        <input
+        <form method="get" className="flex items-center gap-2">
+          {paging && <HiddenParams params={paging.params} />}
+          <input
           type="search"
           placeholder="Search items..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
+            name="q"
+            defaultValue={search}
           className="w-full min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500 sm:max-w-sm"
-        />
+          />
+          <Button type="submit" variant="secondary">Search</Button>
+        </form>
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => downloadInventoryCsv(filtered)}
@@ -190,6 +197,7 @@ export function InventoryScreen({ summary, canWrite = false, canPrice = false }:
       </div>
 
       <DataTable columns={columns} rows={filtered} rowKey={(r) => r.itemId} emptyTitle="Inventory empty" emptyBody="Confirm GRNs to add items to inventory." />
+      {paging && <Pagination basePath="/mis/inventory" params={paging.params} page={paging.page} total={paging.total} />}
 
       {/* Adjust Stock */}
       <SlideOver open={!!adjustItem} onClose={() => setAdjustItem(null)} title={`Adjust Stock — ${adjustItem?.name ?? ''}`}>
@@ -221,7 +229,7 @@ export function InventoryScreen({ summary, canWrite = false, canPrice = false }:
               {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
             </Select>
           </div>
-          <ItemOptionFields options={options} gsm={addGsm} size={addSize} unit={addUnit} onGsm={setAddGsm} onSize={setAddSize} onUnit={setAddUnit} />
+          <ItemOptionFields options={options} gsm={addGsm} size={addSize} substrate={addSubstrate} coating={addCoating} unit={addUnit} onGsm={setAddGsm} onSize={setAddSize} onSubstrate={setAddSubstrate} onCoating={setAddCoating} onUnit={setAddUnit} />
           {canPrice && <NumberInput label="Price Per Unit (₹)" value={addPrice} onChange={e => setAddPrice(e.target.value)} placeholder="e.g. 250.00" />}
           {addError && <p className="text-sm text-red-600">{addError}</p>}
           <div className="flex gap-2 pt-2">

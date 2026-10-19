@@ -1,6 +1,7 @@
 import Link from 'next/link';
 
 import { StatusBadge, type BadgeTone } from '@/components/mis/kit/status-badge';
+import { NOT_LINKED_TO_ORDER } from '@/lib/mis/general-use';
 
 export type RequestListRow = {
   id: string;
@@ -9,6 +10,10 @@ export type RequestListRow = {
   createdAt: Date;
   order: { id: string; orderNumber: string } | null;
   department: { id: string; name: string } | null;
+  isGeneral?: boolean;
+  generalReason?: string | null;
+  costCenter?: string | null;
+  pickList?: { id: string; status: string } | null;
   lines: { id: string; requestedQty: number; actualIssuedQty: number | null; item: { name: string } }[];
 };
 
@@ -20,7 +25,7 @@ export function RequestListScreen({ requests, canDecide }: { requests: RequestLi
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Material requests</h1>
-          <p className="mt-0.5 text-sm text-slate-500">{canDecide ? 'Approve or reject; stock moves on approval.' : 'Every material request and its status.'}</p>
+          <p className="mt-0.5 text-sm text-slate-500">{canDecide ? 'Approve for picking (stock moves when the pick list is handed over), approve & issue now, or reject.' : 'Every material request and its status.'}</p>
         </div>
         <Link href="/mis/store/requests/new" className="inline-flex min-h-11 items-center rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white">
           + New request
@@ -37,6 +42,7 @@ export function RequestListScreen({ requests, canDecide }: { requests: RequestLi
             {r.lines.length} {r.lines.length === 1 ? 'line' : 'lines'}
             {r.order && <> · Order <span className="font-mono">{r.order.orderNumber}</span></>}
             {r.department && <> · {r.department.name}</>}
+            {r.isGeneral && <> · <span className="font-semibold text-amber-700">General / factory use{r.costCenter ? ` · ${r.costCenter}` : ''}</span> <span className="text-slate-500">({NOT_LINKED_TO_ORDER})</span></>}
             {' · '}{new Date(r.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
           </div>
           <div className="truncate text-xs text-slate-500">{r.lines.map((l) => `${l.item.name} × ${l.requestedQty}`).join(', ')}</div>

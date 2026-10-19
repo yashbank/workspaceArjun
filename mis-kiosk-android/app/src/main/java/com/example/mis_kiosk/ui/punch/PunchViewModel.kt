@@ -267,7 +267,11 @@ class PunchViewModel @JvmOverloads constructor(
     }
 
     fun onOperatorInputChange(value: String) {
-        _operatorInput.value = value.take(40)
+        // A pasted code (clipboard, or an IME auto-newline on some keyboards) can carry a
+        // trailing/embedded newline or other whitespace that an exact-match badgeCode lookup
+        // will never match — strip it here rather than at lookup time, so the field itself
+        // never silently holds an un-matchable value the operator can't see is wrong.
+        _operatorInput.value = value.filterNot { it.isWhitespace() }.take(40)
         _operatorError.value = null
         operatorLookupJob?.cancel()
         val code = _operatorInput.value
@@ -447,7 +451,8 @@ class PunchViewModel @JvmOverloads constructor(
      * keyboard produces rather than restricting to a digits-only custom keypad.
      */
     fun onManualInputChange(value: String) {
-        _badgeInput.value = value.take(40)
+        // See onOperatorInputChange — same paste/newline sanitation, same reason.
+        _badgeInput.value = value.filterNot { it.isWhitespace() }.take(40)
         lookupManualMatch()
     }
 

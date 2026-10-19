@@ -41,7 +41,7 @@ const db: Row = {
     count: async () => 0,
   },
   misOrder: { findUnique: async () => ({ orderNumber: 'ORD-1', status: 'IN_PRODUCTION' }) },
-  misDepartment: { findUnique: async () => null },
+  misDepartment: { findUnique: async () => ({ name: 'Press' }) },
   misInventoryLedger: {
     findFirst: async ({ where }: Row) => {
       const rows = state.ledger.filter((l) => (where.itemId === undefined || l.itemId === where.itemId) && (where.source === undefined || l.source === where.source) && (where.sourceId?.in ? where.sourceId.in.includes(l.sourceId) : where.sourceId === undefined || l.sourceId === where.sourceId));
@@ -86,6 +86,9 @@ vi.mock('@/server/mis/roles', () => ({ getMisRole: (...a: unknown[]) => getMisRo
 
 const store = await import('./store');
 const { adjustInventory } = await import('./inventory');
+
+/** R2-80: a no-order issue / request is General / factory use and carries a reason and a cost centre. */
+const G = { reason: 'grease for plates', costCenter: 'Press' };
 const { approveMaterialRequest } = await import('./material-request');
 const as = (role: MisRoleName) => getMisRole.mockResolvedValue(role);
 
@@ -135,9 +138,9 @@ describe('B07 adjustInventory', () => {
 describe('B08 commitIssue is checked against the smaller book', () => {
   it('ledger 10, txn 4: issuing 5 is refused with the stock-balance sentence; issuing 4 works and leaves the txn book at 0', async () => {
     seed(10, 4);
-    await expect(store.commitIssue([{ itemId: 'i1', qty: 5 }], {})).rejects.toThrow('Cannot issue more than the stock balance (4 available)');
+    await expect(store.commitIssue([{ itemId: 'i1', qty: 5 }], { departmentId: 'd1', general: G })).rejects.toThrow('Cannot issue more than the stock balance (4 available)');
     expect(state.ledger).toHaveLength(1);
-    await store.commitIssue([{ itemId: 'i1', qty: 4 }], {});
+    await store.commitIssue([{ itemId: 'i1', qty: 4 }], { departmentId: 'd1', general: G });
     expect(txnBal()).toBe(0);
     expect(ledgerBal()).toBe(6);
     expect(state.txns.at(-1)!.isOverIssue).toBe(false);
@@ -240,7 +243,7 @@ describe('B16 / B17 money formatted on the server, one low-stock rule', () => {
 describe('B20 a failed issue claims nothing', () => {
   it('short stock: the request stays PENDING and no approve audit row is written', async () => {
     seed(1);
-    state.requests = [{ id: 'r1', requestNumber: 'MRN-1', status: 'PENDING', orderId: null, departmentId: null, lines: [{ id: 'l1', itemId: 'i1', requestedQty: D(5) }] }];
+    state.requests = [{ id: 'r1', requestNumber: 'MRN-1', status: 'PENDING', orderId: null, departmentId: 'd1', lines: [{ id: 'l1', itemId: 'i1', requestedQty: D(5) }] }];
     await expect(approveMaterialRequest('r1', [{ lineId: 'l1', actualIssuedQty: 5 }])).rejects.toThrow(/Cannot issue more than the stock balance/);
     expect(state.requests[0].status).toBe('PENDING');
     expect(state.audits.some((a) => a.action === 'material_request.approve')).toBe(false);
@@ -249,8 +252,7 @@ describe('B20 a failed issue claims nothing', () => {
 
   it('with stock, the claim and the issue land together', async () => {
     seed(10);
-    state.requests = [{ id: 'r1', requestNumber: 'MRN-1', status: 'PENDING', orderId: null, departmentId: null, lines: [{ id: 'l1', itemId: 'i1', requestedQty: D(5) }] }];
-    // No order and no department: raw material may be issued as a general issue.
+    state.requests = [{ id: 'r1', requestNumber: 'MRN-1', status: 'PENDING', orderId: null, departmentId: 'd1', lines: [{ id: 'l1', itemId: 'i1', requestedQty: D(5) }] }];
     await approveMaterialRequest('r1', [{ lineId: 'l1', actualIssuedQty: 5 }]);
     expect(state.requests[0].status).toBe('APPROVED');
     expect(ledgerBal()).toBe(5);

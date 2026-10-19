@@ -59,7 +59,8 @@ vi.mock('@/server/mis/machine', () => ({ listMachines: async () => [machine] }))
 vi.mock('@/server/mis/department', () => ({ listDepts: async () => [] }));
 vi.mock('@/server/mis/qc-grid', () => ({ getQcHourlyGrid: async () => null }));
 vi.mock('@/server/mis/defect-type', () => ({ listDefectTypes: async () => [] }));
-vi.mock('@/server/mis/grn', () => ({ listGRNs: async () => [{ id: 'g1', grnNumber: 'GRN-1', supplierInvoiceAmount: d(1200), po: { id: 'p', poNumber: 'PO-1', supplier: { name: 'S' } } }] }));
+const grnRows = [{ id: 'g1', grnNumber: 'GRN-1', supplierInvoiceAmount: d(1200), po: { id: 'p', poNumber: 'PO-1', supplier: { name: 'S' } } }];
+vi.mock('@/server/mis/grn', () => ({ listGRNs: async () => grnRows, listGRNsPage: async () => ({ rows: grnRows, total: 1 }) }));
 vi.mock('@/server/mis/po', () => ({ listPOs: async () => [] }));
 
 vi.mock('@/components/mis/orders/order-detail-screen', () => ({ OrderDetailScreen: () => null }));

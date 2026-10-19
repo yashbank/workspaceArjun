@@ -11,6 +11,9 @@ import { formatFactoryTime } from '@/lib/mis/factory-time';
 import { createTranslator } from '@/lib/mis/i18n';
 import { getOfflineQueue, type QueuedItem } from '@/lib/mis/offline/queue';
 
+import { resolveScan } from '@/lib/mis/badge-scan';
+
+import { BadgeScanner } from './badge-scanner';
 import { fixUnknownBadge } from './punch-fix';
 import { summarisePunchQueue } from './punch-queue';
 import {
@@ -64,6 +67,7 @@ export function KioskScreen({ employees, shifts, date, userId, timeZone, loadedA
   const [selectedShift, setSelectedShift] = useState(shifts[0]?.id ?? '');
   const [message, setMessage] = useState<{ tone: 'ok' | 'held' | 'error'; text: string; photoUrl?: string | null } | null>(null);
   const [local, setLocal] = useState<Record<string, { direction: Direction; at: string }>>({});
+  const [scanFeedback, setScanFeedback] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
   const [fixing, setFixing] = useState<QueuedItem | null>(null);
   const [fixSearch, setFixSearch] = useState('');
   const [isPending, startTransition] = useTransition();
@@ -103,6 +107,20 @@ export function KioskScreen({ employees, shifts, date, userId, timeZone, loadedA
     const q = fixSearch.toLowerCase();
     return liveEmployees.filter((e) => e.name.toLowerCase().includes(q) || e.employeeCode.toLowerCase().includes(q)).slice(0, 8);
   }, [liveEmployees, fixSearch]);
+
+  // R2-105: a scan (camera, wedge scanner or typed) selects the person, exactly like tapping the row.
+  const handleScan = (raw: string) => {
+    const result = resolveScan(raw, liveEmployees);
+    if (result.kind === 'FOUND') {
+      setSelected(result.employee);
+      setMessage(null);
+      setScanFeedback({ tone: 'ok', text: `${result.employee.name} · ${result.employee.employeeCode}` });
+    } else if (result.kind === 'UNKNOWN') {
+      setScanFeedback({ tone: 'error', text: `Badge ${result.code} is not on the roll` });
+    } else {
+      setScanFeedback({ tone: 'error', text: 'That does not look like a badge code' });
+    }
+  };
 
   const timeOf = (iso: string) => formatFactoryTime(new Date(iso), timeZone);
   const dirWord = (d: Direction) => (d === 'IN' ? t('kiosk.in') : t('kiosk.out'));
@@ -284,6 +302,9 @@ export function KioskScreen({ employees, shifts, date, userId, timeZone, loadedA
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
         {/* Employees */}
         <div className="flex h-[520px] flex-col rounded-xl border border-gray-200 bg-white">
+          <div className="border-b border-gray-100 p-4">
+            <BadgeScanner onScan={handleScan} feedback={scanFeedback} />
+          </div>
           <div className="border-b border-gray-100 p-4">
             <input
               className="min-h-12 w-full rounded-lg border border-gray-200 px-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500"

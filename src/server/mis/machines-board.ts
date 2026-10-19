@@ -32,7 +32,7 @@ async function boardSync(machineIds: string[], now: Date): Promise<Map<string, B
     const dayStart = instantAtAxisMinute(key, 0, tz);
     const dayEnd = instantAtAxisMinute(addDaysToDateKey(key, 1), 0, tz);
     const logs = await db.misProductionLog.findMany({
-      where: { machineId: { in: machineIds }, loggedAt: { gte: dayStart, lt: dayEnd } },
+      where: { machineId: { in: machineIds }, loggedAt: { gte: dayStart, lt: dayEnd }, voidedAt: null },
       select: { machineId: true, orderId: true, loggedAt: true, order: { select: { orderNumber: true } } },
       orderBy: { loggedAt: 'asc' },
     });

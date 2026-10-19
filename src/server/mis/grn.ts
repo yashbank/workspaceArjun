@@ -16,6 +16,8 @@ import {
 import type { MisRoleName } from '@/lib/mis/roles';
 import { can } from '@/lib/mis/permissions';
 import { withoutMoneyFields } from '@/lib/mis/money-fields';
+import type { Prisma } from '@/generated/prisma/client';
+import { pageQuery, parseSearch, type Paged } from '@/lib/mis/pagination';
 import { db } from '@/server/db';
 import { MisForbiddenError, requirePermission } from './auth';
 import { logAuditEvent } from './audit';
@@ -109,6 +111,12 @@ function lineQuantities(received: number, dc: number | null | undefined, damage:
   if (out.received < 0 || out.damage < 0 || (out.dc ?? 0) < 0) throw new Error('Quantities cannot be negative.');
   if (out.received + out.damage <= 0) throw new Error('A line needs a received or damaged quantity above zero.');
   return out;
+}
+
+/** R2-74 — the challan quantity is mandatory on every GRN line (the short/damage match is meaningless without it). */
+export const GRN_DC_QTY_REQUIRED = 'Enter the DC (challan) quantity for this line — it is required.';
+function requireDcQuantity(dc: number | null): void {
+  if (dc === null) throw new Error(GRN_DC_QTY_REQUIRED);
 }
 
 /** A PO line as the cap rule needs it. `description`/`item` only make the refusal readable. */
@@ -220,8 +228,35 @@ export function isGrnNumberClash(error: unknown): boolean {
   return String(Array.isArray(target) ? target.join(',') : target).includes('grn_number');
 }
 
+/** R2-83: one page of GRNs (25); `q` matches the GRN number, PO number or supplier. Money is stripped per role as in `listGRNs`. */
+export async function listGRNsPage(opts: { q?: string; page?: number | string } = {}): Promise<Paged<Awaited<ReturnType<typeof listGRNs>>[number]>> {
+  const actor = await requirePermission('grn.view');
+  const q = parseSearch(opts.q);
+  const where: Prisma.MisGrnWhereInput = q
+    ? {
+        OR: [
+          { grnNumber: { contains: q, mode: 'insensitive' } },
+          { po: { poNumber: { contains: q, mode: 'insensitive' } } },
+          { po: { supplier: { name: { contains: q, mode: 'insensitive' } } } },
+        ],
+      }
+    : {};
+  const { skip, take } = pageQuery(opts.page);
+  const [rows, total] = await Promise.all([
+    db.misGrn.findMany({
+      where,
+      include: { po: { select: { id: true, poNumber: true, supplier: { select: { name: true } } } } },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take,
+    }),
+    db.misGrn.count({ where }),
+  ]);
+  return { rows: forReader(actor.role, rows), total };
+}
+
 export async function listGRNs() {
-  const actor = await requirePermission('grn.read');
+  const actor = await requirePermission('grn.view');
   const rows = await db.misGrn.findMany({
     include: {
       po: { select: { id: true, poNumber: true, supplier: { select: { name: true } } } },
@@ -233,7 +268,7 @@ export async function listGRNs() {
 
 /** A GRN with its PO. The PO's line rates are money (D24, F-06): absent unless the caller holds `wages.read`. */
 export async function getGRN(id: string) {
-  const actor = await requirePermission('grn.read');
+  const actor = await requirePermission('grn.view');
   const grn = await db.misGrn.findUnique({
     where: { id },
     include: {
@@ -248,7 +283,14 @@ export async function getGRN(id: string) {
       },
     },
   });
-  return grn ? forReader(actor.role, grn) : grn;
+  if (!grn) return grn;
+  // R2-37: a view-only reader (QC: grn.view without grn.read) sees the supplier's name only, never
+  // their contact, GST or payment terms.
+  const supplier = grn.po?.supplier;
+  const scoped = can(actor.role, 'grn.read') || !grn.po
+    ? grn
+    : { ...grn, po: { ...grn.po, supplier: (supplier ? { id: supplier.id, code: supplier.code, name: supplier.name } : null) as typeof supplier } };
+  return forReader(actor.role, scoped);
 }
 
 export async function createGRN(input: GrnInput) {
@@ -304,7 +346,9 @@ export async function addGRNItem(grnId: string, input: GrnItemInput) {
   const actor = await requirePermission('grn.write');
   const q = lineQuantities(input.receivedQty, input.dcQuantity, input.damageQuantity);
   const grn = await loadDraftGrn(grnId);
+  await assertOrderRef(input.type, input.forOrderRef);
   const poLine = poLineOf(grn, input.poItemId);
+  requireDcQuantity(q.dc);
   const alongside = roundQty(grn.items.filter((i) => i.poItemId === input.poItemId).reduce((sum, i) => sum + num(i.receivedQty), 0));
   enforceReceiptCap(actor.role, poLine, q.received, alongside, input.overReceiptReason);
   const created = await db.$transaction(async (tx) => {
@@ -336,6 +380,10 @@ export async function updateGRNItem(id: string, patch: Partial<GrnItemInput>) {
   const before = await db.misGrnItem.findUnique({ where: { id } });
   if (!before) throw new Error(`GRN Item ${id} not found`);
   const grn = await loadDraftGrn(before.grnId);
+  // R2-71: an edit must not turn a line into "for an order" naming no / an unknown order.
+  if (patch.type !== undefined || patch.forOrderRef !== undefined) {
+    await assertOrderRef(patch.type ?? before.type, patch.forOrderRef !== undefined ? patch.forOrderRef : before.forOrderRef);
+  }
   const poItemId = patch.poItemId ?? before.poItemId;
   const poLine = poLineOf(grn, poItemId);
   const q = lineQuantities(
@@ -343,6 +391,7 @@ export async function updateGRNItem(id: string, patch: Partial<GrnItemInput>) {
     patch.dcQuantity !== undefined ? patch.dcQuantity : before.dcQuantity?.toNumber() ?? null,
     patch.damageQuantity !== undefined ? patch.damageQuantity : before.damageQuantity.toNumber(),
   );
+  requireDcQuantity(q.dc);
   const alongside = roundQty(grn.items.filter((i) => i.poItemId === poItemId && i.id !== id).reduce((sum, i) => sum + num(i.receivedQty), 0));
   enforceReceiptCap(actor.role, poLine, q.received, alongside, patch.overReceiptReason);
   const after = await db.$transaction(async (tx) => {
@@ -407,6 +456,21 @@ type ConfirmLine = {
   poItem: { itemId: string | null; description?: string | null };
 };
 
+/** R2-73: a GRN is a physical delivery — it needs a DC number or a supplier invoice number before it books stock. */
+export const GRN_PAPERWORK_REQUIRED = 'Enter a DC number or a supplier invoice number before confirming this GRN.';
+function assertPaperwork(h: { dcNumber?: string | null; supplierInvoiceNo?: string | null }) {
+  if (!h.dcNumber?.trim() && !h.supplierInvoiceNo?.trim()) throw new GrnStateError(GRN_PAPERWORK_REQUIRED);
+}
+
+/** R2-71: a "for an order" line must name a real order — a typo would silently skip the stock earmark. */
+async function assertOrderRef(type: string | undefined, ref: string | null | undefined) {
+  if (type !== 'FOR_ORDER') return;
+  const orderNumber = orderNumberFromRef(ref);
+  if (!orderNumber) throw new Error('Pick the order this line is for.');
+  const order = await db.misOrder.findFirst({ where: { orderNumber }, select: { id: true } });
+  if (!order) throw new Error(`Order ${orderNumber} was not found — pick it from the list.`);
+}
+
 /** A confirmable GRN has a line with something on it, and every received line lands in the catalog (D4). */
 function assertConfirmable(items: readonly ConfirmLine[]) {
   // A delivery with nothing on it is not a delivery: at least one line must carry a quantity.
@@ -445,6 +509,7 @@ export async function confirmGRN(grnId: string, opts: { overReceiptReason?: stri
   if (!grn) throw new Error(`GRN ${grnId} not found`);
   if (grn.status === 'CONFIRMED') throw new GrnStateError('GRN already confirmed');
   assertConfirmable(grn.items);
+  assertPaperwork(grn);
   const zone = await storeFactoryZone(); // read before the transaction: the runtime pool is one connection wide
 
   const lockedItems = new Set(grn.items.flatMap((i) => (i.poItem.itemId ? [i.poItem.itemId] : [])));
@@ -489,6 +554,7 @@ export async function confirmGRN(grnId: string, opts: { overReceiptReason?: stri
       throw new GrnStateError('This GRN changed while it was being confirmed. Reload it and confirm again.');
     }
     assertConfirmable(fresh.items);
+    assertPaperwork(fresh);
     // B02 — the PO may have been cancelled since this GRN was drafted. Read after the PO-line locks.
     assertPoReceivable(fresh.po);
 
@@ -584,10 +650,11 @@ export async function confirmGRN(grnId: string, opts: { overReceiptReason?: stri
 
     // B01 — move the PO on, so a fully received order shows Complete and leaves the GRN picker. The figures are the
     // ones read under the lock plus what this GRN just added.
-    if (received.size > 0 && [...received.values()].some((q) => q > 0)) {
+    if (received.size > 0) {
+      // R2-75 — a delivery that arrived 100% damaged books nothing, but the PO must show a delivery happened.
       const status = poStatusAfterReceipt(
         fresh.po.items.map((l) => ({ quantity: num(l.quantity), receivedQuantity: roundQty(num(l.receivedQuantity) + (received.get(l.id) ?? 0)) })),
-      );
+      ) ?? (fresh.po.status === 'APPROVED' ? 'RECEIVING' : null);
       if (status && status !== fresh.po.status) await tx.misPurchaseOrder.update({ where: { id: fresh.poId }, data: { status } });
     }
   });

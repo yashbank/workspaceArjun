@@ -38,10 +38,10 @@ export async function recordAqlSampleAction(data: {
   });
 }
 
-/** B84: correct a check within its 24 h window. */
+/** B84 / R2-34: correct a check (Admin/Owner 7 days; QC own checks same day), with a reason. */
 export async function editQcCheckAction(
   id: string,
-  patch: { result?: string; defectType?: string | null; defectQty?: number | null; notes?: string | null; parameterName?: string },
+  patch: { result?: string; defectType?: string | null; defectQty?: number | null; notes?: string | null; parameterName?: string; reason?: string },
 ) {
   return asResult(async () => {
     const check = await editQcCheck(id, patch);

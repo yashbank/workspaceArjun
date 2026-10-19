@@ -1,5 +1,5 @@
 import { requireMisAccess } from '@/server/mis/guard';
-import { listAttendance, getMonthSummary, listShifts } from '@/server/mis/attendance';
+import { listAttendance, listUnrecordedEmployees, getMonthSummary, listShifts } from '@/server/mis/attendance';
 import { getAttendanceMonthView, resolveRegisterQuery } from '@/server/mis/attendance-month';
 import { AttendanceScreen } from '@/components/mis/attendance/attendance-screen';
 import { AttendanceMonthDesktop } from '@/components/mis/desktop/attendance-month-desktop';
@@ -28,12 +28,13 @@ export default async function AttendancePage({
   const todayKey = factoryDateKey(new Date(), timeZone);
   const q = resolveRegisterQuery({ date: sp.date, month: sp.month }, todayKey);
   const date = q.date;
-  const [records, summary, shifts] = await Promise.all([
+  const [records, unrecorded, summary, shifts] = await Promise.all([
     view === 'daily' ? listAttendance(date) : [],
+    view === 'daily' ? listUnrecordedEmployees(date) : [],
     view === 'monthly' ? getMonthSummary(q.month) : [],
     listShifts(),
   ]);
-  const phone = <AttendanceScreen records={records} summary={summary} shifts={shifts} canWrite={canWrite} canNote={canNote} view={view} monthKey={q.month} date={date} timeZone={timeZone} />;
+  const phone = <AttendanceScreen records={records} unrecorded={unrecorded} todayKey={todayKey} summary={summary} shifts={shifts} canWrite={canWrite} canNote={canNote} view={view} monthKey={q.month} date={date} timeZone={timeZone} />;
 
   if (sp.view) return phone;
 

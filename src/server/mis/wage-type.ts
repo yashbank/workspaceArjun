@@ -3,7 +3,7 @@ import type { MisPayBasis, MisWageUnit } from '@/generated/prisma/enums';
 import { db } from '@/server/db';
 
 import { DEFAULT_DAILY_WAGE_CODE, nextWageCode } from '@/lib/mis/wage-code';
-import type { WageRowForCalc } from '@/lib/mis/pay-basis';
+import { isPayrollSupportedUnit, type WageRowForCalc } from '@/lib/mis/pay-basis';
 
 import { requirePermission } from './auth';
 import { logAuditEvent } from './audit';
@@ -130,6 +130,10 @@ export type CreateWageTypeInput = {
 /** Create a wage type. The code is generated, never chosen by the caller. */
 export async function createWageType(input: CreateWageTypeInput): Promise<WageTypeRow> {
   const actor = await requirePermission('wages.read');
+  // R2-113: payroll prices only DAILY and MONTHLY codes; an HOURLY / PIECE_RATE code would be paid wrongly.
+  if (!isPayrollSupportedUnit(input.unit)) {
+    throw new Error('Payroll supports Daily and Monthly wage types only. Hourly and piece-rate pay are not calculated yet.');
+  }
   const existing = await db.misWageType.findMany({ select: { code: true } });
   const code = nextWageCode(input.unit, existing.map((r) => r.code));
 
@@ -233,6 +237,64 @@ export async function setWageTypeActive(code: string, isActive: boolean): Promis
     entityId: code,
     before: { code, isActive: rows[0].isActive },
     after: { code, isActive },
+  });
+}
+
+/**
+ * R2-114 — edit a code's DETAILS (name, Hindi name): labels, not pay. They are copied onto every
+ * effective-dated row of the code, so the history reads under one name; no rate, unit, OT rate,
+ * basis or component amount is touched (a pay change stays a new dated row via `addWageRate`).
+ * Owner only, audited with the names before and after — never an amount.
+ */
+export async function updateWageTypeDetails(code: string, input: { name: string; nameHi?: string | null }): Promise<void> {
+  const actor = await requirePermission('wages.read');
+  const name = input.name?.trim() ?? '';
+  const nameHi = input.nameHi?.trim() || null;
+  if (!name) throw new Error('Name is required.');
+  if (name.length > 80 || (nameHi && nameHi.length > 80)) throw new Error('Name is too long (80 characters at most).');
+  const rows = await db.misWageType.findMany({ where: { code, deletedAt: null } });
+  if (rows.length === 0) throw new Error(`Wage type ${code} not found`);
+
+  const latest = [...rows].sort((a, b) => b.effectiveFrom.getTime() - a.effectiveFrom.getTime())[0];
+  const beforeName = latest.name;
+  const beforeNameHi = latest.nameHi;
+
+  await db.$transaction(rows.map((r) => db.misWageType.update({ where: { id: r.id }, data: { name, nameHi } })));
+
+  await logAuditEvent({
+    actorId: actor.userId,
+    action: 'wageType.updateDetails',
+    entity: 'MisWageType',
+    entityId: code,
+    before: { code, name: beforeName, nameHi: beforeNameHi },
+    after: { code, name, nameHi },
+  });
+}
+
+export type WageRevisionStatus = 'SCHEDULED' | 'IN_FORCE' | 'PAST';
+export type WageRevision = WageTypeRow & { status: WageRevisionStatus };
+
+/**
+ * R2-114 — every code's FULL rate history, newest first within a code, each row marked SCHEDULED
+ * (starts after `todayKey`), IN_FORCE (the latest row on or before it) or PAST. Owner only — this
+ * is every rate the factory has ever paid.
+ */
+export async function listWageRateHistory(todayKey: string): Promise<WageRevision[]> {
+  await requirePermission('wages.read');
+  const rows = await db.misWageType.findMany({
+    where: { deletedAt: null },
+    orderBy: [{ code: 'asc' }, { effectiveFrom: 'desc' }],
+  });
+  const inForceSeen = new Set<string>();
+  return rows.map(toRow).map((r) => {
+    const key = r.effectiveFrom.toISOString().slice(0, 10);
+    let status: WageRevisionStatus;
+    if (key > todayKey) status = 'SCHEDULED';
+    else if (!inForceSeen.has(r.code)) {
+      inForceSeen.add(r.code);
+      status = 'IN_FORCE';
+    } else status = 'PAST';
+    return { ...r, status };
   });
 }
 

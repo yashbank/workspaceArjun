@@ -3,8 +3,10 @@ import { requirePermission, type MisActor } from '@/server/mis/auth';
 import { logAuditEvent } from '@/server/mis/audit';
 import { getCorrectionWindowDays, getFactoryTimezone } from '@/server/mis/business-rules';
 import { deriveDays, isWithinCorrectionWindow } from '@/lib/mis/attendance-day';
-import { addDaysToDateKey, dateKeyToDbDate, factoryDateKey } from '@/lib/mis/factory-time';
+import { addDaysToDateKey, dateKeyToDbDate, factoryDateKey, zonedParts } from '@/lib/mis/factory-time';
 import { resolveShiftAt } from '@/lib/mis/shift-window';
+import { LATENESS_WAIVED_NOTE } from '@/lib/mis/punch-minutes';
+import { isLeaveType, leaveCoversDayWhere, leaveRangesOverlap, leaveWorkingDays, validateLeaveRange, type LeaveType } from '@/lib/mis/leave';
 
 /** The factory's today (D22) — never the server's, which is a different day for 2.5 hours a night. */
 async function today(): Promise<string> {
@@ -30,6 +32,20 @@ export async function listAttendance(date?: string) {
     where: { date: new Date(d) },
     include: { employee: { select: { id: true, name: true, employeeCode: true, role: true } }, shift: true },
     orderBy: { employee: { name: 'asc' } },
+  });
+}
+
+/**
+ * R2-94/95: the active roster with NO register row for `date` — the people the day's register cannot show because
+ * nobody punched them in. The operator needs them to clock in by hand or mark them absent in bulk.
+ */
+export async function listUnrecordedEmployees(date?: string) {
+  await requirePermission('attendance.read');
+  const d = date ?? (await today());
+  return db.misEmployee.findMany({
+    where: { isActive: true, deletedAt: null, attendance: { none: { date: new Date(d) } } },
+    select: { id: true, name: true, employeeCode: true, role: true },
+    orderBy: { name: 'asc' },
   });
 }
 
@@ -238,21 +254,89 @@ export async function approveClockOut(attendanceId: string) {
   return rec;
 }
 
+/** The instant at which the factory clock reads `hhmm` on calendar day `dateKey` (the factory's zone, never the server's). */
+export function factoryTimeToInstant(dateKey: string, hhmm: string, timeZone: string): Date {
+  const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(hhmm);
+  if (!m) throw new Error('Time must look like 09:30');
+  const [y, mo, d] = dateKey.split('-').map(Number);
+  const wanted = Date.UTC(y, mo - 1, d, Number(m[1]), Number(m[2]));
+  let guess = wanted;
+  for (let i = 0; i < 2; i++) {
+    const p = zonedParts(new Date(guess), timeZone);
+    guess += wanted - Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute);
+  }
+  return new Date(guess);
+}
+
 export async function editAttendance(
   attendanceId: string,
-  data: { status?: string; clockIn?: Date; clockOut?: Date; notes?: string },
+  data: { status?: string; clockIn?: Date; clockOut?: Date; notes?: string; clockInTime?: string | null; clockOutTime?: string | null },
   override?: CloseOverride,
 ) {
   const actor = await requirePermission('attendance.write');
   if (data.status !== undefined && !(ATTENDANCE_STATUSES as readonly string[]).includes(data.status)) throw new Error('Unknown status');
   const before = await loadRow(attendanceId);
-  await guardRegisterDate(actor, keyOfDbDate(before.date), before.id, override);
+  const dateKey = keyOfDbDate(before.date);
+  await guardRegisterDate(actor, dateKey, before.id, override);
+  const { clockInTime, clockOutTime, ...rest } = data;
+  const patch: { status?: string; clockIn?: Date | null; clockOut?: Date | null; notes?: string } = { ...rest };
+  // R2-96: "HH:MM" on the register day, read in the factory's zone. A blank leaves the punch as it is.
+  if (clockInTime || clockOutTime) {
+    const timeZone = await getFactoryTimezone();
+    if (clockInTime) patch.clockIn = factoryTimeToInstant(dateKey, clockInTime, timeZone);
+    if (clockOutTime) {
+      let out = factoryTimeToInstant(dateKey, clockOutTime, timeZone);
+      const inAt = patch.clockIn ?? before.clockIn;
+      if (inAt && out.getTime() <= inAt.getTime()) out = new Date(out.getTime() + 24 * 3600 * 1000); // night shift wraps midnight
+      patch.clockOut = out;
+    }
+  }
+  const finalIn = patch.clockIn ?? before.clockIn;
+  const finalOut = patch.clockOut ?? before.clockOut;
+  if (finalOut && !finalIn) throw new Error('A clock-out needs a clock-in');
+  if (finalIn && finalOut && finalOut.getTime() <= finalIn.getTime()) throw new Error('Clock-out must be after clock-in');
   const rec = await db.misAttendance.update({
     where: { id: attendanceId },
-    data: { ...data, editedAt: new Date(), editedById: actor.userId },
+    data: { ...patch, editedAt: new Date(), editedById: actor.userId },
   });
   await logAuditEvent({ actorId: actor.userId, action: 'EDIT_ATTENDANCE', entity: 'MisAttendance', entityId: rec.id, before, after: rec });
   return rec;
+}
+
+/**
+ * R2-103: waive today's lateness. Zeroes `lateMinutes` on every late row of the day and records WHY in the notes and
+ * the audit log (the reason is mandatory). The note keeps the waiver through later punches.
+ */
+export async function waiveLateness(reason: string, date?: string) {
+  const actor = await requirePermission('attendance.write');
+  const why = reason.trim();
+  if (why.length < 3) throw new Error('A reason is required to waive lateness');
+  const todayKey = await today();
+  const key = date ?? todayKey;
+  if (!isValidDateKey(key)) throw new Error('Date must look like 2026-10-13');
+  if (key > todayKey) throw new Error('Cannot waive lateness for a future date');
+  await guardRegisterDate(actor, key, 'waive-lateness');
+  const d = dateKeyToDbDate(key);
+  const late = await db.misAttendance.findMany({ where: { date: d, lateMinutes: { gt: 0 } } });
+  // Deliberately NOT stamped editedAt: that would freeze the day against the rest of its punches (the clock-out and
+  // its OT would never land). The waiver note itself guards lateMinutes through re-derivation (attendance-punch.ts);
+  // the audit event below names the operator.
+  await db.$transaction(async (tx) => {
+    for (const row of late) {
+      await tx.misAttendance.update({
+        where: { id: row.id },
+        data: { lateMinutes: 0, notes: [row.notes, `${LATENESS_WAIVED_NOTE} ${why}`].filter(Boolean).join(' | ') },
+      });
+    }
+  });
+  await logAuditEvent({
+    actorId: actor.userId,
+    action: 'WAIVE_LATENESS',
+    entity: 'MisAttendance',
+    entityId: 'bulk',
+    after: { date: key, reason: why, count: late.length, employeeIds: late.map((r) => r.employeeId) },
+  });
+  return { count: late.length };
 }
 
 export type SkippedAbsent = { employeeId: string; reason: string };
@@ -388,15 +472,43 @@ export async function getMonthSummary(monthOrYear: string | number, month?: numb
   return Object.values(byEmp);
 }
 
-export async function requestLeave(employeeId: string, date: string, reason?: string) {
+export async function requestLeave(
+  employeeId: string,
+  date: string,
+  reason?: string,
+  opts: { endDate?: string | null; leaveType?: string } = {},
+) {
   const actor = await requirePermission('attendance.write');
   if (!isValidDateKey(date)) throw new Error('Date must look like 2026-10-13');
+  // R2-101: an optional last day (inclusive). Blank or equal to the first day is a single-day leave.
+  const endKey = opts.endDate ? opts.endDate : null;
+  if (endKey !== null && !isValidDateKey(endKey)) throw new Error('Last day must look like 2026-10-13');
+  const rangeError = validateLeaveRange(date, endKey);
+  if (rangeError) throw new Error(rangeError);
+  // R2-102: CL / SL / EL / LWP / OTHER. Unknown values are refused, not coerced.
+  const leaveType: LeaveType = opts.leaveType === undefined || opts.leaveType === '' ? 'OTHER' : (opts.leaveType as LeaveType);
+  if (!isLeaveType(leaveType)) throw new Error('Leave type must be CL, SL, EL, LWP or Other');
   const employee = await db.misEmployee.findFirst({ where: { id: employeeId }, select: { id: true, isActive: true, deletedAt: true } });
   if (!employee || !employee.isActive || employee.deletedAt) throw new Error('Employee not found or not active');
   const d = dateKeyToDbDate(date);
   const clash = await db.misLeaveRequest.findFirst({ where: { employeeId, date: d, status: { in: ['PENDING', 'APPROVED'] } } });
   if (clash) throw new Error('A leave request for this day already exists');
-  const rec = await db.misLeaveRequest.create({ data: { employeeId, date: d, reason, status: 'PENDING' } });
+  // R2-101: no two live requests of one person may share a day. A single day is an `endDate` of null.
+  const live = await db.misLeaveRequest.findMany({ where: { employeeId, status: { in: ['PENDING', 'APPROVED'] } } });
+  const overlapping = live.find((l) =>
+    leaveRangesOverlap({ start: date, end: endKey }, { start: keyOfDbDate(l.date), end: l.endDate ? keyOfDbDate(l.endDate) : null }),
+  );
+  if (overlapping) {
+    const first = keyOfDbDate(overlapping.date);
+    const last = overlapping.endDate ? keyOfDbDate(overlapping.endDate) : first;
+    throw new Error(`This overlaps an existing leave request (${first}${last !== first ? ` to ${last}` : ''})`);
+  }
+  const rec = await db.misLeaveRequest.create({
+    data: {
+      employeeId, date: d, reason, status: 'PENDING', leaveType,
+      ...(endKey && endKey !== date ? { endDate: dateKeyToDbDate(endKey) } : {}),
+    },
+  });
   await logAuditEvent({ actorId: actor.userId, action: 'REQUEST_LEAVE', entity: 'MisLeaveRequest', entityId: rec.id, after: rec });
   return rec;
 }
@@ -413,7 +525,15 @@ export async function approveLeave(leaveId: string, approve: boolean) {
   const status = approve ? 'APPROVED' : 'REJECTED';
   const approvedAt = new Date();
   const dateKey = keyOfDbDate(leave.date);
-  const closed = approve ? await isMonthClosed(dateKey) : false;
+  // R2-101: a range marks every working day in it; a single day (endDate null) is itself.
+  const days = leaveWorkingDays(dateKey, leave.endDate ? keyOfDbDate(leave.endDate) : null);
+  const closedMonths = new Map<string, boolean>();
+  if (approve) {
+    for (const k of days) {
+      const m = k.slice(0, 7);
+      if (!closedMonths.has(m)) closedMonths.set(m, await isMonthClosed(k));
+    }
+  }
 
   const skippedDates: string[] = [];
   await db.$transaction(async (tx) => {
@@ -423,17 +543,20 @@ export async function approveLeave(leaveId: string, approve: boolean) {
     });
     if (changed.count === 0) throw new Error(decided);
     if (!approve) return;
-    // B53: an approved leave is a LEAVE row in the register, unless the day already has real data.
-    const row = await tx.misAttendance.findUnique({ where: { employeeId_date: { employeeId: leave.employeeId, date: leave.date } } });
-    if (closed || row?.clockIn || row?.clockOut || row?.editedAt) {
-      skippedDates.push(dateKey);
-      return;
+    for (const k of days) {
+      const dbDay = dateKeyToDbDate(k);
+      // B53: an approved leave is a LEAVE row in the register, unless the day already has real data.
+      const row = await tx.misAttendance.findUnique({ where: { employeeId_date: { employeeId: leave.employeeId, date: dbDay } } });
+      if (closedMonths.get(k.slice(0, 7)) || row?.clockIn || row?.clockOut || row?.editedAt) {
+        skippedDates.push(k);
+        continue;
+      }
+      await tx.misAttendance.upsert({
+        where: { employeeId_date: { employeeId: leave.employeeId, date: dbDay } },
+        create: { employeeId: leave.employeeId, date: dbDay, status: 'LEAVE' },
+        update: { status: 'LEAVE' },
+      });
     }
-    await tx.misAttendance.upsert({
-      where: { employeeId_date: { employeeId: leave.employeeId, date: leave.date } },
-      create: { employeeId: leave.employeeId, date: leave.date, status: 'LEAVE' },
-      update: { status: 'LEAVE' },
-    });
   });
   const rec = { ...leave, status, approvedById: actor.userId, approvedAt, skippedDates };
   await logAuditEvent({
@@ -487,6 +610,18 @@ const PRESENT_STATUSES = ['PRESENT', 'HALF_DAY', 'LATE'];
  * "nobody came in" and "nobody has entered anything yet", which the card has to
  * say out loud rather than showing a confident 0/70.
  */
+/** R2-104 — punch events recorded on the factory's today (in/out each count), not the headcount present. */
+export async function countPunchesToday(): Promise<number> {
+  await requirePermission('attendance.read');
+  const [zone, key] = [await getFactoryTimezone(), await today()];
+  const from = new Date(dateKeyToDbDate(key).getTime() - 14 * 3_600_000); // widest UTC offset either side
+  const rows = await db.misAttendancePunch.findMany({
+    where: { punchedAt: { gte: from, lt: new Date(from.getTime() + 62 * 3_600_000) } },
+    select: { punchedAt: true },
+  });
+  return rows.filter((r) => factoryDateKey(r.punchedAt, zone) === key).length;
+}
+
 export async function getDayAttendanceSummary(date?: string): Promise<DayAttendanceSummary> {
   await requirePermission('attendance.read');
   const d = new Date(date ?? (await today()));
@@ -499,7 +634,7 @@ export async function getDayAttendanceSummary(date?: string): Promise<DayAttenda
       orderBy: { clockIn: 'asc' },
     }),
     db.misLeaveRequest.findMany({
-      where: { date: d, status: 'APPROVED' },
+      where: { ...leaveCoversDayWhere(d), status: 'APPROVED' },
       select: { employeeId: true },
     }),
   ]);

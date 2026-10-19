@@ -53,6 +53,9 @@ vi.mock('@/server/mis/roles', () => ({ getMisRole: (...a: unknown[]) => getMisRo
 
 const { approveMaterialRequest, createMaterialRequest } = await import('./material-request');
 
+/** R2-80: a no-order issue / request is General / factory use and carries a reason and a cost centre. */
+const G = { reason: 'grease for plates', costCenter: 'Press' };
+
 const dec = (n: number) => ({ toNumber: () => n });
 const pending = () => ({
   id: 'r1', requestNumber: 'MRN-1', status: 'PENDING', orderId: 'o1', departmentId: null,
@@ -82,12 +85,16 @@ describe('F. category rule at request time (same rule commitIssue enforces)', ()
   });
 
   it('equipment with neither an order nor a department is refused; with a department it is raised', async () => {
-    await expect(createMaterialRequest([{ itemId: 'i-die', qty: 1 }], {})).rejects.toThrow(/must be issued to a department/);
-    await expect(createMaterialRequest([{ itemId: 'i-die', qty: 1 }], { departmentId: 'd1' })).resolves.toBeTruthy();
+    await expect(createMaterialRequest([{ itemId: 'i-die', qty: 1 }], {})).rejects.toThrow(/order or a department/);
+    // The original contract still holds for a general (no-order) request with no department.
+    await expect(createMaterialRequest([{ itemId: 'i-die', qty: 1 }], { general: G })).rejects.toThrow(/must be issued to a department/);
+    await expect(createMaterialRequest([{ itemId: 'i-die', qty: 1 }], { departmentId: 'd1', general: G })).resolves.toBeTruthy();
   });
 
-  it('raw material needs neither', async () => {
-    await expect(createMaterialRequest([{ itemId: 'i-kraft', qty: 1 }], {})).resolves.toBeTruthy();
+  it('raw material needs an order or a department, not both', async () => {
+    await expect(createMaterialRequest([{ itemId: 'i-kraft', qty: 1 }], { departmentId: 'd1', general: G })).resolves.toBeTruthy();
+    // ...and, as before, raw material needs no department when it is a general issue.
+    await expect(createMaterialRequest([{ itemId: 'i-kraft', qty: 1 }], { general: G })).resolves.toBeTruthy();
   });
 });
 
@@ -101,8 +108,8 @@ describe('I. no request against a closed order', () => {
 
 describe('H. 2 dp rounding before validation', () => {
   it('a request for 0.004 is refused instead of being saved as 0.00; 2.499 is stored as 2.5', async () => {
-    await expect(createMaterialRequest([{ itemId: 'i-kraft', qty: 0.004 }], {})).rejects.toThrow(/greater than zero/);
-    await createMaterialRequest([{ itemId: 'i-kraft', qty: 2.499 }], {});
+    await expect(createMaterialRequest([{ itemId: 'i-kraft', qty: 0.004 }], { departmentId: 'd1', general: G })).rejects.toThrow(/greater than zero/);
+    await createMaterialRequest([{ itemId: 'i-kraft', qty: 2.499 }], { departmentId: 'd1', general: G });
     expect((state.created!.lines as Row).create[0].requestedQty).toBe(2.5);
   });
 

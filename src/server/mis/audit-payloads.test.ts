@@ -64,7 +64,8 @@ describe('audit call sites', () => {
 describe('the wage modules audit through auditSafe() only', () => {
   it('every audit call in wage-type.ts hands over auditSafe(row) or a literal without an amount', () => {
     const calls = auditCallsIn('src/server/mis/wage-type.ts');
-    expect(calls.length).toBe(3);
+    // R2-114 added the 4th: wageType.updateDetails (code + names only), checked by the same loop below.
+    expect(calls.length).toBe(4);
     for (const c of calls) {
       const ok = c.payloadKeys.every((k) => k.startsWith('=auditSafe(')) || !c.payloadKeys.some((k) => /amount|wage|rate/i.test(k));
       expect(ok, `${c.action}: ${c.payloadKeys.join(',')}`).toBe(true);
@@ -91,6 +92,7 @@ describe('the wage modules audit through auditSafe() only', () => {
 
   it('payroll.ts writes no audit row at all — computing a payslip records nothing about its figures', () => {
     expect(auditCallsIn('src/server/mis/payroll.ts')).toEqual([]);
-    expect(exportedFunctions('src/server/mis/payroll.ts').length).toBe(2);
+    // R2-112 added calculateEmployeePayroll (one employee's payslip line) — still no audit call.
+    expect(exportedFunctions('src/server/mis/payroll.ts').length).toBe(3);
   });
 });

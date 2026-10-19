@@ -56,7 +56,7 @@ export async function getQcHourlyGrid(input: { shiftId?: unknown; date?: unknown
 
   // Over-fetch either side; the pure builder does the exact cut on the shift's own axis.
   const checks = await db.misQcCheck.findMany({
-    where: { checkTime: { gte: dateKeyToDbDate(addDaysToDateKey(dateKey, -1)), lt: dateKeyToDbDate(addDaysToDateKey(dateKey, 3)) } },
+    where: { checkTime: { gte: dateKeyToDbDate(addDaysToDateKey(dateKey, -1)), lt: dateKeyToDbDate(addDaysToDateKey(dateKey, 3)) }, voidedAt: null },
     select: { id: true, orderId: true, bomStageId: true, parameterName: true, result: true, defectType: true, defectQty: true, notes: true, checkTime: true },
     orderBy: { checkTime: 'asc' },
   });

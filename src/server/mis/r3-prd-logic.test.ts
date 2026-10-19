@@ -147,48 +147,48 @@ describe('B126 editProductionLog', () => {
 
   it('23h59m is OK and 24h01m is refused', async () => {
     fn.logFindUnique.mockResolvedValue(logAt(24 * H - 60_000));
-    await expect(editProductionLog('l', { qtyProduced: 90 }, NOW)).resolves.toBeDefined();
+    await expect(editProductionLog('l', { reason: 'typo fix', qtyProduced: 90 }, NOW)).resolves.toBeDefined();
     fn.logFindUnique.mockResolvedValue(logAt(24 * H + 60_000));
-    await expect(editProductionLog('l', { qtyProduced: 90 }, NOW)).rejects.toThrow('This entry can no longer be edited (24 h / signed off / order closed).');
+    await expect(editProductionLog('l', { reason: 'typo fix', qtyProduced: 90 }, NOW)).rejects.toThrow('This entry can no longer be edited (24 h / signed off / order closed).');
   });
   it('refuses a signed-off phase and a closed order', async () => {
     fn.logFindUnique.mockResolvedValue(logAt(H, { jobPhase: { status: 'SIGNED_OFF' } }));
-    await expect(editProductionLog('l', { qtyProduced: 90 }, NOW)).rejects.toThrow(/no longer be edited/);
+    await expect(editProductionLog('l', { reason: 'typo fix', qtyProduced: 90 }, NOW)).rejects.toThrow(/no longer be edited/);
     fn.logFindUnique.mockResolvedValue(logAt(H, { order: { status: 'COMPLETED' } }));
-    await expect(editProductionLog('l', { qtyProduced: 90 }, NOW)).rejects.toThrow(/no longer be edited/);
+    await expect(editProductionLog('l', { reason: 'typo fix', qtyProduced: 90 }, NOW)).rejects.toThrow(/no longer be edited/);
   });
   it('WORKER and QC are forbidden, SUPERVISOR allowed', async () => {
     fn.logFindUnique.mockResolvedValue(logAt(H));
     for (const role of ['WORKER', 'QC']) {
       getMisRole.mockResolvedValue(role);
-      await expect(editProductionLog('l', { qtyProduced: 90 }, NOW)).rejects.toThrow(/Not permitted/);
+      await expect(editProductionLog('l', { reason: 'typo fix', qtyProduced: 90 }, NOW)).rejects.toThrow(/Not permitted/);
     }
     getMisRole.mockResolvedValue('SUPERVISOR');
-    await expect(editProductionLog('l', { qtyProduced: 90 }, NOW)).resolves.toBeDefined();
+    await expect(editProductionLog('l', { reason: 'typo fix', qtyProduced: 90 }, NOW)).resolves.toBeDefined();
   });
   it('validates like create: waste <= produced, finite, active operator, stage in BOM', async () => {
     fn.logFindUnique.mockResolvedValue(logAt(H));
-    await expect(editProductionLog('l', { qtyProduced: 5, qtyWaste: 9 }, NOW)).rejects.toThrow(/Waste/);
-    await expect(editProductionLog('l', { qtyProduced: Number.NaN }, NOW)).rejects.toThrow(/valid number/);
+    await expect(editProductionLog('l', { reason: 'typo fix', qtyProduced: 5, qtyWaste: 9 }, NOW)).rejects.toThrow(/Waste/);
+    await expect(editProductionLog('l', { reason: 'typo fix', qtyProduced: Number.NaN }, NOW)).rejects.toThrow(/valid number/);
     fn.employeeFindUnique.mockResolvedValue({ isActive: false });
-    await expect(editProductionLog('l', { employeeId: 'e' }, NOW)).rejects.toThrow('Operator not found.');
+    await expect(editProductionLog('l', { reason: 'typo fix', employeeId: 'e' }, NOW)).rejects.toThrow('Operator not found.');
     fn.stageFindFirst.mockResolvedValue(null);
-    await expect(editProductionLog('l', { bomStageId: 's' }, NOW)).rejects.toThrow(/BOM/);
+    await expect(editProductionLog('l', { reason: 'typo fix', bomStageId: 's' }, NOW)).rejects.toThrow(/BOM/);
   });
   it('changing the machine requires a clearance for that machine and this order', async () => {
     fn.logFindUnique.mockResolvedValue(logAt(H, { machineId: 'm1' }));
     fn.machineFindUnique.mockResolvedValue({ id: 'm2', isActive: true, deletedAt: null });
     assertLineCleared.mockRejectedValueOnce(new Error('Coater 2 needs a line clearance'));
-    await expect(editProductionLog('l', { machineId: 'm2' }, NOW)).rejects.toThrow(/line clearance/);
+    await expect(editProductionLog('l', { reason: 'typo fix', machineId: 'm2' }, NOW)).rejects.toThrow(/line clearance/);
     expect(assertLineCleared).toHaveBeenCalledWith('m2', 'o');
     expect(fn.logUpdate).not.toHaveBeenCalled();
-    await editProductionLog('l', { machineId: 'm1' }, NOW);
+    await editProductionLog('l', { reason: 'typo fix', machineId: 'm1' }, NOW);
     expect(assertLineCleared).toHaveBeenCalledTimes(1);
   });
   it('writes the edit and audits quantities only', async () => {
     const { logAuditEvent } = await import('@/server/mis/audit');
     fn.logFindUnique.mockResolvedValue(logAt(H));
-    await editProductionLog('l', { qtyProduced: 80, qtyWaste: 1 }, NOW);
+    await editProductionLog('l', { reason: 'typo fix', qtyProduced: 80, qtyWaste: 1 }, NOW);
     expect(fn.logUpdate.mock.calls[0][0].data).toMatchObject({ qtyProduced: 80, qtyWaste: 1 });
     expect(logAuditEvent).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'PRODUCTION_LOG_EDIT', before: { qtyProduced: 100, qtyWaste: 2, unit: 'KG' }, after: { qtyProduced: 80, qtyWaste: 1, unit: 'KG' } }),

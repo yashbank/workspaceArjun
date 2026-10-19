@@ -50,7 +50,7 @@ beforeEach(() => {
 describe('PO numbering under concurrency (MIS-111\'s finding, applied to POs)', () => {
   it('creating 20 buffer-stock POs concurrently produces 20 distinct PO numbers, none dropped or thrown away', async () => {
     const results = await Promise.allSettled(
-      Array.from({ length: 20 }, () => createPO({ purpose: 'BUFFER_STOCK' })),
+      Array.from({ length: 20 }, () => createPO({ supplierId: 's1', purpose: 'BUFFER_STOCK' })),
     );
     const succeeded = results.filter((r) => r.status === 'fulfilled');
     expect(succeeded).toHaveLength(20);
@@ -61,9 +61,9 @@ describe('PO numbering under concurrency (MIS-111\'s finding, applied to POs)', 
   });
 
   it('sequential creation (no real concurrency) already worked — the bug was specifically about the same millisecond', async () => {
-    const a = await createPO({ bomRef: 'ORD-202610-00001' });
+    const a = await createPO({ supplierId: 's1', bomRef: 'ORD-202610-00001' });
     await new Promise((r) => setTimeout(r, 2));
-    const b = await createPO({ bomRef: 'ORD-202610-00002' });
+    const b = await createPO({ supplierId: 's1', bomRef: 'ORD-202610-00002' });
     expect(a.poNumber).not.toBe(b.poNumber);
   });
 });

@@ -18,6 +18,7 @@ vi.mock('@/server/mis/worker-allocation', () => ({
   ],
   listCrewBookings: (...a: unknown[]) => (listBookings as (...x: unknown[]) => unknown)(...a),
   getWorkerAvailability: (...a: unknown[]) => (availability as (...x: unknown[]) => unknown)(...a),
+  getWorkerLocks: async () => ({}), // R2-47: the page also reads who holds each lock
 }));
 
 const { default: CrewPage } = await import('./page');

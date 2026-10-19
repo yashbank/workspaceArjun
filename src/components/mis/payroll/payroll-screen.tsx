@@ -9,7 +9,8 @@ import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { DesktopPageHeader } from '@/components/mis/desktop/desktop-shell';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { DEFAULT_FACTORY_TIMEZONE, formatFactoryDate } from '@/lib/mis/factory-time';
-import { closePayrollPeriodAction, recordPayrollExportAction } from '@/app/(mis)/mis/payroll/actions';
+import { closePayrollPeriodAction, recordPayrollExportAction, releasePayslipsAction, withdrawPayslipAction } from '@/app/(mis)/mis/payroll/actions';
+import { useToast } from '@/components/ui/toast';
 
 /**
  * W9 — "the handover to whoever actually pays." This screen carries COUNTS, not money: days,
@@ -50,6 +51,9 @@ type PayrollPeriod = {
 
 type PreflightItem = { id: string; label: string; ok: boolean; detail?: string };
 
+/** R2-110: someone the bank transfer file will leave out, and why. No account number, no figure. */
+type BankGap = { employeeId: string; employeeCode: string; employeeName: string; reason: string };
+
 type Props = {
   // Named `rows`, not `payroll` — the leak scanner in wage-screens.test.tsx flags any PROP KEY
   // containing "payroll" regardless of content, since that word is on its money-keyword list.
@@ -58,6 +62,10 @@ type Props = {
   month: number;
   period: PayrollPeriod;
   preflight: PreflightItem[];
+  /** R2-111: employees already sent this month's payslip. */
+  releasedIds?: string[];
+  /** R2-110: employees the bank transfer file will skip. */
+  bankGaps?: BankGap[];
 };
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -87,13 +95,16 @@ function downloadCountsCsv(payroll: PayrollRow[], monthLabel: string) {
   URL.revokeObjectURL(url);
 }
 
-export function PayrollScreen({ rows: payroll, year, month, period, preflight }: Props) {
+export function PayrollScreen({ rows: payroll, year, month, period, preflight, releasedIds = [], bankGaps = [] }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const { confirm, confirmDialog } = useConfirm();
   const [search, setSearch] = useState('');
   const [closeError, setCloseError] = useState<string | null>(null);
   const [overrideReason, setOverrideReason] = useState('');
+  const { toast } = useToast();
+  const released = useMemo(() => new Set(releasedIds), [releasedIds]);
+  const isClosed = period.status === 'CLOSED';
 
   const filtered = useMemo(() => {
     if (!search.trim()) return payroll;
@@ -135,6 +146,34 @@ export function PayrollScreen({ rows: payroll, year, month, period, preflight }:
   function handleExport() {
     downloadCountsCsv(payroll, monthLabel);
     startTransition(async () => { await recordPayrollExportAction(year, month); });
+  }
+
+  /** R2-111: send this closed month's payslips — everyone (no ids) or one person. */
+  async function handleRelease(employeeIds?: string[]) {
+    if (!employeeIds) {
+      const ok = await confirm({
+        title: `Send ${monthLabel} payslips?`,
+        message: 'Every employee with a payslip this month will be able to open and download their own slip from Me → My payslips. You can take one back later.',
+        confirmLabel: 'Send payslips',
+      });
+      if (!ok) return;
+    }
+    startTransition(async () => {
+      const r = await releasePayslipsAction(year, month, employeeIds);
+      if (!r.ok) toast('error', r.detail);
+      else {
+        toast('success', r.value.released === 0 ? 'Already sent' : `Sent ${r.value.released} payslip${r.value.released === 1 ? '' : 's'}`);
+        router.refresh();
+      }
+    });
+  }
+
+  function handleWithdraw(employeeId: string) {
+    startTransition(async () => {
+      const r = await withdrawPayslipAction(employeeId, year, month);
+      if (!r.ok) toast('error', r.detail);
+      else router.refresh();
+    });
   }
 
   const body = (
@@ -181,7 +220,6 @@ export function PayrollScreen({ rows: payroll, year, month, period, preflight }:
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           <StatusBadge tone="neutral">CSV</StatusBadge>
-          <StatusBadge tone="neutral">XLSX (as CSV)</StatusBadge>
           <StatusBadge tone="info">Owner only</StatusBadge>
         </div>
       </div>
@@ -189,6 +227,53 @@ export function PayrollScreen({ rows: payroll, year, month, period, preflight }:
       <Button onClick={handleExport} disabled={isPending} className="w-full min-h-11">
         Export {MONTHS[month - 1]}
       </Button>
+      {/* R2-110: the wage ledger (rupee figures) is a separate Owner-only file streamed by the server
+          (/api/mis/payroll/wage-ledger) — no amount ever reaches this screen's props (W9). */}
+      <a
+        href={`/api/mis/payroll/wage-ledger?year=${year}&month=${month}`}
+        download
+        className="inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+      >
+        Download wage ledger (amounts) — {MONTHS[month - 1]}
+      </a>
+      {/* R2-110: the bank transfer file (account no., IFSC, amount) — also streamed by the server, Owner only. */}
+      <a
+        href={`/api/mis/payroll/bank-transfer?year=${year}&month=${month}`}
+        download
+        className="inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+      >
+        Download bank transfer file — {MONTHS[month - 1]}
+      </a>
+      {bankGaps.length > 0 && (
+        <div className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <p className="font-semibold">
+            {bankGaps.length} employee{bankGaps.length === 1 ? '' : 's'} will be left out of the bank file — pay them another way, or add their bank details on the Employees screen.
+          </p>
+          <ul className="mt-1 space-y-0.5 text-xs">
+            {bankGaps.map((g) => (
+              <li key={g.employeeId}>
+                <span className="font-mono">{g.employeeCode}</span> {g.employeeName} — {g.reason}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {/* R2-109: every payslip of the month in one print run (one page each). */}
+      <Link
+        href={`/mis/print/payslips?year=${year}&month=${month}`}
+        target="_blank"
+        className="inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+      >
+        Print all payslips — {MONTHS[month - 1]}
+      </Link>
+      {/* R2-111: employees see a payslip only after it is sent, and only for a closed (past) month. */}
+      {isClosed ? (
+        <Button variant="secondary" onClick={() => handleRelease()} disabled={isPending || payroll.length === 0} className="w-full min-h-11">
+          Send payslips to employees ({released.size} of {payroll.length} sent)
+        </Button>
+      ) : (
+        <p className="text-center text-xs text-slate-500">Close this month to send payslips to employees.</p>
+      )}
       <p className="text-center text-xs text-slate-500">Every export is logged with who and when.</p>
 
       {period.status === 'OPEN' ? (
@@ -247,11 +332,12 @@ export function PayrollScreen({ rows: payroll, year, month, period, preflight }:
               <th className="px-4 py-3 text-center font-medium">OT</th>
               <th className="px-4 py-3 text-center font-medium">Allowance days</th>
               <th className="px-4 py-3 text-center font-medium">Payslip</th>
+              {isClosed && <th className="px-4 py-3 text-center font-medium">Sent</th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
             {filtered.length === 0 ? (
-              <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-400">No attendance recorded for this month.</td></tr>
+              <tr><td colSpan={isClosed ? 8 : 7} className="px-4 py-10 text-center text-slate-400">No attendance recorded for this month.</td></tr>
             ) : (
               filtered.map((row) => (
                 <tr key={row.employeeId} className="hover:bg-slate-50">
@@ -269,6 +355,19 @@ export function PayrollScreen({ rows: payroll, year, month, period, preflight }:
                       Payslip
                     </Link>
                   </td>
+                  {isClosed && (
+                    <td className="px-4 py-3 text-center">
+                      {released.has(row.employeeId) ? (
+                        <button onClick={() => handleWithdraw(row.employeeId)} disabled={isPending} className="inline-flex min-h-11 items-center text-sm font-medium text-slate-600 hover:underline">
+                          Sent · Take back
+                        </button>
+                      ) : (
+                        <button onClick={() => handleRelease([row.employeeId])} disabled={isPending} className="inline-flex min-h-11 items-center text-sm font-medium text-indigo-600 hover:underline">
+                          Send
+                        </button>
+                      )}
+                    </td>
+                  )}
                 </tr>
               ))
             )}

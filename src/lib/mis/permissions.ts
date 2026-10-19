@@ -42,6 +42,11 @@ export const MIS_ACTIONS = [
   'po.write',
   'grn.read',
   'grn.write',
+  // R2-37: read-only VIEW of PO / GRN lists and detail. Held by every role that reads them, plus QC.
+  // Separate from po.read / grn.read so the QC grant cannot widen traceability, suppliers or the
+  // 3-way-match board (all still gated on po.read / grn.read, which QC does not hold).
+  'po.view',
+  'grn.view',
   // V2 Epic 1 — the 3-way match board. Read: Owner, Admin, Store Guy. Write (reconcile): Owner, Admin.
   'supplier_invoice.read',
   'supplier_invoice.write',
@@ -110,6 +115,8 @@ const MATRIX: Record<MisRoleName, readonly MisAction[]> = {
     'po.write',
     'grn.read',
     'grn.write',
+    'po.view',
+    'grn.view',
     'supplier_invoice.read',
     'supplier_invoice.write',
     'store.read',
@@ -137,6 +144,7 @@ const MATRIX: Record<MisRoleName, readonly MisAction[]> = {
     'reports.read',
     'inventory.read',
     'grn.read',
+    'grn.view',
     'store.read',
     'clearance.read',
     'clearance.write',
@@ -144,7 +152,7 @@ const MATRIX: Record<MisRoleName, readonly MisAction[]> = {
     'phase.write',
   ],
 
-  QC: ['masters.read', 'orders.read', 'production.read', 'qc.read', 'qc.write', 'reports.read', 'phase.read'],
+  QC: ['masters.read', 'orders.read', 'production.read', 'qc.read', 'qc.write', 'reports.read', 'phase.read', 'po.view', 'grn.view' /* R2-37: read-only */],
 
   SUPER_ATTENDANCE_OPERATOR: [
     'employees.read',
@@ -162,6 +170,8 @@ const MATRIX: Record<MisRoleName, readonly MisAction[]> = {
     'inventory.read',
     'grn.read',
     'grn.write',
+    'po.view',
+    'grn.view',
     'supplier_invoice.read',
     'po.read',
     'store.read',

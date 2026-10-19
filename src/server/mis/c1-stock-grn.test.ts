@@ -112,7 +112,8 @@ const db: Row = {
   misSupplierInvoice: { upsert: async () => null },
   // R3-STK B02/B01: an open PO is read with the GRN and moved on after a receipt.
   misPurchaseOrder: { update: async () => null, updateMany: async () => ({ count: 1 }) },
-  misOrder: { findFirst: async () => null },
+  misOrder: { findFirst: async () => null, findUnique: async () => null },
+  misDepartment: { findUnique: async () => ({ name: 'Printing' }) },
   misOrderStockAllocation: { create: async () => null },
   misAuditLog: { create: async ({ data }: Row) => { state.audits.push(data); return data; } },
   $transaction: async (cb: (tx: Row) => Promise<unknown>) => {
@@ -130,10 +131,13 @@ const getMisRole = vi.fn();
 vi.mock('@/server/mis/roles', () => ({ getMisRole: (...a: unknown[]) => getMisRole(...a) }));
 
 const { confirmGRN, removeGRNItem, discardGRN } = await import('./grn');
+
+/** R2-80: a no-order issue / request is General / factory use and carries a reason and a cost centre. */
+const G = { reason: 'grease for plates', costCenter: 'Press' };
 const { createStoreOut, reconcilePhysicalCount, listPhysicalCounts } = await import('./store');
 const { adjustInventory } = await import('./inventory');
 
-const grn = (id: string, status = 'DRAFT'): Row => ({ id, grnNumber: id.toUpperCase(), poId: 'po1', status, supplierInvoiceNo: null, invoiceDate: null, supplierInvoiceAmount: null });
+const grn = (id: string, status = 'DRAFT'): Row => ({ id, grnNumber: id.toUpperCase(), poId: 'po1', status, dcNumber: 'DC-1', supplierInvoiceNo: null, invoiceDate: null, supplierInvoiceAmount: null });
 const line = (grnId: string, poItemId: string, receivedQty: number): Row => ({ id: `${grnId}-${poItemId}`, grnId, poItemId, receivedQty, damageQuantity: 0, dcQuantity: null, type: 'GENERAL', forOrderRef: null });
 const seedStock = (qty: number, txnQty = qty) => {
   state.ledger = [{ id: 'l0', itemId: 'i1', changeQty: qty, balanceQty: qty, source: 'OPENING', sourceId: null, createdAt: stamp() }];
@@ -214,7 +218,7 @@ describe('#22 confirming a GRN writes the storekeeper book as well as the ledger
 describe('#24/D2 store out never goes below the balance', () => {
   it('refuses one unit over, with the available figure, and writes nothing', async () => {
     seedStock(10);
-    const result = await asResult(() => createStoreOut({ itemId: 'i1', quantity: 10.01 }));
+    const result = await asResult(() => createStoreOut({ itemId: 'i1', departmentId: 'd1', general: G, quantity: 10.01 }));
     expect(result).toEqual({ ok: false, detail: 'Cannot issue more than the stock balance (10 available)' });
     expect(state.ledger).toHaveLength(1);
     expect(state.txns).toHaveLength(1);
@@ -222,7 +226,7 @@ describe('#24/D2 store out never goes below the balance', () => {
 
   it('issues exactly the balance and writes the ledger OUT and the storekeeper OUT together', async () => {
     seedStock(10);
-    const row = await createStoreOut({ itemId: 'i1', quantity: 10, referenceNo: 'JOB-1' });
+    const row = await createStoreOut({ itemId: 'i1', departmentId: 'd1', general: G, quantity: 10, referenceNo: 'JOB-1' });
     expect(ledgerBalance()).toBe(0);
     expect(txnBalance()).toBe(0);
     expect(state.ledger.at(-1)).toMatchObject({ changeQty: -10, source: 'STORE_ISSUE' });
@@ -231,8 +235,8 @@ describe('#24/D2 store out never goes below the balance', () => {
 
   it('is limited by the smaller book, so neither can go negative', async () => {
     seedStock(10, 4); // legacy item: the storekeeper book is behind the ledger
-    await expect(createStoreOut({ itemId: 'i1', quantity: 5 })).rejects.toThrow(/\(4 available\)/);
-    await expect(createStoreOut({ itemId: 'i1', quantity: 4 })).resolves.toBeTruthy();
+    await expect(createStoreOut({ itemId: 'i1', departmentId: 'd1', general: G, quantity: 5 })).rejects.toThrow(/\(4 available\)/);
+    await expect(createStoreOut({ itemId: 'i1', departmentId: 'd1', general: G, quantity: 4 })).resolves.toBeTruthy();
     expect(txnBalance()).toBe(0);
     expect(ledgerBalance()).toBe(6);
   });
@@ -248,7 +252,7 @@ describe('#24/D2 store out never goes below the balance', () => {
 
   it('the over-issue-with-reason input is gone: a reason cannot buy extra stock', async () => {
     seedStock(1);
-    await expect(createStoreOut({ itemId: 'i1', quantity: 3, reason: 'urgent' } as never)).rejects.toThrow(/Cannot issue more/);
+    await expect(createStoreOut({ itemId: 'i1', departmentId: 'd1', general: G, quantity: 3, reason: 'urgent' } as never)).rejects.toThrow(/Cannot issue more/);
   });
 });
 

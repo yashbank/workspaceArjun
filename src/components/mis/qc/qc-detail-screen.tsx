@@ -9,6 +9,7 @@ import { SlideOver } from '@/components/mis/kit/slide-over';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { AqlBreakdown } from '@/components/mis/qc/aql-breakdown';
 import { addQcCheckAction, editQcCheckAction, recordAqlSampleAction } from '@/app/(mis)/mis/qc/actions';
+import { voidQcCheckAction } from '@/app/(mis)/mis/qc/correction-actions';
 import type { AqlResult } from '@/lib/mis/aql';
 import type { QcTemplateRow } from '@/server/mis/qc-template';
 import { QcChecklist } from '@/components/mis/qc/qc-checklist';
@@ -26,8 +27,10 @@ type Check = {
   checkBy?: { name: string } | null;
   templateId?: string | null;
   slotTime?: string | null;
-  /** Server-computed (B84): within 24 h, not acknowledged, order open. Never derived from the browser clock. */
+  /** Server-computed (B84 / R2-34): the correction rule, not acknowledged, order open. Never derived from the browser clock. */
   editable?: boolean;
+  /** Server-computed (R2-34): may this viewer delete (void) the check. */
+  deletable?: boolean;
 };
 
 type Summary = { total: number; pass: number; fail: number; na?: number; totalDefectQty: number };
@@ -98,8 +101,11 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes, 
   const [editDefectType, setEditDefectType] = useState('');
   const [editDefectQty, setEditDefectQty] = useState('');
   const [editNotes, setEditNotes] = useState('');
+  const [editReason, setEditReason] = useState('');
   const [editError, setEditError] = useState<string | null>(null);
   const [editPending, startEditTransition] = useTransition();
+  const [deleting, setDeleting] = useState<Check | null>(null);
+  const [deleteReason, setDeleteReason] = useState('');
 
   // R3-QCR B79: N/A is neither a pass nor a fail, so it is left out of the rate (and shown on its own).
   const decided = summary.pass + summary.fail;
@@ -155,8 +161,17 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes, 
     setEditDefectType(c.defectType ?? '');
     setEditDefectQty(c.defectQty == null ? '' : String(c.defectQty));
     setEditNotes(c.notes ?? '');
+    setEditReason('');
     setEditError(null);
   };
+
+  const handleDelete = () => startEditTransition(async () => {
+    if (!deleting) return;
+    setEditError(null);
+    const outcome = await voidQcCheckAction(deleting.id, deleteReason.trim());
+    if (!outcome.ok) { setEditError(outcome.detail); return; }
+    setDeleting(null);
+  });
 
   const handleEdit = () => startEditTransition(async () => {
     if (!editing) return;
@@ -167,6 +182,7 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes, 
       defectType: editDefectType.trim() || null,
       defectQty: editDefectQty.trim() === '' ? null : Number(editDefectQty),
       notes: editNotes.trim() || null,
+      reason: editReason.trim(),
     });
     if (!outcome.ok) { setEditError(outcome.detail); return; }
     setEditing(null);
@@ -292,8 +308,13 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes, 
                   <td className="px-5 py-3 text-gray-500">{c.checkBy?.name ?? '—'}</td>
                   <td className="px-5 py-3 text-gray-400 max-w-xs truncate">{c.notes ?? '—'}</td>
                   {canWrite && (
-                    <td className="px-5 py-3">
+                    <td className="px-5 py-3 whitespace-nowrap">
                       {c.editable && <Button variant="ghost" onClick={() => openEdit(c)}>Edit</Button>}
+                      {c.deletable && (
+                        <Button variant="ghost" onClick={() => { setDeleting(c); setDeleteReason(''); setEditError(null); }}>
+                          Delete
+                        </Button>
+                      )}
                     </td>
                   )}
                 </tr>
@@ -333,7 +354,7 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes, 
         </div>
       </SlideOver>
 
-      {/* Edit check slide-over (B84: within 24 h) */}
+      {/* Edit check slide-over (B84 / R2-34: Admin/Owner 7 days; QC own checks same day; reason required) */}
       <SlideOver open={editing !== null} onClose={() => setEditing(null)} title="Edit QC Check">
         <div className="flex flex-col gap-4 p-4">
           <Select label="Result" value={editResult} options={resultOptions} onChange={(v) => setEditResult(v as 'PASS' | 'FAIL' | 'NA')} />
@@ -341,10 +362,28 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes, 
           <Input label="Defect type" value={editDefectType} onChange={(e) => setEditDefectType(e.target.value)} />
           <NumberInput label="Defect Qty" value={editDefectQty} onChange={(e) => setEditDefectQty(e.target.value)} />
           <Input label="Notes" value={editNotes} onChange={(e) => setEditNotes(e.target.value)} />
+          <Input label="Reason for the change" value={editReason} onChange={(e) => setEditReason(e.target.value)} />
           {editError && <p role="alert" className="text-sm text-red-700">{editError}</p>}
           <div className="flex gap-2 pt-2">
             <Button onClick={handleEdit} disabled={editPending}>{editPending ? 'Saving…' : 'Save'}</Button>
             <Button variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
+          </div>
+        </div>
+      </SlideOver>
+
+      {/* Delete check slide-over (R2-34: voided with a reason; the audit log keeps it) */}
+      <SlideOver open={deleting !== null} onClose={() => setDeleting(null)} title="Delete QC Check">
+        <div className="flex flex-col gap-4 p-4">
+          {deleting && (
+            <p className="text-sm text-gray-600">
+              {fmt(deleting.checkTime)} · {deleting.parameterName ?? 'General'} · {deleting.result}. It leaves the CoA and every summary; the audit log keeps it.
+            </p>
+          )}
+          <Input label="Reason for deleting" value={deleteReason} onChange={(e) => setDeleteReason(e.target.value)} />
+          {editError && <p role="alert" className="text-sm text-red-700">{editError}</p>}
+          <div className="flex gap-2 pt-2">
+            <Button variant="danger" onClick={handleDelete} disabled={editPending || deleteReason.trim().length < 3}>Delete check</Button>
+            <Button variant="ghost" onClick={() => setDeleting(null)}>Cancel</Button>
           </div>
         </div>
       </SlideOver>

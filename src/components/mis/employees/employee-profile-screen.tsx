@@ -7,6 +7,7 @@ import type { MisPayComponent } from '@/generated/prisma/enums';
 import { setPayComponentAction } from '@/app/(mis)/mis/employees/[id]/actions';
 import { uploadEmployeePhotoAction } from '@/app/(mis)/mis/employees/actions';
 import { unwrap } from '@/lib/mis/action-result';
+import { formatFactoryDate } from '@/lib/mis/factory-time';
 import { PhotoPicker } from './photo-picker';
 
 interface Employee {
@@ -32,9 +33,14 @@ type PayComponentMap = Record<MisPayComponent, boolean>;
 interface Props {
   employee: Employee;
   monthStats: MonthStats;
+  /** yyyy-MM shown in the stats card. */
+  month: string;
+  timezone: string;
   canWrite: boolean;
   /** null for anyone but the Owner (wages.read) — the whole card is absent then, never disabled (25.1). */
   payComponents: PayComponentMap | null;
+  /** R2-89: Owner only (wages.read). The link is absent for everyone else, not disabled. */
+  canViewPayslip?: boolean;
 }
 
 const COMPONENT_LABELS: Record<MisPayComponent, string> = {
@@ -46,10 +52,15 @@ const COMPONENT_LABELS: Record<MisPayComponent, string> = {
 };
 
 function fmtRole(r: string) { return r.replace(/_/g, ' '); }
-function fmtDate(d: Date | string) { return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' }); }
+function fmtDate(d: Date | string, timezone: string) { return formatFactoryDate(new Date(d), timezone); }
+function shiftMonth(key: string, by: number) {
+  const [y, m] = key.split('-').map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + by, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
 function fmtOT(m: number) { const h = Math.floor(m / 60); const min = m % 60; return h > 0 ? `${h}h ${min}m` : `${min}m`; }
 
-export function EmployeeProfileScreen({ employee, monthStats, canWrite, payComponents }: Props) {
+export function EmployeeProfileScreen({ employee, monthStats, month, timezone, canWrite, payComponents, canViewPayslip = false }: Props) {
   const initials = employee.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
   const [isPending, startTransition] = useTransition();
   const [photo, setPhoto] = useState<File | null>(null);
@@ -103,7 +114,7 @@ export function EmployeeProfileScreen({ employee, monthStats, canWrite, payCompo
               </div>
               <div>
                 <div className="text-xs text-gray-500">Joined</div>
-                <div className="font-medium text-gray-900 mt-0.5">{fmtDate(employee.createdAt)}</div>
+                <div className="font-medium text-gray-900 mt-0.5">{fmtDate(employee.createdAt, timezone)}</div>
               </div>
             </div>
           </div>
@@ -117,7 +128,10 @@ export function EmployeeProfileScreen({ employee, monthStats, canWrite, payCompo
           </div>
         )}
         {canWrite && (
-          <div className="mt-5 pt-5 border-t border-gray-100 flex gap-3">
+          <div className="mt-5 pt-5 border-t border-gray-100 flex flex-wrap gap-3">
+            <Link href={`/mis/employees?edit=${employee.id}`}>
+              <Button>Edit Employee</Button>
+            </Link>
             <Link href={`/mis/print/badge/${employee.id}`} target="_blank">
               <Button variant="ghost">Print Badge</Button>
             </Link>
@@ -126,11 +140,24 @@ export function EmployeeProfileScreen({ employee, monthStats, canWrite, payCompo
             </Link>
           </div>
         )}
+        {canViewPayslip && (
+          <div className="mt-5 pt-5 border-t border-gray-100 flex gap-3">
+            <Link href={`/mis/print/payslip/${employee.id}?year=${month.slice(0, 4)}&month=${Number(month.slice(5, 7))}`} target="_blank">
+              <Button variant="ghost">View Payslip · {month}</Button>
+            </Link>
+          </div>
+        )}
       </div>
 
       {/* This month stats */}
       <div>
-        <h2 className="text-sm font-medium text-gray-700 mb-3">This Month</h2>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-medium text-gray-700">Attendance · {month}</h2>
+          <div className="flex items-center gap-2 text-sm">
+            <Link href={`/mis/employees/${employee.id}?month=${shiftMonth(month, -1)}`} className="inline-flex min-h-11 items-center px-2 text-indigo-600">← Prev</Link>
+            <Link href={`/mis/employees/${employee.id}?month=${shiftMonth(month, 1)}`} className="inline-flex min-h-11 items-center px-2 text-indigo-600">Next →</Link>
+          </div>
+        </div>
         <div className="grid grid-cols-4 gap-3">
           {[
             { label: 'Present', value: monthStats.present, color: 'text-green-600' },

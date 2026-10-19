@@ -9,6 +9,8 @@ import {
 } from '@/lib/mis/crew-hours';
 import { addDaysToDateKey, dateKeyToDbDate, factoryDateKey } from '@/lib/mis/factory-time';
 import { presenceOf, type Presence } from '@/lib/mis/presence';
+import { mayReleaseWorker } from '@/lib/mis/worker-lock';
+import { leaveCoversDayWhere } from '@/lib/mis/leave';
 import { db } from '@/server/db';
 import { requirePermission, type MisActor } from '@/server/mis/auth';
 import { flushReleaseAudit, releaseWorkerRows, type ReleaseAuditEvent } from '@/server/mis/allocation-release';
@@ -147,6 +149,9 @@ function endedCutoff(dateKey: string, shift: ShiftRow, now: Date, tz: string): D
  * `override: { reason }`, which is written to the row's notes and to the audit trail. A person who
  * is simply not clocked in today (NOT_IN) is a warning, created with `confirmWarnings`.
  *
+ * R2-47: an override on an OVERLAP RELEASES the person's other open row(s) first (audited
+ * RELEASE_WORKER, reason MOVED, with the override note) - it never leaves two simultaneous holds.
+ *
  * An employee already on *this same* machine allocation for this date/shift
  * is silently a no-op, not a conflict — re-submitting a crew that includes
  * someone already staffed is the normal shape of "add two more people".
@@ -220,7 +225,7 @@ async function assignCore(actor: MisActor, input: AssignWorkersInput, now: Date)
       select: { employeeId: true, clockIn: true, clockOut: true, status: true },
     });
     const leaves = await tx.misLeaveRequest.findMany({
-      where: { employeeId: { in: employeeIds }, date: allocationDate, status: 'APPROVED' },
+      where: { employeeId: { in: employeeIds }, ...leaveCoversDayWhere(allocationDate), status: 'APPROVED' },
       select: { employeeId: true },
     });
     const attendanceBy = new Map((attendance ?? []).map((a) => [a.employeeId, a]));
@@ -276,11 +281,27 @@ async function assignCore(actor: MisActor, input: AssignWorkersInput, now: Date)
 
       let notes = input.notes ?? null;
       let overridden = false;
+      let releasedHold: { id: string; machineName: string; holderId: string | null; count: number } | null = null;
       if (conflicts.length > 0) {
         const hard = conflicts.filter((c) => c.kind !== 'NOT_IN');
         if (mayOverride) {
           overridden = true;
           notes = `${notes ? `${notes} ` : ''}[override] ${overrideReason}`;
+          // R2-47: an override never creates a second simultaneous hold. The person's open row(s) on
+          // other bookings for this date and shift are RELEASED first (audited, with the reason), then
+          // the new row is created - all in this transaction, under the per-person lock above.
+          if (other && other.machineAllocationId !== input.machineAllocationId) {
+            const released = await tx.misWorkerAllocation.updateMany({
+              where: { ...rowFilter, machineAllocationId: { not: input.machineAllocationId } },
+              data: { releasedAt: now },
+            });
+            releasedHold = {
+              id: other.id,
+              machineName: other.machineAllocation.machine.name,
+              holderId: other.assignedById ?? null,
+              count: released?.count ?? 1,
+            };
+          }
         } else if (hard.length > 0) {
           blocked.push(...hard);
           continue;
@@ -303,6 +324,17 @@ async function assignCore(actor: MisActor, input: AssignWorkersInput, now: Date)
       });
       created.push(rec);
 
+      // The release happened first, so its audit row comes first.
+      if (releasedHold) {
+        pendingAudit.push({
+          actorId: actor.userId,
+          action: 'RELEASE_WORKER',
+          entity: 'MisWorkerAllocation',
+          entityId: releasedHold.id,
+          before: { releasedAt: null, employeeId, machineAllocationId: other?.machineAllocationId ?? null, holderId: releasedHold.holderId },
+          after: { reason: 'MOVED', at: now.toISOString(), override: true, note: overrideReason, movedTo: rec.id, rowsReleased: releasedHold.count },
+        });
+      }
       pendingAudit.push({
         actorId: actor.userId,
         action: 'ASSIGN_WORKER',
@@ -322,7 +354,12 @@ async function assignCore(actor: MisActor, input: AssignWorkersInput, now: Date)
           action: 'ASSIGN_WORKER_OVERRIDE',
           entity: 'MisWorkerAllocation',
           entityId: rec.id,
-          after: { employeeId, conflicts: conflicts.map((c) => c.kind), reason: overrideReason },
+          after: {
+            employeeId,
+            conflicts: conflicts.map((c) => c.kind),
+            reason: overrideReason,
+            ...(releasedHold ? { releasedFrom: releasedHold.id, releasedFromMachine: releasedHold.machineName } : {}),
+          },
         });
       }
     }
@@ -334,9 +371,67 @@ async function assignCore(actor: MisActor, input: AssignWorkersInput, now: Date)
   return outcome;
 }
 
+/** Auth user id -> display name, for the holder of a worker lock (R2-47). One query; none when empty. */
+async function holderNames(ids: (string | null | undefined)[]): Promise<Map<string, string>> {
+  const unique = [...new Set(ids.filter((id): id is string => Boolean(id)))];
+  if (unique.length === 0) return new Map();
+  const rows = await db.userProfile.findMany({ where: { id: { in: unique } }, select: { id: true, name: true } });
+  return new Map((rows ?? []).map((r) => [r.id, r.name ?? 'another supervisor']));
+}
+
+export type OperatorHold = { workerAllocationId: string; machineName: string; holderName: string };
+
+/**
+ * R2-47 on the production log: the open crew row that holds this person on a DIFFERENT machine for
+ * this date (and shift, when known), or null. A booking that was released, or ended before `at`,
+ * no longer holds them. Read-only; the caller decides the refusal. Used by `production.ts`.
+ */
+export async function findOperatorHoldElsewhere(i: {
+  employeeId: string;
+  machineId: string;
+  dateKey: string;
+  shiftId: string | null;
+  at: Date;
+}): Promise<OperatorHold | null> {
+  await requirePermission('production.write');
+  const rows = await db.misWorkerAllocation.findMany({
+    where: {
+      employeeId: i.employeeId,
+      allocationDate: allocationDateFor(i.dateKey),
+      ...(i.shiftId ? { shiftId: i.shiftId } : {}),
+      releasedAt: null,
+      deletedAt: null,
+      machineAllocation: { releasedAt: null, endsAt: { gte: i.at }, machineId: { not: i.machineId } },
+    },
+    select: { id: true, assignedById: true, machineAllocation: { select: { machineId: true, machine: { select: { name: true } } } } },
+    orderBy: { createdAt: 'asc' },
+    take: 1,
+  });
+  const row = (rows ?? []).find((r) => r.machineAllocation?.machineId !== i.machineId);
+  if (!row) return null;
+  const holder = row.assignedById ? (await holderNames([row.assignedById])).get(row.assignedById) : undefined;
+  return {
+    workerAllocationId: row.id,
+    machineName: row.machineAllocation?.machine?.name ?? 'another machine',
+    holderName: holder ?? 'another supervisor',
+  };
+}
+
+/**
+ * R2-47 HARD worker lock: the supervisor who assigned a person (`assignedById`) holds them until
+ * they are released. Only that holder, an Admin or the Owner may release or move them. A row with
+ * no recorded holder (from before the lock) is releasable by any supervisor who can see the person.
+ */
+async function assertMayRelease(actor: MisActor, row: { assignedById: string | null }) {
+  if (mayReleaseWorker({ role: actor.role, actorId: actor.userId, holderId: row.assignedById })) return;
+  const holder = (await holderNames([row.assignedById])).get(row.assignedById ?? '') ?? 'the supervisor who assigned them';
+  throw new Error(`Only ${holder} (who assigned this person), an Admin or the Owner can release them.`);
+}
+
 /**
  * Release one person from a booking. Open rows only; the caller must be able to see the person
- * (their pool); the release goes through the shared helper so the audit carries the reason.
+ * (their pool) and hold the lock (R2-47); the release goes through the shared helper so the audit
+ * carries the reason.
  */
 export async function releaseWorker(workerAllocationId: string) {
   const actor = await requirePermission('production.write');
@@ -347,6 +442,7 @@ export async function releaseWorker(workerAllocationId: string) {
     });
     if (!row) throw new Error('That assignment no longer exists.');
     if (row.releasedAt) throw new Error('Already released.');
+    await assertMayRelease(actor, row);
 
     const poolWhere = await resolveVisibleEmployeeWhere(actor);
     const visible = await tx.misEmployee.findMany({
@@ -379,6 +475,8 @@ export async function moveWorker(input: { workerAllocationId: string; toMachineA
     if (!row) throw new Error('That assignment no longer exists.');
     if (row.releasedAt) throw new Error('Already released.');
     if (row.machineAllocationId === input.toMachineAllocationId) throw new Error('That person is already on this booking.');
+    // A move releases the old row, so it needs the same right as a release (R2-47).
+    await assertMayRelease(actor, row);
 
     const poolWhere = await resolveVisibleEmployeeWhere(actor);
     const visible = await tx.misEmployee.findMany({
@@ -556,7 +654,7 @@ export async function getWorkerAvailability(shiftId: string, dateKey: string): P
       select: { employeeId: true, clockIn: true, clockOut: true, status: true },
     }),
     db.misLeaveRequest.findMany({
-      where: { employeeId: { in: employeeIds }, date: allocationDate, status: 'APPROVED' },
+      where: { employeeId: { in: employeeIds }, ...leaveCoversDayWhere(allocationDate), status: 'APPROVED' },
       select: { employeeId: true },
     }),
   ]);
@@ -588,6 +686,32 @@ export async function getWorkerAvailability(shiftId: string, dateKey: string): P
       allocations: byEmployee.get(e.id) ?? [],
     };
   });
+}
+
+/** R2-47 — who holds each open worker row and whether the viewer may release it. */
+export type WorkerLockInfo = { holderName: string | null; canRelease: boolean };
+
+/**
+ * The lock side of the crew board (R2-47), keyed by worker-allocation id: the holder supervisor's
+ * name (blocked shows machine + holder) and whether the viewer may release that row (holder, Admin
+ * or Owner). Read-only, `production.read`, the same open rows `getWorkerAvailability` shows.
+ */
+export async function getWorkerLocks(shiftId: string, dateKey: string): Promise<Record<string, WorkerLockInfo>> {
+  const actor = await requirePermission('production.read');
+  if (!isDateKey(dateKey)) throw new Error('That date is not valid.');
+  const rows = await db.misWorkerAllocation.findMany({
+    where: { allocationDate: allocationDateFor(dateKey), shiftId, releasedAt: null, deletedAt: null, machineAllocation: { releasedAt: null } },
+    select: { id: true, assignedById: true },
+  });
+  const names = await holderNames((rows ?? []).map((r) => r.assignedById));
+  const out: Record<string, WorkerLockInfo> = {};
+  for (const r of rows ?? []) {
+    out[r.id] = {
+      holderName: r.assignedById ? (names.get(r.assignedById) ?? null) : null,
+      canRelease: mayReleaseWorker({ role: actor.role, actorId: actor.userId, holderId: r.assignedById }),
+    };
+  }
+  return out;
 }
 
 /**
@@ -709,7 +833,7 @@ export async function getCrewSummary(date?: Date | string): Promise<CrewSummary>
       select: { employeeId: true, status: true, clockIn: true, clockOut: true },
     }),
     db.misLeaveRequest.findMany({
-      where: { employeeId: { in: poolIds }, date: d, status: 'APPROVED' },
+      where: { employeeId: { in: poolIds }, ...leaveCoversDayWhere(d), status: 'APPROVED' },
       select: { employeeId: true },
     }),
     db.misWorkerAllocation.findMany({
@@ -865,7 +989,7 @@ export async function getManpowerReport(dateKey: string): Promise<ManpowerReport
     poolIds.length === 0
       ? Promise.resolve([])
       : db.misLeaveRequest.findMany({
-          where: { employeeId: { in: poolIds }, date: d, status: 'APPROVED' },
+          where: { employeeId: { in: poolIds }, ...leaveCoversDayWhere(d), status: 'APPROVED' },
           select: { employeeId: true },
         }),
     db.misMachineAllocation.findMany({

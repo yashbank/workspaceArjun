@@ -5,6 +5,7 @@ import { Button } from '@/components/mis/kit/button';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import { NumberInput, Select } from '@/components/mis/kit/input';
 import { allocateMachineAction, getOpenPhasesForOrderAction, releaseMachineAction } from '@/app/(mis)/mis/machine-board/actions';
+import { Combobox } from '@/components/ui/combobox';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { formatFactoryTime } from '@/lib/mis/factory-time';
 import type { SyncFlag } from '@/lib/mis/machine-sync';
@@ -17,6 +18,8 @@ type Machine = {
     id: string; jobRef: string | null; endsAt: Date; order: { orderNumber: string } | null;
     /** Names of the people on it now; "Releasing frees N workers: <names>" (R3 B101). */
     crewNames?: string[];
+    /** R2-41: PRODUCTION_LOG = added automatically when a production log was saved with no booking. */
+    source?: 'SCHEDULED' | 'PRODUCTION_LOG';
   } | null;
   /** Today's last production log and whether it agrees with the booking (R3 B99, warn only). */
   lastLog?: { orderNumber: string | null; at: Date } | null;
@@ -86,6 +89,7 @@ function MachineCard({ machine, canWrite, orders, crewLink, timeZone }: { machin
         <div className="rounded-lg bg-amber-50 px-2 py-1 font-mono text-xs text-amber-900">
           {machine.currentAllocation.order?.orderNumber ?? machine.currentAllocation.jobRef ?? 'Unknown job'}
           {' · '}until {formatFactoryTime(new Date(machine.currentAllocation.endsAt), timeZone)}
+          {machine.currentAllocation.source === 'PRODUCTION_LOG' && <span data-testid="auto-block"> · from production log</span>}
         </div>
       )}
       {machine.syncFlag && machine.syncFlag !== 'OK' && (
@@ -135,10 +139,7 @@ function MachineCard({ machine, canWrite, orders, crewLink, timeZone }: { machin
       {confirmDialog}
       <SlideOver open={allocOpen} onClose={() => setAllocOpen(false)} title={`Allocate — ${machine.name}`}>
         <div className="flex flex-col gap-4 p-4">
-          <Select label="Order" value={orderId} onChange={e => onOrderChange(e.target.value)}>
-            <option value="">Select an order…</option>
-            {orders.map(o => <option key={o.id} value={o.id}>{o.orderNumber}</option>)}
-          </Select>
+          <Combobox label="Order" value={orderId || null} options={orders.map(o => ({ value: o.id, label: o.orderNumber }))} onChange={onOrderChange} placeholder="Select an order…" />
           <Select
             label="Phase"
             value={jobPhaseId}

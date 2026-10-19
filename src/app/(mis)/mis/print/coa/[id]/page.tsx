@@ -1,6 +1,9 @@
 import { isUuid } from '@/lib/mis/ids';
 import { requireMisAccess } from '@/server/mis/guard';
 import { PrintButton } from '@/components/mis/print/print-button';
+import { DocumentVersionBar } from '@/components/mis/print/document-version-bar';
+import { docFileName } from '@/lib/mis/document-version';
+import { getDocumentVersionView } from '@/server/mis/document-versions';
 import { getOrder } from '@/server/mis/orders';
 import { getQcForOrder } from '@/server/mis/qc';
 import { getFactoryTimezone } from '@/server/mis/business-rules';
@@ -32,6 +35,8 @@ export default async function CoaPrintPage({ params }: { params: Promise<{ id: s
   // list here would print as a clean "No quality checks recorded".
   const qcLogs = (await getQcForOrder(id)) as QcLogRow[];
   const timeZone = await getFactoryTimezone();
+  // R2-46: no catch — a version that cannot be read must not print as an uncontrolled-looking copy silently.
+  const docVersions = await getDocumentVersionView('COA', id);
 
   const printDate = formatFactoryDate(new Date(), timeZone);
   const passCount = qcLogs.filter(q => q.result === 'PASS').length;
@@ -49,6 +54,8 @@ export default async function CoaPrintPage({ params }: { params: Promise<{ id: s
           {`DRAFT CERTIFICATE — order is ${order.status}`}
         </div>
       )}
+      {/* R2-46: which controlled version this is, and its sign-off */}
+      <DocumentVersionBar view={docVersions} fileName={docFileName('COA', order.orderNumber, docVersions.latest ? new Date(docVersions.latest.preparedAt) : new Date(), docVersions.latest?.version ?? null, timeZone)} />
       {/* Print button */}
       <div className="no-print mb-6 flex gap-3">
         <PrintButton />

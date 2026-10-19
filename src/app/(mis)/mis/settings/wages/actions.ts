@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 
 import { asResult } from '@/lib/mis/action-result';
 import type { MisPayBasis, MisWageUnit } from '@/generated/prisma/enums';
-import { addWageRate, createWageType, setWageTypeActive } from '@/server/mis/wage-type';
+import { addWageRate, createWageType, setWageTypeActive, updateWageTypeDetails } from '@/server/mis/wage-type';
 
 export async function createWageTypeAction(input: {
   name: string;
@@ -44,6 +44,14 @@ export async function addWageRateAction(
 export async function setWageTypeActiveAction(code: string, isActive: boolean) {
   return asResult(async () => {
     await setWageTypeActive(code, isActive);
+    revalidatePath('/mis/settings/wages');
+  }, { entity: 'Wage type' });
+}
+
+/** R2-114: rename a wage type (name / Hindi name) — labels only, never a rate. Owner only (server-gated). */
+export async function updateWageTypeDetailsAction(code: string, input: { name: string; nameHi?: string | null }) {
+  return asResult(async () => {
+    await updateWageTypeDetails(code, input);
     revalidatePath('/mis/settings/wages');
   }, { entity: 'Wage type' });
 }

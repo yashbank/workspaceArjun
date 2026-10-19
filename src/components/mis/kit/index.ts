@@ -21,3 +21,4 @@ export { StatusBadge, type BadgeTone } from './status-badge';
 
 export { ToastProvider, useToast } from '@/components/ui/toast';
 export { useConfirm, type ConfirmOptions } from '@/components/ui/confirm-dialog';
+export { Pagination, HiddenParams } from './pagination';
