@@ -87,6 +87,23 @@ export function SettingsScreen({
         </Link>
       )}
 
+      {/* R2-102: which leave types payroll pays. Owner only, like wage types — absent, not greyed. */}
+      {canSeeWages && (
+        <Link
+          href="/mis/settings/leave-pay"
+          className="flex items-center justify-between rounded-2xl border border-indigo-200 bg-indigo-50 p-4 hover:bg-indigo-100"
+        >
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-indigo-700">
+              🔒 Visible to you only
+            </div>
+            <div className="mt-1 font-semibold text-slate-900">Leave pay</div>
+            <div className="text-sm text-slate-600">Mark each leave type (CL, SL, EL, LWP, Other) as paid or unpaid in payroll. All start unpaid.</div>
+          </div>
+          <span aria-hidden="true" className="text-indigo-600">→</span>
+        </Link>
+      )}
+
       {canSeeRules && (
         <Link
           href="/mis/settings/rules"

@@ -931,6 +931,22 @@ model MisLeaveRequest {
   @@map("mis_leave_requests")
 }
 
+/// R2-102 (migration 20261020000000_r2_leave_pay_setting). The Owner's PAID / UNPAID choice per
+/// leave type, append-only: nothing is edited, a change is a new row. A payroll month uses the
+/// newest row (effectiveFrom, then createdAt) on or before its LAST day; no row = the built-in
+/// default (every type unpaid — payroll as before R2-102 — `lib/mis/leave-pay.ts`).
+model MisLeavePayRule {
+  id            String       @id @default(uuid()) @db.Uuid
+  leaveType     MisLeaveType @map("leave_type")
+  paid          Boolean
+  effectiveFrom DateTime     @map("effective_from") @db.Date
+  reason        String?
+  changedById   String?      @map("changed_by_id") @db.Uuid
+  createdAt     DateTime     @default(now()) @map("created_at")
+  @@index([leaveType, effectiveFrom])
+  @@map("mis_leave_pay_rules")
+}
+
 model MisBom {
   id            String           @id @default(uuid()) @db.Uuid
   orderId       String           @unique @map("order_id") @db.Uuid
@@ -1903,6 +1919,9 @@ model MisDocumentVersion {
   approvedById String?             @map("approved_by_id") @db.Uuid
   approvedAt   DateTime?           @map("approved_at")
   notes        String?
+  /// R2-46 follow-up: the document's rendered data, captured at issue and frozen at approval. An
+  /// APPROVED version prints from it. NULL = legacy row (prints live with a "no snapshot" note).
+  snapshot     Json?
   createdAt    DateTime            @default(now()) @map("created_at")
   @@unique([docType, refId, version])
   @@index([docType, refId])
