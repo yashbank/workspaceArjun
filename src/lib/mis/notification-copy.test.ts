@@ -3,9 +3,21 @@ import { describe, expect, it } from 'vitest';
 import { MIS_NOTIFY_ROLES, NOTIFICATION_TYPES, isMisNotifyRole, notificationView } from './notification-copy';
 
 describe('who gets the bell', () => {
-  it('is exactly Owner, Admin and Store Guy', () => {
-    expect([...MIS_NOTIFY_ROLES]).toEqual(['OWNER', 'ADMIN', 'STORE_GUY']);
-    for (const r of ['SUPERVISOR', 'QC', 'ATTENDANCE_OPERATOR', 'SUPER_ATTENDANCE_OPERATOR', 'WORKER', null]) expect(isMisNotifyRole(r)).toBe(false);
+  it('is exactly Owner, Admin, Store Guy and (R2-67) Supervisor', () => {
+    expect([...MIS_NOTIFY_ROLES]).toEqual(['OWNER', 'ADMIN', 'STORE_GUY', 'SUPERVISOR']);
+    for (const r of ['QC', 'ATTENDANCE_OPERATOR', 'SUPER_ATTENDANCE_OPERATOR', 'WORKER', null]) expect(isMisNotifyRole(r)).toBe(false);
+  });
+});
+
+describe('notificationView — R2-67 / R2-80', () => {
+  it('a decided request tells the Supervisor what happened and links to it', () => {
+    expect(notificationView(NOTIFICATION_TYPES.requestDecided, { requestId: 'r', requestNumber: 'MRN-1', decision: 'APPROVED', pickList: true })).toMatchObject({ title: 'MRN-1 · approved by the Store', tone: 'ok', href: '/mis/store/requests/r' });
+    expect(notificationView(NOTIFICATION_TYPES.requestDecided, { requestId: 'r', requestNumber: 'MRN-1', decision: 'REJECTED', note: 'Out of stock' })).toMatchObject({ title: 'MRN-1 · rejected by the Store', detail: 'Out of stock', tone: 'risk' });
+  });
+  it('a general-use alert says it is not linked to any order', () => {
+    const v = notificationView(NOTIFICATION_TYPES.generalUse, { reference: 'MRN-2', kind: 'request', costCenter: 'Press', reason: 'grease', requestId: 'r2' })!;
+    expect(v.detail).toBe('Requested for Press · grease · not linked to any order');
+    expect(v.href).toBe('/mis/store/requests/r2');
   });
 });
 

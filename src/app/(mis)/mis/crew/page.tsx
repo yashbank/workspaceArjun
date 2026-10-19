@@ -7,7 +7,7 @@ import { resolveShiftAt } from '@/lib/mis/shift-window';
 import { getFactoryTimezone } from '@/server/mis/business-rules';
 import { requireMisAccess } from '@/server/mis/guard';
 import { getMisRole } from '@/server/mis/roles';
-import { getWorkerAvailability, listActiveShifts, listCrewBookings } from '@/server/mis/worker-allocation';
+import { getWorkerAvailability, getWorkerLocks, listActiveShifts, listCrewBookings } from '@/server/mis/worker-allocation';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -44,9 +44,9 @@ export default async function CrewPage({
   const dateKey =
     params.date && isDateKey(params.date) && params.date >= minDate && params.date <= maxDate ? params.date : defaultDate;
 
-  const [bookings, availability] = shift
-    ? await Promise.all([listCrewBookings(dateKey, shift.id), getWorkerAvailability(shift.id, dateKey)])
-    : [[], []];
+  const [bookings, availability, locks] = shift
+    ? await Promise.all([listCrewBookings(dateKey, shift.id), getWorkerAvailability(shift.id, dateKey), getWorkerLocks(shift.id, dateKey)])
+    : [[], [], {} as Awaited<ReturnType<typeof getWorkerLocks>>];
 
   const openAllocationId =
     params.allocation && UUID.test(params.allocation) && bookings.some((b) => b.machineAllocationId === params.allocation)
@@ -67,7 +67,11 @@ export default async function CrewPage({
         orderNumber: b.orderNumber,
         jobRef: b.jobRef,
       }))}
-      availability={availability}
+      availability={availability.map((w) => ({
+        ...w,
+        // R2-47: who holds each lock, and whether this viewer may release it (the server re-checks).
+        allocations: w.allocations.map((a) => ({ ...a, holderName: locks[a.id]?.holderName ?? null, canRelease: locks[a.id]?.canRelease ?? true })),
+      }))}
       canWrite={canWrite}
       canOverride={role === 'OWNER' || role === 'ADMIN'}
       openAllocationId={openAllocationId}

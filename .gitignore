@@ -119,3 +119,4 @@ public/assets/bpp/references/bpp-ambient-motion-reference.gif
 .zencoder/
 
 .claude/settings.local.json
+.claude/worktrees/

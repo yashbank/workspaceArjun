@@ -35,7 +35,7 @@ export async function getDefectReport(
 
   // Over-fetch a day either side; the pure builder cuts the month exactly on the factory date.
   const fails = await db.misQcCheck.findMany({
-    where: { result: 'FAIL', checkTime: { gte: dateKeyToDbDate(addDaysToDateKey(first, -1)), lt: dateKeyToDbDate(addDaysToDateKey(last, 2)) } },
+    where: { result: 'FAIL', checkTime: { gte: dateKeyToDbDate(addDaysToDateKey(first, -1)), lt: dateKeyToDbDate(addDaysToDateKey(last, 2)) }, voidedAt: null },
     select: { id: true, orderId: true, checkTime: true, checkById: true, defectType: true, defectQty: true, notes: true, parameterName: true },
     orderBy: { checkTime: 'desc' },
   });

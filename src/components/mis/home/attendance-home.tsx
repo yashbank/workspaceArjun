@@ -1,6 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useTransition } from 'react';
+
+import { waiveLatenessAction } from '@/app/(mis)/mis/attendance/actions';
 
 import type { KioskCardData, KioskCardDevice, KioskHealthLevel } from '@/lib/mis/kiosk-health';
 import { cn } from '@/lib/utils';
@@ -126,14 +128,21 @@ export function AttendanceHome({
 /**
  * Waive today's lateness.
  *
- * The toggle and the reason note are local state. There is no waiver mutation
- * in the server layer yet, so the card carries the reason to the register
- * rather than pretending to have saved it — a button that silently does
- * nothing is worse than one that hands the work over.
+ * R2-103: the button calls `waiveLateness` (attendance.write, audited, reason mandatory) and says what happened.
  */
 function WaiveLatenessCard({ lateCount }: { lateCount: number }) {
   const [on, setOn] = useState(false);
   const [reason, setReason] = useState('');
+  const [isPending, startTransition] = useTransition();
+  const [outcome, setOutcome] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const apply = () => startTransition(async () => {
+    const res = await waiveLatenessAction(reason);
+    setOutcome(res.ok
+      ? { ok: true, text: `Waived lateness for ${res.value.count} ${res.value.count === 1 ? 'person' : 'people'}.` }
+      : { ok: false, text: res.detail });
+    if (res.ok) { setOn(false); setReason(''); }
+  });
 
   return (
     <DashedCard>
@@ -174,11 +183,12 @@ function WaiveLatenessCard({ lateCount }: { lateCount: number }) {
             className="w-full rounded-xl border border-slate-200 p-3 text-sm text-slate-900 placeholder:text-slate-400"
           />
           <p className="mb-3 mt-1 text-xs text-slate-500">
-            A waiver needs a reason on the record. Apply it on the register.
+            A waiver needs a reason on the record (at least 3 characters).
           </p>
-          <PrimaryButton href="/mis/attendance">Apply on the register</PrimaryButton>
+          <PrimaryButton onClick={isPending || reason.trim().length < 3 ? undefined : apply}>{isPending ? 'Applying…' : 'Apply waiver'}</PrimaryButton>
         </div>
       )}
+      {outcome && <p role="status" className={cn('mt-3 text-sm', outcome.ok ? 'text-green-700' : 'text-red-600')}>{outcome.text}</p>}
     </DashedCard>
   );
 }

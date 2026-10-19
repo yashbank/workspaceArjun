@@ -1,12 +1,14 @@
 'use client';
 
-import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { EmptyState } from '@/components/mis/kit/empty-state';
 import { SlideOver } from '@/components/mis/kit/slide-over';
+import { scanOutcome } from '@/lib/mis/scan-input';
 import { cn } from '@/lib/utils';
 
 import { InfoCard, Mono, SectionLabel } from '../home/cards';
+import { ScanButton } from './scan-button';
 
 /**
  * The cart.
@@ -30,6 +32,8 @@ import { InfoCard, Mono, SectionLabel } from '../home/cards';
 export type PickerItem = {
   id: string;
   code: string;
+  /** R2-68: a printed barcode may carry the SKU instead of the item code. */
+  sku?: string | null;
   name: string;
   unit: string;
   /** Current stock. ISSUE mode refuses to go past it. */
@@ -64,6 +68,11 @@ type Props = {
   canSetRate?: boolean;
   /** Anything else the screen wants above the cart — a PO, an order, a department. */
   children?: ReactNode;
+  /**
+   * R2-66: fetch fresh balances (item id -> qty). Called when the window regains focus, from the "Refresh stock"
+   * button, and just before Confirm, so a cart left open on a phone never trusts a stale number.
+   */
+  refreshBalances?: () => Promise<Record<string, number>>;
 };
 
 type DraftLine = {
@@ -85,6 +94,7 @@ export function ItemCart({
   canSetRate = false,
   canOverride = false,
   children,
+  refreshBalances,
 }: Props) {
   const [query, setQuery] = useState('');
   const [lines, setLines] = useState<DraftLine[]>([]);
@@ -92,6 +102,10 @@ export function ItemCart({
   const [error, setError] = useState<string | null>(null);
   const [overOpen, setOverOpen] = useState(false);
   const [overDraft, setOverDraft] = useState('');
+  // R2-66: balances fetched after the page loaded; they win over the (possibly minutes-old) ones the page was given.
+  const [live, setLive] = useState<Record<string, number> | null>(null);
+  const [refreshedAt, setRefreshedAt] = useState<Date | null>(null);
+  const [scanNote, setScanNote] = useState<string | null>(null);
   // A fresh key after every success; the same key for a retry of the same cart.
   const commitKey = useRef<string>(newKey());
 
@@ -99,6 +113,7 @@ export function ItemCart({
   const qtyRefs = useRef(new Map<string, HTMLInputElement>());
 
   const byId = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
+  const balanceOf = useCallback((item: PickerItem) => live?.[item.id] ?? item.balance, [live]);
   const isReceive = mode === 'RECEIVE';
   const guardsStock = mode === 'ISSUE';
 
@@ -121,6 +136,30 @@ export function ItemCart({
     return scored.slice(0, MAX_MATCHES).map((hit) => hit.item);
   }, [items, query]);
 
+  /** Returns the fresh map (or null when it could not be fetched — the page's numbers then stand, the server still checks). */
+  const refresh = useCallback(async (): Promise<Record<string, number> | null> => {
+    if (!refreshBalances) return null;
+    try {
+      const fresh = await refreshBalances();
+      setLive(fresh);
+      setRefreshedAt(new Date());
+      return fresh;
+    } catch {
+      return null;
+    }
+  }, [refreshBalances]);
+
+  useEffect(() => {
+    if (!refreshBalances) return;
+    const onFocus = () => { if (document.visibilityState !== 'hidden') void refresh(); };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
+    };
+  }, [refresh, refreshBalances]);
+
   const addItem = useCallback((itemId: string) => {
     setError(null);
     setLines((current) => {
@@ -142,6 +181,13 @@ export function ItemCart({
       qtyRefs.current.get(itemId)?.select();
     }, 0);
   }, []);
+
+  const onScan = useCallback((raw: string) => {
+    const outcome = scanOutcome(items, raw);
+    setScanNote(outcome.message);
+    if (outcome.item) addItem(outcome.item.id);
+    else setQuery(outcome.fallbackQuery);
+  }, [items, addItem]);
 
   const step = useCallback((itemId: string, delta: number) => {
     setError(null);
@@ -173,7 +219,7 @@ export function ItemCart({
   const shortLines = lines.filter((line) => {
     if (!guardsStock) return false;
     const item = byId.get(line.itemId);
-    return item ? (Number(line.qty) || 0) > item.balance : false;
+    return item ? (Number(line.qty) || 0) > balanceOf(item) : false;
   });
 
   const blankLines = lines.filter((line) => (Number(line.qty) || 0) <= 0);
@@ -185,6 +231,14 @@ export function ItemCart({
     setBusy(true);
     setError(null);
     try {
+      // R2-66: look at the stock one more time before committing; a line gone short is shown, not sent.
+      if (guardsStock && refreshBalances) {
+        const fresh = await refresh();
+        const short = fresh
+          ? lines.filter((l) => (Number(l.qty) || 0) > (fresh[l.itemId] ?? byId.get(l.itemId)?.balance ?? 0)).map((l) => byId.get(l.itemId)?.name ?? 'an item')
+          : [];
+        if (short.length > 0) throw new Error(`Stock changed while this cart was open — not enough of ${short.join(', ')} now. Lower the quantity and confirm again.`);
+      }
       await onCommit(
         lines.map((line) => ({
           itemId: line.itemId,
@@ -233,6 +287,21 @@ export function ItemCart({
               </button>
             )}
           </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {/* R2-68/78: the camera only ever fills the search box or adds the matching item — typing always works. */}
+            <ScanButton onScan={onScan} />
+            {refreshBalances && (
+              <button
+                type="button"
+                onClick={() => void refresh()}
+                className="min-h-11 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 active:bg-slate-100"
+              >
+                Refresh stock
+              </button>
+            )}
+            {refreshedAt && <span className="text-xs text-slate-500">Stock as of {refreshedAt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>}
+          </div>
+          {scanNote && <p role="status" className="mt-2 text-sm font-medium text-slate-700">{scanNote}</p>}
 
           {query.trim() !== '' && (
             <div className="mt-2">
@@ -253,7 +322,7 @@ export function ItemCart({
                         {item.name}
                       </span>
                       <Mono>
-                        {item.code} · {item.balance} {item.unit} in stock
+                        {item.code} · {balanceOf(item)} {item.unit} in stock
                       </Mono>
                     </span>
                     <span className="shrink-0 rounded-full bg-indigo-600 px-3 py-1 text-sm font-semibold text-white">
@@ -305,14 +374,14 @@ export function ItemCart({
           const item = byId.get(line.itemId);
           if (!item) return null;
           const qty = Number(line.qty) || 0;
-          const short = guardsStock && qty > item.balance;
+          const short = guardsStock && qty > balanceOf(item);
           return (
             <InfoCard key={line.itemId} className={cn(short && 'border-red-200 bg-red-50')}>
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className="truncate font-semibold text-slate-900">{item.name}</p>
                   <Mono>
-                    {item.code} · {item.balance} {item.unit} in stock
+                    {item.code} · {balanceOf(item)} {item.unit} in stock
                   </Mono>
                 </div>
                 <button
@@ -366,7 +435,7 @@ export function ItemCart({
 
               {short && (
                 <p className="mt-2 text-sm font-medium text-red-700">
-                  Only {item.balance} {item.unit} in stock.
+                  Only {balanceOf(item)} {item.unit} in stock.
                 </p>
               )}
             </InfoCard>

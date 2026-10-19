@@ -3,6 +3,7 @@ import { useState, useTransition } from 'react';
 import { Button } from '@/components/mis/kit/button';
 import { Input, NumberInput } from '@/components/mis/kit/input';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
+import { Select } from '@/components/mis/kit/select';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import {
   createBomAction,
@@ -21,20 +22,26 @@ import {
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { useToast } from '@/components/ui/toast';
 import type { ActionResult } from '@/lib/mis/action-result';
+import type { CatalogItem } from '@/lib/mis/catalog-search';
+import { ItemPicker } from './item-picker';
 
-type Material = { id: string; description: string; quantity: number; unit: string; ratePerUnit: number | null; item: { name: string; unit: string } | null };
-type Stage = { id: string; stageName: string; seq: number; process: { name: string } | null; materials: Material[] };
+type Material = { id: string; description: string; itemId?: string | null; quantity: number; unit: string; ratePerUnit: number | null; item: { name: string; unit: string } | null };
+type Stage = { id: string; stageName: string; seq: number; processId?: string | null; process: { name: string } | null; materials: Material[] };
 type Bom = { id: string; status: string; approvedAt: Date | null; stages: Stage[] } | null;
 
-export function BomScreen({ bom, orderId, canWrite, isOwner }: { bom: Bom; orderId: string; canWrite: boolean; isOwner: boolean }) {
+export function BomScreen({ bom, orderId, canWrite, isOwner, processes = [], items = [] }: { bom: Bom; orderId: string; canWrite: boolean; isOwner: boolean; processes?: { id: string; name: string }[]; /** R2-10: active catalog items for the material picker. */ items?: CatalogItem[] }) {
   const [stageOpen, setStageOpen] = useState(false);
   const [matOpen, setMatOpen] = useState(false);
   const [selectedStageId, setSelectedStageId] = useState('');
   const [stageName, setStageName] = useState('');
+  const [stageProcessId, setStageProcessId] = useState('');
+  const [editStageProcessId, setEditStageProcessId] = useState('');
   const [matDesc, setMatDesc] = useState('');
   const [matQty, setMatQty] = useState('');
   const [matUnit, setMatUnit] = useState('KG');
   const [matRate, setMatRate] = useState('');
+  const [matItemId, setMatItemId] = useState<string | null>(null);
+  const [editMatItemId, setEditMatItemId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const { confirm, confirmDialog } = useConfirm();
   const { toast } = useToast();
@@ -67,14 +74,14 @@ export function BomScreen({ bom, orderId, canWrite, isOwner }: { bom: Bom; order
   }
 
   const addStage = () => startTransition(async () => {
-    if (!settle(await addStageAction(bom.id, { stageName, seq: bom.stages.length }))) return;
-    setStageName(''); setStageOpen(false);
+    if (!settle(await addStageAction(bom.id, { stageName, ...(stageProcessId ? { processId: stageProcessId } : {}), seq: bom.stages.length }))) return;
+    setStageName(''); setStageProcessId(''); setStageOpen(false);
   });
 
   const addMat = () => startTransition(async () => {
     const stage = bom.stages.find(s => s.id === selectedStageId);
-    if (!settle(await addMaterialAction(selectedStageId, { description: matDesc, quantity: parseFloat(matQty), unit: matUnit, ratePerUnit: matRate ? parseFloat(matRate) : undefined, seq: stage?.materials.length ?? 0 }))) return;
-    setMatDesc(''); setMatQty(''); setMatRate(''); setMatOpen(false);
+    if (!settle(await addMaterialAction(selectedStageId, { description: matDesc, ...(matItemId ? { itemId: matItemId } : {}), quantity: parseFloat(matQty), unit: matUnit, ratePerUnit: matRate ? parseFloat(matRate) : undefined, seq: stage?.materials.length ?? 0 }))) return;
+    setMatDesc(''); setMatQty(''); setMatRate(''); setMatItemId(null); setMatOpen(false);
   });
 
   const moveStage = (index: number, direction: -1 | 1) => {
@@ -86,13 +93,13 @@ export function BomScreen({ bom, orderId, canWrite, isOwner }: { bom: Bom; order
   };
 
   const saveStage = () => startTransition(async () => {
-    if (editStageId && settle(await updateStageAction(editStageId, { stageName: editStageName }))) setEditStageId(null);
+    if (editStageId && settle(await updateStageAction(editStageId, { stageName: editStageName, processId: editStageProcessId || null }))) setEditStageId(null);
   });
   const saveMaterial = () => startTransition(async () => {
     if (!editMatId) return;
     // The rate is sent only when the Owner's field is on screen; the server ignores it for anyone else anyway.
     const ok = settle(await updateMaterialAction(editMatId, {
-      description: editMatDesc, quantity: parseFloat(editMatQty), unit: editMatUnit,
+      description: editMatDesc, quantity: parseFloat(editMatQty), unit: editMatUnit, itemId: editMatItemId,
       ...(isOwner && editMatRate !== '' ? { ratePerUnit: parseFloat(editMatRate) } : {}),
     }));
     if (ok) setEditMatId(null);
@@ -130,7 +137,7 @@ export function BomScreen({ bom, orderId, canWrite, isOwner }: { bom: Bom; order
                     <Button variant="ghost" onClick={() => moveStage(i, -1)} disabled={isPending || i === 0}>↑</Button>
                     <Button variant="ghost" onClick={() => moveStage(i, 1)} disabled={isPending || i === bom.stages.length - 1}>↓</Button>
                     <Button variant="ghost" onClick={() => { setSelectedStageId(stage.id); setMatOpen(true); }}>+ Material</Button>
-                    <Button variant="ghost" onClick={() => { setEditStageId(stage.id); setEditStageName(stage.stageName); }}>Edit</Button>
+                    <Button variant="ghost" onClick={() => { setEditStageId(stage.id); setEditStageName(stage.stageName); setEditStageProcessId(stage.processId ?? ''); }}>Edit</Button>
                     <Button variant="ghost" onClick={() => startTransition(async () => { settle(await deleteStageAction(stage.id)); })}>Delete</Button>
                   </>
                 )}
@@ -151,6 +158,7 @@ export function BomScreen({ bom, orderId, canWrite, isOwner }: { bom: Bom; order
                         variant="ghost"
                         onClick={() => {
                           setEditMatId(m.id); setEditMatDesc(m.description); setEditMatQty(String(Number(m.quantity))); setEditMatUnit(m.unit);
+                          setEditMatItemId(m.itemId ?? null);
                           setEditMatRate(m.ratePerUnit != null ? String(Number(m.ratePerUnit)) : '');
                         }}
                       >
@@ -175,7 +183,13 @@ export function BomScreen({ bom, orderId, canWrite, isOwner }: { bom: Bom; order
 
       <SlideOver open={stageOpen} onClose={() => setStageOpen(false)} title="Add Stage">
         <div className="flex flex-col gap-4 p-4">
-          <Input label="Stage Name" value={stageName} onChange={e => setStageName(e.target.value)} />
+          {processes.length > 0 ? (
+            <Select label="Stage (process)" value={stageProcessId} placeholder="Select a process"
+              options={processes.map(p => ({ value: p.id, label: p.name }))}
+              onChange={(v) => { setStageProcessId(v); setStageName(processes.find(p => p.id === v)?.name ?? ''); }} />
+          ) : (
+            <Input label="Stage Name" value={stageName} onChange={e => setStageName(e.target.value)} />
+          )}
           <div className="flex gap-2 pt-2">
             <Button onClick={addStage} disabled={isPending || !stageName}>Add</Button>
             <Button variant="ghost" onClick={() => setStageOpen(false)}>Cancel</Button>
@@ -185,7 +199,13 @@ export function BomScreen({ bom, orderId, canWrite, isOwner }: { bom: Bom; order
 
       <SlideOver open={editStageId !== null} onClose={() => setEditStageId(null)} title="Edit Stage">
         <div className="flex flex-col gap-4 p-4">
-          <Input label="Stage Name" value={editStageName} onChange={e => setEditStageName(e.target.value)} />
+          {processes.length > 0 ? (
+            <Select label="Stage (process)" value={editStageProcessId} placeholder="Select a process"
+              options={processes.map(p => ({ value: p.id, label: p.name }))}
+              onChange={(v) => { setEditStageProcessId(v); setEditStageName(processes.find(p => p.id === v)?.name ?? editStageName); }} />
+          ) : (
+            <Input label="Stage Name" value={editStageName} onChange={e => setEditStageName(e.target.value)} />
+          )}
           <div className="flex gap-2 pt-2">
             <Button onClick={saveStage} disabled={isPending || !editStageName.trim()}>Save</Button>
             <Button variant="ghost" onClick={() => setEditStageId(null)}>Cancel</Button>
@@ -195,6 +215,9 @@ export function BomScreen({ bom, orderId, canWrite, isOwner }: { bom: Bom; order
 
       <SlideOver open={editMatId !== null} onClose={() => setEditMatId(null)} title="Edit Material">
         <div className="flex flex-col gap-4 p-4">
+          {items.length > 0 && (
+            <ItemPicker items={items} value={editMatItemId} onChange={(it) => { setEditMatItemId(it?.id ?? null); if (it && !editMatDesc.trim()) setEditMatDesc(it.name); }} />
+          )}
           <Input label="Description" value={editMatDesc} onChange={e => setEditMatDesc(e.target.value)} />
           <NumberInput label="Quantity" value={editMatQty} onChange={e => setEditMatQty(e.target.value)} />
           <Input label="Unit" value={editMatUnit} onChange={e => setEditMatUnit(e.target.value)} />
@@ -220,6 +243,18 @@ export function BomScreen({ bom, orderId, canWrite, isOwner }: { bom: Bom; order
 
       <SlideOver open={matOpen} onClose={() => setMatOpen(false)} title="Add Material">
         <div className="flex flex-col gap-4 p-4">
+          {items.length > 0 && (
+            <ItemPicker
+              items={items}
+              value={matItemId}
+              onChange={(it) => {
+                setMatItemId(it?.id ?? null);
+                // Picking an item fills the blanks, never overwrites what was typed.
+                if (it && !matDesc.trim()) setMatDesc(it.name);
+                if (it && it.unit) setMatUnit(it.unit);
+              }}
+            />
+          )}
           <Input label="Description" value={matDesc} onChange={e => setMatDesc(e.target.value)} />
           <NumberInput label="Quantity" value={matQty} onChange={e => setMatQty(e.target.value)} />
           <Input label="Unit" value={matUnit} onChange={e => setMatUnit(e.target.value)} />

@@ -7,6 +7,8 @@ import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { Button } from '@/components/mis/kit/button';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import { NumberInput, Input } from '@/components/mis/kit/input';
+import { Select } from '@/components/mis/kit/select';
+import { Combobox } from '@/components/ui/combobox';
 import { unwrap } from '@/lib/mis/action-result';
 import {
   storeInAction,
@@ -28,10 +30,16 @@ type ItemRow = {
   isDemo: boolean;
 };
 
+type IssueTargets = {
+  orders: { id: string; orderNumber: string; customerName: string | null }[];
+  departments: { id: string; name: string }[];
+};
+
 type Props = {
   items: ItemRow[];
   canWrite: boolean;
   isOwner: boolean;
+  targets?: IssueTargets;
 };
 
 const CATEGORY_LABEL: Record<string, string> = {
@@ -72,7 +80,7 @@ function downloadCsv(rows: ItemRow[], isOwner: boolean) {
 
 type SlideMode = 'in' | 'out' | 'edit' | null;
 
-export function StoreItemScreen({ items, canWrite, isOwner }: Props) {
+export function StoreItemScreen({ items, canWrite, isOwner, targets = { orders: [], departments: [] } }: Props) {
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
 
@@ -83,6 +91,8 @@ export function StoreItemScreen({ items, canWrite, isOwner }: Props) {
   // IN / OUT fields
   const [qty, setQty] = useState('');
   const [refNo, setRefNo] = useState('');
+  const [outOrderId, setOutOrderId] = useState('');
+  const [outDepartmentId, setOutDepartmentId] = useState('');
 
   // Edit fields (MIS-285)
   const [editCategory, setEditCategory] = useState('');
@@ -116,6 +126,8 @@ export function StoreItemScreen({ items, canWrite, isOwner }: Props) {
     setSlideMode(mode);
     setQty('');
     setRefNo('');
+    setOutOrderId('');
+    setOutDepartmentId('');
     setError('');
   };
 
@@ -145,6 +157,10 @@ export function StoreItemScreen({ items, canWrite, isOwner }: Props) {
       setError(`Cannot issue more than the stock balance (${slideItem.stockBalance.toFixed(2)} available)`);
       return;
     }
+    if (slideMode === 'out' && !outOrderId && !outDepartmentId) {
+      setError('Pick an order or a department for this issue');
+      return;
+    }
     setError('');
     startTransition(async () => {
       try {
@@ -155,6 +171,8 @@ export function StoreItemScreen({ items, canWrite, isOwner }: Props) {
             itemId: slideItem.id,
             quantity,
             referenceNo: refNo || undefined,
+            orderId: outOrderId || null,
+            departmentId: outDepartmentId || null,
           }));
         }
         setSuccess(
@@ -445,6 +463,8 @@ export function StoreItemScreen({ items, canWrite, isOwner }: Props) {
             value={qty}
             onChange={(e) => setQty(e.target.value)}
             placeholder="e.g. 50"
+            min="0.01"
+            step="0.01"
           />
 
           {isOverBalance && (
@@ -452,6 +472,25 @@ export function StoreItemScreen({ items, canWrite, isOwner }: Props) {
               Cannot issue more than the stock balance ({slideItem?.stockBalance?.toFixed(2)}{' '}
               {slideItem?.unit} available).
             </div>
+          )}
+
+          {slideMode === 'out' && (
+            <>
+              <Combobox
+                label="Against an order"
+                value={outOrderId || null}
+                options={targets.orders.map((o) => ({ value: o.id, label: `${o.orderNumber}${o.customerName ? ` — ${o.customerName}` : ''}` }))}
+                onChange={setOutOrderId}
+                placeholder="Select an order…"
+              />
+              <Select
+                label="To which department"
+                value={outDepartmentId || null}
+                options={targets.departments.map((d) => ({ value: d.id, label: d.name }))}
+                onChange={setOutDepartmentId}
+                placeholder="Select a department…"
+              />
+            </>
           )}
 
           <Input

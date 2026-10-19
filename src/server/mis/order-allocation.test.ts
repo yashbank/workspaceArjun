@@ -20,7 +20,7 @@ const db: Row = {
     findUnique: async () => ORDER,
     findFirst: async ({ where }: Row) => (where.orderNumber === ORDER.orderNumber ? { id: ORDER.id } : null),
   },
-  misDepartment: { findUnique: async () => null },
+  misDepartment: { findUnique: async () => ({ name: 'Press' }) },
   misOrderStockAllocation: {
     create: async ({ data }: Row) => { state.allocations.push({ createdAt: new Date(), ...data }); return data; },
     findMany: async ({ where }: Row) => state.allocations.filter((a) => a.orderId === where.orderId).map((a) => ({ itemId: a.itemId, allocatedQty: D(a.allocatedQty), createdAt: a.createdAt })),
@@ -52,6 +52,9 @@ const getMisRole = vi.fn();
 vi.mock('@/server/mis/roles', () => ({ getMisRole: (...a: unknown[]) => getMisRole(...a) }));
 
 const { commitIssue } = await import('./store');
+
+/** R2-80: a no-order issue / request is General / factory use and carries a reason and a cost centre. */
+const G = { reason: 'grease for plates', costCenter: 'Press' };
 const { confirmGRN } = await import('./grn');
 
 beforeEach(() => {
@@ -62,7 +65,7 @@ beforeEach(() => {
 });
 
 const grnWith = (lines: Row[], bomRef: string | null = null) => ({
-  id: 'g1', grnNumber: 'GRN-1', status: 'DRAFT', po: { bomRef, status: 'APPROVED', poNumber: 'PO-1', items: [] }, // R3-STK B02: confirm needs an open PO
+  id: 'g1', grnNumber: 'GRN-1', status: 'DRAFT', dcNumber: 'DC-1', po: { bomRef, status: 'APPROVED', poNumber: 'PO-1', items: [] }, // R3-STK B02: confirm needs an open PO
   items: lines.map((l, i) => ({ id: `gl${i}`, poItemId: `pi${i}`, receivedQty: D(l.qty), type: l.type ?? 'GENERAL', forOrderRef: l.ref ?? null, poItem: { itemId: 'i1', item } })),
 });
 
@@ -126,7 +129,7 @@ describe('commitIssue against an order', () => {
 
   it('a general issue (no order) is never capped by anyone\'s allocation', async () => {
     allocate(1);
-    await commitIssue([{ itemId: 'i1', qty: 500 }], {});
+    await commitIssue([{ itemId: 'i1', qty: 500 }], { departmentId: 'd1', general: G });
     expect(state.ledger).toHaveLength(1);
   });
 });

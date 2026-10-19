@@ -1,4 +1,5 @@
 'use client';
+import { Combobox } from '@/components/ui/combobox';
 import { useState, useTransition } from 'react';
 import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
@@ -236,24 +237,13 @@ export function StoreCountScreen({ items, counts, canCount, today }: Props) {
 
       <SlideOver open={open} onClose={() => setOpen(false)} title="Record Physical Count">
         <div className="flex flex-col gap-4 p-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Item</label>
-            <select
-              value={selectedItemId}
-              onChange={(e) => {
-                setSelectedItemId(e.target.value);
-                setPhysQty('');
-              }}
-              className="w-full min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400"
-            >
-              <option value="">Select item…</option>
-              {items.map((i) => (
-                <option key={i.id} value={i.id}>
-                  {i.sku ? `[${i.sku}] ` : ''}{i.name} ({i.code})
-                </option>
-              ))}
-            </select>
-          </div>
+          <Combobox
+            label="Item"
+            value={selectedItemId || null}
+            placeholder="Type to search items…"
+            options={items.map((i) => ({ value: i.id, label: `${i.sku ? `[${i.sku}] ` : ''}${i.name} (${i.code})` }))}
+            onChange={(v) => { setSelectedItemId(v); setPhysQty(''); }}
+          />
 
           {selectedItem && (
             <div className="bg-slate-50 rounded-lg p-3 text-sm">

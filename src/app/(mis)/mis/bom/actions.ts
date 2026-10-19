@@ -79,7 +79,7 @@ export async function deleteStageAction(stageId: string): Promise<ActionResult> 
     revalidatePath('/mis/bom', 'layout');
   });
 }
-export async function updateStageAction(stageId: string, patch: { stageName?: string; notes?: string | null; seq?: number }): Promise<ActionResult> {
+export async function updateStageAction(stageId: string, patch: { stageName?: string; notes?: string | null; seq?: number; processId?: string | null }): Promise<ActionResult> {
   return asResult(async () => {
     await updateBomStage(stageId, patch);
     revalidatePath('/mis/bom', 'layout');
@@ -87,7 +87,7 @@ export async function updateStageAction(stageId: string, patch: { stageName?: st
 }
 export async function updateMaterialAction(
   materialId: string,
-  patch: { description?: string; quantity?: number; unit?: string; seq?: number; ratePerUnit?: number | null },
+  patch: { description?: string; quantity?: number; unit?: string; seq?: number; ratePerUnit?: number | null; itemId?: string | null },
 ): Promise<ActionResult> {
   return asResult(async () => {
     await updateBomMaterial(materialId, patch);

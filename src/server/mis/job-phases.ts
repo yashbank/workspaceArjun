@@ -309,7 +309,7 @@ async function collectSignOffBlockers(phase: PhaseWithRefs): Promise<SignOffBloc
   const blockers: SignOffBlocker[] = [];
 
   const logs = await db.misProductionLog.findMany({
-    where: { jobPhaseId: phase.id },
+    where: { jobPhaseId: phase.id, voidedAt: null },
     select: { id: true, qtyWaste: true, wasteReason: true, loggedAt: true, unit: true },
     orderBy: { loggedAt: 'asc' },
   });
@@ -350,6 +350,7 @@ async function unacknowledgedFailures(phase: { orderId: string; bomStageId: stri
       orderId: phase.orderId,
       bomStageId: phase.bomStageId,
       result: 'FAIL',
+      voidedAt: null,
       acknowledgedAt: null,
     },
     select: { id: true, parameterName: true, checkTime: true },
@@ -521,7 +522,7 @@ export async function markNotApplicable(phaseId: string, reason: string) {
   const phase = await loadPhase(phaseId);
   assertTransition(phase.status, 'NOT_APPLICABLE', 'markNotApplicable');
 
-  const recorded = await db.misProductionLog.count({ where: { jobPhaseId: phaseId } });
+  const recorded = await db.misProductionLog.count({ where: { jobPhaseId: phaseId, voidedAt: null } });
   if (recorded > 0) {
     throw new JobPhaseError(
       'PRODUCTION_ALREADY_RECORDED',
@@ -709,7 +710,8 @@ export async function reassignInCharge(phaseId: string, employeeId: string) {
 export async function acknowledgeQcFailure(checkId: string, note?: string) {
   const actor = await requirePermission('phase.write');
   const check = await db.misQcCheck.findUnique({ where: { id: checkId } });
-  if (!check) throw new JobPhaseError('PHASE_NOT_FOUND', 'That check no longer exists.', { checkId });
+  // R2-34: a voided (deleted) check is gone for every purpose, acknowledging included.
+  if (!check || check.voidedAt) throw new JobPhaseError('PHASE_NOT_FOUND', 'That check no longer exists.', { checkId });
   if (check.result !== 'FAIL') {
     throw new JobPhaseError(
       'ILLEGAL_TRANSITION',
@@ -775,9 +777,9 @@ export async function setWasteReason(productionLogId: string, reason: string) {
   // R3 B115 — a typed not-found, and a signed record is frozen until its phase is reopened.
   const log = await db.misProductionLog.findUnique({
     where: { id: productionLogId },
-    select: { id: true, wasteReason: true, jobPhase: { select: { status: true } } },
+    select: { id: true, wasteReason: true, voidedAt: true, jobPhase: { select: { status: true } } },
   });
-  if (!log) throw new JobPhaseError('PHASE_NOT_FOUND', 'That production entry no longer exists.', { productionLogId });
+  if (!log || log.voidedAt) throw new JobPhaseError('PHASE_NOT_FOUND', 'That production entry no longer exists.', { productionLogId });
   if (log.jobPhase?.status === 'SIGNED_OFF') {
     throw new JobPhaseError('ILLEGAL_TRANSITION', 'Reopen the phase to change a signed record.', { productionLogId });
   }
@@ -831,7 +833,7 @@ export async function getSignOffSummary(phaseId: string): Promise<SignOffSummary
 
   const [logs, blockers, previous] = await Promise.all([
     db.misProductionLog.findMany({
-      where: { jobPhaseId: phaseId },
+      where: { jobPhaseId: phaseId, voidedAt: null },
       select: { qtyProduced: true, qtyWaste: true, unit: true },
     }),
     collectSignOffBlockers(phase),
@@ -851,7 +853,7 @@ export async function getSignOffSummary(phaseId: string): Promise<SignOffSummary
   let handedOver: SignOffSummary['handedOver'] = null;
   if (previous && previous.status === 'SIGNED_OFF') {
     const previousLogs = await db.misProductionLog.findMany({
-      where: { jobPhaseId: previous.id },
+      where: { jobPhaseId: previous.id, voidedAt: null },
       select: { qtyProduced: true, unit: true },
     });
     const prevBy = sumByUnit(previousLogs.map((l) => ({ qty: Number(l.qtyProduced), unit: l.unit })));

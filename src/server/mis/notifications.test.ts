@@ -61,19 +61,23 @@ describe('writers', () => {
 });
 
 describe('readers', () => {
-  it('STORE_GUY reads their own unread mis.* rows; SUPERVISOR gets an empty list; QC is refused', async () => {
+  it('STORE_GUY reads their own unread mis.* rows; SUPERVISOR now reads their own too (R2-67); QC is refused', async () => {
     state.rows = [{ userId: 'store-1', type: 'mis.grn_confirmed', payload: {}, readAt: null }, { userId: 'other', type: 'mis.grn_confirmed', payload: {}, readAt: null }];
     // the fake findMany filters on userId only; the real query also narrows `type` to the bell's own list
     expect((await listMisNotifications()).map((n) => n.type)).toEqual(['mis.grn_confirmed']);
     getMisRole.mockResolvedValue('SUPERVISOR');
-    expect(await listMisNotifications()).toEqual([]);
+    getCurrentUser.mockResolvedValue({ id: 'sup-1' });
+    expect(await listMisNotifications()).toEqual([]); // no rows of their own yet — the Store Guy's row is not theirs
+    state.rows.push({ userId: 'sup-1', type: 'mis.material_request.decided', payload: {}, readAt: null });
+    expect((await listMisNotifications()).map((n) => n.type)).toEqual(['mis.material_request.decided']);
+    getCurrentUser.mockResolvedValue({ id: 'store-1' });
     getMisRole.mockResolvedValue('QC');
     await expect(listMisNotifications()).rejects.toThrow(/Not permitted/);
   });
   it('mark-read is scoped to the caller and to the bell\'s own types; junk ids never reach the database', async () => {
     const a = '11111111-1111-4111-8111-111111111111', b = '22222222-2222-4222-8222-222222222222';
     await markMisNotificationsRead([a, 'abc', b]);
-    expect(state.updates[0]).toMatchObject({ where: { id: { in: [a, b] }, userId: 'store-1', type: { in: ['mis.grn_confirmed', 'mis.material_request.raised', 'mis.bom_rejected'] } } }); // C2 added mis.bom_rejected to the bell's types
+    expect(state.updates[0]).toMatchObject({ where: { id: { in: [a, b] }, userId: 'store-1', type: { in: ['mis.grn_confirmed', 'mis.material_request.raised', 'mis.bom_rejected', 'mis.material_request.decided', 'mis.general_use'] } } }); // C2 added mis.bom_rejected; R2-67/R2-80 added decided + general_use
     await markMisNotificationsRead(['abc']);
     expect(state.updates).toHaveLength(1);
   });

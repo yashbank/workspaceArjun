@@ -2,6 +2,7 @@
 import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/mis/kit/button';
+import { Pagination, HiddenParams } from '@/components/mis/kit/pagination';
 import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import { Select } from '@/components/mis/kit/select';
@@ -18,7 +19,9 @@ import { useRouter } from 'next/navigation';
 type Po = { id: string; poNumber: string; status: string; bomRef: string | null; supplier: { id: string; name: string } | null; _count: { items: number }; createdAt: Date };
 type Supplier = { id: string; name: string };
 type ApprovedBom = { orderNumber: string; label: string };
-type Props = { pos: Po[]; suppliers: Supplier[]; canWrite: boolean; approvedBoms?: ApprovedBom[] };
+type Props = { pos: Po[]; suppliers: Supplier[]; canWrite: boolean; approvedBoms?: ApprovedBom[];
+  /** R2-83: the server-side page — total matching rows, the page number, and the URL params kept in the page links. */
+  paging?: { total: number; page: number; params: Record<string, string | undefined> }; };
 
 function statusTone(status: string): BadgeTone {
   switch (status) {
@@ -33,14 +36,12 @@ function statusTone(status: string): BadgeTone {
   }
 }
 
-export function PoListScreen({ pos, suppliers, canWrite, approvedBoms = [] }: Props) {
+export function PoListScreen({ pos, suppliers, canWrite, approvedBoms = [], paging }: Props) {
   const router = useRouter();
   const { confirm, confirmDialog } = useConfirm();
   const { toast } = useToast();
-  const [search, setSearch] = useState('');
-  const filtered = search.trim()
-    ? pos.filter(p => p.poNumber.toLowerCase().includes(search.toLowerCase()) || (p.supplier?.name ?? '').toLowerCase().includes(search.toLowerCase()))
-    : pos;
+  const search = paging?.params.q ?? '';
+  const filtered = pos;
 
   function downloadCsv() {
     const headers = ['PO #', 'Supplier', 'Purpose', 'BOM Ref', 'Status', 'Items', 'Created'];
@@ -59,6 +60,7 @@ export function PoListScreen({ pos, suppliers, canWrite, approvedBoms = [] }: Pr
   const [isPending, startTransition] = useTransition();
 
   const handleCreate = () => {
+    if (!supplierId) { toast('error', 'Please select a supplier.'); return; }
     startTransition(async () => {
       const result = await createPoAction({ supplierId: supplierId || null, purpose, bomRef: purpose === 'FOR_ORDER' ? bomRef || null : null, notes: notes || null });
       if (!result.ok) {
@@ -95,17 +97,20 @@ export function PoListScreen({ pos, suppliers, canWrite, approvedBoms = [] }: Pr
         <h1 className="text-xl font-semibold text-slate-900">Purchase Orders</h1>
         {canWrite && <Button onClick={() => setOpen(true)}>+ New PO</Button>}
       </div>
-      <div className="flex items-center gap-3">
+      <form method="get" className="flex items-center gap-3">
+        {paging && <HiddenParams params={paging.params} />}
         <input
           type="search"
           placeholder="Search POs…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
+          name="q"
+          defaultValue={search}
           className="w-full max-w-sm min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500"
         />
-        <Button variant="ghost" onClick={downloadCsv}>↓ CSV</Button>
-      </div>
+        <Button type="submit" variant="secondary">Search</Button>
+        <Button type="button" variant="ghost" onClick={downloadCsv}>↓ CSV</Button>
+      </form>
       <DataTable columns={columns} rows={filtered} rowKey={(r) => r.id} emptyTitle="No purchase orders" emptyBody="Create a PO from a BOM requirement, or for buffer stock with no BOM behind it." />
+      {paging && <Pagination basePath="/mis/po" params={paging.params} page={paging.page} total={paging.total} />}
       <SlideOver open={open} onClose={() => setOpen(false)} title="New Purchase Order">
         <div className="flex flex-col gap-4 p-4">
           <Select

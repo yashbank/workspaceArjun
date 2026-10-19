@@ -176,6 +176,12 @@ describe('#10 updateBomStage / updateBomMaterial', () => {
     expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: 'UPDATE_BOM_STAGE' }));
   });
 
+  it('R2-10/R2-70: links and clears the master process on a draft stage', async () => {
+    const { stage } = await seedBom();
+    expect(await bomApi.updateBomStage(stage.id, { processId: 'proc-1' })).toMatchObject({ processId: 'proc-1' });
+    expect(await bomApi.updateBomStage(stage.id, { processId: null })).toMatchObject({ processId: null });
+  });
+
   it('refuses a blank stage name', async () => {
     const { stage } = await seedBom();
     await expect(bomApi.updateBomStage(stage.id, { stageName: '  ' })).rejects.toThrow(/name/i);

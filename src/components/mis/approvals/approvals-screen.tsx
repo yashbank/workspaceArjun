@@ -12,12 +12,12 @@ import { poPurpose, poPurposeLabel } from '@/lib/mis/po-purpose';
 
 type ExtraPayDay = {
   id: string; date: Date; kind: 'MULTIPLIER' | 'FLAT_AMOUNT'; value: number;
-  scope: 'ALL_PRESENT' | 'EMPLOYEES' | 'DEPARTMENTS'; reason: string;
+  scope: 'ALL_PRESENT' | 'EMPLOYEES' | 'DEPARTMENTS'; reason: string; proposedByName?: string | null;
 };
 
 type Pending = {
   boms: { id: string; order: { id: string; orderNumber: string; description: string | null } | null }[];
-  leaves: { id: string; date: Date; reason: string | null; employee: { name: string; employeeCode: string } | null }[];
+  leaves: { id: string; date: Date; endDate?: Date | null; leaveType?: string; reason: string | null; employee: { name: string; employeeCode: string } | null }[];
   pos: { id: string; poNumber: string; bomRef: string | null; supplier: { name: string } | null }[];
   // Non-empty ONLY when the caller holds wages.read (server gate, approvals.ts) — every other
   // role sharing this queue (Admin, Supervisor, QC all hold orders.read) gets an empty array,
@@ -115,7 +115,7 @@ export function ApprovalsScreen({ pending, isOwner, canWrite: _canWrite }: Props
             <QueueRow
               key={leave.id}
               title={leave.employee?.name ?? '—'}
-              subtitle={`${leave.employee?.employeeCode ?? ''} · ${new Date(leave.date).toLocaleDateString('en-IN')}${leave.reason ? ` — ${leave.reason}` : ''}`}
+              subtitle={`${leave.employee?.employeeCode ?? ''} · ${new Date(leave.date).toLocaleDateString('en-IN')}${leave.endDate ? ` – ${new Date(leave.endDate).toLocaleDateString('en-IN')}` : ''}${leave.leaveType && leave.leaveType !== 'OTHER' ? ` · ${leave.leaveType}` : ''}${leave.reason ? ` — ${leave.reason}` : ''}`}
               badge={<StatusBadge tone="warning">Pending</StatusBadge>}
               actions={
                 <>
@@ -166,7 +166,7 @@ export function ApprovalsScreen({ pending, isOwner, canWrite: _canWrite }: Props
             <QueueRow
               key={day.id}
               title={`${new Date(day.date).toLocaleDateString('en-IN')} · ${day.kind === 'FLAT_AMOUNT' ? `₹${day.value}` : `×${day.value}`}`}
-              subtitle={`${day.scope === 'ALL_PRESENT' ? 'Everyone present' : day.scope === 'EMPLOYEES' ? 'Specific employees' : 'Specific departments'} — ${day.reason}`}
+              subtitle={`${day.scope === 'ALL_PRESENT' ? 'Everyone present' : day.scope === 'EMPLOYEES' ? 'Specific employees' : 'Specific departments'} — ${day.reason}${day.proposedByName ? ` · proposed by ${day.proposedByName}` : ''}`}
               badge={<StatusBadge tone="warning">Pending</StatusBadge>}
               actions={
                 <>

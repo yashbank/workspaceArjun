@@ -144,7 +144,8 @@ describe('B26 approval mode with unpriced lines', () => {
 
 describe('B27 submit requirements', () => {
   it('a PO without a supplier is refused', async () => {
-    const p = await po.createPO({ purpose: 'BUFFER_STOCK' });
+    const p = await po.createPO({ supplierId: 's1', purpose: 'BUFFER_STOCK' });
+    state.pos[0].supplierId = null; // a legacy PO raised before R2-69 made the supplier mandatory
     await line(p.id);
     await expect(po.submitForApproval(p.id)).rejects.toThrow(/supplier/i);
     expect(state.pos[0].status).toBe('DRAFT');

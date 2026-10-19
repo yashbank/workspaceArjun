@@ -5,6 +5,7 @@ import { asResult } from '@/lib/mis/action-result';
 
 import {
   approveMaterialRequest,
+  approveMaterialRequestForPicking,
   createMaterialRequest,
   rejectMaterialRequest,
   type ApproveLineInput,
@@ -35,6 +36,18 @@ export async function approveMaterialRequestAction(id: string, decisions: Approv
       return await approveMaterialRequest(id, decisions, note);
     } finally {
       revalidate(id); // a refused approve re-opens the note on the server — the screen must show that too
+    }
+  });
+}
+
+/** R2-77: approve and hand to the pick list — no stock moves until the list is handed over. */
+export async function approveMaterialRequestForPickingAction(id: string, decisions: ApproveLineInput[], note?: string | null) {
+  return asResult(async () => {
+    try {
+      return await approveMaterialRequestForPicking(id, decisions, note);
+    } finally {
+      revalidate(id);
+      revalidatePath('/mis/store/pick-lists');
     }
   });
 }

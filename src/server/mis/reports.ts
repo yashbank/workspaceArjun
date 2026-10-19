@@ -62,7 +62,7 @@ export type ProductionTotal = { unit: string; produced: number; waste: number; w
 export async function getProductionReport(range: ReportRange) {
   await requirePermission('reports.read');
   const logs = await db.misProductionLog.findMany({
-    where: { loggedAt: { gte: range.from, lt: range.to } },
+    where: { loggedAt: { gte: range.from, lt: range.to }, voidedAt: null },
     include: {
       order: { select: { orderNumber: true, description: true } },
       machine: { select: { name: true } },
@@ -165,7 +165,7 @@ export async function getAttendanceReport(range: ReportRange) {
 export async function getQcReport(range: ReportRange) {
   await requirePermission('reports.read');
   const checks = await db.misQcCheck.findMany({
-    where: { checkTime: { gte: range.from, lt: range.to } },
+    where: { checkTime: { gte: range.from, lt: range.to }, voidedAt: null },
     include: {
       order: { select: { orderNumber: true } },
     },
@@ -267,6 +267,7 @@ export async function getWastageReport(
         gte: dateKeyToDbDate(addDaysToDateKey(fromKey, -1)),
         lt: dateKeyToDbDate(addDaysToDateKey(lastKey, 2)),
       },
+      voidedAt: null,
     },
     select: {
       loggedAt: true,

@@ -1,6 +1,7 @@
 import { Prisma } from '@/generated/prisma/client';
 import { can } from '@/lib/mis/permissions';
 import { forRole, withoutMoneyFields } from '@/lib/mis/money-fields';
+import { pageQuery, parseSearch, type Paged } from '@/lib/mis/pagination';
 import { db } from '@/server/db';
 import { requirePermission } from './auth';
 import { logAuditEvent } from './audit';
@@ -78,8 +79,31 @@ export async function computePoTotal(poId: string): Promise<string> {
   return formatMoney(total);
 }
 
+export type PoListOptions = { q?: string; page?: number | string };
+
+/** R2-83: one page of POs (25), `q` matches the PO number or the supplier name; `total` counts every match. */
+export async function listPOsPage(opts: PoListOptions = {}): Promise<Paged<Awaited<ReturnType<typeof listPOs>>[number]>> {
+  await requirePermission('po.view');
+  const q = parseSearch(opts.q);
+  const where: Prisma.MisPurchaseOrderWhereInput = q
+    ? { OR: [{ poNumber: { contains: q, mode: 'insensitive' } }, { supplier: { name: { contains: q, mode: 'insensitive' } } }] }
+    : {};
+  const { skip, take } = pageQuery(opts.page);
+  const [rows, total] = await Promise.all([
+    db.misPurchaseOrder.findMany({
+      where,
+      include: { supplier: { select: { id: true, name: true } }, _count: { select: { items: true } } },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take,
+    }),
+    db.misPurchaseOrder.count({ where }),
+  ]);
+  return { rows, total };
+}
+
 export async function listPOs() {
-  await requirePermission('po.read');
+  await requirePermission('po.view');
   return db.misPurchaseOrder.findMany({
     include: {
       supplier: { select: { id: true, name: true } },
@@ -94,7 +118,7 @@ export async function listPOs() {
  * REMOVED from every line, so the quantities and receipts still show and the price does not.
  */
 export async function getPO(id: string) {
-  const actor = await requirePermission('po.read');
+  const actor = await requirePermission('po.view');
   const po = await db.misPurchaseOrder.findUnique({
     where: { id },
     include: {
@@ -103,7 +127,11 @@ export async function getPO(id: string) {
       grns: { orderBy: { createdAt: 'desc' } },
     },
   });
-  return po && !can(actor.role, 'wages.read') ? withoutMoneyFields(po) : po;
+  if (!po) return po;
+  // R2-37: a view-only reader (QC: po.view without po.read) sees who the supplier is, never their
+  // contact, GST or payment terms — supplier data stays behind po.read.
+  const scoped = can(actor.role, 'po.read') ? po : { ...po, supplier: (po.supplier ? { id: po.supplier.id, code: po.supplier.code, name: po.supplier.name } : null) as typeof po.supplier };
+  return !can(actor.role, 'wages.read') ? withoutMoneyFields(scoped) : scoped;
 }
 
 /**
@@ -198,6 +226,8 @@ async function requireDraftPo(poId: string, what: string) {
 
 export async function createPO(input: PoInput) {
   const actor = await requirePermission('po.write');
+  // R2-69: a PO is a commercial contract — it cannot exist without a vendor.
+  if (!input.supplierId?.trim()) throw new Error('Please select a supplier.');
   const { purpose, bomRef } = await resolvePurposeAndRef(input);
   let created;
   const MAX_ATTEMPTS = 6;
@@ -206,7 +236,7 @@ export async function createPO(input: PoInput) {
       created = await db.misPurchaseOrder.create({
         data: {
           poNumber: nextPoNumber(attempt),
-          supplierId: input.supplierId || null,
+          supplierId: input.supplierId,
           bomRef,
           // `purpose` is a real column (Phase 21, D1) behind
           // `mis_purchase_orders_purpose_bom_ref_ck`, which requires it to agree with `bomRef` on

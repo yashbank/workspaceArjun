@@ -25,6 +25,11 @@ export type PrismaErrorContext = {
   entity: string;
   /** The submitted values by field name; used to quote the clashing value in a duplicate message. */
   fields?: Record<string, unknown>;
+  /**
+   * R2-76: a form-style action (no page to boundary) sets this so a permission refusal comes back as this sentence
+   * instead of being thrown — a thrown error is redacted to "An error occurred in the Server Components render…".
+   */
+  forbiddenDetail?: string;
 };
 
 type PrismaLike = Error & { code: string; meta?: { target?: unknown } };
@@ -66,7 +71,10 @@ export async function asResult<T>(run: () => Promise<T>, ctx: PrismaErrorContext
   try {
     return { ok: true, value: await run() };
   } catch (error) {
-    if (isForbidden(error)) throw error;
+    if (isForbidden(error)) {
+      if (ctx.forbiddenDetail) return { ok: false, detail: ctx.forbiddenDetail };
+      throw error;
+    }
     if (isPrismaError(error)) return { ok: false, detail: mapPrismaError(error, ctx) };
     return { ok: false, detail: error instanceof Error && error.message ? error.message : FALLBACK_DETAIL };
   }

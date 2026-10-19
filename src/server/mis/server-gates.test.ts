@@ -66,6 +66,8 @@ const REVIEWED_UNGATED: Record<string, Reviewed> = {
   // V2 Epic 4: a writer, not a reader — called by confirmGRN after its gate; best-effort like logAuditEvent.
   'grn-alerts.ts#notifyGrnConfirmed': { reason: 'internal; called only by confirmGRN after its grn.write gate' },
   'notifications.ts#notifyRoles': { reason: 'writer, not a reader; called by gated mutations after their own write (V2 bell)' },
+  'store-notices.ts#notifyGeneralUse': { reason: 'writer, not a reader; called by gated mutations after their own write (R2-80)' },
+  'store-notices.ts#notifyRequestDecided': { reason: 'writer, not a reader; called by gated mutations after their own write (R2-67)' },
   'kiosk-device.ts#pullForDevice': { reason: 'device-token door', alsoContains: 'authenticateDevice', door: true },
   'attendance-punch.ts#ingestDevicePunch': { reason: 'device-token door', alsoContains: 'authenticateDevice', door: true },
   // V2 Epic 7: the tablet fetches a face with its token, like it pulls the roster.
@@ -97,6 +99,10 @@ const REVIEWED_UNGATED: Record<string, Reviewed> = {
   'roles.ts#getMisRole': { reason: 'identity helper: answers "who is this" from the employee row' },
   'roles.ts#hasMisRole': { reason: 'identity helper' },
   'roles.ts#getMisEmployee': { reason: 'identity helper: the caller\'s own employee row' },
+  // R2-111: an employee reads ONLY their own released payslip — an identity gate (the login's own employee
+  // row), not a role grant; wages.read stays Owner-only. Proven per role in payslips.test.ts.
+  'payslips.ts#listMyPayslips': { reason: "the caller's own released payslip months; employee id from the login", alsoContains: 'requireOwnEmployee', door: true },
+  'payslips.ts#getMyPayslip': { reason: "the caller's own released, closed, previous-month slip; employee id from the login", alsoContains: 'requireOwnEmployee', door: true },
   'navigation.ts#getNavigationFor': { reason: 'derives the menu from the role; returns labels only' },
   // The dashboard catalogue is the navigation menu's shape, for widgets: it derives from the
   // role and returns labels and grid sizes, never factory data. Omission IS the rule here
@@ -197,6 +203,15 @@ describe('money and access functions are gated on the RIGHT action, not merely o
     // D13 — the document library reads across orders (orders.read) and adds a file link (orders.write).
     ['document-library.ts#getDocumentLibrary', 'orders.read'],
     ['document-library.ts#saveDocumentLink', 'orders.write'],
+    // R2-109 / R2-110 / R2-111 / R2-114 — payslips, the bank file and wage-type history are wages.
+    ['payslips.ts#getPayslipBatch', 'wages.read'],
+    ['payslips.ts#listPayslipReleases', 'wages.read'],
+    ['payslips.ts#releasePayslips', 'wages.read'],
+    ['payslips.ts#withdrawPayslipRelease', 'wages.read'],
+    ['payroll-ledger.ts#buildBankTransferCsv', 'wages.read'],
+    ['payroll-ledger.ts#listBankDetailGaps', 'wages.read'],
+    ['wage-type.ts#updateWageTypeDetails', 'wages.read'],
+    ['wage-type.ts#listWageRateHistory', 'wages.read'],
   ])('%s is gated on %s', (key, action) => {
     expect(gateOf(key)).toBe(action);
   });

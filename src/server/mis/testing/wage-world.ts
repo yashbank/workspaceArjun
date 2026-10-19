@@ -156,6 +156,8 @@ export const fakeDb = {
       return data;
     },
     findMany: async () => state.auditRows.map((r, i) => ({ id: `log-${i}`, createdAt: LONG_AGO, entityId: null, actor: null, ...r })),
+    // R2-83: the paged audit list counts the log for its pager.
+    count: async () => state.auditRows.length,
   },
   // Phase 25 — no closed period in any pre-25 fixture world, so every payroll test here keeps
   // computing live, exactly as before. `payroll-25.test.ts` seeds `state.payrollPeriods` itself.

@@ -9,38 +9,51 @@ import { Select } from '@/components/mis/kit/select';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { DEFAULT_FACTORY_TIMEZONE, factoryDateKey, formatFactoryDate } from '@/lib/mis/factory-time';
-import type { WageTypeCode, WageTypeRow } from '@/server/mis/wage-type';
+import type { WageRevision, WageTypeCode, WageTypeRow } from '@/server/mis/wage-type';
 
 import {
   addWageRateAction,
   createWageTypeAction,
   setWageTypeActiveAction,
+  updateWageTypeDetailsAction,
 } from '@/app/(mis)/mis/settings/wages/actions';
 
 import { WagePicker } from './wage-picker';
 
+// R2-113: only the units payroll actually prices (PAYROLL_SUPPORTED_UNITS). Hourly and piece rate
+// are not offered — the server refuses them too.
 const UNIT_OPTIONS = [
   { value: 'DAILY', label: 'Daily' },
   { value: 'MONTHLY', label: 'Monthly' },
-  { value: 'HOURLY', label: 'Hourly' },
-  { value: 'PIECE_RATE', label: 'Piece rate' },
 ];
 
 function todayIso() {
   return factoryDateKey(new Date(), DEFAULT_FACTORY_TIMEZONE);
 }
 
+const REVISION_TONE = { SCHEDULED: 'info', IN_FORCE: 'good', PAST: 'neutral' } as const;
+const REVISION_LABEL = { SCHEDULED: 'Scheduled', IN_FORCE: 'In force', PAST: 'Past' } as const;
+
 export function WageTypeScreen({
   wageTypes,
   codes,
+  history = [],
 }: {
   wageTypes: WageTypeRow[];
   codes: WageTypeCode[];
+  /** R2-114: every dated rate row, newest first within a code. */
+  history?: WageRevision[];
 }) {
   const [addOpen, setAddOpen] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [rateOpen, setRateOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
+
+  // R2-114: edit details (name labels) + rate history, per code.
+  const [detailsFor, setDetailsFor] = useState<WageTypeRow | null>(null);
+  const [detailsName, setDetailsName] = useState('');
+  const [detailsNameHi, setDetailsNameHi] = useState('');
+  const [historyFor, setHistoryFor] = useState<string | null>(null);
 
   // Add-wage-type form
   const [name, setName] = useState('');
@@ -129,6 +142,24 @@ export function WageTypeScreen({
     });
   };
 
+  const openDetails = (row: WageTypeRow) => {
+    setDetailsFor(row);
+    setDetailsName(row.name);
+    setDetailsNameHi(row.nameHi ?? '');
+    setSaveError(null);
+  };
+
+  const handleSaveDetails = () => {
+    if (!detailsFor) return;
+    startTransition(async () => {
+      const r = await updateWageTypeDetailsAction(detailsFor.code, { name: detailsName, nameHi: detailsNameHi || null });
+      if (!r.ok) { setSaveError(r.detail); return; }
+      setDetailsFor(null);
+    });
+  };
+
+  const revisions = historyFor ? history.filter((h) => h.code === historyFor) : [];
+
   const toggleActive = (row: WageTypeRow) => {
     startTransition(async () => {
       const r = await setWageTypeActiveAction(row.code, !row.isActive);
@@ -181,9 +212,15 @@ export function WageTypeScreen({
       key: 'actions',
       header: '',
       render: (r) => (
-        <Button variant="ghost" onClick={() => toggleActive(r)} disabled={isPending}>
-          {r.isActive ? 'Deactivate' : 'Reactivate'}
-        </Button>
+        <div className="flex flex-wrap gap-1">
+          <Button variant="ghost" onClick={() => openDetails(r)} disabled={isPending}>Edit details</Button>
+          <Button variant="ghost" onClick={() => setHistoryFor(r.code)}>
+            History ({history.filter((h) => h.code === r.code).length})
+          </Button>
+          <Button variant="ghost" onClick={() => toggleActive(r)} disabled={isPending}>
+            {r.isActive ? 'Deactivate' : 'Reactivate'}
+          </Button>
+        </div>
       ),
     },
   ];
@@ -209,7 +246,7 @@ export function WageTypeScreen({
         </div>
       </div>
 
-      {saveError && !addOpen && !rateOpen && <p role="alert" className="text-sm text-red-600">{saveError}</p>}
+      {saveError && !addOpen && !rateOpen && !detailsFor && <p role="alert" className="text-sm text-red-600">{saveError}</p>}
       <DataTable
         columns={columns}
         rows={wageTypes}
@@ -285,6 +322,50 @@ export function WageTypeScreen({
             </Button>
             <Button variant="ghost" onClick={() => setRateOpen(false)}>Cancel</Button>
           </div>
+        </div>
+      </SlideOver>
+
+      <SlideOver open={detailsFor !== null} onClose={() => setDetailsFor(null)} title={`Edit details · ${detailsFor?.code ?? ''}`}>
+        <div className="flex flex-col gap-4">
+          <Input label="Name" value={detailsName} onChange={(e) => setDetailsName(e.target.value)} required />
+          <Input label="Name (Hindi)" value={detailsNameHi} onChange={(e) => setDetailsNameHi(e.target.value)} />
+          <p className="text-sm text-slate-500">
+            Renames this code on every dated row. Rates, OT, components and unit do not change — use “Update a rate” for that.
+          </p>
+          {saveError && <p role="alert" className="text-sm text-red-600">{saveError}</p>}
+          <div className="flex gap-2 pt-2">
+            <Button onClick={handleSaveDetails} disabled={isPending || !detailsName.trim()}>
+              {isPending ? 'Saving…' : 'Save'}
+            </Button>
+            <Button variant="ghost" onClick={() => setDetailsFor(null)}>Cancel</Button>
+          </div>
+        </div>
+      </SlideOver>
+
+      <SlideOver open={historyFor !== null} onClose={() => setHistoryFor(null)} title={`Rate history · ${historyFor ?? ''}`}>
+        <div className="flex flex-col gap-3">
+          <p className="text-sm text-slate-500">Every rate this code has had, newest first. A pay period is always priced at the rate in force on each day.</p>
+          {revisions.length === 0 ? (
+            <p className="text-sm text-slate-500">No rates recorded.</p>
+          ) : (
+            <ol className="flex flex-col gap-2">
+              {revisions.map((h) => (
+                <li key={h.id} className="rounded-xl border border-slate-200 p-3 text-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium text-slate-900">From {formatFactoryDate(new Date(h.effectiveFrom), DEFAULT_FACTORY_TIMEZONE)}</span>
+                    <StatusBadge tone={REVISION_TONE[h.status]}>{REVISION_LABEL[h.status]}</StatusBadge>
+                  </div>
+                  <div className="mt-1 text-slate-700">₹{h.amount.toFixed(2)} {h.unit === 'MONTHLY' ? 'a month' : 'a day'}</div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    OT {h.otRatePerHour != null ? `₹${h.otRatePerHour.toFixed(2)}/hr` : 'not set'}
+                    {h.hraAmount != null && ` · HRA ₹${h.hraAmount.toFixed(0)}`}
+                    {h.allowanceAmount != null && ` · Allowance ₹${h.allowanceAmount.toFixed(0)}`}
+                    {h.bonusAmount != null && ` · Bonus ₹${h.bonusAmount.toFixed(0)}`}
+                  </div>
+                </li>
+              ))}
+            </ol>
+          )}
         </div>
       </SlideOver>
     </div>

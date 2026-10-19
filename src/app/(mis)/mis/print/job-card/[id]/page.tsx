@@ -3,6 +3,9 @@ import { dateKeyToDbDate, formatFactoryDate, formatFactoryDateTime } from '@/lib
 import { formatQty } from '@/lib/mis/qty-by-unit';
 import { requireMisAccess } from '@/server/mis/guard';
 import { PrintButton } from '@/components/mis/print/print-button';
+import { DocumentVersionBar } from '@/components/mis/print/document-version-bar';
+import { docFileName } from '@/lib/mis/document-version';
+import { getDocumentVersionView } from '@/server/mis/document-versions';
 import { getOrder } from '@/server/mis/orders';
 import { getBom } from '@/server/mis/bom';
 import { getProductionSummary } from '@/server/mis/production';
@@ -38,12 +41,13 @@ export default async function JobCardPrintPage({ params }: { params: Promise<{ i
   // produced or no BOM is a false legal document, so a load error reaches `error.tsx`
   // ("Could not load the batch record - do not print"). Every role that can reach `getOrder`
   // (orders.read) also holds `phase.read` and `production.read`.
-  const [bom, prodSummary, phases, crew, timeZone] = await Promise.all([
+  const [bom, prodSummary, phases, crew, timeZone, docVersions] = await Promise.all([
     getBom(id),
     getProductionSummary(id),
     getPhasesForOrder(id),
     getCrewForOrder(id),
     getFactoryTimezone(),
+    getDocumentVersionView('JOB_CARD', id), // R2-46
   ]);
 
   const printDate = formatFactoryDate(new Date(), timeZone);
@@ -56,6 +60,8 @@ export default async function JobCardPrintPage({ params }: { params: Promise<{ i
 
   return (
     <div className="p-8 max-w-[794px] mx-auto font-sans text-sm text-gray-900">
+      {/* R2-46: which controlled version this is, and its sign-off */}
+      <DocumentVersionBar view={docVersions} fileName={docFileName('JOB_CARD', order.orderNumber, docVersions.latest ? new Date(docVersions.latest.preparedAt) : new Date(), docVersions.latest?.version ?? null, timeZone)} />
       {/* Print button */}
       <div className="no-print mb-6 flex gap-3">
         <PrintButton />

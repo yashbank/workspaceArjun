@@ -18,7 +18,7 @@ async function getTodayQcChecks() {
   tomorrow.setDate(tomorrow.getDate() + 1);
   
   return db.misQcCheck.findMany({
-    where: { checkTime: { gte: today, lt: tomorrow } },
+    where: { checkTime: { gte: today, lt: tomorrow }, voidedAt: null },
     include: {
       order: { select: { orderNumber: true } },
     },

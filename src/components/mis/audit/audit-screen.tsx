@@ -1,7 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import { Pagination } from '@/components/mis/kit/pagination';
 import { fmtDate as fmtFactoryDate, fmtTime as fmtFactoryTime } from '@/lib/mis/client-dates';
 
 type AuditRow = {
@@ -17,8 +16,11 @@ type AuditRow = {
 
 interface Props {
   logs: AuditRow[];
-  initialFrom: string;
-  initialTo: string;
+  /** R2-83: the server-side page — the filters are URL params and the server already applied them. */
+  total: number;
+  page: number;
+  entities: string[];
+  params: { q: string; entity: string; from: string; to: string };
 }
 
 const entityColors: Record<string, string> = {
@@ -37,55 +39,29 @@ function fmtTime(dt: Date | string) {
   return fmtFactoryDate(d, { day: '2-digit', month: 'short' }) + ' ' + fmtFactoryTime(d, { hour: '2-digit', minute: '2-digit', hour12: true });
 }
 
-export function AuditScreen({ logs, initialFrom, initialTo }: Props) {
-  const router = useRouter();
-  const [search, setSearch] = useState('');
-  const [entityFilter, setEntityFilter] = useState('');
-  const [fromDate, setFromDate] = useState(initialFrom);
-  const [toDate, setToDate] = useState(initialTo);
-
-  const applyDateRange = (nextFrom: string, nextTo: string) => {
-    const params = new URLSearchParams();
-    if (nextFrom) params.set('from', nextFrom);
-    if (nextTo) params.set('to', nextTo);
-    router.push(params.size > 0 ? `/mis/audit?${params.toString()}` : '/mis/audit');
-  };
-
-  const entities = useMemo(() => {
-    const set = new Set(logs.map(l => l.entity));
-    return ['', ...Array.from(set).sort()];
-  }, [logs]);
-
-  const filtered = useMemo(() => {
-    return logs.filter(l => {
-      if (entityFilter && l.entity !== entityFilter) return false;
-      if (search) {
-        const q = search.toLowerCase();
-        return l.action.toLowerCase().includes(q) || l.actorName.toLowerCase().includes(q) || l.entity.toLowerCase().includes(q);
-      }
-      return true;
-    });
-  }, [logs, search, entityFilter]);
+export function AuditScreen({ logs, total, page, entities, params }: Props) {
+  const filtered = logs;
+  const hasFilter = Boolean(params.q || params.entity || params.from || params.to);
 
   return (
     <div className="max-w-5xl mx-auto space-y-5 py-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-gray-900">Audit Log</h1>
-        <span className="text-sm text-gray-400">{filtered.length} of {logs.length} events</span>
+        <span className="text-sm text-gray-400">{total} events</span>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
+      <form method="get" className="flex flex-wrap items-center gap-3">
         <input
           type="search"
+          name="q"
           className="min-h-12 w-full max-w-sm rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
           placeholder="Search actions, actors…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          defaultValue={params.q}
         />
         <select
+          name="entity"
           className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          value={entityFilter}
-          onChange={(e) => setEntityFilter(e.target.value)}
+          defaultValue={params.entity}
         >
           <option value="">All entities</option>
           {entities.filter(Boolean).map(e => (
@@ -96,27 +72,25 @@ export function AuditScreen({ logs, initialFrom, initialTo }: Props) {
           <span>From</span>
           <input
             type="date"
-            value={fromDate}
-            onChange={(e) => { setFromDate(e.target.value); applyDateRange(e.target.value, toDate); }}
+            name="from"
+            defaultValue={params.from}
             className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           <span>To</span>
           <input
             type="date"
-            value={toDate}
-            onChange={(e) => { setToDate(e.target.value); applyDateRange(fromDate, e.target.value); }}
+            name="to"
+            defaultValue={params.to}
             className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
-          {(fromDate || toDate) && (
-            <button
-              onClick={() => { setFromDate(''); setToDate(''); applyDateRange('', ''); }}
-              className="inline-flex min-h-11 items-center text-base text-gray-500 hover:text-gray-700 underline"
-            >
-              Clear
-            </button>
-          )}
         </div>
-      </div>
+        <button type="submit" className="inline-flex min-h-11 items-center rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-900 hover:bg-slate-50">Apply</button>
+        {hasFilter && (
+          <a href="/mis/audit" className="inline-flex min-h-11 items-center text-base text-gray-500 hover:text-gray-700 underline">
+            Clear
+          </a>
+        )}
+      </form>
 
       <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-50">
         {filtered.length === 0 ? (
@@ -159,6 +133,7 @@ export function AuditScreen({ logs, initialFrom, initialTo }: Props) {
           ))
         )}
       </div>
+      <Pagination basePath="/mis/audit" params={params} page={page} total={total} />
     </div>
   );
 }

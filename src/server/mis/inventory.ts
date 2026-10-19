@@ -1,5 +1,6 @@
 import { roundQty } from '@/lib/mis/quantity';
 import { itemLockKey } from '@/lib/mis/stock-lock-keys';
+import { pageQuery, parseSearch, type Paged } from '@/lib/mis/pagination';
 import { db } from '@/server/db';
 import { logAuditEvent } from './audit';
 import { requirePermission } from './auth';
@@ -46,6 +47,51 @@ export async function getInventorySummary() {
       lastUpdated: last?.created_at ?? null,
     };
   });
+}
+
+/**
+ * R2-83: one page of the stock list (25 items by name). `q` matches code or name. Only the page's items have their
+ * latest ledger row read; `outOfStock` counts every active item at or below zero, so the header stays whole-list.
+ */
+export async function getInventoryPage(
+  opts: { q?: string; page?: number | string } = {},
+): Promise<Paged<Awaited<ReturnType<typeof getInventorySummary>>[number]> & { outOfStock: number }> {
+  await requirePermission('inventory.read');
+  const q = parseSearch(opts.q);
+  const where = {
+    deletedAt: null,
+    ...(q ? { OR: [{ name: { contains: q, mode: 'insensitive' as const } }, { code: { contains: q, mode: 'insensitive' as const } }] } : {}),
+  };
+  const { skip, take } = pageQuery(opts.page);
+  const [items, total, zero] = await Promise.all([
+    db.misItem.findMany({ where, orderBy: { name: 'asc' }, skip, take }),
+    db.misItem.count({ where }),
+    db.$queryRaw<{ n: bigint | number }[]>`
+      SELECT count(*) AS n FROM mis_items i
+      LEFT JOIN LATERAL (SELECT balance_qty FROM mis_inventory_ledger l WHERE l.item_id = i.id ORDER BY l.created_at DESC LIMIT 1) last ON true
+      WHERE i.deleted_at IS NULL AND COALESCE(last.balance_qty, 0) <= 0`,
+  ]);
+  const ids = items.map((i) => i.id);
+  const latest = ids.length
+    ? await db.$queryRaw<{ item_id: string; balance_qty: unknown; created_at: Date }[]>`
+        SELECT DISTINCT ON (item_id) item_id, balance_qty, created_at
+        FROM mis_inventory_ledger
+        WHERE item_id = ANY(${ids})
+        ORDER BY item_id, created_at DESC`
+    : [];
+  const byItem = new Map(latest.map((r) => [r.item_id, r]));
+  const rows = items.map((item) => {
+    const last = byItem.get(item.id);
+    return {
+      itemId: item.id,
+      code: item.code,
+      name: item.name,
+      unit: item.unit,
+      balance: last ? Number(last.balance_qty) : 0,
+      lastUpdated: last?.created_at ?? null,
+    };
+  });
+  return { rows, total, outOfStock: Number(zero[0]?.n ?? 0) };
 }
 
 export async function adjustInventory(itemId: string, changeQty: number, notes?: string) {

@@ -11,9 +11,10 @@ const LEGACY_LABELS: Record<string, string> = { KG: 'Kg', LITRE: 'Litre', PIECE:
  * The unit dropdown: only master options whose value is one the enum can store. If the master has
  * none of them, the legacy values are offered with readable labels.
  */
-export function unitChoices(options: readonly OptionLike[], legacyUnits: readonly string[] = LEGACY_UNITS): OptionLike[] {
+export function unitChoices(options: readonly OptionLike[], legacyUnits: readonly string[] = LEGACY_UNITS, anyText = false): OptionLike[] {
   const allowed = new Set(legacyUnits);
-  const picked = options.filter((o) => allowed.has(o.value));
+  // R2-25: unit is text now, so with anyText every master unit option is offered.
+  const picked = anyText ? [...options] : options.filter((o) => allowed.has(o.value));
   if (picked.length > 0) return picked.map((o) => ({ value: o.value, label: o.label }));
   return legacyUnits.map((u) => ({ value: u, label: LEGACY_LABELS[u] ?? u }));
 }
@@ -27,4 +28,10 @@ export function labelChoices(options: readonly OptionLike[], current: string | n
   const cur = (current ?? '').trim();
   if (cur && !list.some((o) => o.value === cur)) list.push({ value: cur, label: `${cur} (not in masters)` });
   return list;
+}
+
+/** A stored unit that is not in the list stays selectable (an old item must still be editable). */
+export function withCurrentUnit(list: readonly OptionLike[], current: string | null | undefined): OptionLike[] {
+  const cur = (current ?? '').trim();
+  return cur && !list.some((o) => o.value === cur) ? [...list, { value: cur, label: cur }] : [...list];
 }

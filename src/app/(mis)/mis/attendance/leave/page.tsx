@@ -26,6 +26,8 @@ export default async function LeavePage({ searchParams }: { searchParams: { empl
         leaves={leaves.map(l => ({
           id: l.id,
           date: l.date,
+          endDate: l.endDate,
+          leaveType: l.leaveType,
           status: l.status,
           reason: l.reason,
           employee: l.employee,

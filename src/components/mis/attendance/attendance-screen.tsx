@@ -1,13 +1,14 @@
 'use client';
+import { ListPager, usePagedRows } from './list-pager';
 import { useState, useTransition } from 'react';
 import { Button } from '@/components/mis/kit/button';
 import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { SlideOver } from '@/components/mis/kit/slide-over';
-import { Input } from '@/components/mis/kit/input';
+import { DateInput, Input, TimeInput } from '@/components/mis/kit/input';
 import { clockInAction, clockOutAction, approveClockOutAction, editAttendanceAction, markAbsentBulkAction, listPunchesForDayAction, addAttendanceNoteAction } from '@/app/(mis)/mis/attendance/actions';
 import { useToast } from '@/components/ui/toast';
-import { formatFactoryTime } from '@/lib/mis/factory-time';
+import { addDaysToDateKey, formatFactoryTime, zonedParts } from '@/lib/mis/factory-time';
 import type { ActionResult } from '@/lib/mis/action-result';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -24,13 +25,15 @@ type PunchRow = {
 };
 type SummaryRec = { employee: { id: string; name: string; employeeCode: string } | null; present: number; absent: number; otMinutes: number; lateMinutes: number };
 
+type Unrecorded = { id: string; name: string; employeeCode: string; role: string };
+
 type Props = {
-  records: AttendanceRec[]; summary: SummaryRec[]; shifts: { id: string; name: string }[];
+  records: AttendanceRec[]; unrecorded?: Unrecorded[]; todayKey?: string; summary: SummaryRec[]; shifts: { id: string; name: string }[];
   canWrite: boolean; canNote?: boolean; view: string; monthKey: string; date?: string; timeZone: string;
 };
 
 const STATUS_TONE: Record<string, 'good' | 'warning' | 'critical' | 'neutral'> = {
-  PRESENT: 'good', HALF_DAY: 'warning', ABSENT: 'critical', LEAVE: 'neutral', HOLIDAY: 'neutral',
+  NOT_RECORDED: 'warning', PRESENT: 'good', HALF_DAY: 'warning', ABSENT: 'critical', LEAVE: 'neutral', HOLIDAY: 'neutral',
 };
 
 function fmtTime(d: Date | null, timeZone: string) {
@@ -38,9 +41,16 @@ function fmtTime(d: Date | null, timeZone: string) {
   return formatFactoryTime(new Date(d), timeZone);
 }
 
+/** "HH:MM" on the factory clock, for a <input type=time>. */
+function toTimeInput(d: Date | null, timeZone: string) {
+  if (!d) return '';
+  const p = zonedParts(new Date(d), timeZone);
+  return `${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}`;
+}
+
 function fmtMin(m: number) { return m > 0 ? `${m}m` : '—'; }
 
-export function AttendanceScreen({ records, summary, shifts: _shifts, canWrite, canNote = false, view, monthKey, date, timeZone }: Props) {
+export function AttendanceScreen({ records, unrecorded = [], todayKey, summary, shifts: _shifts, canWrite, canNote = false, view, monthKey, date, timeZone }: Props) {
   const { toast } = useToast();
   const router = useRouter();
   /** B63: show a refusal as a toast; true when the action went through. */
@@ -68,23 +78,35 @@ export function AttendanceScreen({ records, summary, shifts: _shifts, canWrite, 
     }
     setSelected(new Set());
   });
+  // R2-94/95: people with no register row yet (nobody punched them) are shown too, so the operator can clock them in or mark them absent.
+  const allRecords: AttendanceRec[] = [
+    ...records,
+    ...unrecorded.map((e): AttendanceRec => ({
+      id: `new:${e.id}`, date: new Date(date ?? todayKey ?? Date.now()), status: 'NOT_RECORDED', clockIn: null, clockOut: null,
+      approvedOut: false, lateMinutes: 0, otMinutes: 0, notes: null, employee: e, shift: null,
+    })),
+  ];
+  const isToday = !date || !todayKey || date === todayKey;
   const filteredRecords = empSearch.trim()
-    ? records.filter(r => (r.employee?.name ?? '').toLowerCase().includes(empSearch.toLowerCase()) || (r.employee?.employeeCode ?? '').toLowerCase().includes(empSearch.toLowerCase()))
-    : records;
+    ? allRecords.filter(r => (r.employee?.name ?? '').toLowerCase().includes(empSearch.toLowerCase()) || (r.employee?.employeeCode ?? '').toLowerCase().includes(empSearch.toLowerCase()))
+    : allRecords;
   const filteredSummary = empSearch.trim()
     ? summary.filter(r => (r.employee?.name ?? '').toLowerCase().includes(empSearch.toLowerCase()) || (r.employee?.employeeCode ?? '').toLowerCase().includes(empSearch.toLowerCase()))
     : summary;
 
+  const dailyPaged = usePagedRows(filteredRecords, `${empSearch}|${date ?? ''}`);
   const [editOpen, setEditOpen] = useState(false);
   const [editRec, setEditRec] = useState<AttendanceRec | null>(null);
   const [editStatus, setEditStatus] = useState('PRESENT');
   const [editNotes, setEditNotes] = useState('');
   const [editReason, setEditReason] = useState('');
+  const [editIn, setEditIn] = useState('');
+  const [editOut, setEditOut] = useState('');
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteRec, setNoteRec] = useState<AttendanceRec | null>(null);
   const [noteText, setNoteText] = useState('');
 
-  const openEdit = (r: AttendanceRec) => { setEditRec(r); setEditStatus(r.status); setEditNotes(r.notes ?? ''); setEditReason(''); setEditOpen(true); };
+  const openEdit = (r: AttendanceRec) => { setEditRec(r); setEditStatus(r.status); setEditNotes(r.notes ?? ''); setEditReason(''); setEditIn(toTimeInput(r.clockIn, timeZone)); setEditOut(toTimeInput(r.clockOut, timeZone)); setEditOpen(true); };
   const openNote = (r: AttendanceRec) => { setNoteRec(r); setNoteText(''); setNoteOpen(true); };
 
   const [punchesOpen, setPunchesOpen] = useState(false);
@@ -123,11 +145,11 @@ export function AttendanceScreen({ records, summary, shifts: _shifts, canWrite, 
     { key: 'ot', header: 'OT', render: (r) => <span>{fmtMin(r.otMinutes)}</span> },
     { key: 'actions', header: '', render: (r) => (
       <div className="flex gap-2 justify-end">
-        {canWrite && !r.clockIn && <Button variant="ghost" onClick={() => startTransition(async () => { settle(await clockInAction(r.employee!.id)); })}>Clock In</Button>}
+        {canWrite && !r.clockIn && (isToday || !r.id.startsWith('new:')) && <Button variant="ghost" onClick={() => startTransition(async () => { settle(await clockInAction(r.employee!.id)); })}>Clock In</Button>}
         {canWrite && r.clockIn && !r.clockOut && <Button variant="ghost" onClick={() => startTransition(async () => { settle(await clockOutAction(r.id)); })}>Clock Out</Button>}
         {canWrite && r.clockOut && !r.approvedOut && <Button variant="ghost" onClick={() => startTransition(async () => { settle(await approveClockOutAction(r.id)); })}>Approve Out</Button>}
         {(r.clockIn || r.clockOut) && <Button variant="ghost" onClick={() => openPunches(r)}>Punches</Button>}
-        {canWrite && <Button variant="ghost" onClick={() => openEdit(r)}>Edit</Button>}
+        {canWrite && !r.id.startsWith('new:') && <Button variant="ghost" onClick={() => openEdit(r)}>Edit</Button>}
         {canNote && !canWrite && <Button variant="ghost" onClick={() => openNote(r)}>Add note</Button>}
       </div>
     )},
@@ -148,6 +170,8 @@ export function AttendanceScreen({ records, summary, shifts: _shifts, canWrite, 
         <div className="flex gap-2">
           <Link href="/mis/attendance?view=daily" className={`inline-flex min-h-11 items-center rounded-lg px-3 text-base font-medium ${view === 'daily' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Daily</Link>
           <Link href="/mis/attendance?view=monthly" className={`inline-flex min-h-11 items-center rounded-lg px-3 text-base font-medium ${view === 'monthly' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Monthly ({monthKey})</Link>
+          <Link href="/mis/attendance/leave" className="inline-flex min-h-11 items-center rounded-lg bg-slate-100 px-3 text-base font-medium text-slate-700 hover:bg-slate-200">Leave requests</Link>
+          {canWrite && <Link href="/mis/attendance/shifts" className="inline-flex min-h-11 items-center rounded-lg bg-slate-100 px-3 text-base font-medium text-slate-700 hover:bg-slate-200">Shifts</Link>}
           {/* D28 — the same door (attendance.write) that already gates clock-in/out edits on this screen. */}
           {canWrite && (
             <Link href="/mis/attendance/extra-pay" className="inline-flex min-h-11 items-center rounded-lg bg-indigo-50 px-3 text-base font-medium text-indigo-700 hover:bg-indigo-100">
@@ -156,6 +180,20 @@ export function AttendanceScreen({ records, summary, shifts: _shifts, canWrite, 
           )}
         </div>
       </div>
+
+      {view === 'daily' && (
+        <div className="flex flex-wrap items-end gap-2">
+          <Button variant="ghost" onClick={() => date && router.push(`/mis/attendance?view=daily&date=${addDaysToDateKey(date, -1)}`)} disabled={!date}>← Previous day</Button>
+          <DateInput
+            label="Date"
+            value={date ?? ''}
+            max={todayKey}
+            onChange={(e) => { if (e.target.value) router.push(`/mis/attendance?view=daily&date=${e.target.value}`); }}
+          />
+          <Button variant="ghost" onClick={() => date && router.push(`/mis/attendance?view=daily&date=${addDaysToDateKey(date, 1)}`)} disabled={!date || !!(todayKey && date >= todayKey)}>Next day →</Button>
+          {!isToday && todayKey && <Button variant="ghost" onClick={() => router.push('/mis/attendance?view=daily')}>Today</Button>}
+        </div>
+      )}
 
       {view === 'monthly' && (
         <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
@@ -184,7 +222,8 @@ export function AttendanceScreen({ records, summary, shifts: _shifts, canWrite, 
               </div>
             </div>
           )}
-          <DataTable columns={dailyCols} rows={filteredRecords} rowKey={(r) => r.id} emptyTitle="No attendance records" emptyBody="Records appear once employees clock in." />
+          <DataTable columns={dailyCols} rows={dailyPaged.pageRows} rowKey={(r) => r.id} emptyTitle="No attendance records" emptyBody="No active employees on the roll for this day." />
+          <ListPager page={dailyPaged.page} total={dailyPaged.total} setPage={dailyPaged.setPage} />
         </>
       ) : (
         <DataTable columns={monthCols} rows={filteredSummary} rowKey={(r) => r.employee?.id ?? Math.random().toString()} emptyTitle="No data for this month" />
@@ -198,10 +237,14 @@ export function AttendanceScreen({ records, summary, shifts: _shifts, canWrite, 
               {['PRESENT','ABSENT','HALF_DAY','LEAVE','HOLIDAY'].map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
+          <div className="grid grid-cols-2 gap-3">
+            <TimeInput label="Clock In" value={editIn} onChange={e => setEditIn(e.target.value)} />
+            <TimeInput label="Clock Out" value={editOut} onChange={e => setEditOut(e.target.value)} />
+          </div>
           <Input label="Notes" value={editNotes} onChange={e => setEditNotes(e.target.value)} />
           <Input label="Reason (only for a closed month; Owner)" value={editReason} onChange={e => setEditReason(e.target.value)} />
           <div className="flex gap-2 pt-2">
-            <Button onClick={() => startTransition(async () => { if (editRec) { const override = editReason.trim().length >= 3 ? { reason: editReason.trim() } : undefined; if (settle(await editAttendanceAction(editRec.id, { status: editStatus, notes: editNotes }, override))) setEditOpen(false); } })} disabled={isPending}>Save</Button>
+            <Button onClick={() => startTransition(async () => { if (editRec) { const override = editReason.trim().length >= 3 ? { reason: editReason.trim() } : undefined; if (settle(await editAttendanceAction(editRec.id, { status: editStatus, notes: editNotes, clockInTime: editIn && editIn !== toTimeInput(editRec.clockIn, timeZone) ? editIn : undefined, clockOutTime: editOut && editOut !== toTimeInput(editRec.clockOut, timeZone) ? editOut : undefined }, override))) setEditOpen(false); } })} disabled={isPending}>Save</Button>
             <Button variant="ghost" onClick={() => setEditOpen(false)}>Cancel</Button>
           </div>
         </div>

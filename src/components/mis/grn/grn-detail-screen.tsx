@@ -49,7 +49,7 @@ type Grn = {
   po: { id: string; poNumber: string; supplier: { id: string; name: string } | null; items: PoItem[] } | null;
   items: GrnItem[];
 };
-type Props = { grn: Grn; canWrite: boolean; /** ADMIN/OWNER: may take more than the order + 2% with a reason (R3-STK B03). */ canOverride?: boolean; canSeeMoney?: boolean; /** Server-formatted (Owner only); null otherwise. */ invoiceAmountFormatted?: string | null };
+type Props = { grn: Grn; canWrite: boolean; /** R2-71: confirmed / in-production orders a line can be earmarked for. */ orders?: { id: string; orderNumber: string; customerName: string | null }[]; /** ADMIN/OWNER: may take more than the order + 2% with a reason (R3-STK B03). */ canOverride?: boolean; canSeeMoney?: boolean; /** Server-formatted (Owner only); null otherwise. */ invoiceAmountFormatted?: string | null };
 
 const isoDate = (d: Date | string | null | undefined) => (d ? new Date(d).toISOString().slice(0, 10) : '');
 
@@ -64,7 +64,7 @@ function parseAmount(raw: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-export function GrnDetailScreen({ grn, canWrite, canOverride = false, canSeeMoney = false, invoiceAmountFormatted = null }: Props) {
+export function GrnDetailScreen({ grn, canWrite, orders = [], canOverride = false, canSeeMoney = false, invoiceAmountFormatted = null }: Props) {
   const [isPending, startTransition] = useTransition();
   const [selectedPoItemId, setSelectedPoItemId] = useState('');
   const [qty, setQty] = useState('');
@@ -93,15 +93,15 @@ export function GrnDetailScreen({ grn, canWrite, canOverride = false, canSeeMone
   const [headerError, setHeaderError] = useState<string | null>(null);
   const setH = (k: keyof typeof header) => (e: React.ChangeEvent<HTMLInputElement>) => { setHeaderSaved(false); setHeader({ ...header, [k]: e.target.value }); };
 
-  const handleSaveHeader = () => {
+  /** Save the paperwork typed in the form; true when it is on the GRN. Confirm calls this first (R2-72). */
+  const persistHeader = async (): Promise<boolean> => {
     setHeaderError(null);
     const amount = header.supplierInvoiceAmount.trim() === '' ? null : parseAmount(header.supplierInvoiceAmount);
     if (canSeeMoney && header.supplierInvoiceAmount.trim() !== '' && amount === null) {
       setHeaderError('Supplier invoice amount must be a number.');
-      return;
+      return false;
     }
-    startTransition(async () => {
-      try {
+    try {
       const saved = unwrap(await updateGrnHeaderAction(grn.id, {
         supplierInvoiceNo: header.supplierInvoiceNo || null,
         invoiceDate: header.invoiceDate || null,
@@ -113,10 +113,14 @@ export function GrnDetailScreen({ grn, canWrite, canOverride = false, canSeeMone
       }));
       setWarnings(saved?.warnings ?? []);
       setHeaderSaved(true);
-      } catch (e) {
-        setHeaderError(e instanceof Error ? e.message : 'That did not save.');
-      }
-    });
+      return true;
+    } catch (e) {
+      setHeaderError(e instanceof Error ? e.message : 'That did not save.');
+      return false;
+    }
+  };
+  const handleSaveHeader = () => {
+    startTransition(async () => { await persistHeader(); });
   };
   const [type, setType] = useState('GENERAL');
   const [orderRef, setOrderRef] = useState('');
@@ -129,7 +133,7 @@ export function GrnDetailScreen({ grn, canWrite, canOverride = false, canSeeMone
     const onThisGrn = grn.items.filter(i => i.poItem.id === poItem.id).reduce((sum, i) => sum + toNum(i.receivedQty), 0);
     return Math.round((toNum(poItem.quantity) - toNum(poItem.receivedQuantity ?? 0) - onThisGrn) * 100) / 100;
   };
-  const availablePoItems = (grn.po?.items ?? []).filter(i => remainingOf(i) > 0);
+  const availablePoItems = (grn.po?.items ?? []).filter(i => canOverride || remainingOf(i) > 0); // R2-12: Admin/Owner can add a further batch past the order (reason required)
 
   // #11: edit / remove a line on a DRAFT.
   const { confirm: askConfirm, confirmDialog } = useConfirm();
@@ -156,6 +160,14 @@ export function GrnDetailScreen({ grn, canWrite, canOverride = false, canSeeMone
     const damage = parseAmount(editFields.damage);
     if (received === null || (editFields.dc.trim() !== '' && dc === null) || (editFields.damage.trim() !== '' && damage === null)) {
       setEditError('Quantities must be numbers.');
+      return;
+    }
+    if (dc === null) {
+      setEditError('Enter the DC quantity from the delivery challan.');
+      return;
+    }
+    if (received < 0 || (damage ?? 0) < 0 || (dc ?? 0) < 0 || received + (damage ?? 0) <= 0) {
+      setEditError('Received quantity must be greater than zero (quantities cannot be negative).');
       return;
     }
     setEditError(null);
@@ -191,7 +203,7 @@ export function GrnDetailScreen({ grn, canWrite, canOverride = false, canSeeMone
 
   const router = useRouter();
   const handleDiscard = async () => {
-    if (!(await askConfirm({ title: 'Discard this draft?', message: `${grn.grnNumber} and all its lines will be deleted. Nothing has been booked to stock.`, confirmLabel: 'Discard draft', destructive: true }))) return;
+    if (!(await askConfirm({ title: 'Delete this draft GRN?', message: `${grn.grnNumber} and all its lines will be deleted. Nothing has been booked to stock.`, confirmLabel: 'Delete draft', destructive: true }))) return;
     setConfirmError(null);
     startTransition(async () => {
       try {
@@ -211,6 +223,18 @@ export function GrnDetailScreen({ grn, canWrite, canOverride = false, canSeeMone
     const damage = parseAmount(damageQty);
     if (received === null || (dcQty.trim() !== '' && dc === null) || (damageQty.trim() !== '' && damage === null)) {
       setItemError('Quantities must be numbers.');
+      return;
+    }
+    if (dc === null) {
+      setItemError('Enter the DC quantity from the delivery challan.');
+      return;
+    }
+    if (received < 0 || (damage ?? 0) < 0 || (dc ?? 0) < 0 || received + (damage ?? 0) <= 0) {
+      setItemError('Received quantity must be greater than zero (quantities cannot be negative).');
+      return;
+    }
+    if (type === 'FOR_ORDER' && !orderRef) {
+      setItemError('Pick the order this line is for.');
       return;
     }
     startTransition(async () => {
@@ -249,6 +273,8 @@ export function GrnDetailScreen({ grn, canWrite, canOverride = false, canSeeMone
   };
   const handleConfirm = async () => {
     if (!(await askConfirm({ title: 'Confirm this GRN?', message: 'Confirming this GRN will update inventory and cannot be undone.', confirmLabel: 'Confirm GRN' }))) return;
+    // R2-72: paperwork typed but not yet saved must not be lost by confirming.
+    if (!(await persistHeader())) { setConfirmError('Fix the delivery paperwork above before confirming.'); return; }
     runConfirm();
   };
 
@@ -278,7 +304,7 @@ export function GrnDetailScreen({ grn, canWrite, canOverride = false, canSeeMone
         </div>
         {isDraft && canWrite && (
           <div className="flex items-center gap-2">
-            <Button variant="ghost" onClick={handleDiscard} disabled={isPending}>Discard draft</Button>
+            <Button variant="ghost" onClick={handleDiscard} disabled={isPending}>Delete draft</Button>
             {grn.items.length > 0 && <Button onClick={handleConfirm} disabled={isPending}>Confirm GRN</Button>}
           </div>
         )}
@@ -369,10 +395,10 @@ export function GrnDetailScreen({ grn, canWrite, canOverride = false, canSeeMone
             onChange={setSelectedPoItemId}
             options={[{ value: '', label: '— Select item —' }, ...availablePoItems.map(i => ({ value: i.id, label: `${i.description} (Ordered: ${toNum(i.quantity)} · remaining ${remainingOf(i)})` }))]}
           />
-          <NumberInput label="Received Qty (good)" value={qty} onChange={e => setQty(e.target.value)} />
+          <NumberInput label="Received Qty (good)" value={qty} onChange={e => setQty(e.target.value)} min="0.01" step="0.01" />
           <div className="grid grid-cols-2 gap-3">
-            <NumberInput label="DC Qty (challan)" value={dcQty} onChange={e => setDcQty(e.target.value)} />
-            <NumberInput label="Damaged Qty" value={damageQty} onChange={e => setDamageQty(e.target.value)} />
+            <NumberInput label="DC Qty (challan) *" value={dcQty} onChange={e => setDcQty(e.target.value)} min="0" step="0.01" />
+            <NumberInput label="Damaged Qty" value={damageQty} onChange={e => setDamageQty(e.target.value)} min="0" step="0.01" />
           </div>
           {dcQty && <p className="text-xs text-slate-500">Short = {dcQty} − ({qty || 0} + {damageQty || 0}) = <strong>{Math.round(((parseFloat(dcQty) || 0) - (parseFloat(qty) || 0) - (parseFloat(damageQty) || 0)) * 100) / 100}</strong></p>}
           {itemError && (
@@ -388,7 +414,12 @@ export function GrnDetailScreen({ grn, canWrite, canOverride = false, canSeeMone
             options={[{ value: 'GENERAL', label: 'General Stock' }, { value: 'FOR_ORDER', label: 'For Specific Order' }]}
           />
           {type === 'FOR_ORDER' && (
-            <Input label="Order Reference" value={orderRef} onChange={e => setOrderRef(e.target.value)} />
+            <Select
+              label="Order Reference"
+              value={orderRef}
+              onChange={setOrderRef}
+              options={[{ value: '', label: '— Select order —' }, ...orders.map(o => ({ value: o.orderNumber, label: `${o.orderNumber}${o.customerName ? ` — ${o.customerName}` : ''}` }))]}
+            />
           )}
           <Input label="Batch No" value={batchNo} onChange={e => setBatchNo(e.target.value)} />
           <div>
@@ -401,9 +432,9 @@ export function GrnDetailScreen({ grn, canWrite, canOverride = false, canSeeMone
         {editLine && (
           <div className="flex flex-col gap-4 p-4">
             <div className="font-medium text-slate-800">{editLine.poItem.description}</div>
-            <NumberInput label="Received Qty (good)" value={editFields.received} onChange={e => setEditFields({ ...editFields, received: e.target.value })} />
+            <NumberInput label="Received Qty (good)" value={editFields.received} onChange={e => setEditFields({ ...editFields, received: e.target.value })} min="0.01" step="0.01" />
             <div className="grid grid-cols-2 gap-3">
-              <NumberInput label="DC Qty (challan)" value={editFields.dc} onChange={e => setEditFields({ ...editFields, dc: e.target.value })} />
+              <NumberInput label="DC Qty (challan) *" value={editFields.dc} onChange={e => setEditFields({ ...editFields, dc: e.target.value })} />
               <NumberInput label="Damaged Qty" value={editFields.damage} onChange={e => setEditFields({ ...editFields, damage: e.target.value })} />
             </div>
             <Input label="Batch No" value={editFields.batch} onChange={e => setEditFields({ ...editFields, batch: e.target.value })} />

@@ -220,7 +220,11 @@ function computeEmployeeMonth(
 
   const basicWageOn = components.BASIC ? basicWage : 0;
   const otPayOn = components.OT ? otPay : 0;
-  const grossPay = basicWageOn + otPayOn + hra + allowance + bonus + extraPay - latePenaltyTotal;
+  // R2-107: a late penalty can take the month to zero, never below it. The penalty is capped at
+  // the month's earnings, so the payslip's own lines still add up (earnings − penalty = gross ≥ 0).
+  const earnings = basicWageOn + otPayOn + hra + allowance + bonus + extraPay;
+  const latePenaltyApplied = Math.min(latePenaltyTotal, earnings);
+  const grossPay = Math.max(0, earnings - latePenaltyApplied);
 
   return {
     employeeId: emp.id,
@@ -241,7 +245,7 @@ function computeEmployeeMonth(
     otPay: round(otPayOn),
     bonus: round(bonus),
     extraPay: round(extraPay),
-    latePenalty: round(latePenaltyTotal),
+    latePenalty: round(latePenaltyApplied),
     grossPay: round(grossPay),
     wageTypeCode: emp.wageTypeCode ?? null,
     needsPayCode: !emp.wageTypeCode && !closingRow,
@@ -268,10 +272,30 @@ function computeEmployeeMonth(
  */
 export async function calculateMonthlyPayroll(year: number, month: number, client: Prisma.TransactionClient = db): Promise<PayrollRow[]> {
   await requirePermission('wages.read');
+  return computePayroll(year, month, client, null);
+}
 
+/**
+ * R2-112: one employee's payslip line — the same arithmetic as `calculateMonthlyPayroll`, but every
+ * query is scoped to that one employee (their attendance, their roster row, their snapshot line),
+ * so opening a payslip never recomputes the whole factory. `null` when they have no line that month.
+ */
+export async function calculateEmployeePayroll(
+  employeeId: string,
+  year: number,
+  month: number,
+  client: Prisma.TransactionClient = db,
+): Promise<PayrollRow | null> {
+  await requirePermission('wages.read');
+  const rows = await computePayroll(year, month, client, employeeId);
+  return rows.find((r) => r.employeeId === employeeId) ?? null;
+}
+
+async function computePayroll(year: number, month: number, client: Prisma.TransactionClient, onlyEmployeeId: string | null): Promise<PayrollRow[]> {
+  const scope = onlyEmployeeId ? { employeeId: onlyEmployeeId } : {};
   const period = await findPayrollPeriod(client, year, month);
   if (period?.status === 'CLOSED') {
-    const lines = await client.misPayrollSnapshotLine.findMany({ where: { periodId: period.id }, orderBy: { employeeName: 'asc' } });
+    const lines = await client.misPayrollSnapshotLine.findMany({ where: { periodId: period.id, ...scope }, orderBy: { employeeName: 'asc' } });
     return lines.map(snapshotToRow);
   }
 
@@ -289,7 +313,7 @@ export async function calculateMonthlyPayroll(year: number, month: number, clien
   const workingDays = daysInMonth(year, month);
 
   const attendance: AttendanceRow[] = await client.misAttendance.findMany({
-    where: { date: { gte: start, lte: end } },
+    where: { date: { gte: start, lte: end }, ...scope },
     include: {
       employee: { select: { id: true, name: true, employeeCode: true, payType: true, sundayPaid: true, wageTypeCode: true, departmentId: true } },
       shift: { select: { name: true } },
@@ -306,7 +330,7 @@ export async function calculateMonthlyPayroll(year: number, month: number, clien
   // R3 B44: every active, non-deleted employee with a wage code gets a line, even with no attendance
   // rows at all (a MONTHLY employee is still paid Sundays, allowances and extra-pay days).
   const rosterEmployees = (await client.misEmployee.findMany({
-    where: { deletedAt: null, isActive: true, wageTypeCode: { not: null } },
+    where: { deletedAt: null, isActive: true, wageTypeCode: { not: null }, ...(onlyEmployeeId ? { id: onlyEmployeeId } : {}) },
     select: { id: true, name: true, employeeCode: true, payType: true, sundayPaid: true, wageTypeCode: true, departmentId: true },
   })) as PayrollEmployee[];
   const zeroRowEmployees = rosterEmployees.filter((e) => !byEmployee[e.id]);

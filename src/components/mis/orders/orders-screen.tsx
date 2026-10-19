@@ -2,6 +2,7 @@
 import Link from 'next/link';
 import { useState, useTransition } from 'react';
 import { Button } from '@/components/mis/kit/button';
+import { Pagination, HiddenParams } from '@/components/mis/kit/pagination';
 import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import { Input, DateInput } from '@/components/mis/kit/input';
@@ -9,23 +10,27 @@ import { Select } from '@/components/mis/kit/select';
 import { StatusBadge, type BadgeTone } from '@/components/mis/kit/status-badge';
 import { saveOrderAction, updateOrderStatusAction } from '@/app/(mis)/mis/orders/actions';
 import { useToast } from '@/components/ui/toast';
+import { OrderStatusActions } from '@/components/mis/orders/order-status-actions';
+import type { CloseGate } from '@/lib/mis/order-transitions';
 
 type Order = { id: string; orderNumber: string; status: string; description: string | null; deliveryDate: Date | null; createdAt: Date; customer: { id: string; name: string } | null };
 type Customer = { id: string; name: string };
-type Props = { orders: Order[]; customers: Customer[]; canWrite: boolean; initialCustomerId?: string };
+type Props = { orders: Order[]; customers: Customer[]; canWrite: boolean; initialCustomerId?: string; gatesByOrder?: Record<string, CloseGate[]>; canOverride?: boolean;
+  /** R2-83: the server-side page — total matching rows, the page number, and the URL params kept in the page links. */
+  paging?: { total: number; page: number; params: Record<string, string | undefined> }; };
 
 function statusTone(status: string): BadgeTone {
   switch (status) {
     case 'DRAFT': return 'neutral';
     case 'CONFIRMED': return 'info';
     case 'IN_PRODUCTION': return 'warning';
-    case 'COMPLETE': return 'good';
+    case 'COMPLETED': case 'DELIVERED': return 'good';
     case 'CANCELLED': return 'critical';
     default: return 'neutral';
   }
 }
 
-export function OrdersScreen({ orders, customers, canWrite, initialCustomerId }: Props) {
+export function OrdersScreen({ orders, customers, canWrite, initialCustomerId, gatesByOrder = {}, canOverride = false, paging }: Props) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Order | null>(null);
   const [customerId, setCustomerId] = useState('');
@@ -55,10 +60,8 @@ export function OrdersScreen({ orders, customers, canWrite, initialCustomerId }:
     });
   };
 
-  const [search, setSearch] = useState('');
-  const filtered = search.trim()
-    ? orders.filter(o => o.orderNumber.toLowerCase().includes(search.toLowerCase()) || (o.customer?.name ?? '').toLowerCase().includes(search.toLowerCase()) || (o.description ?? '').toLowerCase().includes(search.toLowerCase()))
-    : orders;
+  const search = paging?.params.q ?? '';
+  const filtered = orders;
 
   function downloadCsv() {
     const headers = ['Order #', 'Customer', 'Description', 'Status', 'Delivery Date', 'Created'];
@@ -97,6 +100,9 @@ export function OrdersScreen({ orders, customers, canWrite, initialCustomerId }:
             } catch { toast('error', 'That did not save. Try again.'); }
           })}>Confirm</Button>
         )}
+        {canWrite && r.status !== 'DRAFT' && (
+          <OrderStatusActions orderId={r.id} orderNumber={r.orderNumber} status={r.status} gates={gatesByOrder[r.id] ?? []} canOverride={canOverride} override={null} />
+        )}
       </div>
     )},
   ];
@@ -107,17 +113,20 @@ export function OrdersScreen({ orders, customers, canWrite, initialCustomerId }:
         <h1 className="text-xl font-semibold text-slate-900">Orders</h1>
         {canWrite && <Button onClick={openAdd}>+ New Order</Button>}
       </div>
-      <div className="flex items-center gap-3">
+      <form method="get" className="flex items-center gap-3">
+        {paging && <HiddenParams params={paging.params} />}
         <input
           type="search"
           placeholder="Search orders…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
+          name="q"
+          defaultValue={search}
           className="w-full max-w-sm min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500"
         />
-        <Button variant="ghost" onClick={downloadCsv}>↓ CSV</Button>
-      </div>
+        <Button type="submit" variant="secondary">Search</Button>
+        <Button type="button" variant="ghost" onClick={downloadCsv}>↓ CSV</Button>
+      </form>
       <DataTable columns={columns} rows={filtered} rowKey={(r) => r.id} emptyTitle="No orders yet" emptyBody="Create an order for a customer." />
+      {paging && <Pagination basePath="/mis/orders" params={paging.params} page={paging.page} total={paging.total} />}
       <SlideOver open={open} onClose={() => setOpen(false)} title={editing ? 'Edit Order' : 'New Order'}>
         <div className="flex flex-col gap-4 p-4">
           <Select

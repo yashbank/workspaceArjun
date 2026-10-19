@@ -149,14 +149,17 @@ describe('B79 getQcSummary', () => {
 
 describe('B84 editQcCheck', () => {
   const seed = (patch: Row = {}) => {
-    world.checks.push({ id: 'c1', orderId: 'ord-1', result: 'FAIL', defectType: 'TEAR', defectQty: 2, notes: 'edge split', parameterName: 'Shade', acknowledgedAt: null, createdAt: new Date(), ...patch });
+    // R2-34: a QC inspector edits only their OWN check (checkById = the signed-in 'u1').
+    world.checks.push({ id: 'c1', orderId: 'ord-1', result: 'FAIL', defectType: 'TEAR', defectQty: 2, notes: 'edge split', parameterName: 'Shade', acknowledgedAt: null, checkById: 'u1', createdAt: new Date(), ...patch });
     return 'c1';
   };
-  const now = new Date('2026-09-05T12:00:00Z');
+  // R2-34: a QC inspector's window is the same factory day, so "now" is 23:59:30 IST - 23 h 59 m
+  // earlier is still that day, 24 h 01 m earlier is the day before.
+  const now = new Date('2026-09-05T18:29:30Z');
 
   it('23 h 59 m after creation is allowed, and the audit row has before and after', async () => {
     const id = seed({ createdAt: new Date(now.getTime() - (24 * HOUR - 60 * 1000)) });
-    const after = await editQcCheck(id, { result: 'PASS', defectType: null, defectQty: null, notes: 'rechecked' }, now);
+    const after = await editQcCheck(id, { reason: 'recheck', result: 'PASS', defectType: null, defectQty: null, notes: 'rechecked' }, now);
     expect(after.result).toBe('PASS');
     const call = audit.mock.calls.at(-1)![0];
     expect(call).toMatchObject({ action: 'QC_CHECK_EDIT', entity: 'MisQcCheck', entityId: id });
@@ -166,34 +169,34 @@ describe('B84 editQcCheck', () => {
 
   it('24 h 01 m after creation is refused', async () => {
     const id = seed({ createdAt: new Date(now.getTime() - (24 * HOUR + 60 * 1000)) });
-    await expect(editQcCheck(id, { notes: 'late' }, now)).rejects.toThrow('This check can no longer be edited (24 h / acknowledged / order closed)');
+    await expect(editQcCheck(id, { reason: 'recheck', notes: 'late' }, now)).rejects.toThrow('This check can no longer be edited (24 h / acknowledged / order closed)');
   });
 
   it('an acknowledged check is refused', async () => {
     const id = seed({ createdAt: now, acknowledgedAt: new Date() });
-    await expect(editQcCheck(id, { notes: 'x y z' }, now)).rejects.toThrow(/no longer be edited/);
+    await expect(editQcCheck(id, { reason: 'recheck', notes: 'x y z' }, now)).rejects.toThrow(/no longer be edited/);
   });
 
   it('a check on a closed order is refused', async () => {
     const id = seed({ createdAt: now, orderId: 'ord-done' });
-    await expect(editQcCheck(id, { notes: 'x y z' }, now)).rejects.toThrow(/no longer be edited/);
+    await expect(editQcCheck(id, { reason: 'recheck', notes: 'x y z' }, now)).rejects.toThrow(/no longer be edited/);
   });
 
   it('the patch is validated as an add is (FAIL needs a reason; negative qty refused)', async () => {
     const id = seed({ createdAt: now, result: 'PASS', defectType: null, notes: null });
-    await expect(editQcCheck(id, { result: 'FAIL' }, now)).rejects.toThrow(/defect type or a note/);
-    await expect(editQcCheck(id, { defectQty: -1 }, now)).rejects.toThrow(/Defect quantity/);
+    await expect(editQcCheck(id, { reason: 'recheck', result: 'FAIL' }, now)).rejects.toThrow(/defect type or a note/);
+    await expect(editQcCheck(id, { reason: 'recheck', defectQty: -1 }, now)).rejects.toThrow(/Defect quantity/);
   });
 
   it.each(MIS_ROLES.filter((r) => !['OWNER', 'ADMIN', 'QC', 'SUPERVISOR'].includes(r)))('%s (no qc.write) is forbidden', async (role) => {
     const id = seed({ createdAt: now });
     as(role);
-    await expect(editQcCheck(id, { notes: 'abc' }, now)).rejects.toMatchObject({ name: 'MisForbiddenError' });
+    await expect(editQcCheck(id, { reason: 'recheck', notes: 'abc' }, now)).rejects.toMatchObject({ name: 'MisForbiddenError' });
   });
 
   it('QC may edit', async () => {
     const id = seed({ createdAt: now });
     as('QC');
-    await expect(editQcCheck(id, { notes: 'abc def' }, now)).resolves.toMatchObject({ notes: 'abc def' });
+    await expect(editQcCheck(id, { reason: 'recheck', notes: 'abc def' }, now)).resolves.toMatchObject({ notes: 'abc def' });
   });
 });

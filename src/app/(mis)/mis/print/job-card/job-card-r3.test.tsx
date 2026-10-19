@@ -18,6 +18,9 @@ vi.mock('@/server/mis/business-rules', () => ({ getFactoryTimezone: async () => 
 vi.mock('@/server/mis/job-phases', () => ({ getPhasesForOrder: () => getPhasesForOrder() }));
 vi.mock('@/server/mis/worker-allocation', () => ({ getCrewForOrder: () => getCrewForOrder() }));
 vi.mock('@/components/mis/print/print-button', () => ({ PrintButton: () => null }));
+// R2-46: the page reads its document version and draws the version strip.
+vi.mock('@/server/mis/document-versions', () => ({ getDocumentVersionView: async () => ({ docType: 'COA', refId: 'x', versions: [], latest: null, canPrepare: false }) }));
+vi.mock('@/components/mis/print/document-version-bar', () => ({ DocumentVersionBar: () => null }));
 
 const { default: Page } = await import('./[id]/page');
 const ID = '3f2b8c1e-9a4d-4e6b-8c7a-1d5e0f9a2b34';
