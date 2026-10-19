@@ -9,6 +9,8 @@ const getMisRole = vi.fn();
 vi.mock('@/server/mis/roles', () => ({ getMisRole: (...a: unknown[]) => getMisRole(...a) }));
 const audit = vi.fn();
 vi.mock('@/server/mis/audit', () => ({ logAuditEvent: (...a: unknown[]) => audit(...a) }));
+// R2-46 follow-up: issue/approve now capture the document's data (covered in r2-doc-version-snapshot.test.ts).
+vi.mock('@/server/mis/document-snapshots', () => ({ captureDocumentSnapshot: async () => ({ kind: 'COA', schema: 1, capturedAt: new Date().toISOString(), order: {}, qcLogs: [] }) }));
 
 const rows: Row[] = [];
 vi.mock('@/server/db', () => ({

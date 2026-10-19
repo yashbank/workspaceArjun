@@ -55,6 +55,7 @@ const store = await import('./store');
 const materialRequest = await import('./material-request');
 const pickList = await import('./pick-list');
 const storeReturn = await import('./store-return');
+const leavePay = await import('./leave-pay');
 
 type Entry = { module: string; name: string; requires: MisAction; call: () => Promise<unknown> };
 
@@ -122,6 +123,11 @@ const TABLE: Entry[] = [
   { module: 'extra-pay-days.ts', name: 'rejectExtraPayDay', requires: 'wages.read', call: () => extraPayDays.rejectExtraPayDay('x1') },
   { module: 'extra-pay-days.ts', name: 'countPendingExtraPayDays', requires: 'wages.read', call: () => extraPayDays.countPendingExtraPayDays() },
 
+  // R2-102 — whether a leave type is PAID moves every payslip: Owner only, read and write.
+  { module: 'leave-pay.ts', name: 'getLeavePaySettings', requires: 'wages.read', call: () => leavePay.getLeavePaySettings() },
+  { module: 'leave-pay.ts', name: 'setLeavePay', requires: 'wages.read', call: () => leavePay.setLeavePay({ leaveType: 'CL', paid: false }) },
+  { module: 'leave-pay.ts', name: 'getLeavePayForMonth', requires: 'wages.read', call: () => leavePay.getLeavePayForMonth(2026, 1) },
+
   // Phase 25 (D27's missing half) — the period-close/snapshot flow. Every door is wages.read.
   { module: 'payroll-period.ts', name: 'getPayrollPeriod', requires: 'wages.read', call: () => payrollPeriod.getPayrollPeriod(2026, 1) },
   { module: 'payroll-period.ts', name: 'getPayrollPreflight', requires: 'wages.read', call: () => payrollPeriod.getPayrollPreflight(2026, 1) },
@@ -183,6 +189,7 @@ const NOT_A_DOOR: Record<string, string[]> = {
   'extra-pay-days.ts': [],
   'payroll-period.ts': [],
   'payroll-ledger.ts': [],
+  'leave-pay.ts': [],
   'supplier-invoice.ts': [],
   // R2 batch 2 — the Store flow modules are fully tabled (every async export is a door).
   'pick-list.ts': [],

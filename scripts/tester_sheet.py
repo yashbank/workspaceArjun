@@ -65,7 +65,7 @@ def rows_by_id(ws, cols):
     idx = {c: i for i, c in enumerate(cols)}
     out = {}
     for r in ws.iter_rows(min_row=2, values_only=True):
-        if r[0]:
+        if r[0] and str(r[0]) != cols[0]:  # skip stray repeated header rows
             out[str(r[0])] = {c: (r[i] if i < len(r) else None) for c, i in idx.items()}
     return out
 
