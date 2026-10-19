@@ -1,3 +1,5 @@
+import Link from 'next/link';
+
 import { Card, CardRow } from '@/components/mis/kit/card';
 import { RoleBadge } from '@/components/mis/roles/role-badge';
 import { requireMisAccess } from '@/server/mis/guard';
@@ -28,6 +30,17 @@ export default async function MisMePage() {
         <CardRow label="MIS role" value={<RoleBadge role={role} />} />
         <CardRow label="Hindi name" value={employee?.nameHi ?? '—'} />
       </Card>
+
+      {/* R2-111: the payslips the Owner has sent this person (previous months only). */}
+      {employee && (
+        <Link
+          href="/mis/me/payslips"
+          className="flex min-h-11 items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 hover:bg-slate-50"
+        >
+          My payslips
+          <span aria-hidden="true" className="text-slate-400">→</span>
+        </Link>
+      )}
     </div>
   );
 }

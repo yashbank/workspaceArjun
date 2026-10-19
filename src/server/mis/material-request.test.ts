@@ -42,6 +42,9 @@ vi.mock('@/server/mis/roles', () => ({ getMisRole: (...a: unknown[]) => getMisRo
 
 const { approveMaterialRequest, createMaterialRequest, rejectMaterialRequest } = await import('./material-request');
 
+/** R2-80: a no-order issue / request is General / factory use and carries a reason and a cost centre. */
+const G = { reason: 'grease for plates', costCenter: 'Press' };
+
 const dec = (n: number) => ({ toNumber: () => n });
 const pending = () => ({
   id: 'r1', requestNumber: 'MRN-1', status: 'PENDING', orderId: 'o1', departmentId: null, requestedById: 'sup-9',
@@ -82,7 +85,7 @@ describe('create', () => {
 
   it('equipment cannot be booked to an order, but can be requested as overhead', async () => {
     await expect(createMaterialRequest([{ itemId: 'i-die', qty: 1 }], { orderId: 'o1' })).rejects.toThrow(/Die/);
-    await expect(createMaterialRequest([{ itemId: 'i-die', qty: 1 }], { departmentId: 'd1' })).resolves.toBeTruthy();
+    await expect(createMaterialRequest([{ itemId: 'i-die', qty: 1 }], { departmentId: 'd1', general: G })).resolves.toBeTruthy();
   });
 
   it('a stale order id is a message, not a foreign-key error', async () => {

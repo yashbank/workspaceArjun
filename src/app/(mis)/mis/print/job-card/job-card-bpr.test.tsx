@@ -33,6 +33,9 @@ vi.mock('@/server/mis/job-phases', () => ({ getPhasesForOrder: () => getPhasesFo
 // crew read is stubbed empty (mock plumbing only, no expectation changed).
 vi.mock('@/server/mis/worker-allocation', () => ({ getCrewForOrder: async () => [] }));
 vi.mock('@/components/mis/print/print-button', () => ({ PrintButton: () => null }));
+// R2-46: the page reads its document version and draws the version strip.
+vi.mock('@/server/mis/document-versions', () => ({ getDocumentVersionView: async () => ({ docType: 'COA', refId: 'x', versions: [], latest: null, canPrepare: false }) }));
+vi.mock('@/components/mis/print/document-version-bar', () => ({ DocumentVersionBar: () => null }));
 
 const { default: JobCardPrintPage } = await import('./[id]/page');
 

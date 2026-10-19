@@ -8,6 +8,7 @@ import {
   type PunchFact,
 } from '@/lib/mis/attendance-day';
 import { dateKeyToDbDate, formatFactoryTime } from '@/lib/mis/factory-time';
+import { isLatenessWaived, punchMinutes } from '@/lib/mis/punch-minutes';
 import {
   isIdempotencyKey,
   isUuid,
@@ -41,9 +42,12 @@ import {
  * Both end in `applyPunch`, inside `runIdempotent`, so a punch lands exactly once
  * whichever door it used and however many times it was sent (Appendix B §B.7).
  *
- * WHAT THIS NEVER DOES: compute lateness or overtime (D20 — no rule exists yet),
- * touch `lateMinutes` / `otMinutes`, edit or delete a punch (the database refuses),
- * or overwrite a day a person edited by hand.
+ * LATE / OT (R2-106): `lateMinutes` and `otMinutes` are derived from the day's clock
+ * times against its shift window (`punchMinutes`), so payroll's OT pay and late
+ * penalty see real figures.
+ *
+ * WHAT THIS NEVER DOES: edit or delete a punch (the database refuses), or overwrite
+ * a day a person edited by hand.
  */
 
 export const PUNCH_KINDS = ['attendance.punch_in', 'attendance.punch_out'] as const satisfies readonly QueuedWriteKind[];
@@ -268,6 +272,8 @@ async function applyPunch(
       continue;
     }
     if (!row) {
+      // R2-106: late/OT minutes are derived from the punches against the day's shift window.
+      const mins = punchMinutes(day, shifts.find((s) => s.id === day.shiftId), timeZone);
       await tx.misAttendance.create({
         data: {
           employeeId: employee.id,
@@ -276,19 +282,28 @@ async function applyPunch(
           status: 'PRESENT',
           clockIn: day.clockIn,
           clockOut: day.clockOut,
+          lateMinutes: mins.lateMinutes ?? 0,
+          otMinutes: mins.otMinutes ?? 0,
         },
       });
     } else {
+      // A derived time wins; a null (only one side has arrived) never erases what is there.
+      const clockIn = day.clockIn ?? row.clockIn;
+      const clockOut = day.clockOut ?? row.clockOut;
+      const shiftId = day.shiftId ?? row.shiftId;
+      // R2-106: minutes follow the merged clock times; an unknown side keeps the stored figure.
+      const mins = punchMinutes({ workDate: day.workDate, clockIn, clockOut }, shifts.find((s) => s.id === shiftId), timeZone);
       await tx.misAttendance.update({
         where: { id: row.id },
         data: {
-          // A derived time wins; a null (only one side has arrived) never erases what is there.
-          clockIn: day.clockIn ?? row.clockIn,
-          clockOut: day.clockOut ?? row.clockOut,
-          shiftId: day.shiftId ?? row.shiftId,
+          clockIn,
+          clockOut,
+          shiftId,
           // Turning up overrides "absent"; it never overrides leave, half-day or late.
           status: row.status === 'ABSENT' ? 'PRESENT' : row.status,
-          // lateMinutes and otMinutes are deliberately absent (D20).
+          // R2-103: a waived day keeps its waiver through every later punch.
+          lateMinutes: isLatenessWaived(row.notes) ? row.lateMinutes : (mins.lateMinutes ?? row.lateMinutes),
+          otMinutes: mins.otMinutes ?? row.otMinutes,
         },
       });
     }
@@ -308,10 +323,23 @@ async function applyPunch(
       (row.clockOut?.getTime() ?? null) === (derived.clockOut?.getTime() ?? null);
     if (!isExactlyWhatPunchesMade) continue; // someone else wrote here; leave it
 
+    // R2-106: minutes the punches themselves derived are not a person's edit.
+    const derivedMins = punchMinutes(derived, shifts.find((s) => s.id === (derived.shiftId ?? row.shiftId)), timeZone);
+    const lateFromPunches = row.lateMinutes === (derivedMins.lateMinutes ?? 0);
+    const otFromPunches = row.otMinutes === (derivedMins.otMinutes ?? 0);
     const untouched =
-      row.status === 'PRESENT' && row.lateMinutes === 0 && row.otMinutes === 0 && !row.approvedOut && !row.notes;
+      row.status === 'PRESENT' && (row.lateMinutes === 0 || lateFromPunches) && (row.otMinutes === 0 || otFromPunches) && !row.approvedOut && !row.notes;
     if (untouched) await tx.misAttendance.delete({ where: { id: row.id } });
-    else await tx.misAttendance.update({ where: { id: row.id }, data: { clockIn: null, clockOut: null } });
+    else
+      await tx.misAttendance.update({
+        where: { id: row.id },
+        data: {
+          clockIn: null,
+          clockOut: null,
+          ...(lateFromPunches ? { lateMinutes: 0 } : {}),
+          ...(otFromPunches ? { otMinutes: 0 } : {}),
+        },
+      });
   }
 
   return {

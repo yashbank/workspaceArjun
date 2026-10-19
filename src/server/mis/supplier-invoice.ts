@@ -2,6 +2,7 @@ import type { Prisma } from '@/generated/prisma/client';
 import { threeWayMatch, type ThreeWayMatch } from '@/lib/mis/grn-match';
 import { matchSupplierInvoice, type MatchStatus } from '@/lib/mis/invoice-match';
 import { can } from '@/lib/mis/permissions';
+import { pageQuery, parseSearch, type Paged } from '@/lib/mis/pagination';
 import { db } from '@/server/db';
 
 import { logAuditEvent } from './audit';
@@ -101,34 +102,66 @@ function matchFor(inv: InvoiceWithGrn) {
  */
 export async function listSupplierInvoices(filter?: { status?: MatchStatus }): Promise<SupplierInvoiceRow[]> {
   const actor = await requirePermission('supplier_invoice.read');
-  const seesFigures = can(actor.role, 'supplier_invoice.write');
-  const seesMoney = can(actor.role, 'wages.read');
   const rows = await db.misSupplierInvoice.findMany({
     where: filter?.status ? { status: filter.status } : undefined,
     orderBy: { createdAt: 'desc' },
     take: 500,
     include: invoiceInclude,
   });
-  return rows.map((inv) => {
-    const base: SupplierInvoiceRow = {
-      id: inv.id,
-      invoiceNo: inv.invoiceNo,
-      invoiceDate: inv.invoiceDate,
-      poNumber: inv.po.poNumber,
-      grnNumber: inv.grn?.grnNumber ?? null,
-      supplierName: inv.supplier?.name ?? null,
-      status: inv.status,
-    };
-    if (!seesFigures) return base;
-    const m = matchFor(inv);
-    return {
-      ...base,
-      figures: { billedQty: m.billedQty, receivedQty: m.receivedQty, qtyVariance: m.qtyVariance, variancePct: m.priceVariancePct },
-      ...(seesMoney
-        ? { money: { expected: formatMoney(m.expectedAmount), invoiced: m.invoiceAmount === null ? null : formatMoney(m.invoiceAmount), variance: m.priceVariance === null ? null : formatMoney(m.priceVariance) } }
-        : {}),
-    };
-  });
+  return rows.map((inv) => invoiceRowFor(actor.role, inv));
+}
+
+/**
+ * R2-83: one page of invoices (25). `status` and `q` (invoice no., PO, supplier) are applied in the query, and
+ * `counts` is per-status over the `q` search so the filter chips stay honest. Same role-shaped payloads as the board.
+ */
+export async function listSupplierInvoicesPage(
+  opts: { status?: MatchStatus; q?: string; page?: number | string } = {},
+): Promise<Paged<SupplierInvoiceRow> & { counts: Record<MatchStatus, number> }> {
+  const actor = await requirePermission('supplier_invoice.read');
+  const q = parseSearch(opts.q);
+  const search: Prisma.MisSupplierInvoiceWhereInput = q
+    ? {
+        OR: [
+          { invoiceNo: { contains: q, mode: 'insensitive' } },
+          { po: { poNumber: { contains: q, mode: 'insensitive' } } },
+          { supplier: { name: { contains: q, mode: 'insensitive' } } },
+        ],
+      }
+    : {};
+  const where: Prisma.MisSupplierInvoiceWhereInput = { ...search, ...(opts.status ? { status: opts.status } : {}) };
+  const { skip, take } = pageQuery(opts.page);
+  const [rows, total, grouped] = await Promise.all([
+    db.misSupplierInvoice.findMany({ where, orderBy: { createdAt: 'desc' }, skip, take, include: invoiceInclude }),
+    db.misSupplierInvoice.count({ where }),
+    db.misSupplierInvoice.groupBy({ by: ['status'], where: search, _count: { _all: true } }),
+  ]);
+  const counts = { MATCHED: 0, DISCREPANCY_QTY: 0, DISCREPANCY_PRICE: 0, PENDING_REVIEW: 0 } as Record<MatchStatus, number>;
+  for (const g of grouped) counts[g.status as MatchStatus] = g._count._all;
+  return { rows: rows.map((inv) => invoiceRowFor(actor.role, inv)), total, counts };
+}
+
+function invoiceRowFor(role: Parameters<typeof can>[0], inv: InvoiceWithGrn): SupplierInvoiceRow {
+  const seesFigures = can(role, 'supplier_invoice.write');
+  const seesMoney = can(role, 'wages.read');
+  const base: SupplierInvoiceRow = {
+    id: inv.id,
+    invoiceNo: inv.invoiceNo,
+    invoiceDate: inv.invoiceDate,
+    poNumber: inv.po.poNumber,
+    grnNumber: inv.grn?.grnNumber ?? null,
+    supplierName: inv.supplier?.name ?? null,
+    status: inv.status,
+  };
+  if (!seesFigures) return base;
+  const m = matchFor(inv);
+  return {
+    ...base,
+    figures: { billedQty: m.billedQty, receivedQty: m.receivedQty, qtyVariance: m.qtyVariance, variancePct: m.priceVariancePct },
+    ...(seesMoney
+      ? { money: { expected: formatMoney(m.expectedAmount), invoiced: m.invoiceAmount === null ? null : formatMoney(m.invoiceAmount), variance: m.priceVariance === null ? null : formatMoney(m.priceVariance) } }
+      : {}),
+  };
 }
 
 /**

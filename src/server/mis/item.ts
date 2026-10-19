@@ -3,7 +3,6 @@ import { forRole, withoutMoneyFields } from '@/lib/mis/money-fields';
 import { db } from '@/server/db';
 import { requirePermission } from './auth';
 import { logAuditEvent } from './audit';
-import { MisItemUnit } from '@/generated/prisma/enums';
 import { createWithItemCode } from './item-code';
 
 const MAX_NAME = 120;
@@ -32,12 +31,12 @@ export type ItemInput = {
   unit?: string;
 };
 
-const VALID_UNITS = new Set<string>(Object.values(MisItemUnit));
-
-function toItemUnit(unit: string | undefined, fallback: MisItemUnit): MisItemUnit {
+/** R2-25: unit is free text fed by the UNIT master options; only shape is checked here. */
+export function toItemUnit(unit: string | undefined, fallback = 'KG'): string {
   if (unit === undefined) return fallback;
-  if (!VALID_UNITS.has(unit)) throw new Error(`Invalid unit: ${unit}`);
-  return unit as MisItemUnit;
+  const u = unit.trim();
+  if (u.length < 1 || u.length > 20) throw new Error('Unit is required (1 to 20 characters).');
+  return u;
 }
 
 // `pricePerUnit` is money (D24, F-06). The three readers below serve every masters.read role (Admin,
@@ -69,7 +68,7 @@ export async function searchItems(query: string) {
 export async function createItem(input: ItemInput) {
   const actor = await requirePermission('masters.write');
   const name = cleanName(input.name);
-  const unit = toItemUnit(input.unit, MisItemUnit.KG);
+  const unit = toItemUnit(input.unit);
   const data = {
     name,
     gsm: input.gsm?.trim() || null,
@@ -97,7 +96,7 @@ export async function updateItem(id: string, patch: Partial<ItemInput>) {
     ...(patch.size !== undefined ? { size: patch.size?.trim() || null } : {}),
     ...(patch.substrate !== undefined ? { substrate: patch.substrate?.trim() || null } : {}),
     ...(patch.coating !== undefined ? { coating: patch.coating?.trim() || null } : {}),
-    ...(patch.unit !== undefined ? { unit: toItemUnit(patch.unit, MisItemUnit.KG) } : {}),
+    ...(patch.unit !== undefined ? { unit: toItemUnit(patch.unit) } : {}),
   }});
   await logAuditEvent({ actorId: actor.userId, action: 'item.update', entity: 'MisItem', entityId: id, before, after });
   return forRole(actor.role, after);

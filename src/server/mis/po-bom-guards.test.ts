@@ -84,7 +84,7 @@ const draftWithLine = async (qty = 5) => {
 
 describe('#6 submit and approve guards', () => {
   it('submitForApproval refuses a PO with no lines', async () => {
-    const created = await po.createPO({ purpose: 'BUFFER_STOCK' });
+    const created = await po.createPO({ supplierId: 's1', purpose: 'BUFFER_STOCK' });
     await expect(po.submitForApproval(created.id)).rejects.toThrow(/at least one line/i);
     expect(state.pos[0].status).toBe('DRAFT');
   });
@@ -182,7 +182,7 @@ describe('#5 deleteDraftPO', () => {
 
 describe('#4 updatePO header edit', () => {
   it('changes supplier and notes on a draft and audits before/after', async () => {
-    const created = await po.createPO({ purpose: 'BUFFER_STOCK', notes: 'old' });
+    const created = await po.createPO({ supplierId: 's1', purpose: 'BUFFER_STOCK', notes: 'old' });
     const after = await po.updatePO(created.id, { supplierId: 's1', notes: '  new  ' });
     expect(after.supplierId).toBe('s1');
     expect(after.notes).toBe('new');
@@ -196,19 +196,19 @@ describe('#4 updatePO header edit', () => {
   });
 
   it('switching to buffer stock clears the BOM ref (same rule as createPO)', async () => {
-    const created = await po.createPO({ purpose: 'FOR_ORDER', bomRef: ORD_OK });
+    const created = await po.createPO({ supplierId: 's1', purpose: 'FOR_ORDER', bomRef: ORD_OK });
     const after = await po.updatePO(created.id, { purpose: 'BUFFER_STOCK', bomRef: ORD_OK });
     expect(after.bomRef).toBeNull();
     expect(after.purpose).toBe('BUFFER_STOCK');
   });
 
   it('FOR_ORDER with no ref is refused exactly like createPO', async () => {
-    const created = await po.createPO({ purpose: 'BUFFER_STOCK' });
+    const created = await po.createPO({ supplierId: 's1', purpose: 'BUFFER_STOCK' });
     await expect(po.updatePO(created.id, { purpose: 'FOR_ORDER', bomRef: '' })).rejects.toThrow(/BOM reference/i);
   });
 
   it('pointing a draft at an order whose BOM is not approved is refused', async () => {
-    const created = await po.createPO({ purpose: 'BUFFER_STOCK' });
+    const created = await po.createPO({ supplierId: 's1', purpose: 'BUFFER_STOCK' });
     await expect(po.updatePO(created.id, { purpose: 'FOR_ORDER', bomRef: ORD_DRAFT })).rejects.toThrow(/BOM is not approved/);
     expect(state.pos[0].bomRef).toBeNull();
   });
@@ -216,7 +216,7 @@ describe('#4 updatePO header edit', () => {
 
 describe('D1 / #9 a PO against an unapproved BOM is blocked', () => {
   it('createPO FOR_ORDER with an APPROVED BOM succeeds and stores the normalised order number', async () => {
-    const created = await po.createPO({ purpose: 'FOR_ORDER', bomRef: ` ${ORD_OK.toLowerCase()} ` });
+    const created = await po.createPO({ supplierId: 's1', purpose: 'FOR_ORDER', bomRef: ` ${ORD_OK.toLowerCase()} ` });
     expect(created.bomRef).toBe(ORD_OK);
   });
 
@@ -226,7 +226,7 @@ describe('D1 / #9 a PO against an unapproved BOM is blocked', () => {
     ['an order that does not exist', 'ORD-209912-99999'],
     ['free text that is not an order number', 'BOM-118'],
   ])('createPO FOR_ORDER against %s throws the typed "BOM is not approved" error and creates nothing', async (_label, ref) => {
-    const err = await po.createPO({ purpose: 'FOR_ORDER', bomRef: ref }).catch((e: Error) => e);
+    const err = await po.createPO({ supplierId: 's1', purpose: 'FOR_ORDER', bomRef: ref }).catch((e: Error) => e);
     expect(err).toBeInstanceOf(Error);
     expect((err as Error).message).toMatch(/^BOM is not approved for order /);
     expect(isBomNotApprovedDetail((err as Error).message)).toBe(true);
@@ -235,11 +235,11 @@ describe('D1 / #9 a PO against an unapproved BOM is blocked', () => {
 
   it('a PENDING_APPROVAL BOM is not approved either', async () => {
     state.boms[1].status = 'PENDING_APPROVAL';
-    await expect(po.createPO({ purpose: 'FOR_ORDER', bomRef: ORD_DRAFT })).rejects.toThrow(/BOM is not approved/);
+    await expect(po.createPO({ supplierId: 's1', purpose: 'FOR_ORDER', bomRef: ORD_DRAFT })).rejects.toThrow(/BOM is not approved/);
   });
 
   it('buffer-stock POs are untouched by the rule', async () => {
-    const created = await po.createPO({ purpose: 'BUFFER_STOCK', bomRef: ORD_DRAFT });
+    const created = await po.createPO({ supplierId: 's1', purpose: 'BUFFER_STOCK', bomRef: ORD_DRAFT });
     expect(created.bomRef).toBeNull();
   });
 });

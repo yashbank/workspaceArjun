@@ -11,12 +11,16 @@ const requireMisAccess = vi.fn(async () => ({ id: 'u1' }));
 const getMisRole = vi.fn(async () => 'OWNER');
 const getEmployee = vi.fn(async () => null);
 const calculateMonthlyPayroll = vi.fn(async () => []);
+const calculateEmployeePayroll = vi.fn(async (..._a: unknown[]) => null);
 
 vi.mock('next/navigation', () => ({ notFound: () => notFound() }));
 vi.mock('@/server/mis/guard', () => ({ requireMisAccess: () => requireMisAccess() }));
 vi.mock('@/server/mis/roles', () => ({ getMisRole: () => getMisRole() }));
 vi.mock('@/server/mis/employee', () => ({ getEmployee: () => getEmployee() }));
-vi.mock('@/server/mis/payroll', () => ({ calculateMonthlyPayroll: () => calculateMonthlyPayroll() }));
+vi.mock('@/server/mis/payroll', () => ({
+  calculateMonthlyPayroll: () => calculateMonthlyPayroll(),
+  calculateEmployeePayroll: (...a: unknown[]) => calculateEmployeePayroll(...a),
+}));
 vi.mock('@/components/mis/print/print-button', () => ({ PrintButton: () => null }));
 
 const { default: PayslipPage } = await import('./[employeeId]/page');
@@ -36,12 +40,16 @@ describe('/mis/print/payslip/[employeeId]', () => {
       expect(getMisRole).not.toHaveBeenCalled();
       expect(getEmployee).not.toHaveBeenCalled();
       expect(calculateMonthlyPayroll).not.toHaveBeenCalled();
+      expect(calculateEmployeePayroll).not.toHaveBeenCalled();
     },
   );
 
   it('a well-formed id goes on to the gate and the queries (an unknown employee is still a 404, but a real one)', async () => {
     await expect(page('3f2b8c1e-9a4d-4e6b-8c7a-1d5e0f9a2b34')).rejects.toThrow('NEXT_NOT_FOUND');
     expect(getEmployee).toHaveBeenCalledTimes(1);
-    expect(calculateMonthlyPayroll).toHaveBeenCalledTimes(1);
+    // R2-112: only this employee's line is computed — never the whole factory's payroll.
+    expect(calculateEmployeePayroll).toHaveBeenCalledTimes(1);
+    expect(calculateEmployeePayroll).toHaveBeenCalledWith('3f2b8c1e-9a4d-4e6b-8c7a-1d5e0f9a2b34', 2026, 1);
+    expect(calculateMonthlyPayroll).not.toHaveBeenCalled();
   });
 });

@@ -13,6 +13,7 @@ import {
   getAttendanceCorrectionWindow,
   getCurrentShiftName,
   getDayAttendanceSummary,
+  countPunchesToday,
 } from '@/server/mis/attendance';
 import { listOpenGRNs } from '@/server/mis/grn';
 import { listGrnAlerts } from '@/server/mis/grn-alerts';
@@ -359,7 +360,7 @@ async function AttendanceScreen({
     getKioskHealthSummary(),
   ]);
 
-  const punchesToday = today.present;
+  const punchesToday = await countPunchesToday();
 
   return (
     <AttendanceHome

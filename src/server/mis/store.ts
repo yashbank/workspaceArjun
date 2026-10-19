@@ -1,5 +1,6 @@
 import type { Prisma } from '@/generated/prisma/client';
 import { MisItemCategory } from '@/generated/prisma/enums';
+import { pageQuery, parseSearch, type Paged } from '@/lib/mis/pagination';
 import { db } from '@/server/db';
 import { can } from '@/lib/mis/permissions';
 import { requirePermission } from './auth';
@@ -11,6 +12,8 @@ import { notifyGrnConfirmed } from './grn-alerts';
 import { addDaysToDateKey, factoryDateKey } from '@/lib/mis/factory-time';
 import type { QueuedWriteKind } from '@/lib/mis/offline/idempotency';
 import { poPurpose, type PoPurpose } from '@/lib/mis/po-purpose';
+import { resolveGeneralUse, type GeneralUse, type GeneralUseInput } from '@/lib/mis/general-use';
+import { ISSUE_TARGET_REQUIRED } from '@/lib/mis/issue-target';
 import { categoryRefusal } from '@/lib/mis/material-request';
 import { OrderStockQuotaExceededError } from '@/lib/mis/order-allocation';
 import { isOrderClosed } from '@/lib/mis/order-status';
@@ -19,6 +22,7 @@ import { poStatusAfterReceipt, receiptVerdict } from '@/lib/mis/receipt-rules';
 import { isLowStock } from '@/lib/mis/stock-predicates';
 import { itemLockKey, poItemLockKey } from '@/lib/mis/stock-lock-keys';
 import { lockStockKeys } from './stock-lock';
+import { notifyGeneralUse } from './store-notices';
 import { formatMoney } from './po';
 import {
   factoryDayStart,
@@ -257,7 +261,17 @@ export type StoreOutInput = {
   itemId: string;
   quantity: number;
   referenceNo?: string;
+  /** R2-63: a stock-out must be booked to an order (earmark + traceability) or a department. */
+  orderId?: string | null;
+  departmentId?: string | null;
+  /** R2-80/62/Q11 — required when there is no order: "General / factory use" with a reason and a cost centre. */
+  general?: GeneralUseInput;
 };
+
+/** The factory-use tail of a stock-out reason: "General / factory use · Press · grease". Null for an order issue. */
+function generalReasonText(g: GeneralUse): string | null {
+  return g.isGeneral ? ['General / factory use', g.costCenter, g.generalReason].filter(Boolean).join(' · ') : null;
+}
 
 export async function createStoreOut(input: StoreOutInput): Promise<StoreTxnRow> {
   const actor = await requirePermission('store.write');
@@ -266,9 +280,22 @@ export async function createStoreOut(input: StoreOutInput): Promise<StoreTxnRow>
 
   const item = await db.misItem.findFirst({
     where: { id: input.itemId, isActive: true, deletedAt: null },
-    select: { id: true, name: true, code: true, sku: true },
+    select: { id: true, name: true, code: true, sku: true, category: true },
   });
   if (!item) throw new Error('Item not found or inactive');
+  if (!input.orderId && !input.departmentId && !input.general) throw new Error(ISSUE_TARGET_REQUIRED);
+  const generalUse = resolveGeneralUse(input.orderId, input.general);
+  const [order, department] = await Promise.all([
+    input.orderId ? db.misOrder.findUnique({ where: { id: input.orderId }, select: { orderNumber: true, status: true } }) : Promise.resolve(null),
+    input.departmentId ? db.misDepartment.findUnique({ where: { id: input.departmentId }, select: { name: true } }) : Promise.resolve(null),
+  ]);
+  if (input.orderId && !order) throw new Error('That order no longer exists — reload and pick again.');
+  if (input.departmentId && !department) throw new Error('That department no longer exists — reload and pick again.');
+  if (order?.status && isOrderClosed(order.status)) {
+    throw new Error(`${order.orderNumber} is ${order.status.toLowerCase().replace(/_/g, ' ')} — stock cannot be issued against a closed order.`);
+  }
+  const refusal = categoryRefusal([{ name: item.name, category: item.category }], { orderId: input.orderId, departmentId: input.departmentId });
+  if (refusal) throw new Error(refusal);
 
   const zone = await storeFactoryZone();
   // D2: stock never goes negative, so there is no over-issue. Both books are written under the item
@@ -281,14 +308,18 @@ export async function createStoreOut(input: StoreOutInput): Promise<StoreTxnRow>
     if (quantity > available) {
       throw new Error(`Cannot issue more than the stock balance (${round2(Math.max(0, available))} available)`);
     }
-    const reference = input.referenceNo ?? `Issue ${factoryDateKey(new Date(), zone)}`;
+    if (input.orderId) {
+      const over = await allocationShortfalls(tx, input.orderId, [{ itemId: input.itemId, qty: quantity, label: `${item.name} (${item.code})` }]);
+      if (over.length > 0) throw new OrderStockQuotaExceededError(input.orderId, over);
+    }
+    const reference = input.referenceNo ?? order?.orderNumber ?? department?.name ?? `Issue ${factoryDateKey(new Date(), zone)}`;
     await tx.misInventoryLedger.create({
       data: {
         itemId: input.itemId,
         changeQty: -quantity,
         balanceQty: round2(ledgerBalance - quantity),
         source: 'STORE_ISSUE',
-        sourceId: null,
+        sourceId: input.orderId ?? null,
         notes: reference,
       },
     });
@@ -301,8 +332,11 @@ export async function createStoreOut(input: StoreOutInput): Promise<StoreTxnRow>
         quantity,
         balanceQty: round2(txnBalance - quantity),
         referenceNo: input.referenceNo ?? null,
-        reason: null,
+        reason: [department ? `To ${department.name}` : null, generalReasonText(generalUse)].filter(Boolean).join(' · ') || null,
         isOverIssue: false,
+        isGeneral: generalUse.isGeneral,
+        generalReason: generalUse.generalReason,
+        costCenter: generalUse.costCenter,
         createdById: actor.userId,
       },
     });
@@ -313,8 +347,9 @@ export async function createStoreOut(input: StoreOutInput): Promise<StoreTxnRow>
     entity: 'MisStoreTransaction',
     entityId: txn.id,
     actorId: actor.userId,
-    after: { itemId: input.itemId, quantity, txnNumber: txn.txnNumber, newBalance: String(Number(txn.balanceQty)), isOverIssue: false },
+    after: { itemId: input.itemId, quantity, txnNumber: txn.txnNumber, newBalance: String(Number(txn.balanceQty)), isOverIssue: false, orderId: input.orderId ?? null, departmentId: input.departmentId ?? null, isGeneral: generalUse.isGeneral, chargedTo: generalUse.costCenter, generalReason: generalUse.generalReason },
   });
+  await notifyGeneralUse(actor.userId, generalUse, { reference: txn.txnNumber, kind: 'issue' });
 
   return {
     id: txn.id,
@@ -626,8 +661,26 @@ export type GlobalTxnFilter = {
 
 export async function listAllStoreTxns(filter: GlobalTxnFilter = {}): Promise<StoreTxnRow[]> {
   await requirePermission('store.read');
+  return (await listAllStoreTxnsPage({ ...filter, all: true })).rows;
+}
+
+/** R2-83: one page (25) of the store transaction log; `q` matches txn no., item name / code / SKU or reference. `total` counts every match. */
+export async function listAllStoreTxnsPage(
+  filter: GlobalTxnFilter & { q?: string; page?: number | string; all?: boolean } = {},
+): Promise<Paged<StoreTxnRow>> {
+  await requirePermission('store.read');
 
   const where: Record<string, unknown> = {};
+  const q = parseSearch(filter.q);
+  if (q) {
+    where.OR = [
+      { txnNumber: { contains: q, mode: 'insensitive' } },
+      { referenceNo: { contains: q, mode: 'insensitive' } },
+      { item: { name: { contains: q, mode: 'insensitive' } } },
+      { item: { code: { contains: q, mode: 'insensitive' } } },
+      { item: { sku: { contains: q, mode: 'insensitive' } } },
+    ];
+  }
   if (filter.itemId) where.itemId = filter.itemId;
   if (filter.type) where.type = filter.type;
   if (filter.from || filter.to) {
@@ -639,14 +692,19 @@ export async function listAllStoreTxns(filter: GlobalTxnFilter = {}): Promise<St
     where.createdAt = dateRange;
   }
 
-  const txns = await db.misStoreTransaction.findMany({
-    where,
-    include: { item: { select: { name: true, code: true, sku: true } } },
-    orderBy: { createdAt: 'desc' },
-    take: 500,
-  });
+  const { skip, take } = filter.all ? { skip: 0, take: 500 } : pageQuery(filter.page);
+  const [txns, total] = await Promise.all([
+    db.misStoreTransaction.findMany({
+      where,
+      include: { item: { select: { name: true, code: true, sku: true } } },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take,
+    }),
+    db.misStoreTransaction.count({ where }),
+  ]);
 
-  return txns.map((t) => ({
+  const rows = txns.map((t) => ({
     id: t.id,
     txnNumber: t.txnNumber,
     itemId: t.itemId,
@@ -661,6 +719,7 @@ export async function listAllStoreTxns(filter: GlobalTxnFilter = {}): Promise<St
     isOverIssue: t.isOverIssue,
     createdAt: t.createdAt,
   }));
+  return { rows, total };
 }
 
 // ---------------------------------------------------------------------------
@@ -890,6 +949,12 @@ export type IssueMeta = {
   orderId?: string | null;
   departmentId?: string | null;
   notes?: string | null;
+  /** R2-80/62/Q11 — required when there is no order: "General / factory use" with a reason and a cost centre. */
+  general?: GeneralUseInput;
+  /** R2-77/R2-67 — the material request this issue fulfils; stamped on every store transaction it writes. */
+  materialRequestId?: string | null;
+  /** True when the caller (a request approval) raises its own General-use alert, so the issue stays quiet. */
+  skipGeneralNotice?: boolean;
   /** R3-STK B11 — one UUID per cart open: pressing Confirm twice books once. */
   idempotencyKey?: string | null;
   /**
@@ -1274,6 +1339,8 @@ export async function commitIssue(
 
   const cart = mergeCartLines(lines);
   if (cart.length === 0) throw new Error('Add at least one item before confirming the issue.');
+  if (!meta.orderId && !meta.departmentId && !meta.general) throw new Error(ISSUE_TARGET_REQUIRED);
+  const generalUse = resolveGeneralUse(meta.orderId, meta.general);
   const items = await loadCartItems(cart);
 
   const [order, department] = await Promise.all([
@@ -1302,7 +1369,7 @@ export async function commitIssue(
   const zone = await storeFactoryZone(); // read before the transaction: the runtime pool is one connection wide
   const reference =
     order?.orderNumber ?? department?.name ?? `Issue ${factoryDateKey(new Date(), zone)}`;
-  const reason = [department ? `To ${department.name}` : null, notes].filter(Boolean).join(' · ') || null;
+  const reason = [department ? `To ${department.name}` : null, generalReasonText(generalUse), notes].filter(Boolean).join(' · ') || null;
 
   const apply = async (tx: Prisma.TransactionClient): Promise<CartCommitResult> => {
     // One issue at a time per item. The balance read, the order-cap read and the ledger write below
@@ -1371,6 +1438,10 @@ export async function commitIssue(
           reason,
           // D2: stock never goes negative, so there is no over-issue (the check above uses the smaller book).
           isOverIssue: false,
+          isGeneral: generalUse.isGeneral,
+          generalReason: generalUse.generalReason,
+          costCenter: generalUse.costCenter,
+          materialRequestId: meta.materialRequestId ?? null,
           createdById: actor.userId,
         },
       });
@@ -1411,8 +1482,13 @@ export async function commitIssue(
       orderId: meta.orderId ?? null,
       departmentId: meta.departmentId ?? null,
       itemIds: cart.map((l) => l.itemId),
+      isGeneral: generalUse.isGeneral,
+      chargedTo: generalUse.costCenter,
+      generalReason: generalUse.generalReason,
+      materialRequestId: meta.materialRequestId ?? null,
     },
   });
+  if (!meta.skipGeneralNotice) await notifyGeneralUse(actor.userId, generalUse, { reference: result.reference, kind: 'issue', requestId: meta.materialRequestId ?? null });
 
   return result;
 }
@@ -1424,6 +1500,8 @@ export async function commitIssue(
 export type PickerItemRow = {
   id: string;
   code: string;
+  /** R2-68: so a scanned barcode that carries the SKU still finds the item. */
+  sku: string | null;
   name: string;
   unit: string;
   balance: number;
@@ -1442,7 +1520,7 @@ export async function listPickerItems(): Promise<PickerItemRow[]> {
   const items = await db.misItem.findMany({
     where: { isActive: true, deletedAt: null },
     orderBy: [{ name: 'asc' }],
-    select: { id: true, code: true, name: true, unit: true },
+    select: { id: true, code: true, sku: true, name: true, unit: true },
   });
 
   const balances = new Map<string, number>();
@@ -1456,10 +1534,26 @@ export async function listPickerItems(): Promise<PickerItemRow[]> {
   return items.map((item) => ({
     id: item.id,
     code: item.code,
+    sku: item.sku,
     name: item.name,
     unit: item.unit,
     balance: balances.get(item.id) ?? 0,
   }));
+}
+
+/**
+ * R2-66 — fresh balances for the cart: "what is in stock right now". The cart calls this when the window regains
+ * focus and just before Confirm, so a phone left open for ten minutes does not show a stale number. Same source as
+ * `listPickerItems` (the inventory ledger's last row per item); the server still re-checks on commit.
+ */
+export async function listItemBalances(): Promise<Record<string, number>> {
+  await requirePermission('store.read');
+  const rows = await db.$queryRaw<{ item_id: string; balance_qty: unknown }[]>`
+    SELECT DISTINCT ON (item_id) item_id, balance_qty
+    FROM mis_inventory_ledger
+    ORDER BY item_id, created_at DESC
+  `;
+  return Object.fromEntries(rows.map((r) => [r.item_id, Number(r.balance_qty)]));
 }
 
 /** Suppliers a delivery can be booked against. */
@@ -1502,6 +1596,20 @@ export async function listOpenPOs(): Promise<OpenPoRow[]> {
     purpose: poPurpose(po),
     itemIds: po.items.map((i) => i.itemId).filter((id): id is string => Boolean(id)),
   }));
+}
+
+/**
+ * R2-80: the cost centres a General / factory-use issue can be charged to (the COST_CENTER master options: department
+ * names + "General"). Own lister because the Store Guy has `store.read` but not `masters.read`.
+ */
+export async function listCostCenters(): Promise<{ value: string; label: string }[]> {
+  await requirePermission('store.read');
+  const rows = await db.misMasterOption.findMany({
+    where: { group: 'COST_CENTER', deletedAt: null, isActive: true },
+    orderBy: [{ sortOrder: 'asc' }, { label: 'asc' }],
+    select: { value: true, label: true },
+  });
+  return rows.map((r) => ({ value: r.label, label: r.label }));
 }
 
 /** Where an issue can be booked to. */

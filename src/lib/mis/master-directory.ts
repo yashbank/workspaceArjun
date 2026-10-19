@@ -31,7 +31,7 @@ export type FieldSpec = {
   /** Greyed on an existing row and never written by an update: the code. */
   identity?: boolean;
   /** For `select`: where the options come from. */
-  options?: 'departments' | 'itemUnits' | 'severities';
+  options?: 'departments' | 'itemUnits' | 'severities' | 'gsm' | 'size' | 'substrate' | 'coating';
 };
 
 export type MasterKey =
@@ -66,7 +66,7 @@ export const MASTERS: readonly MasterSpec[] = [
   { key: 'machines', nav: 'CORE', href: '/mis/masters/machines', fields: [code, name, { key: 'departmentId', type: 'select', options: 'departments' }, { key: 'machineType', type: 'text' }, { key: 'capacityPerDay', type: 'number' }], columns: ['department', 'machineType'], hasHindi: false },
   { key: 'processes', nav: 'CORE', href: '/mis/masters/processes', fields: [code, name, nameHi, { key: 'departmentId', type: 'select', options: 'departments' }, { key: 'standardTimeMinutes', type: 'number', integer: true }], columns: ['department'], hasHindi: true },
   { key: 'customers', nav: 'CORE', href: '/mis/customers', fields: [code, name, nameHi, { key: 'phone', type: 'text' }, { key: 'city', type: 'text' }, { key: 'gstNo', type: 'text' }, { key: 'address', type: 'text' }], columns: ['city'], hasHindi: true },
-  { key: 'items', nav: 'CORE', href: '/mis/masters/items', fields: [code, name, { key: 'unit', type: 'select', options: 'itemUnits' }, { key: 'gsm', type: 'text' }, { key: 'size', type: 'text' }, { key: 'substrate', type: 'text' }, { key: 'coating', type: 'text' }], columns: ['unit'], hasHindi: false },
+  { key: 'items', nav: 'CORE', href: '/mis/masters/items', fields: [code, name, { key: 'unit', type: 'select', options: 'itemUnits' }, { key: 'gsm', type: 'select', options: 'gsm' }, { key: 'size', type: 'select', options: 'size' }, { key: 'substrate', type: 'select', options: 'substrate' }, { key: 'coating', type: 'select', options: 'coating' }], columns: ['unit'], hasHindi: false },
   { key: 'defect-types', nav: 'QUALITY', href: '/mis/masters/defect-types', fields: [code, name, nameHi, { key: 'severity', type: 'select', required: true, options: 'severities' }], columns: ['severity'], hasHindi: true },
   ...MASTER_GROUPS.map(
     (g): MasterSpec => ({
@@ -161,7 +161,10 @@ export type MasterRowView = {
   createdAt: Date;
 };
 
-export type SelectOptions = { departments: { value: string; label: string }[]; itemUnits: { value: string; label: string }[]; severities: { value: string; label: string }[] };
+export type SelectOptions = { departments: { value: string; label: string }[]; itemUnits: { value: string; label: string }[]; severities: { value: string; label: string }[];
+  /** R2-02/84/85: master-option choices for the item attributes (value = label). Absent for masters without them. */
+  attrs?: Record<'gsm' | 'size' | 'substrate' | 'coating', { value: string; label: string }[]>;
+};
 
 export type MasterListView = {
   master: MasterKey;

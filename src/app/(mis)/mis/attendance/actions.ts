@@ -10,6 +10,7 @@ import {
   setShiftActive,
   markAbsentBulk,
   listPunchesForDay,
+  waiveLateness,
 } from '@/server/mis/attendance';
 import { addAttendanceNote } from '@/server/mis/attendance-month';
 import { asResult } from '@/lib/mis/action-result';
@@ -37,7 +38,7 @@ export async function approveClockOutAction(attendanceId: string) {
 }
 export async function editAttendanceAction(
   attendanceId: string,
-  data: { status?: string; notes?: string },
+  data: { status?: string; notes?: string; clockInTime?: string | null; clockOutTime?: string | null },
   override?: { reason: string },
 ) {
   return asResult(async () => {
@@ -51,9 +52,9 @@ export async function addAttendanceNoteAction(attendanceId: string, note: string
     revalidatePath('/mis/attendance');
   });
 }
-export async function requestLeaveAction(employeeId: string, date: string, reason?: string) {
+export async function requestLeaveAction(employeeId: string, date: string, reason?: string, opts?: { endDate?: string | null; leaveType?: string }) {
   return asResult(async () => {
-    await requestLeave(employeeId, date, reason);
+    await requestLeave(employeeId, date, reason, opts);
     revalidatePath('/mis/attendance');
     revalidatePath('/mis/attendance/leave');
   });
@@ -89,4 +90,12 @@ export async function markAbsentBulkAction(employeeIds: string[], date?: string)
 }
 export async function listPunchesForDayAction(employeeId: string, date: string) {
   return asResult(async () => listPunchesForDay(employeeId, date));
+}
+export async function waiveLatenessAction(reason: string, date?: string) {
+  return asResult(async () => {
+    const out = await waiveLateness(reason, date);
+    revalidatePath('/mis/attendance');
+    revalidatePath('/mis');
+    return { count: out.count };
+  });
 }

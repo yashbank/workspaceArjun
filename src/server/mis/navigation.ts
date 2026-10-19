@@ -46,8 +46,8 @@ const NAV: NavDefinition[] = [
   { id: 'settings', labelKey: 'nav.settings', href: '/mis/settings', icon: 'settings', primary: false, requires: 'settings.read' },
   // Phase 2 additions
   { id: 'employees', labelKey: 'nav.employees', href: '/mis/employees', icon: 'users', primary: false, requires: 'employees.read' },
-  { id: 'po', labelKey: 'nav.po', href: '/mis/po', icon: 'clipboard', primary: false, requires: 'po.read' },
-  { id: 'grn', labelKey: 'nav.grn', href: '/mis/grn', icon: 'database', primary: false, requires: 'grn.read' },
+  { id: 'po', labelKey: 'nav.po', href: '/mis/po', icon: 'clipboard', primary: false, requires: 'po.view' },
+  { id: 'grn', labelKey: 'nav.grn', href: '/mis/grn', icon: 'database', primary: false, requires: 'grn.view' },
   { id: 'supplier-invoices', labelKey: 'nav.supplierInvoices', href: '/mis/supplier-invoices', icon: 'clipboard', primary: false, requires: 'supplier_invoice.read' },
   { id: 'inventory', labelKey: 'nav.inventory', href: '/mis/inventory', icon: 'database', primary: false, requires: 'inventory.read' },
   { id: 'customers', labelKey: 'nav.customers', href: '/mis/customers', icon: 'users', primary: false, requires: 'orders.read' },

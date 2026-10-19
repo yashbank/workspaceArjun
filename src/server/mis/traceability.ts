@@ -27,7 +27,7 @@ export async function getOrderTrace(orderId: string) {
       },
     }),
     db.misProductionLog.findMany({
-      where: { orderId },
+      where: { orderId, voidedAt: null },
       include: {
         machine: { select: { name: true } },
         employee: { select: { name: true } },
@@ -36,7 +36,7 @@ export async function getOrderTrace(orderId: string) {
       orderBy: { loggedAt: 'asc' },
     }),
     db.misQcCheck.findMany({
-      where: { orderId },
+      where: { orderId, voidedAt: null },
       orderBy: { checkTime: 'asc' },
     }).then(withCheckerNames),
     db.misDocument.findMany({

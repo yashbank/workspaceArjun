@@ -317,7 +317,7 @@ export async function deleteBom(orderId: string) {
 }
 
 /** #10 — edit a stage on a DRAFT BOM. */
-export async function updateBomStage(stageId: string, patch: { stageName?: string; notes?: string | null; seq?: number }) {
+export async function updateBomStage(stageId: string, patch: { stageName?: string; notes?: string | null; seq?: number; processId?: string | null }) {
   const actor = await requirePermission('orders.write');
   const before = await requireDraftStage(stageId);
   if (patch.stageName !== undefined && !patch.stageName.trim()) throw new Error('A stage needs a name.');
@@ -327,6 +327,8 @@ export async function updateBomStage(stageId: string, patch: { stageName?: strin
       ...(patch.stageName !== undefined ? { stageName: patch.stageName.trim() } : {}),
       ...(patch.notes !== undefined ? { notes: patch.notes?.trim() || null } : {}),
       ...(patch.seq !== undefined ? { seq: patch.seq } : {}),
+      // R2-10/R2-70: link (or clear) the master process so routing, line clearance and QC can follow the stage.
+      ...(patch.processId !== undefined ? { processId: patch.processId || null } : {}),
     },
   });
   await logAuditEvent({ actorId: actor.userId, action: 'UPDATE_BOM_STAGE', entity: 'MisBomStage', entityId: stageId, before, after: rec });
@@ -340,10 +342,15 @@ export async function updateBomStage(stageId: string, patch: { stageName?: strin
  */
 export async function updateBomMaterial(
   materialId: string,
-  patch: { description?: string; quantity?: number; unit?: string; seq?: number; ratePerUnit?: number | null },
+  patch: { description?: string; quantity?: number; unit?: string; seq?: number; ratePerUnit?: number | null; itemId?: string | null },
 ) {
   const actor = await requirePermission('orders.write');
   const before = await requireDraftMaterial(materialId);
+  // R2-10: link (or clear, with null) the catalog item; a named item must exist and be active.
+  if (patch.itemId) {
+    const item = await db.misItem.findUnique({ where: { id: patch.itemId }, select: { id: true, isActive: true, deletedAt: true } });
+    if (!item || item.isActive === false || item.deletedAt) throw new Error('That item does not exist or is inactive.');
+  }
   if (patch.description !== undefined && !patch.description.trim()) throw new Error('A material needs a description.');
   if (patch.quantity !== undefined && !(patch.quantity > 0)) throw new Error('Quantity must be more than zero.');
   if (patch.unit !== undefined && !patch.unit.trim()) throw new Error('A material needs a unit.');
@@ -355,6 +362,7 @@ export async function updateBomMaterial(
       ...(patch.quantity !== undefined ? { quantity: patch.quantity } : {}),
       ...(patch.unit !== undefined ? { unit: patch.unit.trim() } : {}),
       ...(patch.seq !== undefined ? { seq: patch.seq } : {}),
+      ...(patch.itemId !== undefined ? { itemId: patch.itemId || null } : {}),
       ...(mayEditRate && patch.ratePerUnit !== undefined ? { ratePerUnit: patch.ratePerUnit } : {}),
     },
   });

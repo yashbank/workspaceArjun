@@ -37,3 +37,62 @@ export function worstFlag(flags: SyncFlag[]): SyncFlag | null {
   for (const f of flags) if (worst === null || SEVERITY[f] > SEVERITY[worst]) worst = f;
   return worst;
 }
+
+// ---------------------------------------------------------------------------
+// R2-40/41/45 — a production log keeps the machine board honest.
+// ---------------------------------------------------------------------------
+
+export type SyncBooking = BookingWindow & {
+  id: string;
+  /** SCHEDULED (booked on the board) or PRODUCTION_LOG (auto-created by an earlier log). Absent = SCHEDULED. */
+  source?: 'SCHEDULED' | 'PRODUCTION_LOG' | null;
+  orderNumber?: string | null;
+};
+
+/**
+ * What saving a log at `at` on `machineId` for `orderId` does to the board:
+ *
+ *  - `COVERED`  — a live booking for this same order already covers it; nothing to add.
+ *  - `CONFLICT` — another production log is already running a DIFFERENT order on this machine at
+ *                 this time (its auto-created block covers `at`). The log is refused: one machine
+ *                 cannot run two orders at once, and a second silent row would double-book it.
+ *  - `SCHEDULED_OTHER` — the board has this machine booked for another order. Kept a warning
+ *                 (R3 B123): the plan may simply have moved; the supervisor sees OTHER_ORDER.
+ *  - `CREATE`   — nothing covers it: a PRODUCTION_LOG block is created so the board and the
+ *                 utilisation report show the machine ran.
+ */
+export type SyncDecision =
+  | { kind: 'COVERED'; booking: SyncBooking }
+  | { kind: 'CONFLICT'; booking: SyncBooking }
+  | { kind: 'SCHEDULED_OTHER'; booking: SyncBooking }
+  | { kind: 'CREATE' };
+
+export function decideMachineSync(
+  log: { machineId: string; orderId: string; at: Date },
+  bookings: SyncBooking[],
+): SyncDecision {
+  const t = log.at.getTime();
+  const covering = bookings.filter(
+    (b) => b.machineId === log.machineId && !b.releasedAt && b.startsAt.getTime() <= t && t <= b.endsAt.getTime(),
+  );
+  const same = covering.find((b) => b.orderId === log.orderId);
+  if (same) return { kind: 'COVERED', booking: same };
+  const running = covering.find((b) => b.source === 'PRODUCTION_LOG');
+  if (running) return { kind: 'CONFLICT', booking: running };
+  if (covering.length > 0) return { kind: 'SCHEDULED_OTHER', booking: covering[0] };
+  return { kind: 'CREATE' };
+}
+
+/** Without a shift to anchor it, an auto block spans this long, ending at the log. */
+export const AUTO_BLOCK_FALLBACK_MS = 60 * 60 * 1000;
+
+/**
+ * The window of an auto-created block: the shift the log fell in when one is known (the run happened
+ * during that shift), else the hour up to the log. Always contains `at`.
+ */
+export function autoBlockWindow(at: Date, shiftWindow: { start: Date; end: Date } | null): { startsAt: Date; endsAt: Date } {
+  if (shiftWindow && shiftWindow.start.getTime() <= at.getTime() && at.getTime() <= shiftWindow.end.getTime()) {
+    return { startsAt: shiftWindow.start, endsAt: shiftWindow.end };
+  }
+  return { startsAt: new Date(at.getTime() - AUTO_BLOCK_FALLBACK_MS), endsAt: at };
+}

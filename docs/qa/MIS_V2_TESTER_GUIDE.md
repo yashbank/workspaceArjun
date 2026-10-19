@@ -210,6 +210,48 @@ presses Re-check match (known, intentional for now).
 | 13.23 | ATTENDANCE | Duplicate leave; self-approve leave; mark-absent after punches; edit outside the correction window | Refused; skips people who punched; refused |
 | 13.24 | KIOSK (new APK) | Night-shift worker at 05:30; revoked tablet with queued punches; stuck entry | Defaults to OUT; queued punches sent before wipe; stuck row listed with Retry |
 
+## §14. Round 2 — Batch 2 (release 2026-10-19) — re-test only this
+
+| # | Role | Where | Expected |
+|---|---|---|---|
+| 14.1 | ADMIN | R2-02: Items: open New item; check GSM, size, substrate, coating, unit; add a new option via '+ Add new' | All are dropdowns from master options; the new option is saved and selectable |
+| 14.2 | SUPERVISOR | R2-25: Open an item attribute dropdown (e.g. size, unit) | Options listed; there is no '+ Add new' for Supervisor |
+| 14.3 | ADMIN | R2-84: Inventory → Add Item: pick substrate and coating; add a unit inline | Substrate and coating present; new unit saved and selectable |
+| 14.4 | ADMIN | R2-85: Items screen and Inventory Add Item: use the searchable unit/attribute selects | Type to filter; same options in both screens |
+| 14.5 | ADMIN | R2-10: BOM: add a material and link it to a catalog item (search by name) | Searchable catalog link saves and shows on the BOM line |
+| 14.6 | ADMIN | R2-82: Any form with Item, Unit, Machine, Operator or Order picker: type to filter | Searchable select narrows as you type |
+| 14.7 | ADMIN | R2-83: Open PO, GRN, Supplier Invoices, Orders, Inventory, Employees, Audit, Store transactions, Leave, Extra-pay, Daily register; go to page 2 after searching/filtering | 25 rows per page; URL keeps q and filters; footer reads '26-50 of N' |
+| 14.8 | ADMIN | R2-81: Open Supplier Invoices on a wide screen | Page uses the full width |
+| 14.9 | QC | R2-37: Log in; open PO and GRN lists and a detail page | Lists and detail open read-only; no write buttons |
+| 14.10 | SUPERVISOR | R2-38: Go to /mis/store/issue | Shows 'Raise a request instead'; no 403/500; no issuing |
+| 14.11 | SUPERVISOR | R2-80: Raise a material request / issue with no order | Only allowed as 'General / factory use' with a reason and cost centre; tagged GENERAL, 'not linked to any order'; Owner and Admin get a bell notice |
+| 14.12 | STORE_GUY | R2-64: Open the Store sidebar | Grouped menu: Dashboard, Goods Issue, Receipts, Transactions |
+| 14.13 | STORE_GUY | R2-66: Issue cart: click 'Refresh stock'; let a line go stale then Confirm | Stock refreshes; a stale line blocks Confirm until refreshed |
+| 14.14 | SUPERVISOR | R2-67: Raise a request; Store approves, rejects, or hands over | Supervisor gets a bell notice for each decision |
+| 14.15 | STORE_GUY | R2-77: Approve a request for picking → /mis/store/pick-lists → save picks → staged → hand over | Stock moves only at handover, not before |
+| 14.16 | STORE_GUY | R2-79: /mis/store/returns: return material as store guy; also as supervisor | Store-guy return books stock back at once; supervisor return stays pending until store accepts |
+| 14.17 | STORE_GUY | R2-68: Store Issue/Receive cart: tap Scan (real device, Chrome/Android) | Camera scans an item barcode into the cart; typing works as fallback |
+| 14.18 | STORE_GUY | R2-78: Receive cart: tap Scan on a real device | Camera scan adds the item; typed fallback works |
+| 14.19 | ATTENDANCE | R2-105: Web Kiosk: tap Scan for an employee on a real device | Camera scan identifies the employee; typed fallback works |
+| 14.20 | STORE_GUY | R2-74: GRN: confirm a line with no DC quantity (also via direct submit) | Refused by the server; DC quantity required |
+| 14.21 | SUPERVISOR | R2-40: Log production on a machine with no booking | Board shows the machine BUSY from the production log |
+| 14.22 | SUPERVISOR | R2-41: Log a second production on the same machine and time for a different order | Refused with a clear message |
+| 14.23 | SUPERVISOR | R2-45: Check machine board and utilisation after an unbooked production log | Board and utilisation match the log (source = production log) |
+| 14.24 | SUPERVISOR | R2-47: Crew board: view Available vs Blocked; another supervisor tries to take a held worker; holder/Admin/Owner release | Blocked shows machine and holder; other supervisor refused; holder, Admin or Owner can release |
+| 14.25 | ADMIN | R2-46: COA / job card: Issue Vn, then Approve; try as the preparer; open the file name | Preparer cannot approve; Admin/Owner can; file named COA_ORD_DDMMYY_Vn; reprint shows version and status |
+| 14.26 | ADMIN | R2-17: Production log: edit and delete a row within 7 days with a reason; as SUPERVISOR try edit at <24h and delete | Admin edit/delete works with reason; Supervisor can edit within 24h, no delete |
+| 14.27 | QC | R2-34: Edit and delete your own QC check same day; try yesterday's and someone else's; then as Admin/Owner within 7 days | QC own same-day only; Admin/Owner allowed within 7 days; reason audited |
+| 14.28 | SUPERVISOR | R2-48: Production log: enter makeready minutes | Saved and shown on the log |
+| 14.29 | ATTENDANCE | R2-101: Leave range Fri–Tue; approve; apply an overlapping leave | Shows 4 working days; approval writes the register; overlap refused |
+| 14.30 | ATTENDANCE | R2-102: Apply leave of each type CL, SL, EL, LWP, Other | Types recorded and shown (payroll paid/unpaid rules not yet applied) |
+| 14.31 | ADMIN | R2-88: Open an employee profile | Edit Employee button present and works |
+| 14.32 | OWNER | R2-89: Open an employee profile | View Payslip link is present for Owner |
+| 14.33 | OWNER | R2-116: Extra-pay: search by name; check the Proposed by column | Search filters rows; Proposed by is shown |
+| 14.34 | OWNER | R2-110: Add/Edit employee bank fields (Owner/Admin only); month end: 'Download bank transfer file' | IFSC pattern and account 9–18 digits validated; file Owner only; employees without bank details are listed |
+| 14.35 | OWNER | R2-111: Close a past month → Send payslips; then as an employee: Me → My payslips; try the current month | Employee sees only own sent past-month slips; current month returns 404 |
+| 14.36 | OWNER | R2-109: Payroll: Print all payslips | All payslips open in one print view |
+| 14.37 | OWNER | R2-114: Settings → Wages: Edit details; view history | Details saved; rate history listed |
+
 ## §9. Report
 Use the Bug template from `EXTERNAL_TESTER_GUIDE.md` §8: what you did, what you expected, what
 happened, role, device/width, time.

@@ -1,4 +1,5 @@
 import { evaluateAql, type AqlResult } from '@/lib/mis/aql';
+import { correctionVerdict, requireCorrectionReason } from '@/lib/mis/entry-correction';
 import { addDaysToDateKey, dateKeyToDbDate, factoryDateKey, factoryMinuteOfDay } from '@/lib/mis/factory-time';
 import { isOrderClosed } from '@/lib/mis/order-status';
 import { db } from '@/server/db';
@@ -20,7 +21,7 @@ export async function withCheckerNames<T extends { checkById: string | null }>(c
 
 /** The result values the grid, the checklist and the form all use. */
 const QC_RESULTS = ['PASS', 'FAIL', 'NA'] as const;
-const EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
+const EDIT_REFUSAL = 'This check can no longer be edited (24 h / acknowledged / order closed)';
 
 type CheckFields = { result: string; defectType?: string | null; defectQty?: number | null; notes?: string | null };
 
@@ -51,23 +52,35 @@ async function assertStageBelongsToOrder(orderId: string, bomStageId: string) {
 }
 
 /**
- * R3-QCR B84: correct a check within 24 h of its creation, while it is not acknowledged and its
- * order is open. Gated on `qc.write` (never a role name). The audit row carries before/after.
+ * R3-QCR B84 / R2-34: correct a check. Who and until when is `correctionVerdict`
+ * (lib/mis/entry-correction.ts): Admin/Owner within 7 days; a QC inspector their OWN checks on the
+ * same factory day. An acknowledged check or a closed order freezes it for everyone. Gated on
+ * `qc.write`; every edit carries a reason, and the audit row has before/after plus the reason.
  */
 export async function editQcCheck(
   id: string,
-  patch: { result?: string; defectType?: string | null; defectQty?: number | null; notes?: string | null; parameterName?: string },
+  patch: { result?: string; defectType?: string | null; defectQty?: number | null; notes?: string | null; parameterName?: string; reason?: string },
   now: Date = new Date(),
 ) {
   const actor = await requirePermission('qc.write');
   const before = await db.misQcCheck.findUnique({ where: { id } });
-  if (!before) throw new Error('QC check not found');
+  if (!before || before.voidedAt) throw new Error('QC check not found');
   const order = await db.misOrder.findUnique({ where: { id: before.orderId }, select: { status: true } });
   const closed = !order || isOrderClosed(order.status ?? '');
-  const tooOld = now.getTime() - new Date(before.createdAt).getTime() > EDIT_WINDOW_MS;
-  if (tooOld || before.acknowledgedAt || closed) {
-    throw new Error('This check can no longer be edited (24 h / acknowledged / order closed)');
+  const verdict = correctionVerdict({
+    kind: 'QC',
+    action: 'EDIT',
+    role: actor.role,
+    actorId: actor.userId,
+    ownerId: before.checkById,
+    at: new Date(before.createdAt),
+    now,
+    timeZone: await getFactoryTimezone(),
+  });
+  if (!verdict.allowed || before.acknowledgedAt || closed) {
+    throw new Error(verdict.allowed ? EDIT_REFUSAL : `${EDIT_REFUSAL}: ${verdict.reason}`);
   }
+  const reason = requireCorrectionReason(patch.reason);
   const merged = {
     result: patch.result ?? before.result,
     defectType: patch.defectType !== undefined ? patch.defectType : before.defectType,
@@ -89,9 +102,46 @@ export async function editQcCheck(
     entityId: id,
     before: beforeSnapshot,
     after: pick(after as Record<string, unknown>),
+    reason,
   });
   if (after.result === 'FAIL' && before.result !== 'FAIL') await notifyOfDefect(after);
   return after;
+}
+
+/**
+ * R2-34 — delete a QC check under the same rule as an edit. VOIDED, not erased (voidedAt +
+ * voidReason): the CoA, the grid and every summary skip it; the audit trail keeps it.
+ */
+export async function voidQcCheck(id: string, reasonInput: string, now: Date = new Date()) {
+  const actor = await requirePermission('qc.write');
+  const before = await db.misQcCheck.findUnique({ where: { id } });
+  if (!before || before.voidedAt) throw new Error('QC check not found');
+  const verdict = correctionVerdict({
+    kind: 'QC',
+    action: 'DELETE',
+    role: actor.role,
+    actorId: actor.userId,
+    ownerId: before.checkById,
+    at: new Date(before.createdAt),
+    now,
+    timeZone: await getFactoryTimezone(),
+  });
+  if (!verdict.allowed) throw new Error(verdict.reason);
+  if (before.acknowledgedAt) throw new Error('This failure has been acknowledged; it can no longer be deleted.');
+  const order = await db.misOrder.findUnique({ where: { id: before.orderId }, select: { status: true } });
+  if (!order || isOrderClosed(order.status ?? '')) throw new Error('The order is closed; its checks can no longer be changed.');
+  const reason = requireCorrectionReason(reasonInput);
+  const rec = await db.misQcCheck.update({ where: { id }, data: { voidedAt: now, voidReason: reason } });
+  await logAuditEvent({
+    actorId: actor.userId,
+    action: 'QC_CHECK_VOID',
+    entity: 'MisQcCheck',
+    entityId: id,
+    before: { result: before.result, parameterName: before.parameterName, defectType: before.defectType, checkTime: new Date(before.checkTime).toISOString() },
+    after: { voidedAt: now.toISOString() },
+    reason,
+  });
+  return rec;
 }
 
 export async function addQcCheck(
@@ -226,7 +276,8 @@ export async function recordAqlSample(input: {
 export async function getQcForOrder(orderId: string) {
   await requirePermission('qc.read');
   const checks = await db.misQcCheck.findMany({
-    where: { orderId },
+    // R2-34: a voided (deleted) check is kept for the audit trail but never shown or counted.
+    where: { orderId, voidedAt: null },
     include: {
       bomStage: { select: { stageName: true } },
     },
@@ -237,7 +288,7 @@ export async function getQcForOrder(orderId: string) {
 
 export async function getQcSummary(orderId: string) {
   await requirePermission('qc.read');
-  const checks = await db.misQcCheck.findMany({ where: { orderId } });
+  const checks = await db.misQcCheck.findMany({ where: { orderId, voidedAt: null } });
   const pass = checks.filter(c => c.result === 'PASS').length;
   const fail = checks.filter(c => c.result === 'FAIL').length;
   const na = checks.length - pass - fail;
@@ -330,6 +381,7 @@ export async function getTodayQcBoard(now: Date = new Date()): Promise<QcTodayBo
         gte: dateKeyToDbDate(addDaysToDateKey(todayKey, -1)),
         lt: dateKeyToDbDate(addDaysToDateKey(todayKey, 2)),
       },
+      voidedAt: null,
     },
     include: { order: { select: { orderNumber: true } } },
     orderBy: { checkTime: 'desc' },
@@ -373,7 +425,7 @@ export async function listRecentQcFailures(limit = 5, sinceHours = 24): Promise<
   await requirePermission('qc.read');
   const since = new Date(Date.now() - sinceHours * 60 * 60 * 1000);
   const checks = await db.misQcCheck.findMany({
-    where: { result: 'FAIL', checkTime: { gte: since } },
+    where: { result: 'FAIL', checkTime: { gte: since }, voidedAt: null },
     include: { order: { select: { orderNumber: true } } },
     orderBy: { checkTime: 'desc' },
     take: limit,

@@ -21,7 +21,7 @@ export default async function ProductionPage() {
       where: { status: { notIn: [...CLOSED_ORDER_STATUSES, 'DRAFT'] } },
       include: {
         customer: { select: { id: true, name: true } },
-        _count: { select: { productionLogs: true } },
+        _count: { select: { productionLogs: { where: { voidedAt: null } } } },
       },
       orderBy: { createdAt: 'desc' },
     }),

@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { PageBack } from '@/components/mis/common/page-back';
 import { useMemo, useState } from 'react';
 
@@ -85,6 +86,13 @@ export function ReceiveScreen({ header, items, suppliers, openPos, canSetRate = 
   return (
     <HomeStack>
       <PageBack href="/mis/store/dashboard" label="Store overview" />
+      <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-1.5 text-sm text-slate-500">
+        <Link href="/mis/store/dashboard" className="inline-flex min-h-11 items-center hover:text-slate-900">Store</Link>
+        <span aria-hidden="true">/</span>
+        <Link href="/mis/store/stock" className="inline-flex min-h-11 items-center hover:text-slate-900">Stock</Link>
+        <span aria-hidden="true">/</span>
+        <span className="font-medium text-slate-900">Material Receive</span>
+      </nav>
       <HeaderCard title={header.title} meta={header.meta} />
 
       {done && (

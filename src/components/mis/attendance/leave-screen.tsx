@@ -3,18 +3,25 @@
 import { useState, useTransition } from 'react';
 import { Button } from '@/components/mis/kit/button';
 import { Select, type SelectOption } from '@/components/mis/kit/select';
+import { Combobox } from '@/components/ui/combobox';
 import { Input, DateInput } from '@/components/mis/kit/input';
 import { SlideOver } from '@/components/mis/kit/slide-over';
+import { ListPager, usePagedRows } from './list-pager';
 import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { requestLeaveAction, approveLeaveAction } from '@/app/(mis)/mis/attendance/actions';
 import { useToast } from '@/components/ui/toast';
 import { formatFactoryDate } from '@/lib/mis/factory-time';
+import { LEAVE_TYPES, LEAVE_TYPE_LABEL, countLeaveWorkingDays, leaveTypeLabel, validateLeaveRange } from '@/lib/mis/leave';
 
 type Employee = { id: string; name: string; employeeCode: string };
 type LeaveRow = {
   id: string;
   date: Date | string;
+  /** R2-101: last day, inclusive; null for a single-day leave. */
+  endDate?: Date | string | null;
+  /** R2-102 */
+  leaveType?: string;
   status: string;
   reason: string | null;
   employee: Employee | null;
@@ -34,9 +41,13 @@ interface Props {
 }
 
 export function LeaveScreen({ leaves, employees, canApprove, initialEmployeeId }: Props) {
-  const [open, setOpen] = useState(!!initialEmployeeId);
+  const [open, setOpen] = useState(false);
   const [empId, setEmpId] = useState(initialEmployeeId ?? '');
+  // R2-100: ?employeeId= FILTERS the history; it never pops the request form open.
+  const [historyOf, setHistoryOf] = useState<string | null>(initialEmployeeId ?? null);
   const [date, setDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [leaveType, setLeaveType] = useState('CL');
   const [reason, setReason] = useState('');
   const [filter, setFilter] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'>('ALL');
   const [empSearch, setEmpSearch] = useState('');
@@ -44,18 +55,23 @@ export function LeaveScreen({ leaves, employees, canApprove, initialEmployeeId }
   const { toast } = useToast();
 
   const empOptions: SelectOption[] = [
-    { value: '', label: '— Select Employee —' },
     ...employees.map((e) => ({ value: e.id, label: `${e.name} (${e.employeeCode})` })),
   ];
 
   const filtered = leaves
+    .filter((l) => !historyOf || l.employee?.id === historyOf)
     .filter((l) => filter === 'ALL' ? true : l.status === filter)
     .filter((l) => !empSearch.trim() || (l.employee?.name ?? '').toLowerCase().includes(empSearch.toLowerCase()) || (l.employee?.employeeCode ?? '').toLowerCase().includes(empSearch.toLowerCase()));
 
+  const paged = usePagedRows(filtered, `${filter}|${empSearch}|${historyOf ?? ''}`);
+  const typeOptions: SelectOption[] = LEAVE_TYPES.map((t) => ({ value: t, label: LEAVE_TYPE_LABEL[t] }));
+  const rangeError = date ? validateLeaveRange(date, endDate || null) : null;
+  const dayCount = date && !rangeError ? countLeaveWorkingDays(date, endDate || null) : 0;
+
   const handleRequest = () => startTransition(async () => {
-    const res = await requestLeaveAction(empId, date, reason || undefined);
+    const res = await requestLeaveAction(empId, date, reason || undefined, { endDate: endDate || null, leaveType });
     if (!res.ok) { toast('error', res.detail); return; }
-    setEmpId(''); setDate(''); setReason(''); setOpen(false);
+    setEmpId(''); setDate(''); setEndDate(''); setLeaveType('CL'); setReason(''); setOpen(false);
   });
 
   const handleApprove = (id: string, approve: boolean) => startTransition(async () => {
@@ -79,8 +95,20 @@ export function LeaveScreen({ leaves, employees, canApprove, initialEmployeeId }
       key: 'date',
       header: 'Date',
       // A leave day is a date-only value (UTC midnight), so it is read in UTC to keep the same calendar day.
-      render: (r) => formatFactoryDate(new Date(r.date), 'UTC'),
+      render: (r) => {
+        const first = formatFactoryDate(new Date(r.date), 'UTC');
+        if (!r.endDate) return first;
+        const startKey = new Date(r.date).toISOString().slice(0, 10);
+        const endKey = new Date(r.endDate).toISOString().slice(0, 10);
+        return (
+          <div>
+            <div>{first} – {formatFactoryDate(new Date(r.endDate), 'UTC')}</div>
+            <div className="text-xs text-gray-500">{countLeaveWorkingDays(startKey, endKey)} working days</div>
+          </div>
+        );
+      },
     },
+    { key: 'type', header: 'Type', render: (r) => leaveTypeLabel(r.leaveType) },
     { key: 'reason', header: 'Reason', render: (r) => r.reason ?? '—' },
     {
       key: 'status',
@@ -111,6 +139,13 @@ export function LeaveScreen({ leaves, employees, canApprove, initialEmployeeId }
         <Button onClick={() => setOpen(true)}>+ Request Leave</Button>
       </div>
 
+      {historyOf && (
+        <div className="flex items-center gap-2 rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-800">
+          Showing leave history for {employees.find((e) => e.id === historyOf)?.name ?? 'this employee'}
+          <Button variant="ghost" onClick={() => setHistoryOf(null)}>Show everyone</Button>
+        </div>
+      )}
+
       {/* Filter tabs */}
       <div className="flex flex-wrap gap-1 bg-gray-100 p-1 rounded-lg w-fit">
         {(['ALL', 'PENDING', 'APPROVED', 'REJECTED'] as const).map((f) => (
@@ -137,19 +172,24 @@ export function LeaveScreen({ leaves, employees, canApprove, initialEmployeeId }
 
       <DataTable
         columns={columns}
-        rows={filtered}
+        rows={paged.pageRows}
         rowKey={(r) => r.id}
         emptyTitle="No leave requests"
         emptyBody="No leave requests found for the selected filter."
       />
+      <ListPager page={paged.page} total={paged.total} setPage={paged.setPage} />
 
       <SlideOver open={open} onClose={() => setOpen(false)} title="Request Leave">
         <div className="flex flex-col gap-4 p-4">
-          <Select label="Employee" value={empId} options={empOptions} onChange={setEmpId} />
-          <DateInput label="Date" value={date} onChange={(e) => setDate(e.target.value)} />
+          <Combobox label="Employee" value={empId} options={empOptions} onChange={setEmpId} />
+          <Select label="Leave type" value={leaveType} options={typeOptions} onChange={setLeaveType} />
+          <DateInput label="From" value={date} onChange={(e) => setDate(e.target.value)} />
+          <DateInput label="To (leave blank for a single day)" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+          {rangeError && <p role="alert" className="text-sm text-red-600">{rangeError}</p>}
+          {dayCount > 0 && <p className="text-sm text-slate-600">{dayCount} working {dayCount === 1 ? 'day' : 'days'} (Sundays are not counted in a range)</p>}
           <Input label="Reason (optional)" value={reason} onChange={(e) => setReason(e.target.value)} />
           <div className="flex gap-2 pt-2">
-            <Button onClick={handleRequest} disabled={isPending || !empId || !date}>Submit</Button>
+            <Button onClick={handleRequest} disabled={isPending || !empId || !date || !!rangeError}>Submit</Button>
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
           </div>
         </div>

@@ -5,7 +5,8 @@
  * Pure: no Prisma, no React.
  */
 
-export const MIS_NOTIFY_ROLES = ['OWNER', 'ADMIN', 'STORE_GUY'] as const;
+// R2-67: the Supervisor hears when the Store decides their material request, so the bell now serves them too.
+export const MIS_NOTIFY_ROLES = ['OWNER', 'ADMIN', 'STORE_GUY', 'SUPERVISOR'] as const;
 export type MisNotifyRole = (typeof MIS_NOTIFY_ROLES)[number];
 
 export function isMisNotifyRole(role: string | null | undefined): role is MisNotifyRole {
@@ -16,6 +17,10 @@ export const NOTIFICATION_TYPES = {
   grnConfirmed: 'mis.grn_confirmed',
   requestRaised: 'mis.material_request.raised',
   bomRejected: 'mis.bom_rejected',
+  // R2-67 — the Store decided a Supervisor's material request.
+  requestDecided: 'mis.material_request.decided',
+  // R2-80/62/Q11 — an issue / request raised as General / factory use (no order): Owner + Admin are told.
+  generalUse: 'mis.general_use',
 } as const;
 
 export type NotificationView = { title: string; detail: string; href: string; tone: 'info' | 'risk' | 'ok' };
@@ -46,6 +51,24 @@ export function notificationView(type: string, payload: unknown): NotificationVi
         title: `${str(p, 'requestNumber')} · material requested`,
         detail: `${num(p, 'lineCount')} ${num(p, 'lineCount') === 1 ? 'line' : 'lines'}${str(p, 'orderNumber') ? ` · for ${str(p, 'orderNumber')}` : ''}${str(p, 'departmentName') ? ` · ${str(p, 'departmentName')}` : ''} · waiting for the Store`,
         href: `/mis/store/requests/${str(p, 'requestId')}`,
+        tone: 'info',
+      };
+    case NOTIFICATION_TYPES.requestDecided: {
+      const approved = str(p, 'decision') === 'APPROVED';
+      return {
+        title: `${str(p, 'requestNumber')} · ${approved ? 'approved' : 'rejected'} by the Store`,
+        detail: approved
+          ? `${str(p, 'note') || 'Your material request was approved'}${str(p, 'pickList') ? ' · a pick list is being prepared' : ''}`
+          : str(p, 'note') || 'Your material request was rejected',
+        href: `/mis/store/requests/${str(p, 'requestId')}`,
+        tone: approved ? 'ok' : 'risk',
+      };
+    }
+    case NOTIFICATION_TYPES.generalUse:
+      return {
+        title: `${str(p, 'reference')} · General / factory use`,
+        detail: `${str(p, 'kind') === 'request' ? 'Requested' : 'Issued'}${str(p, 'costCenter') ? ` for ${str(p, 'costCenter')}` : ''} · ${str(p, 'reason') || 'no reason given'} · not linked to any order`,
+        href: str(p, 'requestId') ? `/mis/store/requests/${str(p, 'requestId')}` : '/mis/store/transactions',
         tone: 'info',
       };
     case NOTIFICATION_TYPES.bomRejected:

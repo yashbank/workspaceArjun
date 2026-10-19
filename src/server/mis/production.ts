@@ -1,6 +1,8 @@
 import { addDaysToDateKey, dateKeyToDbDate, factoryDateKey, factoryMinuteOfDay } from '@/lib/mis/factory-time';
 import { isUuid, parkable, rejectable, type QueuedWriteEnvelope } from '@/lib/mis/offline/idempotency';
-import { classifyLogAgainstBookings } from '@/lib/mis/machine-sync';
+import { shiftDateKeyFor, shiftWindowInstants } from '@/lib/mis/crew-hours';
+import { correctionVerdict, requireCorrectionReason } from '@/lib/mis/entry-correction';
+import { autoBlockWindow, classifyLogAgainstBookings, decideMachineSync, type SyncBooking } from '@/lib/mis/machine-sync';
 import { isOrderClosed } from '@/lib/mis/order-status';
 import { PRODUCTION_EDIT_WINDOW_MS } from '@/lib/mis/production-form';
 import { sumByUnit } from '@/lib/mis/qty-by-unit';
@@ -13,6 +15,8 @@ import { getFactoryTimezone } from '@/server/mis/business-rules';
 import { runIdempotent, type IdempotentResult, type MisTx, type RunOptions } from '@/server/mis/idempotency';
 import { resolveJobPhaseForProduction } from '@/server/mis/job-phases';
 import { assertLineCleared } from '@/server/mis/line-clearance';
+import { lockStockKeys } from '@/server/mis/stock-lock';
+import { findOperatorHoldElsewhere } from '@/server/mis/worker-allocation';
 
 /** A non-blocking note about a log (R3 B122/B123). Never stops the write; replay ignores it. */
 export type ProductionWarning = {
@@ -32,7 +36,21 @@ export type LogProductionInput = {
   unit?: string;
   loggedAt?: Date;
   notes?: string;
+  /** R2-48 — set-up time before the run, whole minutes 0..1440. */
+  makereadyMinutes?: number;
 };
+
+/** R2-48: makeready is whole minutes, 0 to 24 h (the DB CHECK is the same). */
+export const MAKEREADY_MAX_MINUTES = 1440;
+
+function cleanMakeready(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 0 || n > MAKEREADY_MAX_MINUTES) {
+    throw rejectable('MALFORMED', 'Makeready must be whole minutes between 0 and 1440.');
+  }
+  return n;
+}
 
 /**
  * D14 — a closed order refuses production, online and on replay alike.
@@ -136,7 +154,32 @@ async function createProductionLog(
     if (!emp || emp.isActive === false || emp.deletedAt) throw rejectable('MALFORMED', 'Operator not found.');
   }
 
-  const shiftId = await resolveShiftId(data.shiftId, at);
+  const shift = await resolveShift(data.shiftId, at);
+  const shiftId = shift?.id ?? null;
+  const makereadyMinutes = cleanMakeready(data.makereadyMinutes);
+
+  // R2-47 HARD worker lock: an operator held on another machine this shift is not accepted here.
+  // Parked, not rejected: once the holder releases them the same entry goes through.
+  if (data.employeeId) {
+    const refusal = await operatorLockRefusal(data.employeeId, data.machineId, at, shift);
+    if (refusal) throw parkable('WORKER_LOCKED', refusal);
+  }
+
+  // R2-40/41/45 — the machine board must agree with what actually ran. Decided inside the write's
+  // transaction, before the row exists, so a refused log leaves nothing behind.
+  // One board decision per machine at a time: without this, two logs saved together on the same machine both read
+  // "nothing covers it" and both create a block (a double booking, or two orders on one machine). Transaction-scoped,
+  // so it holds until the queue's transaction commits; a no-op off a transaction.
+  if (client !== db) await lockStockKeys(client as MisTx, [`machine-board-${data.machineId}`]);
+  const sync = await decideBoardSync(client, data, at);
+  if (sync.kind === 'CONFLICT') {
+    const who = sync.booking.orderNumber ?? 'another order';
+    throw parkable(
+      'MACHINE_CONFLICT',
+      `This machine is already running ${who} at this time (from another production log). Log this against ${who}, or release that run on the machine board first.`,
+    );
+  }
+  const warnings = await collectWarnings(data, at);
 
   // Named fields only. Spreading caller input into a create is how a client
   // ends up setting a column it was never meant to reach.
@@ -153,29 +196,107 @@ async function createProductionLog(
       unit: data.unit ?? 'KG',
       loggedAt: at,
       notes: data.notes,
+      ...(makereadyMinutes !== undefined ? { makereadyMinutes } : {}),
       loggedById: actor.userId,
     },
   });
-  const warnings = await collectWarnings(data, at);
-  return { rec, actorId: actor.userId, warnings };
+
+  let autoAllocation: { id: string; startsAt: Date; endsAt: Date } | null = null;
+  if (sync.kind === 'CREATE') {
+    const timeZone = await getFactoryTimezone();
+    const window = autoBlockWindow(
+      at,
+      shift?.startTime && shift?.endTime ? shiftWindowInstants(shiftDateKeyFor(shift as ShiftTimesRow, at, timeZone), shift as ShiftTimesRow, timeZone) : null,
+    );
+    const created = await client.misMachineAllocation.create({
+      data: {
+        machineId: data.machineId,
+        orderId: data.orderId,
+        jobPhaseId,
+        source: 'PRODUCTION_LOG',
+        productionLogId: rec.id,
+        allocatedById: actor.userId,
+        startsAt: window.startsAt,
+        endsAt: window.endsAt,
+        notes: 'Added automatically from a production log',
+      },
+    });
+    autoAllocation = { id: created.id, startsAt: window.startsAt, endsAt: window.endsAt };
+    for (const w of warnings) {
+      if (w.code === 'NO_BOOKING') w.message = `${w.message} It has been added to the machine board.`;
+    }
+  }
+  return { rec, actorId: actor.userId, warnings, autoAllocation };
+}
+
+type ShiftTimesRow = { id: string; startTime: string; endTime: string };
+
+/**
+ * R2-47: the refusal text when `employeeId` is held (an open crew row) on a machine other than
+ * `machineId` for the log's factory day and shift, else null. The day is the shift's own start date
+ * (a night shift after midnight belongs to the day it began), the key the crew board stores.
+ */
+async function operatorLockRefusal(
+  employeeId: string,
+  machineId: string,
+  at: Date,
+  shift: (Partial<ShiftTimesRow> & { id: string }) | null,
+): Promise<string | null> {
+  const timeZone = await getFactoryTimezone();
+  const dateKey =
+    shift?.startTime && shift?.endTime ? shiftDateKeyFor(shift as ShiftTimesRow, at, timeZone) : factoryDateKey(at, timeZone);
+  const hold = await findOperatorHoldElsewhere({ employeeId, machineId, dateKey, shiftId: shift?.id ?? null, at });
+  if (!hold) return null;
+  return `This operator is allocated to ${hold.machineName} this shift (held by ${hold.holderName}). Ask ${hold.holderName}, an Admin or the Owner to release them from ${hold.machineName} on the crew board first.`;
+}
+
+/** The live bookings covering `at` on this machine, read through the write's own client. */
+async function decideBoardSync(client: MisTx | typeof db, data: LogProductionInput, at: Date) {
+  const rows = await client.misMachineAllocation.findMany({
+    where: { machineId: data.machineId, releasedAt: null, startsAt: { lte: at }, endsAt: { gte: at } },
+    select: { id: true, machineId: true, orderId: true, startsAt: true, endsAt: true, releasedAt: true, source: true, order: { select: { orderNumber: true } } },
+  });
+  const bookings: SyncBooking[] = (rows ?? []).map((r) => ({
+    id: r.id,
+    machineId: r.machineId,
+    orderId: r.orderId,
+    startsAt: r.startsAt,
+    endsAt: r.endsAt,
+    releasedAt: r.releasedAt,
+    source: r.source ?? null,
+    orderNumber: r.order?.orderNumber ?? null,
+  }));
+  return decideMachineSync({ machineId: data.machineId, orderId: data.orderId, at }, bookings);
+}
+
+/**
+ * R2-41: the board block a log created rides in the log's OWN audit row, so one commit writes
+ * exactly one audit event (MIS-154) and the allocation is still traceable from the trail.
+ */
+function withAutoAllocation<T extends object>(after: T, auto: { id: string; startsAt: Date; endsAt: Date } | null) {
+  if (!auto) return after;
+  return {
+    ...after,
+    autoAllocation: { id: auto.id, source: 'PRODUCTION_LOG', startsAt: auto.startsAt.toISOString(), endsAt: auto.endsAt.toISOString() },
+  };
 }
 
 /**
  * R3 B122: the payload's shift when it is active; else the active shift whose window holds
  * `at` on the factory clock; else null. Best effort - a lookup failure must not block a write.
  */
-async function resolveShiftId(requested: string | undefined, at: Date): Promise<string | null> {
+async function resolveShift(requested: string | undefined, at: Date): Promise<Partial<ShiftTimesRow> & { id: string } | null> {
   try {
     if (requested) {
-      const named = await db.misShift.findUnique({ where: { id: requested }, select: { id: true, isActive: true } });
-      if (named && named.isActive !== false) return named.id;
+      const named = await db.misShift.findUnique({ where: { id: requested }, select: { id: true, isActive: true, startTime: true, endTime: true } });
+      if (named && named.isActive !== false) return named;
     }
     const [shifts, timeZone] = await Promise.all([
       db.misShift.findMany({ where: { isActive: true }, select: { id: true, startTime: true, endTime: true } }),
       getFactoryTimezone(),
     ]);
     const minute = factoryMinuteOfDay(at, timeZone);
-    return (shifts ?? []).find((sh) => isMinuteInShiftWindow(minute, sh))?.id ?? null;
+    return (shifts ?? []).find((sh) => isMinuteInShiftWindow(minute, sh)) ?? null;
   } catch {
     return null;
   }
@@ -230,8 +351,8 @@ async function collectWarnings(data: LogProductionInput, at: Date): Promise<Prod
 
 /** The direct, non-queued path. Same gates, same create — one home for the gate list. */
 export async function logProduction(data: LogProductionInput) {
-  const { rec, actorId } = await createProductionLog(data, db);
-  await logAuditEvent({ actorId, action: 'LOG_PRODUCTION', entity: 'MisProductionLog', entityId: rec.id, after: rec });
+  const { rec, actorId, autoAllocation } = await createProductionLog(data, db);
+  await logAuditEvent({ actorId, action: 'LOG_PRODUCTION', entity: 'MisProductionLog', entityId: rec.id, after: withAutoAllocation(rec, autoAllocation) });
   return rec;
 }
 
@@ -248,6 +369,8 @@ export type ProductionLogPayload = {
   /** #18 — optional BOM stage ("process") the output belongs to. Validated against the order's BOM on write. */
   bomStageId?: string;
   notes?: string;
+  /** R2-48 — makeready (set-up) minutes before the run; optional, whole minutes 0..1440. */
+  makereadyMinutes?: number;
   /**
    * `YYYY-MM-DD`, only when the person deliberately back-dates an entry — the
    * detail screen's Date field. This is the *business* date they chose, and it is
@@ -323,7 +446,9 @@ function toLogInput(payload: unknown, clientRecordedAt: string): LogProductionIn
     loggedAt = day;
   }
 
-  return { orderId, machineId, qtyProduced, qtyWaste, unit: text(p.unit), employeeId, shiftId, bomStageId, notes: text(p.notes), loggedAt };
+  const makereadyMinutes = cleanMakeready(p.makereadyMinutes);
+
+  return { orderId, machineId, qtyProduced, qtyWaste, unit: text(p.unit), employeeId, shiftId, bomStageId, notes: text(p.notes), loggedAt, makereadyMinutes };
 }
 
 function summarise(warnings: ProductionWarning[], rec: {
@@ -377,6 +502,7 @@ export async function submitProductionLog(
   // Attribute the write to whoever made it, so a held entry shows the right name.
   const actorId = envelope.queuedBy ?? user.id;
 
+  let auto: { id: string; startsAt: Date; endsAt: Date } | null = null;
   const out = await runIdempotent<ProductionLogResult>(
     { ...envelope, kind: 'production.log', actorId },
     async (tx) => {
@@ -390,9 +516,10 @@ export async function submitProductionLog(
           'This entry was recorded by a different user than the one signed in now, so it will not be sent under their name. Ask them to sign in.',
         );
       }
-      const { rec, warnings } = await createProductionLog(toLogInput(envelope.payload, envelope.clientRecordedAt), tx, {
+      const { rec, warnings, autoAllocation } = await createProductionLog(toLogInput(envelope.payload, envelope.clientRecordedAt), tx, {
         skipClearance: options.override?.skipClearance,
       });
+      auto = autoAllocation;
       return { entityType: 'MisProductionLog', entityId: rec.id, result: summarise(warnings, rec) };
     },
     options,
@@ -406,7 +533,7 @@ export async function submitProductionLog(
       action: 'LOG_PRODUCTION',
       entity: 'MisProductionLog',
       entityId: out.result.id,
-      after: out.result,
+      after: withAutoAllocation(out.result, auto),
     });
   }
   return out;
@@ -441,11 +568,13 @@ export async function getProductionFormContext(orderId: string, at: Date = new D
 export async function getProductionForOrder(orderId: string) {
   await requirePermission('production.read');
   return db.misProductionLog.findMany({
-    where: { orderId },
+    // R2-17: a voided (deleted) entry is kept for the audit trail but never shown or counted.
+    where: { orderId, voidedAt: null },
     include: {
       machine: { select: { name: true } },
       employee: { select: { name: true } },
       shift: { select: { name: true } },
+      bomStage: { select: { stageName: true } },
       jobPhase: { select: { status: true } },
     },
     orderBy: { loggedAt: 'desc' },
@@ -456,7 +585,7 @@ export type ProductionUnitTotal = { unit: string; produced: number; waste: numbe
 
 export async function getProductionSummary(orderId: string) {
   await requirePermission('production.read');
-  const logs = await db.misProductionLog.findMany({ where: { orderId } });
+  const logs = await db.misProductionLog.findMany({ where: { orderId, voidedAt: null } });
   // R3 B124 - never add across units: 500 PIECE and 200 KG are two totals.
   const producedBy = sumByUnit(logs.map((l) => ({ qty: Number(l.qtyProduced), unit: l.unit })));
   const wasteBy = sumByUnit(logs.map((l) => ({ qty: Number(l.qtyWaste ?? 0), unit: l.unit })));
@@ -504,7 +633,7 @@ export async function getProductionSeries(days: number, endingOn: Date = new Dat
   const end = new Date(dateKeyToDbDate(addDaysToDateKey(lastKey, 1)).getTime());
 
   const logs = await db.misProductionLog.findMany({
-    where: { loggedAt: { gte: start, lt: end } },
+    where: { loggedAt: { gte: start, lt: end }, voidedAt: null },
     select: { loggedAt: true, qtyProduced: true, qtyWaste: true },
   });
 
@@ -546,6 +675,7 @@ export async function getDayProductionSummary(day: Date): Promise<DayProductionS
         gte: dateKeyToDbDate(addDaysToDateKey(key, -1)),
         lt: dateKeyToDbDate(addDaysToDateKey(key, 2)),
       },
+      voidedAt: null,
     },
     select: { qtyProduced: true, qtyWaste: true, machineId: true, loggedAt: true },
   });
@@ -561,7 +691,7 @@ export async function getDayProductionSummary(day: Date): Promise<DayProductionS
 }
 
 // ---------------------------------------------------------------------------
-// R3 B126 - edit an entry within 24 h
+// R3 B126 / R2-17 - edit or delete (void) an entry
 // ---------------------------------------------------------------------------
 
 export { PRODUCTION_EDIT_WINDOW_MS };
@@ -575,30 +705,47 @@ export type ProductionLogPatch = {
   employeeId?: string | null;
   bomStageId?: string | null;
   notes?: string | null;
+  /** R2-48 — null clears it. */
+  makereadyMinutes?: number | null;
+  /** R2-17 — why the entry is being corrected; required, 3+ characters, written to the audit row. */
+  reason?: string;
 };
 
 const EDIT_REFUSAL = 'This entry can no longer be edited (24 h / signed off / order closed).';
 
+/**
+ * Who may correct, and until when, is `correctionVerdict` (lib/mis/entry-correction.ts): Admin/Owner
+ * within 7 days, a supervisor within 24 h (B126). A signed-off phase or a closed order freezes the
+ * entry for everyone, and a voided entry is gone.
+ */
 export async function editProductionLog(id: string, patch: ProductionLogPatch, now: Date = new Date()) {
   const actor = await requirePermission('production.write');
   const log = await db.misProductionLog.findUnique({
     where: { id },
     include: { jobPhase: { select: { status: true } }, order: { select: { status: true } } },
   });
-  if (!log) throw new Error('That production entry no longer exists.');
-  if (
-    now.getTime() - log.loggedAt.getTime() > PRODUCTION_EDIT_WINDOW_MS ||
-    log.jobPhase?.status === 'SIGNED_OFF' ||
-    isOrderClosed(log.order.status)
-  ) {
-    throw new Error(EDIT_REFUSAL);
+  if (!log || log.voidedAt) throw new Error('That production entry no longer exists.');
+  const verdict = correctionVerdict({
+    kind: 'PRODUCTION',
+    action: 'EDIT',
+    role: actor.role,
+    actorId: actor.userId,
+    ownerId: log.loggedById,
+    at: log.loggedAt,
+    now,
+    timeZone: await getFactoryTimezone(),
+  });
+  if (!verdict.allowed || log.jobPhase?.status === 'SIGNED_OFF' || isOrderClosed(log.order.status)) {
+    throw new Error(verdict.allowed ? EDIT_REFUSAL : `${EDIT_REFUSAL} ${verdict.reason}`);
   }
+  const reason = requireCorrectionReason(patch.reason);
 
   const qtyProduced = patch.qtyProduced ?? Number(log.qtyProduced);
   const qtyWaste = patch.qtyWaste ?? Number(log.qtyWaste);
   if (!Number.isFinite(qtyProduced) || qtyProduced < 0) throw new Error('The produced quantity is not a valid number.');
   if (!Number.isFinite(qtyWaste) || qtyWaste < 0) throw new Error('The wastage quantity is not a valid number.');
   if (qtyWaste > qtyProduced) throw new Error('Waste cannot be more than the quantity produced.');
+  const makereadyMinutes = patch.makereadyMinutes === null ? null : cleanMakeready(patch.makereadyMinutes);
 
   const bomStageId = patch.bomStageId === undefined ? log.bomStageId : patch.bomStageId;
   if (patch.bomStageId) {
@@ -614,6 +761,13 @@ export async function editProductionLog(id: string, patch: ProductionLogPatch, n
       select: { id: true, isActive: true, deletedAt: true },
     });
     if (!emp || emp.isActive === false || emp.deletedAt) throw new Error('Operator not found.');
+  }
+  // R2-47: a corrected operator or machine must not put a person held on another machine on this log.
+  const nextEmployeeId = patch.employeeId !== undefined ? patch.employeeId : log.employeeId;
+  const nextMachineId = patch.machineId || log.machineId;
+  if (nextEmployeeId && nextMachineId && (patch.employeeId || patch.machineId) && (nextEmployeeId !== log.employeeId || nextMachineId !== log.machineId)) {
+    const refusal = await operatorLockRefusal(nextEmployeeId, nextMachineId, log.loggedAt, await resolveShift(log.shiftId ?? undefined, log.loggedAt));
+    if (refusal) throw new Error(refusal);
   }
   if (patch.machineId) {
     const machine = await db.misMachine.findUnique({ where: { id: patch.machineId }, select: { id: true, isActive: true, deletedAt: true } });
@@ -633,8 +787,16 @@ export async function editProductionLog(id: string, patch: ProductionLogPatch, n
       ...(patch.employeeId !== undefined ? { employeeId: patch.employeeId } : {}),
       bomStageId,
       ...(patch.notes !== undefined ? { notes: patch.notes?.trim() || null } : {}),
+      ...(patch.makereadyMinutes !== undefined ? { makereadyMinutes } : {}),
     },
   });
+  // R2-41: the board block this entry created moves with it to the corrected machine.
+  if (patch.machineId && patch.machineId !== log.machineId) {
+    await db.misMachineAllocation.updateMany({
+      where: { productionLogId: id, source: 'PRODUCTION_LOG', releasedAt: null },
+      data: { machineId: patch.machineId },
+    });
+  }
   await logAuditEvent({
     actorId: actor.userId,
     action: 'PRODUCTION_LOG_EDIT',
@@ -642,6 +804,51 @@ export async function editProductionLog(id: string, patch: ProductionLogPatch, n
     entityId: id,
     before: { qtyProduced: Number(log.qtyProduced), qtyWaste: Number(log.qtyWaste), unit: log.unit },
     after: { qtyProduced, qtyWaste, unit: rec.unit },
+    reason,
+  });
+  return rec;
+}
+
+/**
+ * R2-17 — delete a production entry: Admin/Owner only, within 7 days, with a reason. It is VOIDED,
+ * not erased (voidedAt + voidReason): every total and list skips it, the audit trail keeps it. The
+ * machine-board block it auto-created (R2-41) is released with it.
+ */
+export async function voidProductionLog(id: string, reasonInput: string, now: Date = new Date()) {
+  const actor = await requirePermission('production.write');
+  const log = await db.misProductionLog.findUnique({
+    where: { id },
+    include: { jobPhase: { select: { status: true } }, order: { select: { status: true } } },
+  });
+  if (!log || log.voidedAt) throw new Error('That production entry no longer exists.');
+  const verdict = correctionVerdict({
+    kind: 'PRODUCTION',
+    action: 'DELETE',
+    role: actor.role,
+    actorId: actor.userId,
+    ownerId: log.loggedById,
+    at: log.loggedAt,
+    now,
+    timeZone: await getFactoryTimezone(),
+  });
+  if (!verdict.allowed) throw new Error(verdict.reason);
+  if (log.jobPhase?.status === 'SIGNED_OFF') throw new Error('Reopen the phase to change a signed record.');
+  if (isOrderClosed(log.order.status)) throw new Error('The order is closed; its entries can no longer be changed.');
+  const reason = requireCorrectionReason(reasonInput);
+
+  const rec = await db.misProductionLog.update({ where: { id }, data: { voidedAt: now, voidReason: reason } });
+  const released = await db.misMachineAllocation.updateMany({
+    where: { productionLogId: id, source: 'PRODUCTION_LOG', releasedAt: null },
+    data: { releasedAt: now },
+  });
+  await logAuditEvent({
+    actorId: actor.userId,
+    action: 'PRODUCTION_LOG_VOID',
+    entity: 'MisProductionLog',
+    entityId: id,
+    before: { qtyProduced: Number(log.qtyProduced), qtyWaste: Number(log.qtyWaste), unit: log.unit, loggedAt: log.loggedAt.toISOString() },
+    after: { voidedAt: now.toISOString(), autoBlocksReleased: released?.count ?? 0 },
+    reason,
   });
   return rec;
 }

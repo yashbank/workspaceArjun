@@ -33,6 +33,8 @@
     "@prisma/client": "^7.8.0",
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.105.4",
+    "@zxing/browser": "0.1.5",
+    "@zxing/library": "0.21.3",
     "archiver": "^8.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

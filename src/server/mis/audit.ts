@@ -29,6 +29,8 @@ export type AuditEntry = {
   ip?: string | null;
   /** There is no severity column (no schema change): a WARNING is carried in `after.severity`. */
   severity?: 'INFO' | 'WARNING';
+  /** R2-17/34: why a record was corrected or voided. No column either: carried in `after.reason`. */
+  reason?: string;
 };
 
 /** Spec Epic 1: a GRN with a discrepancy gets a WARNING entry. grn.ts calls this after the GRN is saved. */
@@ -42,6 +44,16 @@ export function logGrnDiscrepancy(args: { actorId: string | null; grnId: string;
     severity: 'WARNING',
     ip: args.ip,
   });
+}
+
+/** `after` plus the severity and reason that have no column of their own. */
+function withExtras(entry: AuditEntry): Diff {
+  if (!entry.severity && !entry.reason) return entry.after;
+  return {
+    ...(entry.after ?? {}),
+    ...(entry.severity ? { severity: entry.severity } : {}),
+    ...(entry.reason ? { reason: entry.reason } : {}),
+  };
 }
 
 /**
@@ -64,7 +76,7 @@ export async function logAuditEvent(entry: AuditEntry): Promise<void> {
         // JSON by construction — redact() only ever returns primitives and
         // values that came out of a JSON-shaped diff.
         before: (forStorage(entry.before) ?? undefined) as Prisma.InputJsonValue | undefined,
-        after: (forStorage(entry.severity ? { ...(entry.after ?? {}), severity: entry.severity } : entry.after) ?? undefined) as Prisma.InputJsonValue | undefined,
+        after: (forStorage(withExtras(entry)) ?? undefined) as Prisma.InputJsonValue | undefined,
         ip: entry.ip ?? null,
       },
     });

@@ -96,6 +96,9 @@ vi.mock('@/server/mis/roles', () => ({ getMisRole: (...a: unknown[]) => getMisRo
 
 const { commitIssue } = await import('./store');
 
+/** R2-80: a no-order issue / request is General / factory use and carries a reason and a cost centre. */
+const G = { reason: 'grease for plates', costCenter: 'Press' };
+
 // R3-STK B08: an issue is checked against the smaller of the two books, so opening stock sits in both.
 const stock = (itemId: string, qty: number) => {
   state.ledger.push({ itemId, changeQty: qty, balanceQty: qty, source: 'OPENING', sourceId: null, createdAt: stamp() });
@@ -120,8 +123,8 @@ describe('E. concurrent issues are serialised per item', () => {
   it('two issues of 60 against a stock of 100 cannot both pass the balance check', async () => {
     stock('i1', 100);
     const results = await Promise.allSettled([
-      commitIssue([{ itemId: 'i1', qty: 60 }], {}),
-      commitIssue([{ itemId: 'i1', qty: 60 }], {}),
+      commitIssue([{ itemId: 'i1', qty: 60 }], { departmentId: 'd1', general: G }),
+      commitIssue([{ itemId: 'i1', qty: 60 }], { departmentId: 'd1', general: G }),
     ]);
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
     const lost = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
@@ -147,8 +150,8 @@ describe('E. concurrent issues are serialised per item', () => {
     stock('i1', 100);
     stock('i2', 100);
     const results = await Promise.allSettled([
-      commitIssue([{ itemId: 'i1', qty: 60 }], {}),
-      commitIssue([{ itemId: 'i2', qty: 60 }], { departmentId: 'd1' }),
+      commitIssue([{ itemId: 'i1', qty: 60 }], { departmentId: 'd1', general: G }),
+      commitIssue([{ itemId: 'i2', qty: 60 }], { departmentId: 'd1', general: G }),
     ]);
     expect(results.every((r) => r.status === 'fulfilled')).toBe(true);
   });
@@ -176,16 +179,18 @@ describe('F. equipment and other items are department overhead', () => {
 
   it('need a department when there is no order', async () => {
     stock('i2', 10);
-    await expect(commitIssue([{ itemId: 'i2', qty: 1 }], {})).rejects.toThrow(/must be issued to a department.*Die/);
+    await expect(commitIssue([{ itemId: 'i2', qty: 1 }], {})).rejects.toThrow(/order or a department/);
+    // The original contract still holds for a general (no-order) issue with no department.
+    await expect(commitIssue([{ itemId: 'i2', qty: 1 }], { general: G })).rejects.toThrow(/must be issued to a department.*Die/);
     expect(state.ledger).toHaveLength(1);
-    await commitIssue([{ itemId: 'i2', qty: 1 }], { departmentId: 'd1' });
+    await commitIssue([{ itemId: 'i2', qty: 1 }], { departmentId: 'd1', general: G });
     expect(balance('i2')).toBe(9);
   });
 
   it('raw material still issues to an order or as a general issue', async () => {
     stock('i1', 10);
     await commitIssue([{ itemId: 'i1', qty: 1 }], { orderId: 'o1' });
-    await commitIssue([{ itemId: 'i1', qty: 1 }], {});
+    await commitIssue([{ itemId: 'i1', qty: 1 }], { departmentId: 'd1', general: G });
     expect(balance('i1')).toBe(8);
   });
 });
@@ -229,11 +234,13 @@ describe('G. the issue can run the caller’s own writes inside its transaction'
     stock('i1', 10);
     const seen: Row[] = [];
     await commitIssue([{ itemId: 'i1', qty: 1 }], {
+      departmentId: 'd1',
+      general: G,
       inTransaction: async (tx) => { seen.push({ tx, ledgerRows: state.ledger.length }); },
     });
     expect(seen).toHaveLength(1);
     expect(typeof (seen[0].tx as Row).$queryRaw).toBe('function'); // the tx, not the bare db
     expect(seen[0].ledgerRows).toBe(2);
-    await expect(commitIssue([{ itemId: 'i1', qty: 1 }], { inTransaction: async () => { throw new Error('line write failed'); } })).rejects.toThrow(/line write failed/);
+    await expect(commitIssue([{ itemId: 'i1', qty: 1 }], { departmentId: 'd1', general: G, inTransaction: async () => { throw new Error('line write failed'); } })).rejects.toThrow(/line write failed/);
   });
 });

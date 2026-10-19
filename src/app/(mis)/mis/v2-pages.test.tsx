@@ -20,7 +20,7 @@ vi.mock('@/server/mis/auth', () => ({ checkPermission: async () => true, require
 
 const request = { id: ID, requestNumber: 'MRN-1', status: 'PENDING', createdAt: new Date(), notes: null, decisionNote: null, order: null, department: { id: 'd', name: 'Print' }, lines: [{ id: 'l1', requestedQty: d(5), actualIssuedQty: null, item: { id: 'i', code: 'K', name: 'Kraft', unit: 'KG', category: 'RAW_MATERIAL' } }] };
 vi.mock('@/server/mis/material-request', () => ({ listMaterialRequests: async () => [request], getMaterialRequest: async () => request }));
-vi.mock('@/server/mis/store', () => ({ listPickerItems: async () => [{ id: 'i', code: 'K', name: 'Kraft', unit: 'KG', balance: 3 }], listIssueTargets: async () => ({ orders: [], departments: [] }) }));
+vi.mock('@/server/mis/store', () => ({ listPickerItems: async () => [{ id: 'i', code: 'K', name: 'Kraft', unit: 'KG', balance: 3 }], listIssueTargets: async () => ({ orders: [], departments: [] }), listCostCenters: async () => [{ value: 'General', label: 'General' }] }));
 const template = { id: ID, name: 'Printing 6-Colours', processName: 'Printing', slotStart: '09:15', slotEnd: '18:00', parameters: ['Shade'], slots: ['09:15', '10:00'], isActive: true, sortOrder: 0 };
 vi.mock('@/server/mis/qc-template', () => ({ listQcTemplates: async () => [template] }));
 vi.mock('@/server/mis/orders', () => ({ getOrder: async () => ({ id: ID, orderNumber: 'ORD-1', customer: { name: 'C' } }) }));

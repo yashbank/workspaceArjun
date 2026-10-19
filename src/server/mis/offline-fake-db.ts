@@ -30,6 +30,8 @@ export type FakeState = {
   attendance: Row[];
   employees: Row[];
   shifts: Row[];
+  /** R2-40/41/45 — machine-board rows a production log auto-creates (source PRODUCTION_LOG). */
+  allocations: Row[];
 };
 
 const unique = () => Object.assign(new Error('Unique constraint failed on the fields: (`key`)'), { code: 'P2002' });
@@ -114,6 +116,7 @@ export function createFakeDb() {
     attendance: [],
     employees: [],
     shifts: [],
+    allocations: [],
   };
   const hooks: { failOn?: string } = {};
   let nextLog = 1;
@@ -215,7 +218,19 @@ export function createFakeDb() {
         return rows.sort((a, b) => (b.clearedAt as Date).getTime() - (a.clearedAt as Date).getTime())[0] ?? null;
       },
     },
-    misMachineAllocation: { findFirst: async () => null },
+    misMachineAllocation: {
+      findFirst: async () => null,
+      // Where-clauses are not evaluated: a test that needs a covering booking sets `allocations`
+      // (or overrides findMany) with exactly the rows that cover.
+      findMany: async () => state.allocations.map((a) => ({ ...a })),
+      create: async ({ data }: { data: Row }) => {
+        const order = state.orders.get(String(data.orderId));
+        // `order` rides along as the select in production.ts would return it.
+        const rec = { id: `ma-${state.allocations.length + 1}`, releasedAt: null, order: order ? { orderNumber: order.orderNumber } : null, ...data };
+        state.allocations.push(rec);
+        return { ...rec };
+      },
+    },
     misShift: {
       findUnique: async () => null,
       findMany: async () => state.shifts.filter((sh) => sh.isActive !== false).map((sh) => ({ ...sh })),
@@ -248,6 +263,7 @@ export function createFakeDb() {
         misAttendance: attendanceApi(get),
         misEmployee: employeesApi(get),
         misShift: db.misShift,
+        misMachineAllocation: db.misMachineAllocation,
       };
       const result = await fn(tx);
       state.queued = staged.queued;

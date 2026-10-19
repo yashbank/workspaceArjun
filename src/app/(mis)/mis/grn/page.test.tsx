@@ -13,7 +13,7 @@ import { MIS_ROLES, type MisRoleName } from '@/lib/mis/roles';
 const calls = { grns: 0, pos: 0 };
 vi.mock('@/server/db', () => ({
   db: {
-    misGrn: { findMany: async () => { calls.grns += 1; return [{ id: 'g1', grnNumber: 'GRN-1' }]; } },
+    misGrn: { findMany: async () => { calls.grns += 1; return [{ id: 'g1', grnNumber: 'GRN-1' }]; }, count: async () => 1 },
     misPurchaseOrder: { findMany: async () => { calls.pos += 1; return [{ id: 'p1', poNumber: 'PO-1', status: 'APPROVED' }, { id: 'p2', poNumber: 'PO-2', status: 'DRAFT' }]; } },
   },
 }));
@@ -28,7 +28,7 @@ const { default: GrnPage } = await import('./page');
 
 const propsOf = (node: ReactNode) => (isValidElement(node) ? (node.props as { grns: unknown[]; approvedPos: { id: string }[]; canWrite: boolean }) : null);
 const as = (role: MisRoleName) => { getCurrentUser.mockResolvedValue({ id: 'u1' }); getMisRole.mockResolvedValue(role); };
-const READERS: MisRoleName[] = ['OWNER', 'ADMIN', 'SUPERVISOR', 'STORE_GUY'];
+const READERS: MisRoleName[] = ['OWNER', 'ADMIN', 'SUPERVISOR', 'STORE_GUY', 'QC']; // R2-37: QC views GRNs read-only
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -43,7 +43,7 @@ describe.each(MIS_ROLES.map((r) => [r] as const))('%s', (role) => {
       expect(p?.grns).toHaveLength(1);
     });
   } else {
-    it('is refused (no GRN read)', async () => {
+    it('is refused (no GRN view)', async () => {
       as(role);
       await expect(GrnPage()).rejects.toMatchObject({ name: 'MisForbiddenError' });
     });

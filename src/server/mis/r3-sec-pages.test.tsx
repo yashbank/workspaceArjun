@@ -11,7 +11,7 @@ vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 vi.mock('@/server/mis/guard', () => ({ requireMisAccess: async () => ({ id: 'u1' }) }));
 vi.mock('@/server/mis/roles', () => ({ getMisRole: async () => 'OWNER' }));
 const findMany = vi.fn(async (..._a: unknown[]) => [] as unknown[]);
-vi.mock('@/server/db', () => ({ db: { misAuditLog: { findMany: (...a: unknown[]) => findMany(...a) } } }));
+vi.mock('@/server/db', () => ({ db: { misAuditLog: { findMany: (...a: unknown[]) => findMany(...a), count: async () => 0 } } }));
 vi.mock('@/server/mis/auth', async () => {
   const actual = await vi.importActual<typeof import('@/server/mis/auth')>('@/server/mis/auth');
   return { ...actual, requirePermission: async () => ({ userId: 'u1', role: 'OWNER' }) };
@@ -19,7 +19,11 @@ vi.mock('@/server/mis/auth', async () => {
 vi.mock('@/components/mis/audit/audit-screen', () => ({ AuditScreen: () => null }));
 const getEmployee = vi.fn(async (..._a: unknown[]) => null);
 const calculateMonthlyPayroll = vi.fn(async (..._a: unknown[]) => [] as unknown[]);
-vi.mock('@/server/mis/payroll', () => ({ calculateMonthlyPayroll: (...a: unknown[]) => calculateMonthlyPayroll(...a) }));
+vi.mock('@/server/mis/payroll', () => ({
+  calculateMonthlyPayroll: (...a: unknown[]) => calculateMonthlyPayroll(...a),
+  // R2-112: the payslip computes one employee's line; same spy, so "no query" assertions still hold.
+  calculateEmployeePayroll: (...a: unknown[]) => calculateMonthlyPayroll(...a),
+}));
 vi.mock('@/components/mis/print/print-button', () => ({ PrintButton: () => null }));
 
 // The server functions every actions file wraps - each one refuses with a plain Error.
@@ -84,19 +88,20 @@ describe('B42 every export of the actions files returns an ActionResult', () => 
   });
 });
 
-describe('B39 the audit page', () => {
-  it('?limit=abc&from=zzz renders the list with defaults (100, no date filter)', async () => {
+describe('B39 the audit page (R2-83: 25 a page, filters in the URL)', () => {
+  it('?page=abc&from=zzz renders the first page with no date filter', async () => {
     const { default: AuditPage } = await import('@/app/(mis)/mis/audit/page');
-    await AuditPage({ searchParams: Promise.resolve({ limit: 'abc', from: 'zzz', to: '2026-13-99x' }) });
-    const args = findMany.mock.calls[0][0] as { take: number; where: Record<string, unknown> };
-    expect(args.take).toBe(100);
+    await AuditPage({ searchParams: Promise.resolve({ page: 'abc', from: 'zzz', to: '2026-13-99x' }) });
+    const args = findMany.mock.calls[0][0] as { take: number; skip: number; where: Record<string, unknown> };
+    expect(args.take).toBe(25);
+    expect(args.skip).toBe(0);
     expect(args.where.createdAt).toBeUndefined();
   });
 
-  it.each([['0', 1], ['-5', 1], ['9999', 500], ['250', 250]])('limit %s is clamped to %i', async (limit, expected) => {
+  it.each([['0', 0], ['-5', 0], ['1', 0], ['3', 50]])('page %s skips %i rows', async (page, skip) => {
     const { default: AuditPage } = await import('@/app/(mis)/mis/audit/page');
-    await AuditPage({ searchParams: Promise.resolve({ limit }) });
-    expect((findMany.mock.calls[0][0] as { take: number }).take).toBe(expected);
+    await AuditPage({ searchParams: Promise.resolve({ page }) });
+    expect((findMany.mock.calls[0][0] as { skip: number; take: number })).toMatchObject({ skip, take: 25 });
   });
 
   it('a well-formed date range is used', async () => {

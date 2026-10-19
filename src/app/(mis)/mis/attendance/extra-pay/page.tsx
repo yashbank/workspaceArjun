@@ -3,6 +3,7 @@ import { getMisRole } from '@/server/mis/roles';
 import { can } from '@/lib/mis/permissions';
 import { MisForbiddenError } from '@/server/mis/auth';
 import { listEmployeeRoster } from '@/server/mis/employee';
+import { listDepartmentOptions, listExtraPayProposals } from '@/server/mis/extra-pay-days';
 import { ExtraPayProposeScreen } from '@/components/mis/attendance/extra-pay-propose-screen';
 import { PageBack } from '@/components/mis/common/page-back';
 
@@ -16,11 +17,11 @@ export default async function ExtraPayProposePage() {
   const user = await requireMisAccess();
   const role = await getMisRole(user.id);
   if (!can(role, 'attendance.write')) throw new MisForbiddenError('attendance.write');
-  const employees = await listEmployeeRoster();
+  const [employees, departments, proposals] = await Promise.all([listEmployeeRoster(), listDepartmentOptions(), listExtraPayProposals()]);
   return (
     <>
       <PageBack href="/mis/attendance" label="Attendance" />
-      <ExtraPayProposeScreen employees={employees.map((e) => ({ id: e.id, name: e.name, employeeCode: e.employeeCode }))} />
+      <ExtraPayProposeScreen employees={employees.map((e) => ({ id: e.id, name: e.name, employeeCode: e.employeeCode }))} departments={departments} proposals={proposals} />
     </>
   );
 }

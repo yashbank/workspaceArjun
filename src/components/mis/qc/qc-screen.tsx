@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Button } from '@/components/mis/kit/button';
 import { Input, NumberInput } from '@/components/mis/kit/input';
 import { Select, type SelectOption } from '@/components/mis/kit/select';
+import { Combobox } from '@/components/ui/combobox';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import { addQcCheckAction } from '@/app/(mis)/mis/qc/actions';
 
@@ -115,7 +116,7 @@ export function QcScreen({ orders, canWrite, defectTypes }: { orders: Order[]; c
 
       <SlideOver open={open} onClose={() => setOpen(false)} title="Add QC Check">
         <div className="flex flex-col gap-4 p-4">
-          <Select label="Order" value={orderId} options={orderOptions} onChange={setOrderId} />
+          <Combobox label="Order" value={orderId} options={orderOptions} onChange={setOrderId} />
           <Select label="Result" value={result} options={resultOptions} onChange={(v) => setResult(v as 'PASS' | 'FAIL' | 'NA')} />
           <Input label="Parameter Name" value={parameterName} onChange={(e) => setParameterName(e.target.value)} />
           {result === 'FAIL' && (

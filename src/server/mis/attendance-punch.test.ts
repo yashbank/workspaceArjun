@@ -360,16 +360,35 @@ describe('a day a person edited by hand is theirs (D20)', () => {
   });
 });
 
-describe('lateness and overtime are NOT computed here (D20 — Phase 19)', () => {
-  it('a very late arrival creates a day with lateMinutes and otMinutes exactly 0', async () => {
+describe('R2-106 — lateness and overtime are derived from the punches against the shift window', () => {
+  it('on time in, 8h late out on Shift 1 (06:00–14:00): late 0, OT 480', async () => {
     await send(punchBody('in', ist(20, 6, 0), { shiftId: S1 }));
-    await send(punchBody('out', ist(20, 22, 0), { shiftId: S1 })); // 16h on an 8h shift: hours of "overtime"
+    await send(punchBody('out', ist(20, 22, 0), { shiftId: S1 })); // 16h on an 8h shift
     const day = rowFor('2026-09-20')!;
     expect(day.lateMinutes).toBe(0);
-    expect(day.otMinutes).toBe(0);
+    expect(day.otMinutes).toBe(480);
   });
 
-  it('never overwrites a lateness or overtime someone else recorded on a day it updates', async () => {
+  it('45 min late in, 2h late out: late 45, OT 120', async () => {
+    await send(punchBody('in', ist(20, 6, 45), { shiftId: S1 }));
+    expect(rowFor('2026-09-20')).toMatchObject({ lateMinutes: 45, otMinutes: 0 }); // OUT not here yet
+    await send(punchBody('out', ist(20, 16, 0), { shiftId: S1 }));
+    expect(rowFor('2026-09-20')).toMatchObject({ lateMinutes: 45, otMinutes: 120 });
+  });
+
+  it('a night shift across midnight (22:00–06:00): in 22:10, out 07:30 next morning → late 10, OT 90', async () => {
+    await send(punchBody('in', ist(20, 22, 10), { shiftId: NIGHT }));
+    await send(punchBody('out', ist(21, 7, 30), { shiftId: NIGHT }));
+    expect(rowFor('2026-09-20')).toMatchObject({ lateMinutes: 10, otMinutes: 90 });
+  });
+
+  it('early in and early out are never negative minutes', async () => {
+    await send(punchBody('in', ist(20, 5, 40), { shiftId: S1 }));
+    await send(punchBody('out', ist(20, 13, 30), { shiftId: S1 }));
+    expect(rowFor('2026-09-20')).toMatchObject({ lateMinutes: 0, otMinutes: 0 });
+  });
+
+  it('an unknown side (no clock-out yet) keeps the stored overtime; the known side is derived', async () => {
     fake.state.attendance.push({
       id: 'att-1',
       employeeId: 'e1',
@@ -387,6 +406,15 @@ describe('lateness and overtime are NOT computed here (D20 — Phase 19)', () =>
     await send(punchBody('in', ist(21, 6, 25)));
     expect(fake.state.attendance[0]).toMatchObject({ lateMinutes: 25, otMinutes: 40, status: 'LATE' }); // status not reset either
     expect(fake.state.attendance[0].clockIn).not.toBeNull();
+  });
+
+  it('R2-103: a waived lateness survives the later clock-out re-derivation; OT still lands', async () => {
+    await send(punchBody('in', ist(20, 6, 45), { shiftId: S1 }));
+    const row = rowFor('2026-09-20')!;
+    expect(row.lateMinutes).toBe(45);
+    Object.assign(row, { lateMinutes: 0, notes: 'Lateness waived: bus strike' }); // what waiveLateness writes
+    await send(punchBody('out', ist(20, 16, 0), { shiftId: S1 }));
+    expect(rowFor('2026-09-20')).toMatchObject({ lateMinutes: 0, otMinutes: 120 });
   });
 
   it('turning up does turn an ABSENT day present', async () => {

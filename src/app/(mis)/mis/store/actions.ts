@@ -1,7 +1,10 @@
 'use server';
 import { revalidatePath } from 'next/cache';
 
-import { asResult, type ActionResult } from '@/lib/mis/action-result';
+import { asResult, type ActionResult, type PrismaErrorContext } from '@/lib/mis/action-result';
+
+/** R2-76: the Issue screen answers a permission refusal in words, not as a redacted server error. */
+const ISSUE_CTX: PrismaErrorContext = { entity: 'Record', forbiddenDetail: 'You do not have permission to issue stock.' };
 import {
   commitIssue,
   commitReceipt,
@@ -11,6 +14,7 @@ import {
   reconcilePhysicalCount,
   updateStoreItemProps,
   deactivateStoreItem,
+  listItemBalances,
 } from '@/server/mis/store';
 import type {
   CartCommitResult,
@@ -131,5 +135,10 @@ export async function commitIssueAction(
     const result = await commitIssue(lines, { ...meta, idempotencyKey: idempotencyKey ?? meta.idempotencyKey });
     revalidateStock();
     return result;
-  });
+  }, ISSUE_CTX);
+}
+
+/** R2-66: fresh balances for the cart (on window focus and just before Confirm). Read-only — nothing to revalidate. */
+export async function getItemBalancesAction(): Promise<ActionResult<Record<string, number>>> {
+  return asResult(() => listItemBalances());
 }

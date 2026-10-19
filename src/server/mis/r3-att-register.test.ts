@@ -65,6 +65,8 @@ const fakeDb: Row = {
     findUnique: async ({ where }: Row) => store.leaves.find((l) => l.id === where.id) ?? null,
     findFirst: async ({ where }: Row) =>
       store.leaves.find((l) => l.employeeId === where.employeeId && sameDay(l.date, where.date) && where.status.in.includes(l.status)) ?? null,
+    findMany: async ({ where }: Row) =>
+      store.leaves.filter((l) => l.employeeId === where.employeeId && where.status.in.includes(l.status)),
     create: async ({ data }: Row) => {
       const rec = { id: id(), ...data };
       store.leaves.push(rec);
@@ -451,5 +453,55 @@ describe('B63 screens and actions', () => {
   it('the shifts screen asks before deactivating and the leave screen shows refusals as a toast', () => {
     expect(read('components/mis/attendance/shifts-screen.tsx')).toMatch(/useConfirm/);
     expect(read('components/mis/attendance/leave-screen.tsx')).toMatch(/toast\('error', res\.detail\)/);
+  });
+});
+
+describe('R2-101/102 multi-day leave', () => {
+  const asLeave = (over: Row = {}): Row => {
+    const l = { id: id(), employeeId: E1, date: day('2026-10-23'), endDate: day('2026-10-27'), leaveType: 'CL', status: 'PENDING', reason: null, ...over };
+    store.leaves.push(l);
+    return l;
+  };
+
+  it('records the range and the type on the request', async () => {
+    const rec = await att.requestLeave(E1, '2026-11-02', 'wedding', { endDate: '2026-11-04', leaveType: 'EL' });
+    expect(rec).toMatchObject({ leaveType: 'EL', status: 'PENDING' });
+    expect(rec.endDate?.toISOString().slice(0, 10)).toBe('2026-11-04');
+  });
+
+  it('defaults the type to OTHER and treats endDate = date as a single day', async () => {
+    const rec = await att.requestLeave(E1, '2026-11-02', undefined, { endDate: '2026-11-02' });
+    expect(rec.leaveType).toBe('OTHER');
+    expect(rec.endDate).toBeUndefined();
+  });
+
+  it('refuses a reversed range, a bad type and an over-long range', async () => {
+    await expect(att.requestLeave(E1, '2026-11-05', undefined, { endDate: '2026-11-02' })).rejects.toThrow('before the first day');
+    await expect(att.requestLeave(E1, '2026-11-05', undefined, { leaveType: 'XX' })).rejects.toThrow('Leave type must be');
+    await expect(att.requestLeave(E1, '2026-01-01', undefined, { endDate: '2026-12-31' })).rejects.toThrow('at most');
+  });
+
+  it('refuses a request that overlaps an existing range, but allows it once that is rejected', async () => {
+    const l = asLeave();
+    await expect(att.requestLeave(E1, '2026-10-26', undefined, { endDate: '2026-10-30' })).rejects.toThrow('overlaps an existing leave request');
+    await expect(att.requestLeave(E1, '2026-10-24')).rejects.toThrow('overlaps');
+    await expect(att.requestLeave(E1, '2026-10-28')).resolves.toMatchObject({ status: 'PENDING' });
+    l.status = 'REJECTED';
+    await expect(att.requestLeave(E1, '2026-10-24')).resolves.toMatchObject({ status: 'PENDING' });
+  });
+
+  it('approving a range writes a LEAVE row per working day, skipping Sunday and punched days', async () => {
+    row({ employeeId: E1, date: day('2026-10-26'), clockIn: new Date('2026-10-26T01:00:00Z') });
+    const l = asLeave();
+    const out = await att.approveLeave(l.id, true);
+    const marked = store.attendance.filter((r) => r.status === 'LEAVE').map((r) => r.date.toISOString().slice(0, 10)).sort();
+    // 23 Fri, 24 Sat marked; 25 Sunday not a working day; 26 punched (skipped); 27 Tue marked.
+    expect(marked).toEqual(['2026-10-23', '2026-10-24', '2026-10-27']);
+    expect(out.skippedDates).toEqual(['2026-10-26']);
+  });
+
+  it('requestLeave is denied without attendance.write', async () => {
+    getMisRole.mockResolvedValue('WORKER');
+    await expect(att.requestLeave(E1, '2026-11-02')).rejects.toThrow(/Not permitted/);
   });
 });
