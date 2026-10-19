@@ -5,7 +5,8 @@ import { requireMisAccess } from '@/server/mis/guard';
 import { PrintButton } from '@/components/mis/print/print-button';
 import { DocumentVersionBar } from '@/components/mis/print/document-version-bar';
 import { docFileName } from '@/lib/mis/document-version';
-import { getDocumentVersionView } from '@/server/mis/document-versions';
+import { docDataSource, jobCardSnapshotFrom, parseVersionParam, type BomInput, type JobCardSnapshot } from '@/lib/mis/document-snapshot';
+import { getDocumentVersionSnapshot, getDocumentVersionView } from '@/server/mis/document-versions';
 import { getOrder } from '@/server/mis/orders';
 import { getBom } from '@/server/mis/bom';
 import { getProductionSummary } from '@/server/mis/production';
@@ -30,8 +31,15 @@ function phaseStatusLabel(status: string): string {
   }
 }
 
-export default async function JobCardPrintPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function JobCardPrintPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams?: Promise<{ v?: string | string[] }>;
+}) {
   const { id } = await params;
+  const requestedVersion = parseVersionParam((await searchParams)?.v);
   if (!isUuid(id)) notFound();
   await requireMisAccess();
   const order = await getOrder(id);
@@ -50,18 +58,30 @@ export default async function JobCardPrintPage({ params }: { params: Promise<{ i
     getDocumentVersionView('JOB_CARD', id), // R2-46
   ]);
 
-  const printDate = formatFactoryDate(new Date(), timeZone);
-  const deliveryDate = order.deliveryDate ? formatFactoryDate(new Date(order.deliveryDate), timeZone) : '—';
-  // R3 B124: per-unit totals, never one mixed sum and never a hard-coded "kg".
-  const unitTotals =
-    prodSummary.byUnit && prodSummary.byUnit.length > 0
-      ? prodSummary.byUnit
-      : [{ unit: '', produced: Number(prodSummary.totalProduced), waste: Number(prodSummary.totalWaste), wastePercent: null }];
+  // R2-46 follow-up: `?v=N` picks a version (default the newest). An APPROVED one prints its frozen
+  // snapshot; a PREPARED one, an unissued doc and a legacy approved row with no snapshot print live.
+  const selected = (requestedVersion != null ? docVersions.versions.find((v) => v.version === requestedVersion) : undefined) ?? docVersions.latest;
+  const dataSource = docDataSource(selected);
+  const frozen = dataSource === 'SNAPSHOT' && selected ? ((await getDocumentVersionSnapshot('JOB_CARD', id, selected.id)) as JobCardSnapshot | null) : null;
+  const doc: JobCardSnapshot =
+    frozen ?? jobCardSnapshotFrom({ order, bom: bom as unknown as BomInput, production: prodSummary, phases, crew }, new Date());
+  const { phases: docPhases, crew: docCrew } = doc;
+
+  // A frozen copy carries the date it was frozen, so its reprint is identical.
+  const printDate = formatFactoryDate(new Date(doc.capturedAt), timeZone);
+  const deliveryDate = doc.order.deliveryDate ? formatFactoryDate(new Date(doc.order.deliveryDate), timeZone) : '—';
+  // R3 B124: per-unit totals, never one mixed sum and never a hard-coded "kg" (fallback in jobCardSnapshotFrom).
+  const unitTotals = doc.production.byUnit;
 
   return (
     <div className="p-8 max-w-[794px] mx-auto font-sans text-sm text-gray-900">
       {/* R2-46: which controlled version this is, and its sign-off */}
-      <DocumentVersionBar view={docVersions} fileName={docFileName('JOB_CARD', order.orderNumber, docVersions.latest ? new Date(docVersions.latest.preparedAt) : new Date(), docVersions.latest?.version ?? null, timeZone)} />
+      <DocumentVersionBar
+        view={docVersions}
+        selected={selected}
+        dataSource={dataSource}
+        fileName={docFileName('JOB_CARD', doc.order.orderNumber, selected ? new Date(selected.preparedAt) : new Date(), selected?.version ?? null, timeZone)}
+      />
       {/* Print button */}
       <div className="no-print mb-6 flex gap-3">
         <PrintButton />
@@ -77,7 +97,7 @@ export default async function JobCardPrintPage({ params }: { params: Promise<{ i
           <p className="text-gray-600 text-xs mt-0.5">Batch Production Record</p>
         </div>
         <div className="text-right">
-          <p className="font-bold text-lg font-mono">{order.orderNumber}</p>
+          <p className="font-bold text-lg font-mono">{doc.order.orderNumber}</p>
           <p className="text-xs text-gray-500">Print Date: {printDate}</p>
         </div>
       </div>
@@ -86,7 +106,7 @@ export default async function JobCardPrintPage({ params }: { params: Promise<{ i
       <div className="grid grid-cols-2 gap-x-8 gap-y-3 mb-8">
         <div>
           <span className="text-xs text-gray-500 uppercase tracking-wide">Customer</span>
-          <p className="font-medium mt-0.5">{order.customer?.name ?? '—'}</p>
+          <p className="font-medium mt-0.5">{doc.order.customerName ?? '—'}</p>
         </div>
         <div>
           <span className="text-xs text-gray-500 uppercase tracking-wide">Delivery Date</span>
@@ -94,24 +114,24 @@ export default async function JobCardPrintPage({ params }: { params: Promise<{ i
         </div>
         <div>
           <span className="text-xs text-gray-500 uppercase tracking-wide">Description</span>
-          <p className="font-medium mt-0.5">{order.description ?? '—'}</p>
+          <p className="font-medium mt-0.5">{doc.order.description ?? '—'}</p>
         </div>
         <div>
           <span className="text-xs text-gray-500 uppercase tracking-wide">Status</span>
-          <p className="font-medium mt-0.5">{order.status?.replace(/_/g, ' ') ?? '—'}</p>
+          <p className="font-medium mt-0.5">{doc.order.status?.replace(/_/g, ' ') ?? '—'}</p>
         </div>
       </div>
 
       {/* BOM stages */}
-      {bom && bom.stages.length > 0 && (
+      {doc.bomStages.length > 0 && (
         <div className="mb-8">
           <h2 className="font-bold text-sm uppercase tracking-wide border-b border-gray-300 pb-1 mb-3">Manufacturing Stages</h2>
-          {bom.stages.map((stage, i) => (
+          {doc.bomStages.map((stage, i) => (
             <div key={stage.id} className="mb-4">
               <div className="flex items-center gap-2 mb-1">
                 <span className="bg-gray-900 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">{i + 1}</span>
                 <span className="font-semibold">{stage.stageName}</span>
-                {stage.process && <span className="text-gray-500 text-xs">({stage.process.name})</span>}
+                {stage.processName && <span className="text-gray-500 text-xs">({stage.processName})</span>}
               </div>
               {stage.materials.length > 0 && (
                 <table className="w-full text-xs mt-1 ml-7">
@@ -126,7 +146,7 @@ export default async function JobCardPrintPage({ params }: { params: Promise<{ i
                     {stage.materials.map((m) => (
                       <tr key={m.id} className="border-b border-gray-100">
                         <td className="py-1">{m.description}</td>
-                        <td className="py-1 text-right">{formatQty(Number(m.quantity))}</td>
+                        <td className="py-1 text-right">{formatQty(m.quantity)}</td>
                         <td className="py-1 pl-2">{m.unit}</td>
                       </tr>
                     ))}
@@ -143,7 +163,7 @@ export default async function JobCardPrintPage({ params }: { params: Promise<{ i
           order must say so, not read as a passed gate. */}
       <div className="mb-8">
         <h2 className="font-bold text-sm uppercase tracking-wide border-b border-gray-300 pb-1 mb-3">Work Flow — Section Sign-Off</h2>
-        {phases.length === 0 ? (
+        {docPhases.length === 0 ? (
           <p className="text-gray-500 text-xs italic">No phase plan · not gated — this order has no planned work-flow sections.</p>
         ) : (
           <>
@@ -165,20 +185,20 @@ export default async function JobCardPrintPage({ params }: { params: Promise<{ i
                   </tr>
                 </thead>
                 <tbody>
-                  {phases.map((phase) => {
+                  {docPhases.map((phase) => {
                     const skipped = phase.status === 'NOT_APPLICABLE';
                     return (
                       <tr key={phase.id} className={`border-b border-gray-100 ${skipped ? 'text-gray-400 italic' : ''}`}>
                         <td className="py-1.5 pr-2 align-top">{phase.sequence}</td>
-                        <td className="py-1.5 pr-2 align-top font-medium">{phase.process.name}</td>
+                        <td className="py-1.5 pr-2 align-top font-medium">{phase.processName}</td>
                         <td className="py-1.5 pr-2 align-top">
                           {phaseStatusLabel(phase.status)}
                           {skipped && phase.notApplicableReason ? ` (${phase.notApplicableReason})` : ''}
                           {phase.downstreamFlagged ? ' · an earlier section was reopened after this one started' : ''}
                         </td>
-                        <td className="py-1.5 pr-2 align-top">{phase.inCharge?.name ?? (skipped ? '—' : 'Not assigned')}</td>
-                        <td className="py-1.5 pr-2 align-top">{phase.startedAt ? formatFactoryDateTime(phase.startedAt, timeZone) : '—'}</td>
-                        <td className="py-1.5 pr-2 align-top">{phase.signedOffAt ? formatFactoryDateTime(phase.signedOffAt, timeZone) : '—'}</td>
+                        <td className="py-1.5 pr-2 align-top">{phase.inChargeName ?? (skipped ? '—' : 'Not assigned')}</td>
+                        <td className="py-1.5 pr-2 align-top">{phase.startedAt ? formatFactoryDateTime(new Date(phase.startedAt), timeZone) : '—'}</td>
+                        <td className="py-1.5 pr-2 align-top">{phase.signedOffAt ? formatFactoryDateTime(new Date(phase.signedOffAt), timeZone) : '—'}</td>
                         <td className="py-1.5 align-top">{skipped ? '—' : <span className="inline-block w-24 border-b border-gray-400">&nbsp;</span>}</td>
                       </tr>
                     );
@@ -188,13 +208,13 @@ export default async function JobCardPrintPage({ params }: { params: Promise<{ i
             </div>
             {/* R3 B125 - who worked each section (names and codes only; no rates). */}
             <ul className="mt-3 space-y-1 text-xs" data-testid="crew-lines">
-              {phases
+              {docPhases
                 .filter((p) => p.status !== 'NOT_APPLICABLE')
                 .map((phase) => {
-                  const groups = crew.filter((g) => g.jobPhaseId === phase.id);
+                  const groups = docCrew.filter((g) => g.jobPhaseId === phase.id);
                   return (
                     <li key={phase.id}>
-                      <span className="font-medium">Crew — {phase.process.name}:</span>{' '}
+                      <span className="font-medium">Crew — {phase.processName}:</span>{' '}
                       {groups.length === 0
                         ? '—'
                         : groups
@@ -222,7 +242,7 @@ export default async function JobCardPrintPage({ params }: { params: Promise<{ i
         <div className="grid grid-cols-3 gap-4">
           <div className="border border-gray-200 rounded p-3 text-center">
             <p className="text-gray-500 text-xs">Log Entries</p>
-            <p className="font-bold text-lg">{prodSummary.entries}</p>
+            <p className="font-bold text-lg">{doc.production.entries}</p>
           </div>
           <div className="border border-gray-200 rounded p-3 text-center">
             <p className="text-gray-500 text-xs">Total Produced</p>
@@ -240,10 +260,10 @@ export default async function JobCardPrintPage({ params }: { params: Promise<{ i
       </div>
 
       {/* Notes */}
-      {order.notes && (
+      {doc.order.notes && (
         <div className="mb-8">
           <h2 className="font-bold text-sm uppercase tracking-wide border-b border-gray-300 pb-1 mb-2">Notes</h2>
-          <p className="text-gray-700 text-sm">{order.notes}</p>
+          <p className="text-gray-700 text-sm">{doc.order.notes}</p>
         </div>
       )}
 

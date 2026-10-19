@@ -3,7 +3,8 @@ import { requireMisAccess } from '@/server/mis/guard';
 import { PrintButton } from '@/components/mis/print/print-button';
 import { DocumentVersionBar } from '@/components/mis/print/document-version-bar';
 import { docFileName } from '@/lib/mis/document-version';
-import { getDocumentVersionView } from '@/server/mis/document-versions';
+import { coaSnapshotFrom, docDataSource, parseVersionParam, type CoaSnapshot, type QcInput } from '@/lib/mis/document-snapshot';
+import { getDocumentVersionSnapshot, getDocumentVersionView } from '@/server/mis/document-versions';
 import { getOrder } from '@/server/mis/orders';
 import { getQcForOrder } from '@/server/mis/qc';
 import { getFactoryTimezone } from '@/server/mis/business-rules';
@@ -11,19 +12,15 @@ import { formatFactoryDate, formatFactoryDateTime } from '@/lib/mis/factory-time
 import { latestVerdict } from '@/lib/mis/qc-verdict';
 import { notFound } from 'next/navigation';
 
-type QcLogRow = {
-  id: string;
-  bomStageId?: string | null;
-  parameterName: string | null;
-  result: string;
-  defectType: string | null;
-  notes: string | null;
-  checkTime: Date;
-  checkBy: { name: string } | null;
-};
-
-export default async function CoaPrintPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function CoaPrintPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams?: Promise<{ v?: string | string[] }>;
+}) {
   const { id } = await params;
+  const requestedVersion = parseVersionParam((await searchParams)?.v);
   if (!isUuid(id)) notFound();
   await requireMisAccess();
   const order = await getOrder(id);
@@ -33,29 +30,42 @@ export default async function CoaPrintPage({ params }: { params: Promise<{ id: s
   // the Date column, "—" in Checked By and Notes/Defect on every row of every COA ever printed).
   // B75: NO `.catch(() => [])`. A load failure reaches `error.tsx` ("do not issue this certificate"); an empty
   // list here would print as a clean "No quality checks recorded".
-  const qcLogs = (await getQcForOrder(id)) as QcLogRow[];
+  const liveQc = (await getQcForOrder(id)) as unknown as QcInput[];
   const timeZone = await getFactoryTimezone();
   // R2-46: no catch — a version that cannot be read must not print as an uncontrolled-looking copy silently.
   const docVersions = await getDocumentVersionView('COA', id);
+  // R2-46 follow-up: `?v=N` picks a version (default the newest). An APPROVED one prints its frozen
+  // snapshot; a PREPARED one, an unissued doc and a legacy approved row with no snapshot print live.
+  const selected = (requestedVersion != null ? docVersions.versions.find((v) => v.version === requestedVersion) : undefined) ?? docVersions.latest;
+  const dataSource = docDataSource(selected);
+  const frozen = dataSource === 'SNAPSHOT' && selected ? ((await getDocumentVersionSnapshot('COA', id, selected.id)) as CoaSnapshot | null) : null;
+  const doc: CoaSnapshot = frozen ?? coaSnapshotFrom(order, liveQc, new Date());
+  const qcLogs = doc.qcLogs;
 
-  const printDate = formatFactoryDate(new Date(), timeZone);
+  // A frozen copy carries the date it was frozen, so its reprint is identical.
+  const printDate = formatFactoryDate(new Date(doc.capturedAt), timeZone);
   const passCount = qcLogs.filter(q => q.result === 'PASS').length;
   const failCount = qcLogs.filter(q => q.result === 'FAIL').length;
   // B74: only the LATEST check per stage + parameter counts, so a failure fixed by a later pass is resolved.
   const verdict = latestVerdict(qcLogs).overall;
   const overallResult = qcLogs.length === 0 ? 'N/A — no checks recorded' : verdict === 'NA' ? 'N/A' : verdict;
   // B81: a certificate for an order that is not finished is a draft, and says so in red.
-  const isDraft = order.status !== 'COMPLETED' && order.status !== 'DELIVERED';
+  const isDraft = doc.order.status !== 'COMPLETED' && doc.order.status !== 'DELIVERED';
 
   return (
     <div className="p-8 max-w-[794px] mx-auto font-sans text-sm text-gray-900">
       {isDraft && (
         <div role="alert" className="mb-4 border-2 border-red-600 bg-red-50 px-4 py-2 text-center font-bold uppercase tracking-wide text-red-700">
-          {`DRAFT CERTIFICATE — order is ${order.status}`}
+          {`DRAFT CERTIFICATE — order is ${doc.order.status}`}
         </div>
       )}
       {/* R2-46: which controlled version this is, and its sign-off */}
-      <DocumentVersionBar view={docVersions} fileName={docFileName('COA', order.orderNumber, docVersions.latest ? new Date(docVersions.latest.preparedAt) : new Date(), docVersions.latest?.version ?? null, timeZone)} />
+      <DocumentVersionBar
+        view={docVersions}
+        selected={selected}
+        dataSource={dataSource}
+        fileName={docFileName('COA', doc.order.orderNumber, selected ? new Date(selected.preparedAt) : new Date(), selected?.version ?? null, timeZone)}
+      />
       {/* Print button */}
       <div className="no-print mb-6 flex gap-3">
         <PrintButton />
@@ -71,7 +81,7 @@ export default async function CoaPrintPage({ params }: { params: Promise<{ id: s
           <p className="text-gray-600 text-xs mt-0.5">Certificate of Analysis</p>
         </div>
         <div className="text-right">
-          <p className="font-bold text-lg font-mono">{order.orderNumber}</p>
+          <p className="font-bold text-lg font-mono">{doc.order.orderNumber}</p>
           <p className="text-xs text-gray-500">Date: {printDate}</p>
         </div>
       </div>
@@ -80,16 +90,16 @@ export default async function CoaPrintPage({ params }: { params: Promise<{ id: s
       <div className="grid grid-cols-2 gap-x-8 gap-y-3 mb-8">
         <div>
           <span className="text-xs text-gray-500 uppercase">Customer</span>
-          <p className="font-medium mt-0.5">{order.customer?.name ?? '—'}</p>
+          <p className="font-medium mt-0.5">{doc.order.customerName ?? '—'}</p>
         </div>
         <div>
           <span className="text-xs text-gray-500 uppercase">Product / Description</span>
-          <p className="font-medium mt-0.5">{order.description ?? '—'}</p>
+          <p className="font-medium mt-0.5">{doc.order.description ?? '—'}</p>
         </div>
         <div>
           <span className="text-xs text-gray-500 uppercase">Delivery Date</span>
           <p className="font-medium mt-0.5">
-            {order.deliveryDate ? formatFactoryDate(new Date(order.deliveryDate), timeZone) : '—'}
+            {doc.order.deliveryDate ? formatFactoryDate(new Date(doc.order.deliveryDate), timeZone) : '—'}
           </p>
         </div>
         <div>
@@ -127,7 +137,7 @@ export default async function CoaPrintPage({ params }: { params: Promise<{ id: s
                     {q.result}
                   </td>
                   <td className="p-2">{[q.defectType, q.notes].filter(Boolean).join(' · ') || '—'}</td>
-                  <td className="p-2">{q.checkBy?.name ?? '—'}</td>
+                  <td className="p-2">{q.checkByName ?? '—'}</td>
                   <td className="p-2">{formatFactoryDateTime(new Date(q.checkTime), timeZone)}</td>
                 </tr>
               ))}

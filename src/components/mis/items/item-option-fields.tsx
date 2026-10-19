@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import Link from 'next/link';
-import { Select } from '@/components/mis/kit/select';
+import { Combobox } from '@/components/ui/combobox';
 import { labelChoices, unitChoices, withCurrentUnit, type OptionLike } from '@/lib/mis/item-options';
 import { addItemOptionAction, type ItemFormOptions } from '@/app/(mis)/mis/inventory/actions';
 
@@ -55,7 +55,7 @@ function AddOption({ group, noun, onAdded }: { group: Group; noun: string; onAdd
 }
 
 /**
- * GSM, Size, Substrate, Coating and Unit as dropdowns of the active master options (R2-02/25/84/85). The four
+ * GSM, Size, Substrate, Coating and Unit as searchable comboboxes (R2-82) of the active master options (R2-02/25/84/85). The four
  * attribute fields store the option LABEL, Unit stores the option value; a stored value that is not in the
  * masters stays selectable. Admin/Owner (`canManage`) can add a new option inline without leaving the form.
  */
@@ -81,7 +81,7 @@ export function ItemOptionFields({ options, gsm, size, substrate = '', coating =
     ) : null;
   const field = (g: Group, label: string, noun: string, list: OptionLike[], cur: string, pick: ((v: string) => void) | undefined, hint: boolean) => (
     <div className="flex flex-col gap-1">
-      <Select label={label} value={cur || null} options={g === 'UNIT' ? list : labelChoices(list, cur)} onChange={(v) => pick?.(v)} placeholder={`Select ${noun}`} />
+      <Combobox label={label} value={cur || null} options={g === 'UNIT' ? list : labelChoices(list, cur)} onChange={(v) => pick?.(v)} placeholder={`Select ${noun}`} />
       {hint && options && list.length === 0 && <><EmptyHint group={label} />{manage(label)}</>}
       {options?.canManage && <AddOption group={g} noun={noun} onAdded={added(g, (v) => pick?.(v), g !== 'UNIT')} />}
     </div>

@@ -49,16 +49,19 @@ export const state: {
   extraPayDayDepartments: Row[];
   employees: Row[];
   leaveRequests: Row[];
+  /** R2-102 — the Owner's PAID/UNPAID leave choices; empty = the built-in defaults. */
+  leavePayRules: Row[];
 } = {
   wageTypes: [], rules: [], attendance: [], storeTxns: [], boms: null, attendanceWhere: [],
   auditRows: [], rawAudit: [], writes: [], payrollPeriods: [], payrollSnapshotLines: [],
   payComponents: [], extraPayDays: [], extraPayDayEmployees: [], extraPayDayDepartments: [],
-  employees: [], leaveRequests: [],
+  employees: [], leaveRequests: [], leavePayRules: [],
 };
 
 const match = (row: Row, where: Row = {}): boolean =>
   Object.entries(where).every(([key, cond]) => {
     if (key === 'AND') return (cond as Row[]).every((c) => match(row, c)); // R3-SEC
+    if (key === 'OR') return (cond as Row[]).some((c) => match(row, c)); // R2-102 (leave ranges)
     const value = row[key];
     if (cond !== null && typeof cond === 'object' && !(cond instanceof Date)) {
       const ops = Object.keys(cond);
@@ -210,7 +213,20 @@ export const fakeDb = {
     findMany: async (args: Row = {}) => state.extraPayDayDepartments.filter((r) => match(r, args.where)),
     createMany: async ({ data }: Row) => { state.extraPayDayDepartments.push(...data); return { count: data.length }; },
   },
-  misLeaveRequest: { count: async (args: Row = {}) => state.leaveRequests.filter((r) => match(r, args.where)).length },
+  misLeaveRequest: {
+    count: async (args: Row = {}) => state.leaveRequests.filter((r) => match(r, args.where)).length,
+    // R2-102: payroll reads the approved leaves behind a month's LEAVE rows.
+    findMany: async (args: Row = {}) => state.leaveRequests.filter((r) => match(r, args.where)),
+  },
+  misLeavePayRule: {
+    findMany: async (args: Row = {}) => sortRows(state.leavePayRules.filter((r) => match(r, args.where)), args.orderBy),
+    create: async ({ data }: Row) => {
+      state.writes.push('misLeavePayRule.create');
+      const row = { id: nextId(), reason: null, changedById: null, createdAt: new Date(), ...data };
+      state.leavePayRules.push(row);
+      return row;
+    },
+  },
   // Phase 25's writers use the callback form (`$transaction(async (tx) => ...)`) as well as the
   // array form; the fixture has no real isolation, so a callback just runs against the same fake
   // db (fine for a test — nothing here needs rollback semantics).
@@ -241,6 +257,7 @@ export function seedWorld() {
   state.extraPayDayDepartments = [];
   state.employees = [];
   state.leaveRequests = [];
+  state.leavePayRules = [];
   state.wageTypes = [
     { id: 'w1', code: 'WG-DAILY-01', name: 'General', nameHi: null, amount: DAILY_WAGE, unit: 'DAILY', effectiveFrom: LONG_AGO, isActive: true, deletedAt: null },
     { id: 'w2', code: 'WG-MONTHLY-01', name: 'Staff', nameHi: null, amount: MONTHLY_WAGE, unit: 'MONTHLY', effectiveFrom: LONG_AGO, isActive: true, deletedAt: null },

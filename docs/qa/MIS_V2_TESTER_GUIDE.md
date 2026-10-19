@@ -252,6 +252,37 @@ presses Re-check match (known, intentional for now).
 | 14.36 | OWNER | R2-109: Payroll: Print all payslips | All payslips open in one print view |
 | 14.37 | OWNER | R2-114: Settings → Wages: Edit details; view history | Details saved; rate history listed |
 
+## 15. Round 2 — Batch 3 (release 2026-10-20) — re-test only this
+
+| # | Role | Where | Expected |
+|---|---|---|---|
+| 15.1 | OWNER | R2-102: Settings > Leave pay: see every leave type (CL, SL, EL, LWP, Other) | All start Unpaid; Owner can toggle each to Paid; change is audited and history kept |
+| 15.2 | OWNER | R2-102: Approve a CL leave for a daily worker; open payroll for that month | Payroll basic does not change while CL is Unpaid |
+| 15.3 | OWNER | R2-102: Set CL to Paid in Settings > Leave pay; recheck the open month payroll | Basic rises by exactly one day rate for the approved CL day |
+| 15.4 | OWNER | R2-102: Flip CL back to Unpaid | Payroll basic drops back by one day rate |
+| 15.5 | OWNER | R2-102: Toggle a leave type, then view a closed (past) month payroll | Closed month figures are unchanged |
+| 15.6 | ADMIN | R2-102: Open Settings > Leave pay and try to change a type | Refused with 403; Admin cannot change |
+| 15.7 | ADMIN | R2-46: Approve COA/job card V1 (different user from preparer); change a QC check; reprint | Page and file name (_V1) unchanged; content still the frozen V1 |
+| 15.8 | ADMIN | R2-46: Click 'Update to latest' (Admin or Owner) | V2 created as PREPARED; needs a different approver than the preparer |
+| 15.9 | ADMIN | R2-46: Open the document with ?v=1 | Older V1 snapshot is viewable |
+| 15.10 | ADMIN | R2-46: Open a legacy approved COA/job card (approved before this release) | Prints live data with a 'No snapshot' note |
+| 15.11 | ADMIN | R2-82: Items > Add: type in Unit, GSM, Size, Substrate, Coating | Each is a searchable dropdown that filters as you type; '+ Add new' available inline for Admin |
+| 15.12 | SUPERVISOR | R2-82: Open the same item dropdowns | Options listed and searchable; no '+ Add new' |
+| 15.13 | STORE_GUY | R2-68/78/105 camera scanning (REAL Android Chrome device only): store issue cart Scan button; receive cart Scan; kiosk Scan with camera | Camera scans the barcode/employee; typed entry fallback works. Not testable on desktop or emulator |
+
+### UI smoke checklist (one line each; tick when it opens and works)
+
+1. Orders list: pagination works, page 2 after a filter
+2. Store pick list: save picks, staged, hand over
+3. Returns: store-guy return books stock back at once
+4. General-use issue: reason and cost centre required
+5. Worker lock board: Available vs Blocked, release
+6. Payroll bank file: Owner can download, others cannot
+7. Bulk payslips: Print all opens in one view
+8. Leave range: Fri to Tue shows working days only
+9. Kiosk: identify an employee by typing the code
+10. My payslips: employee sees only own sent past months
+
 ## §9. Report
 Use the Bug template from `EXTERNAL_TESTER_GUIDE.md` §8: what you did, what you expected, what
 happened, role, device/width, time.
