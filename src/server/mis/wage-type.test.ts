@@ -118,6 +118,19 @@ describe('createWageType — the code system', () => {
     const [entry] = mockAudit.mock.calls[0];
     expect(JSON.stringify(entry)).not.toMatch(/amount/i);
   });
+
+  it.each(['HOURLY', 'PIECE_RATE'] as const)('R2-113: refuses a %s code payroll cannot price, writing nothing', async (unit) => {
+    mockFindMany.mockResolvedValue([]);
+    await expect(createWageType({ name: 'Packing', unit, amount: 60 })).rejects.toThrow(/Daily and Monthly wage types only/);
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  it('R2-113: MONTHLY is still accepted', async () => {
+    mockFindMany.mockResolvedValue([]);
+    mockCreate.mockImplementation(({ data }: { data: Record<string, unknown> }) => ({ id: 'w2', deletedAt: null, createdAt: new Date(), updatedAt: new Date(), ...data }));
+    expect((await createWageType({ name: 'Staff', unit: 'MONTHLY', amount: 31000 })).code).toBe('WG-MONTHLY-01');
+  });
 });
 
 describe('addWageRate — never mutates a past row', () => {

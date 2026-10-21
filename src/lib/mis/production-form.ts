@@ -114,3 +114,10 @@ export function validateQuantities(qty: string, waste: string): string | null {
 export function isClosedOrderStatus(status: string): boolean {
   return ['CANCELLED', 'DELIVERED', 'COMPLETED'].includes(status);
 }
+
+/** R2-48: '' is "not recorded"; otherwise whole minutes 0..1440 (the server and DB CHECK agree). Null when fine. */
+export function makereadyError(value: string): string | null {
+  if (value.trim() === '') return null;
+  const n = Number(value);
+  return Number.isInteger(n) && n >= 0 && n <= 1440 ? null : 'Makeready must be whole minutes between 0 and 1440.';
+}

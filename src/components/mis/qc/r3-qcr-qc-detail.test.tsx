@@ -13,6 +13,7 @@ vi.mock('@/app/(mis)/mis/qc/actions', () => ({
   editQcCheckAction: (...a: unknown[]) => editQcCheckAction(...a),
   recordChecklistCheckAction: vi.fn(),
 }));
+vi.mock('@/app/(mis)/mis/qc/correction-actions', () => ({ voidQcCheckAction: vi.fn() })); // R2-34: the screen imports it
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }));
 
 const { QcDetailScreen } = await import('./qc-detail-screen');

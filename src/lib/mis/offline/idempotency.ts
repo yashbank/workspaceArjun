@@ -60,6 +60,10 @@ export type ParkReason =
   | 'PREDECESSOR_PARKED'
   | 'CLOCK_SKEW'
   | 'TOO_OLD'
+  // R2-40: another production log is running a different order on this machine at that time.
+  | 'MACHINE_CONFLICT'
+  // R2-47: the operator is held on another machine this shift; parked until the holder releases them.
+  | 'WORKER_LOCKED'
   // Punches (Phase 13; D20, D21). None is in RETRYABLE_PARK_REASONS — see below.
   | 'BADGE_UNKNOWN'
   | 'EMPLOYEE_INACTIVE'
@@ -99,6 +103,7 @@ export const RETRYABLE_PARK_REASONS: ReadonlySet<ParkReason> = new Set<ParkReaso
   'PHASE_AMBIGUOUS',
   'FORBIDDEN',
   'UNKNOWN',
+  'MACHINE_CONFLICT', // retry once the other run is released on the machine board
 ]);
 
 export function isRetryablePark(reason: ParkReason | string | null | undefined): boolean {

@@ -51,9 +51,16 @@ describe('every action returns a refusal as data', () => {
     expect(await call()).toEqual({ ok: false, detail: 'PO PO-1 is CANCELLED; goods can only be received against an approved PO.' });
   });
 
-  it.each(CALLS)('%s still throws a permission refusal for the error boundary', async (_name, call) => {
+  // R2-76: the Issue screen has no page boundary to catch a throw (production redacts it), so it answers in words.
+  it.each(CALLS.filter(([name]) => name !== 'commitIssueAction'))('%s still throws a permission refusal for the error boundary', async (_name, call) => {
     refuse.mockImplementation(forbidden);
     await expect(call()).rejects.toThrow(/Not permitted/);
+  });
+
+  it('R2-76: commitIssueAction returns a friendly permission refusal instead of throwing', async () => {
+    refuse.mockImplementation(forbidden);
+    const result = await storeActions.commitIssueAction([{ itemId: 'i', qty: 1 }], {}, 'key');
+    expect(result).toEqual({ ok: false, detail: 'You do not have permission to issue stock.' });
   });
 });
 

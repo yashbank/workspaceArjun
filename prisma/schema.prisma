@@ -367,8 +367,17 @@ model MisEmployee {
   /// V2 Epic 7 — the portal URL of a 256×256 WebP taken at onboarding (`employee-photo.ts`).
   /// Sent to the gate tablet on pull so a scan flashes the face the badge belongs to.
   photoUrl      String?  @map("photo_url")
+  /// R3-S2 (parked migration 20261014000002). The shift a new allocation defaults to.
+  defaultShiftId String? @map("default_shift_id") @db.Uuid
+  /// R2-110 (migration 20261019000000). Bank details for the month-end transfer CSV.
+  /// Sensitive: read/write behind the same OWNER-only gate as wages; never put in an audit payload in full.
+  bankName      String?  @map("bank_name")
+  bankAccountNo String?  @map("bank_account_no")
+  ifsc          String?
 
   userProfile   UserProfile?      @relation(fields: [userProfileId], references: [id], onDelete: SetNull)
+  defaultShift  MisShift?         @relation("MisEmployeeDefaultShift", fields: [defaultShiftId], references: [id], onDelete: SetNull)
+  releasedSlips MisPayslipRelease[]
   manager       MisEmployee?      @relation("MisReports", fields: [managerId], references: [id], onDelete: SetNull)
   reports       MisEmployee[]     @relation("MisReports")
   department    MisDepartment?    @relation(fields: [departmentId], references: [id])
@@ -385,6 +394,7 @@ model MisEmployee {
   @@index([departmentId])
   @@index([deletedAt])
   @@index([wageTypeCode])
+  @@index([defaultShiftId])
   @@map("mis_employees")
 }
 
@@ -620,7 +630,9 @@ model MisItem {
   size           String?
   substrate      String?
   coating        String?
-  unit           MisItemUnit      @default(KG)
+  /// R2-25 / R3 (parked migration 20261014000003): TEXT, fed by the UNIT master options.
+  /// The MisItemUnit enum stays in the schema only so existing imports of its values keep compiling.
+  unit           String           @default("KG")
   pricePerUnit   Decimal?         @map("price_per_unit") @db.Decimal(12, 2)
   isDemo         Boolean          @default(true) @map("is_demo")
   reorderLevel   Decimal?         @map("reorder_level") @db.Decimal(12, 2)
@@ -635,6 +647,8 @@ model MisItem {
   bomMaterials   MisBomMaterial[]
   materialRequestLines MisMaterialRequestLine[]
   orderAllocations MisOrderStockAllocation[]
+  pickListLines  MisPickListLine[]
+  storeReturns   MisStoreReturn[]
   @@map("mis_items")
 }
 
@@ -778,6 +792,7 @@ model MisInventoryLedger {
   notes      String?
   createdAt  DateTime  @default(now()) @map("created_at")
   item       MisItem   @relation(fields: [itemId], references: [id])
+  storeReturns MisStoreReturn[]
   @@map("mis_inventory_ledger")
 }
 
@@ -791,9 +806,20 @@ model MisStoreTransaction {
   referenceNo String?         @map("reference_no")
   reason      String?
   isOverIssue Boolean         @default(false) @map("is_over_issue")
+  /// R2-80/62 (migration 20261019000000). An OUT with no order is allowed only as GENERAL
+  /// (factory use): reason + cost centre (a COST_CENTER master option value) required.
+  isGeneral     Boolean       @default(false) @map("is_general")
+  generalReason String?       @map("general_reason")
+  costCenter    String?       @map("cost_center")
+  /// R2-77. The material request this issue fulfils (set on pick-list handover). Nullable.
+  materialRequestId String?   @map("material_request_id") @db.Uuid
   createdById String?         @map("created_by_id") @db.Uuid
   createdAt   DateTime        @default(now()) @map("created_at")
   item        MisItem         @relation(fields: [itemId], references: [id])
+  materialRequest MisMaterialRequest? @relation(fields: [materialRequestId], references: [id], onDelete: SetNull)
+  storeReturns MisStoreReturn[]
+  @@index([materialRequestId])
+  @@index([isGeneral])
   @@map("mis_store_transactions")
 }
 
@@ -832,6 +858,7 @@ model MisOrder {
   jobPhases    MisJobPhase[]
   materialRequests MisMaterialRequest[]
   stockAllocations MisOrderStockAllocation[]
+  storeReturns MisStoreReturn[]
   @@map("mis_orders")
 }
 
@@ -848,6 +875,7 @@ model MisShift {
   productionLogs MisProductionLog[]
   lineClearances MisLineClearance[]
   workerAllocations MisWorkerAllocation[]
+  defaultForEmployees MisEmployee[] @relation("MisEmployeeDefaultShift")
   @@map("mis_shifts")
 }
 
@@ -875,10 +903,24 @@ model MisAttendance {
   @@map("mis_attendance")
 }
 
+/// R2-101/102 (migration 20261019000000). Leave types.
+enum MisLeaveType {
+  CL
+  SL
+  EL
+  LWP
+  OTHER
+  @@map("mis_leave_type")
+}
+
+/// `date` is the FIRST day of the leave. `endDate` is the last day (inclusive) of a
+/// multi-day range; NULL means a single-day leave (every pre-R2 row). DB CHECK: endDate >= date.
 model MisLeaveRequest {
   id           String      @id @default(uuid()) @db.Uuid
   employeeId   String      @map("employee_id") @db.Uuid
   date         DateTime    @db.Date
+  endDate      DateTime?   @map("end_date") @db.Date
+  leaveType    MisLeaveType @default(OTHER) @map("leave_type")
   reason       String?
   status       String      @default("PENDING")
   approvedById String?     @map("approved_by_id") @db.Uuid
@@ -889,6 +931,22 @@ model MisLeaveRequest {
   @@map("mis_leave_requests")
 }
 
+/// R2-102 (migration 20261020000000_r2_leave_pay_setting). The Owner's PAID / UNPAID choice per
+/// leave type, append-only: nothing is edited, a change is a new row. A payroll month uses the
+/// newest row (effectiveFrom, then createdAt) on or before its LAST day; no row = the built-in
+/// default (every type unpaid — payroll as before R2-102 — `lib/mis/leave-pay.ts`).
+model MisLeavePayRule {
+  id            String       @id @default(uuid()) @db.Uuid
+  leaveType     MisLeaveType @map("leave_type")
+  paid          Boolean
+  effectiveFrom DateTime     @map("effective_from") @db.Date
+  reason        String?
+  changedById   String?      @map("changed_by_id") @db.Uuid
+  createdAt     DateTime     @default(now()) @map("created_at")
+  @@index([leaveType, effectiveFrom])
+  @@map("mis_leave_pay_rules")
+}
+
 model MisBom {
   id            String           @id @default(uuid()) @db.Uuid
   orderId       String           @unique @map("order_id") @db.Uuid
@@ -897,6 +955,9 @@ model MisBom {
   createdById   String?          @map("created_by_id") @db.Uuid
   approvedById  String?          @map("approved_by_id") @db.Uuid
   approvedAt    DateTime?        @map("approved_at")
+  /// E5-05 (parked migration 20261004000000_mis_bom_versioning).
+  version              Int       @default(1)
+  lastApprovedSnapshot Json?     @map("last_approved_snapshot") @db.JsonB
   createdAt     DateTime         @default(now()) @map("created_at")
   updatedAt     DateTime         @updatedAt @map("updated_at")
   order         MisOrder         @relation(fields: [orderId], references: [id])
@@ -972,12 +1033,18 @@ model MisProductionLog {
   loggedById  String?      @map("logged_by_id") @db.Uuid
   loggedAt    DateTime     @default(now()) @map("logged_at")
   notes       String?
+  /// R2-17/34 + R2-48 (parked migration 20261014000001). Void = soft delete with a reason;
+  /// DB CHECK keeps voidedAt/voidReason both set or both null. makereadyMinutes 0..1440.
+  voidedAt         DateTime? @map("voided_at")
+  voidReason       String?   @map("void_reason")
+  makereadyMinutes Int?      @map("makeready_minutes")
   order       MisOrder     @relation(fields: [orderId], references: [id])
   bomStage    MisBomStage? @relation(fields: [bomStageId], references: [id], onDelete: SetNull)
   machine     MisMachine?  @relation(fields: [machineId], references: [id], onDelete: SetNull)
   employee    MisEmployee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
   shift       MisShift?    @relation(fields: [shiftId], references: [id], onDelete: SetNull)
   jobPhase    MisJobPhase? @relation(fields: [jobPhaseId], references: [id], onDelete: SetNull)
+  machineAllocation MisMachineAllocation?
   @@index([jobPhaseId])
   @@map("mis_production_log")
 }
@@ -1008,6 +1075,9 @@ model MisQcCheck {
   /// the hourly grid and the CoA need no new result value.
   templateId    String?      @map("template_id") @db.Uuid
   slotTime      String?      @map("slot_time")
+  /// R2-17/34 (parked migration 20261014000001). Void pair, same CHECK as production log.
+  voidedAt      DateTime?    @map("voided_at")
+  voidReason    String?      @map("void_reason")
   order         MisOrder     @relation(fields: [orderId], references: [id])
   bomStage      MisBomStage? @relation(fields: [bomStageId], references: [id], onDelete: SetNull)
   template      MisQcTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
@@ -1022,8 +1092,19 @@ model MisQcCheck {
 /// read by new code. It is still WRITABLE from allocateMachine(), because
 /// the only existing screen (machine-board-screen.tsx) has no order/phase
 /// picker yet; see the Phase 9 report for the scheduling gap this leaves.
+/// R2-40/41/45 (migration 20261019000000). Where a machine-board row came from.
+enum MisMachineAllocationSource {
+  SCHEDULED
+  PRODUCTION_LOG
+  @@map("mis_machine_allocation_source")
+}
+
 model MisMachineAllocation {
   id             String      @id @default(uuid()) @db.Uuid
+  /// SCHEDULED = booked on the board (every pre-R2 row); PRODUCTION_LOG = auto-created when a
+  /// production log was saved on a machine no allocation covered (productionLogId then set).
+  source         MisMachineAllocationSource @default(SCHEDULED)
+  productionLogId String?    @unique @map("production_log_id") @db.Uuid
   machineId      String      @map("machine_id") @db.Uuid
   orderId        String?     @map("order_id") @db.Uuid
   jobPhaseId     String?     @map("job_phase_id") @db.Uuid
@@ -1040,6 +1121,7 @@ model MisMachineAllocation {
   machine        MisMachine  @relation(fields: [machineId], references: [id])
   order          MisOrder?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
   jobPhase       MisJobPhase? @relation(fields: [jobPhaseId], references: [id], onDelete: SetNull)
+  productionLog  MisProductionLog? @relation(fields: [productionLogId], references: [id], onDelete: SetNull)
   workerAllocations MisWorkerAllocation[]
   @@index([jobPhaseId])
   @@map("mis_machine_allocations")
@@ -1074,6 +1156,15 @@ model MisWorkerAllocation {
   allocationDate       DateTime            @map("allocation_date") @db.Date
   assignedById        String?              @map("assigned_by_id") @db.Uuid
   releasedAt          DateTime?            @map("released_at")
+  /// R3-S2 / R2-47 (parked migration 20261014000002). The HOLDER supervisor of the hard worker
+  /// lock is `assignedById`; only the holder, Admin or Owner may release. releaseReason is one of
+  /// MANUAL, MOVED, PHASE_SIGNED_OFF, MACHINE_RELEASED, ORDER_CLOSED, CLOCKED_OUT (DB CHECK);
+  /// crewRole is OPERATOR, HELPER or INCHARGE (DB CHECK). Partial unique index
+  /// mis_worker_allocations_open_uq (employee, date, shift, machine allocation) WHERE open — not
+  /// modelable in Prisma.
+  releasedById        String?              @map("released_by_id") @db.Uuid
+  releaseReason       String?              @map("release_reason")
+  crewRole            String?              @map("crew_role")
   notes               String?
   deletedAt           DateTime?            @map("deleted_at")
   createdAt           DateTime             @default(now()) @map("created_at")
@@ -1661,6 +1752,11 @@ model MisMaterialRequest {
   /// RAW_MATERIAL / CONSUMABLE lines may be booked to an order; EQUIPMENT / OTHER never are.
   orderId       String?                  @map("order_id") @db.Uuid
   departmentId  String?                  @map("department_id") @db.Uuid
+  /// R2-80/62/Q11 (migration 20261019000000). No order => must be GENERAL (factory use), with a
+  /// reason and a cost centre (COST_CENTER master option value). Enforced in server code.
+  isGeneral     Boolean                  @default(false) @map("is_general")
+  generalReason String?                  @map("general_reason")
+  costCenter    String?                  @map("cost_center")
   notes         String?
   requestedById String?                  @map("requested_by_id") @db.Uuid
   decidedById   String?                  @map("decided_by_id") @db.Uuid
@@ -1671,7 +1767,10 @@ model MisMaterialRequest {
   order         MisOrder?                @relation(fields: [orderId], references: [id])
   department    MisDepartment?           @relation(fields: [departmentId], references: [id])
   lines         MisMaterialRequestLine[]
+  pickList      MisPickList?
+  storeTxns     MisStoreTransaction[]
   @@index([status])
+  @@index([isGeneral])
   @@map("mis_material_requests")
 }
 
@@ -1684,8 +1783,149 @@ model MisMaterialRequestLine {
   actualIssuedQty Decimal?           @map("actual_issued_qty") @db.Decimal(12, 2)
   request         MisMaterialRequest @relation(fields: [requestId], references: [id])
   item            MisItem            @relation(fields: [itemId], references: [id])
+  pickListLines   MisPickListLine[]
   @@index([requestId])
   @@map("mis_material_request_lines")
+}
+
+// ---------------------------------------------------------------------------
+// R2 batch #2 (migration 20261019000000_r2_batch2_schema)
+// ---------------------------------------------------------------------------
+
+/// R2-77 — Pick & Staging. An APPROVED material request gets ONE pick list. Store Guy picks,
+/// stages, then hands over to the supervisor. Stock moves ONLY on HANDED_OVER (the handover
+/// writes the MisStoreTransaction/ledger rows, linked back via materialRequestId).
+enum MisPickListStatus {
+  PENDING
+  PICKING
+  STAGED
+  HANDED_OVER
+  @@map("mis_pick_list_status")
+}
+
+model MisPickList {
+  id                String            @id @default(uuid()) @db.Uuid
+  materialRequestId String            @unique @map("material_request_id") @db.Uuid
+  status            MisPickListStatus @default(PENDING)
+  /// Plain scalar auth user ids (house convention), not FKs.
+  pickedById        String?           @map("picked_by_id") @db.Uuid
+  stagedAt          DateTime?         @map("staged_at")
+  handedOverAt      DateTime?         @map("handed_over_at")
+  handedOverById    String?           @map("handed_over_by_id") @db.Uuid
+  /// The supervisor who received the material.
+  handedOverToId    String?           @map("handed_over_to_id") @db.Uuid
+  notes             String?
+  createdById       String?           @map("created_by_id") @db.Uuid
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+  materialRequest   MisMaterialRequest @relation(fields: [materialRequestId], references: [id], onDelete: Cascade)
+  lines             MisPickListLine[]
+  @@index([status])
+  @@map("mis_pick_lists")
+}
+
+model MisPickListLine {
+  id                    String       @id @default(uuid()) @db.Uuid
+  pickListId            String       @map("pick_list_id") @db.Uuid
+  materialRequestLineId String?      @map("material_request_line_id") @db.Uuid
+  itemId                String       @map("item_id") @db.Uuid
+  /// Snapshot of what the store approved for this line (actualIssuedQty at pick-list creation).
+  requiredQty           Decimal      @map("required_qty") @db.Decimal(12, 2)
+  pickedQty             Decimal      @default(0) @map("picked_qty") @db.Decimal(12, 2)
+  createdAt             DateTime     @default(now()) @map("created_at")
+  updatedAt             DateTime     @updatedAt @map("updated_at")
+  pickList              MisPickList  @relation(fields: [pickListId], references: [id], onDelete: Cascade)
+  materialRequestLine   MisMaterialRequestLine? @relation(fields: [materialRequestLineId], references: [id], onDelete: SetNull)
+  item                  MisItem      @relation(fields: [itemId], references: [id])
+  @@index([pickListId])
+  @@map("mis_pick_list_lines")
+}
+
+/// R2-79 — Return-to-Store. A floor return of unused/rejected material. Stock is reversed into
+/// the store only when ACCEPTED; that write's ledger row and store transaction are linked here.
+enum MisStoreReturnStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  @@map("mis_store_return_status")
+}
+
+model MisStoreReturn {
+  id            String               @id @default(uuid()) @db.Uuid
+  returnNumber  String               @unique @map("return_number")
+  itemId        String               @map("item_id") @db.Uuid
+  quantity      Decimal              @db.Decimal(12, 2)
+  reason        String
+  orderId       String?              @map("order_id") @db.Uuid
+  status        MisStoreReturnStatus @default(PENDING)
+  /// Plain scalar auth user ids.
+  returnedById  String?              @map("returned_by_id") @db.Uuid
+  decidedById   String?              @map("decided_by_id") @db.Uuid
+  decidedAt     DateTime?            @map("decided_at")
+  decisionNote  String?              @map("decision_note")
+  ledgerId      String?              @map("ledger_id") @db.Uuid
+  storeTxnId    String?              @map("store_txn_id") @db.Uuid
+  createdAt     DateTime             @default(now()) @map("created_at")
+  updatedAt     DateTime             @updatedAt @map("updated_at")
+  item          MisItem              @relation(fields: [itemId], references: [id])
+  order         MisOrder?            @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  ledger        MisInventoryLedger?  @relation(fields: [ledgerId], references: [id], onDelete: SetNull)
+  storeTxn      MisStoreTransaction? @relation(fields: [storeTxnId], references: [id], onDelete: SetNull)
+  @@index([status])
+  @@index([itemId])
+  @@index([orderId])
+  @@map("mis_store_returns")
+}
+
+/// R2-111 — the Owner RELEASES a payslip to an employee; only released slips for PREVIOUS
+/// months are visible to the employee. One row per employee per period. releasedById is a plain
+/// scalar auth user id. Carries no money.
+model MisPayslipRelease {
+  id           String      @id @default(uuid()) @db.Uuid
+  employeeId   String      @map("employee_id") @db.Uuid
+  year         Int
+  month        Int
+  releasedById String?     @map("released_by_id") @db.Uuid
+  releasedAt   DateTime    @default(now()) @map("released_at")
+  employee     MisEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  @@unique([employeeId, year, month])
+  @@index([year, month])
+  @@map("mis_payslip_releases")
+}
+
+/// R2-46 — a printed/issued COA or job card is versioned (v1, v2, …) with a two-level sign-off.
+/// refId is polymorphic (an order id for JOB_CARD, the order/QC ref the COA print uses for COA),
+/// so it carries no FK. Plain scalar auth user ids for the signers.
+enum MisDocVersionType {
+  COA
+  JOB_CARD
+  @@map("mis_doc_version_type")
+}
+
+enum MisDocVersionStatus {
+  PREPARED
+  APPROVED
+  @@map("mis_doc_version_status")
+}
+
+model MisDocumentVersion {
+  id           String              @id @default(uuid()) @db.Uuid
+  docType      MisDocVersionType   @map("doc_type")
+  refId        String              @map("ref_id") @db.Uuid
+  version      Int
+  status       MisDocVersionStatus @default(PREPARED)
+  preparedById String?             @map("prepared_by_id") @db.Uuid
+  preparedAt   DateTime            @default(now()) @map("prepared_at")
+  approvedById String?             @map("approved_by_id") @db.Uuid
+  approvedAt   DateTime?           @map("approved_at")
+  notes        String?
+  /// R2-46 follow-up: the document's rendered data, captured at issue and frozen at approval. An
+  /// APPROVED version prints from it. NULL = legacy row (prints live with a "no snapshot" note).
+  snapshot     Json?
+  createdAt    DateTime            @default(now()) @map("created_at")
+  @@unique([docType, refId, version])
+  @@index([docType, refId])
+  @@map("mis_document_versions")
 }
 
 /// V2 Epic 2 — stock received FOR an order is earmarked for it. One append-only row per

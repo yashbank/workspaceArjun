@@ -16,6 +16,18 @@ export type WageRowForCalc = {
   bonusAmount: number | null;
 };
 
+/**
+ * R2-113: the wage units the payroll engine actually prices. HOURLY and PIECE_RATE exist in the
+ * enum but payroll is day-based and records no hours-worked or pieces-made per employee, so a new
+ * wage code may only be DAILY or MONTHLY (the server refuses the others; the form does not offer them).
+ */
+export const PAYROLL_SUPPORTED_UNITS = ['DAILY', 'MONTHLY'] as const;
+export type PayrollSupportedUnit = (typeof PAYROLL_SUPPORTED_UNITS)[number];
+
+export function isPayrollSupportedUnit(unit: string): unit is PayrollSupportedUnit {
+  return (PAYROLL_SUPPORTED_UNITS as readonly string[]).includes(unit);
+}
+
 /** UTC Sunday — attendance dates are `@db.Date` (UTC midnight), so this never drifts with a server timezone (D22). */
 export function isSunday(date: Date): boolean {
   return date.getUTCDate() >= 1 && date.getUTCDay() === 0;

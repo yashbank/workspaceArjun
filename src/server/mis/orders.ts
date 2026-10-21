@@ -3,6 +3,8 @@ import {
   canOverrideCloseGates, canTransitionOrder, evaluateCloseGates, isOrderStatus, MIN_REASON_LENGTH, transitionNeedsReason, unmetGates, type CloseGate,
 } from '@/lib/mis/order-transitions';
 import { dateKeyToDbDate, factoryDateKey } from '@/lib/mis/factory-time';
+import type { Prisma } from '@/generated/prisma/client';
+import { pageQuery, parseSearch, type Paged } from '@/lib/mis/pagination';
 import { db } from '@/server/db';
 import { flushReleaseAudit, releaseMachineAllocations, type ReleaseAuditEvent } from '@/server/mis/allocation-release';
 import { getFactoryTimezone } from '@/server/mis/business-rules';
@@ -35,6 +37,30 @@ function nextOrderNumber(attempt = 0): string {
 
 export function isUniqueConstraintError(err: unknown): boolean {
   return Boolean(err && typeof err === 'object' && (err as { code?: unknown }).code === 'P2002');
+}
+
+/** R2-83: one page of orders (25); `q` matches the order number, customer or description; `customerId` narrows to one customer. */
+export async function listOrdersPage(opts: { q?: string; customerId?: string; page?: number | string } = {}): Promise<Paged<Awaited<ReturnType<typeof listOrders>>[number]>> {
+  await requirePermission('orders.read');
+  const q = parseSearch(opts.q);
+  const where: Prisma.MisOrderWhereInput = {
+    ...(opts.customerId ? { customerId: opts.customerId } : {}),
+    ...(q
+      ? {
+          OR: [
+            { orderNumber: { contains: q, mode: 'insensitive' } },
+            { description: { contains: q, mode: 'insensitive' } },
+            { customer: { name: { contains: q, mode: 'insensitive' } } },
+          ],
+        }
+      : {}),
+  };
+  const { skip, take } = pageQuery(opts.page);
+  const [rows, total] = await Promise.all([
+    db.misOrder.findMany({ where, include: { customer: { select: { id: true, name: true } } }, orderBy: { createdAt: 'desc' }, skip, take }),
+    db.misOrder.count({ where }),
+  ]);
+  return { rows, total };
 }
 
 export async function listOrders() {
@@ -135,8 +161,8 @@ export async function getOrderCloseGates(orderId: string): Promise<CloseGate[]> 
 async function computeCloseGates(orderId: string): Promise<CloseGate[]> {
   const [phases, qcChecks, productionCount] = await Promise.all([
     db.misJobPhase.findMany({ where: { orderId, deletedAt: null }, select: { status: true } }),
-    db.misQcCheck.findMany({ where: { orderId }, select: { bomStageId: true, parameterName: true, result: true, checkTime: true } }),
-    db.misProductionLog.count({ where: { orderId } }),
+    db.misQcCheck.findMany({ where: { orderId, voidedAt: null }, select: { bomStageId: true, parameterName: true, result: true, checkTime: true } }),
+    db.misProductionLog.count({ where: { orderId, voidedAt: null } }),
   ]);
   return evaluateCloseGates({ phases, qcChecks, productionCount });
 }
@@ -363,7 +389,7 @@ export async function listOrdersNeedingAction(limit = 5): Promise<OrderNeedingAc
     include: {
       customer: { select: { name: true } },
       bom: { select: { status: true } },
-      _count: { select: { productionLogs: true } },
+      _count: { select: { productionLogs: { where: { voidedAt: null } } } },
     },
     orderBy: [{ deliveryDate: 'asc' }, { createdAt: 'desc' }],
     take: 50,

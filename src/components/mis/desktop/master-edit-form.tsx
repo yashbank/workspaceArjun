@@ -1,7 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { useActionState } from 'react';
+import { useActionState, useState } from 'react';
+
+import { Combobox } from '@/components/ui/combobox';
 
 import { masterSpec, type MasterKey, type MasterListView } from '@/lib/mis/master-directory';
 import { saveMasterAction, setDeactivatedAction, type SaveState } from '@/app/(mis)/mis/masters/desktop-actions';
@@ -15,6 +17,18 @@ import { useT } from '../shell/locale-provider';
  * in a script. The code is present, greyed, and explained — it is the identity, so it is not part of an update.
  * Inputs are 48px with 16px text (a laptop with a keyboard gets no denser form than a tablet).
  */
+
+/** A searchable select that still posts through the plain <form> (hidden input carries the value). */
+function ComboField({ id, name, label, value, options, required, none }: { id: string; name: string; label: string; value: string; options: { value: string; label: string }[]; required?: boolean; none: string }) {
+  const [v, setV] = useState(value);
+  const list = v && !options.some((o) => o.value === v) ? [...options, { value: v, label: v }] : options;
+  return (
+    <>
+      <input type="hidden" name={name} value={v} />
+      <Combobox id={id} hideLabel label={label} value={v || null} options={list} onChange={setV} placeholder={none} clearable={!required} />
+    </>
+  );
+}
 
 const input = 'min-h-12 w-full rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900';
 
@@ -64,12 +78,16 @@ export function MasterEditForm({ master, editing, options, closeHref, error = nu
             <div key={f.key}>
               <label htmlFor={id} className="mb-1 block text-sm font-semibold text-slate-800">{label}{f.required ? ' *' : ''}</label>
               {f.type === 'select' ? (
+                (f.options === 'gsm' || f.options === 'size' || f.options === 'substrate' || f.options === 'coating' || f.options === 'itemUnits') ? (
+                  <ComboField key={value} id={id} name={f.key} label={label} value={value} required={f.required} none={t('d10.noneOption')} options={f.options === 'itemUnits' ? options.itemUnits : options.attrs?.[f.options] ?? []} />
+                ) : (
                 <select key={value} id={id} name={f.key} defaultValue={value} required={f.required} className={input}>
                   <option value="">{t('d10.noneOption')}</option>
-                  {(f.options === 'departments' ? options.departments : f.options === 'itemUnits' ? options.itemUnits : options.severities).map((o) => (
+                  {(f.options === 'departments' ? options.departments : options.severities).map((o) => (
                     <option key={o.value} value={o.value}>{o.label}</option>
                   ))}
                 </select>
+                )
               ) : (
                 <input id={id} name={f.key} defaultValue={value} required={f.required} inputMode={f.type === 'number' ? 'decimal' : undefined} className={input} />
               )}

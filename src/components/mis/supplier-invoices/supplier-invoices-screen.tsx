@@ -1,5 +1,9 @@
 'use client';
 import { useState, useTransition } from 'react';
+import Link from 'next/link';
+
+import { HiddenParams, Pagination } from '@/components/mis/kit/pagination';
+import { pageHref } from '@/lib/mis/pagination';
 
 import { reconcileSupplierInvoiceAction } from '@/app/(mis)/mis/supplier-invoices/actions';
 import { Button } from '@/components/mis/kit/button';
@@ -42,15 +46,23 @@ function Pill({ status }: { status: MatchStatus }) {
   return <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-sm font-medium ring-1 ring-inset ${PILL[status]}`}>{LABEL[status]}</span>;
 }
 
-type Props = { rows: SupplierInvoiceRow[]; canReconcile: boolean };
+type Props = {
+  rows: SupplierInvoiceRow[];
+  canReconcile: boolean;
+  /** R2-83: the server-side page — the status filter and search are URL params, `counts` is per status over the search. */
+  paging?: { total: number; page: number; status: MatchStatus | ''; q: string; counts: Record<MatchStatus, number> };
+};
 
-export function SupplierInvoicesScreen({ rows, canReconcile }: Props) {
-  const [filter, setFilter] = useState<MatchStatus | 'ALL'>('ALL');
+export function SupplierInvoicesScreen({ rows, canReconcile, paging }: Props) {
   const [busy, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
-  const shown = filter === 'ALL' ? rows : rows.filter((r) => r.status === filter);
-  const count = (s: MatchStatus) => rows.filter((r) => r.status === s).length;
+  const filter: MatchStatus | 'ALL' = paging ? (paging.status || 'ALL') : 'ALL';
+  const shown = rows;
+  const count = (s: MatchStatus) => (paging ? paging.counts[s] : rows.filter((r) => r.status === s).length);
+  const allCount = paging ? MATCH_STATUSES.reduce((n, s) => n + paging.counts[s], 0) : rows.length;
+  const q = paging?.q ?? '';
+  const chipHref = (s: MatchStatus | '') => pageHref('/mis/supplier-invoices', { q, status: s }, 1);
   const hasFigures = rows.some((r) => r.figures);
   const hasMoney = rows.some((r) => r.money);
 
@@ -65,18 +77,30 @@ export function SupplierInvoicesScreen({ rows, canReconcile }: Props) {
     });
 
   return (
-    <div className="mx-auto w-full max-w-5xl p-4 md:p-6 flex flex-col gap-3 pb-24">
+    <div className="w-full p-4 md:p-6 flex flex-col gap-3 pb-24">
       <div className="rounded-2xl border border-slate-200 bg-white p-4">
         <h1 className="text-2xl font-bold text-slate-900">Supplier invoices</h1>
         <p className="text-sm text-slate-600 mt-1">Each invoice checked against the purchase order rate and what the store actually received.</p>
       </div>
 
       <div className="flex flex-wrap gap-2" role="group" aria-label="Filter by match status">
-        <FilterChip active={filter === 'ALL'} onClick={() => setFilter('ALL')}>All ({rows.length})</FilterChip>
+        <FilterChip active={filter === 'ALL'} href={chipHref('')}>All ({allCount})</FilterChip>
         {MATCH_STATUSES.map((s) => (
-          <FilterChip key={s} active={filter === s} onClick={() => setFilter(s)}>{LABEL[s]} ({count(s)})</FilterChip>
+          <FilterChip key={s} active={filter === s} href={chipHref(s)}>{LABEL[s]} ({count(s)})</FilterChip>
         ))}
       </div>
+
+      <form method="get" className="flex items-center gap-2">
+        <HiddenParams params={{ status: paging?.status }} />
+        <input
+          type="search"
+          name="q"
+          placeholder="Search invoice, PO or supplier…"
+          defaultValue={q}
+          className="w-full max-w-sm min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500"
+        />
+        <Button type="submit" variant="secondary">Search</Button>
+      </form>
 
       {error && <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-800">{error}</div>}
 
@@ -154,19 +178,19 @@ export function SupplierInvoicesScreen({ rows, canReconcile }: Props) {
           </div>
         </>
       )}
+      {paging && <Pagination basePath="/mis/supplier-invoices" params={{ q, status: paging.status }} page={paging.page} total={paging.total} />}
     </div>
   );
 }
 
-function FilterChip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+function FilterChip({ active, href, children }: { active: boolean; href: string; children: React.ReactNode }) {
   return (
-    <button
-      type="button"
-      aria-pressed={active}
-      onClick={onClick}
-      className={`min-h-11 rounded-full border px-4 text-sm font-semibold ${active ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-300 bg-white text-slate-900 hover:bg-slate-50'}`}
+    <Link
+      href={href}
+      aria-current={active ? 'true' : undefined}
+      className={`inline-flex min-h-11 items-center rounded-full border px-4 text-sm font-semibold ${active ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-300 bg-white text-slate-900 hover:bg-slate-50'}`}
     >
       {children}
-    </button>
+    </Link>
   );
 }

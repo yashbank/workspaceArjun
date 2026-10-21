@@ -24,11 +24,14 @@ const options = {
 describe('R3-MST B32 GSM / Size / Unit are dropdowns', () => {
   it('GSM lists the master labels plus a "(not in masters)" entry for a legacy value', () => {
     render(<ItemOptionFields options={options} gsm="75 GSM" size="" unit="KG" onGsm={vi.fn()} onSize={vi.fn()} onUnit={vi.fn()} />);
-    const gsm = screen.getByLabelText('GSM') as HTMLSelectElement;
-    const labels = Array.from(gsm.options).map((o) => o.textContent);
+    // R2-82: searchable combobox, not a native SELECT. Options render once it is opened.
+    const gsm = screen.getByLabelText('GSM') as HTMLInputElement;
+    expect(gsm.getAttribute('role')).toBe('combobox');
+    expect(gsm.tagName).toBe('INPUT');
+    expect(gsm.value).toBe('75 GSM (not in masters)');
+    fireEvent.focus(gsm);
+    const labels = screen.getAllByRole('option').map((o) => o.textContent);
     expect(labels).toEqual(expect.arrayContaining(['80 GSM', '90 GSM', '75 GSM (not in masters)']));
-    expect(gsm.value).toBe('75 GSM');
-    expect(gsm.tagName).toBe('SELECT');
   });
 
   it('no free-text input remains for GSM, Size or Unit', () => {
@@ -47,8 +50,10 @@ describe('R3-MST B32 GSM / Size / Unit are dropdowns', () => {
 
   it('with no master options the unit dropdown offers the 4 legacy units', () => {
     render(<ItemOptionFields options={{ gsm: [], size: [], unit: [], canManage: false }} gsm="" size="" unit="" onGsm={vi.fn()} onSize={vi.fn()} onUnit={vi.fn()} />);
-    const unit = screen.getByLabelText('Unit') as HTMLSelectElement;
-    expect(Array.from(unit.options).map((o) => o.value).filter(Boolean)).toEqual(['KG', 'LITRE', 'PIECE', 'REAM']);
+    const unit = screen.getByLabelText('Unit') as HTMLInputElement;
+    expect(unit.getAttribute('role')).toBe('combobox');
+    fireEvent.focus(unit);
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['Kg', 'Litre', 'Piece', 'Ream']);
   });
 });
 

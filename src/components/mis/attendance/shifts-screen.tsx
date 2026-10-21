@@ -1,5 +1,6 @@
 'use client';
 
+import { shiftDuration } from '@/lib/mis/shift-duration';
 import { useState, useTransition } from 'react';
 import { Button } from '@/components/mis/kit/button';
 import { Input, TimeInput } from '@/components/mis/kit/input';
@@ -52,16 +53,6 @@ export function ShiftsScreen({ shifts, canWrite }: Props) {
     });
   };
 
-  function calcHours(start: string, end: string): string {
-    try {
-      const [sh, sm] = start.split(':').map(Number);
-      const [eh, em] = end.split(':').map(Number);
-      const diff = (eh * 60 + em) - (sh * 60 + sm);
-      if (diff <= 0) return '—';
-      return `${Math.floor(diff / 60)}h ${diff % 60}m`;
-    } catch { return '—'; }
-  }
-
   return (
     <div className="max-w-3xl mx-auto space-y-5 py-6">
       <div className="flex items-center justify-between">
@@ -86,7 +77,7 @@ export function ShiftsScreen({ shifts, canWrite }: Props) {
                   )}
                 </div>
                 <div className="text-sm text-gray-500 mt-0.5">
-                  {shift.startTime} – {shift.endTime} · {calcHours(shift.startTime, shift.endTime)}
+                  {shift.startTime} – {shift.endTime} · {shiftDuration(shift.startTime, shift.endTime)}
                 </div>
               </div>
               {canWrite && (

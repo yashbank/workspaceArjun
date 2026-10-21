@@ -1,13 +1,16 @@
 'use client';
 
+import Link from 'next/link';
 import { PageBack } from '@/components/mis/common/page-back';
 import { useState } from 'react';
 
-import { commitIssueAction } from '@/app/(mis)/mis/store/actions';
+import { commitIssueAction, getItemBalancesAction } from '@/app/(mis)/mis/store/actions';
 import { unwrap } from '@/lib/mis/action-result';
+import { resolveGeneralUse } from '@/lib/mis/general-use';
 import { cn } from '@/lib/utils';
 
 import { HeaderCard, HomeStack, InfoCard, Mono, OkCard, SectionLabel } from '../home/cards';
+import { EMPTY_GENERAL, GeneralUseFields, type GeneralFields } from './general-use-fields';
 import { ItemCart, type CartLine, type PickerItem } from './item-cart';
 
 /**
@@ -24,25 +27,38 @@ type Props = {
   items: PickerItem[];
   orders: { id: string; orderNumber: string; customerName: string | null }[];
   departments: { id: string; name: string }[];
+  /** R2-80: where a no-order issue is charged. */
+  costCenters?: { value: string; label: string }[];
   /** V2 Epic 2 — per open order, what is earmarked and what is left; the server enforces the same cap on Confirm. */
   allocations?: Record<string, { itemId: string; name: string; code: string; unit: string; allocated: number; issued: number; remaining: number }[]>;
 };
 
-export function IssueScreen({ header, items, orders, departments, allocations = {} }: Props) {
+export function IssueScreen({ header, items, orders, departments, costCenters = [], allocations = {} }: Props) {
   const [orderId, setOrderId] = useState<string | null>(null);
   const [departmentId, setDepartmentId] = useState<string | null>(null);
+  const [general, setGeneral] = useState<GeneralFields>(EMPTY_GENERAL);
   const [done, setDone] = useState<{ reference: string; lineCount: number; totalQty: number } | null>(
     null,
   );
 
   async function commit(lines: CartLine[], key: string) {
-    const result = unwrap(await commitIssueAction(lines, { orderId, departmentId }, key));
+    // R2-80: no order => General / factory use with a reason and a cost centre (the server checks it again).
+    resolveGeneralUse(orderId, general);
+    const result = unwrap(await commitIssueAction(lines, { orderId, departmentId, general: orderId ? null : general }, key));
     setDone(result);
+    setGeneral(EMPTY_GENERAL);
   }
 
   return (
     <HomeStack>
       <PageBack href="/mis/store/dashboard" label="Store overview" />
+      <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-1.5 text-sm text-slate-500">
+        <Link href="/mis/store/dashboard" className="inline-flex min-h-11 items-center hover:text-slate-900">Store</Link>
+        <span aria-hidden="true">/</span>
+        <Link href="/mis/store/stock" className="inline-flex min-h-11 items-center hover:text-slate-900">Stock</Link>
+        <span aria-hidden="true">/</span>
+        <span className="font-medium text-slate-900">Material Issue</span>
+      </nav>
       <HeaderCard title={header.title} meta={header.meta} />
 
       {done && (
@@ -58,7 +74,7 @@ export function IssueScreen({ header, items, orders, departments, allocations = 
         </OkCard>
       )}
 
-      <ItemCart items={items} mode="ISSUE" onCommit={commit}>
+      <ItemCart items={items} mode="ISSUE" onCommit={commit} refreshBalances={refreshBalances}>
         {departments.length > 0 && (
           <InfoCard>
             <SectionLabel>To which department</SectionLabel>
@@ -66,7 +82,7 @@ export function IssueScreen({ header, items, orders, departments, allocations = 
               <TargetChip
                 active={departmentId === null}
                 onClick={() => setDepartmentId(null)}
-                label="Not recorded"
+                label="No department"
               />
               {departments.map((dept) => (
                 <TargetChip
@@ -87,7 +103,7 @@ export function IssueScreen({ header, items, orders, departments, allocations = 
               <TargetChip
                 active={orderId === null}
                 onClick={() => setOrderId(null)}
-                label="General issue"
+                label="No order — General / factory use"
               />
               {orders.map((order) => (
                 <TargetChip
@@ -116,12 +132,18 @@ export function IssueScreen({ header, items, orders, departments, allocations = 
             )}
           </InfoCard>
         )}
+        {orderId === null && <GeneralUseFields value={general} onChange={setGeneral} costCenters={costCenters} />}
       </ItemCart>
 
       {/* Clears the sticky foot and the tab bar below it. */}
       <div className="h-32" aria-hidden="true" />
     </HomeStack>
   );
+}
+
+/** R2-66: fresh balances for the cart, via the server action (unwrapped to a plain map). */
+async function refreshBalances(): Promise<Record<string, number>> {
+  return unwrap(await getItemBalancesAction());
 }
 
 function TargetChip({

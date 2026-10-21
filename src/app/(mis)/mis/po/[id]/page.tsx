@@ -17,10 +17,11 @@ export default async function PoDetailPage({ params }: { params: Promise<{ id: s
   if (!po) notFound();
   // Rates and totals are money (D24, F-06): only `wages.read` receives them. For anyone else `getPO`
   // has already removed the rate, and the total is neither computed nor sent.
-  const [canSeeMoney, canWrite, canApprove] = await Promise.all([
+  const [canSeeMoney, canWrite, canApprove, canReconcile] = await Promise.all([
     checkPermission('wages.read'),
     checkPermission('po.write'),
     checkPermission('po.write'),
+    checkPermission('po.read'), // R2-37: QC views the PO (po.view) but not the 3-way match
   ]);
   // The item catalog only feeds the "Add Item" form, which is itself gated on canWrite — a
   // po.read-only viewer (e.g. STORE_GUY, who lacks masters.read) must never reach listItems().
@@ -28,7 +29,7 @@ export default async function PoDetailPage({ params }: { params: Promise<{ id: s
   // The header editor (DRAFT only) needs the supplier list and the approved-BOM picker.
   const [suppliers, approvedBoms] = canWrite && po.status === 'DRAFT' ? await Promise.all([listSuppliers(), listApprovedBomOrders()]) : [[], []];
   const total = canSeeMoney ? await computePoTotal(id) : null;
-  const reconciliation = (po.grns?.length ?? 0) > 0 ? await reconcilePO(id) : null;
+  const reconciliation = canReconcile && (po.grns?.length ?? 0) > 0 ? await reconcilePO(id) : null;
   type PoItem = (typeof po.items)[number];
   const formattedItems = po.items.map((item: PoItem) => ({
     id: item.id,

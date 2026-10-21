@@ -71,7 +71,7 @@ const db: Row = {
     create: async ({ data }: Row) => {
       state.grnCreateAttempts.push(data.grnNumber);
       if (state.failGrnNumbers > 0) { state.failGrnNumbers -= 1; throw Object.assign(new Error('Unique constraint failed'), { code: 'P2002', meta: { target: ['grn_number'] } }); }
-      const row = { id: `g${state.grns.length + 1}`, status: 'DRAFT', supplierInvoiceNo: null, invoiceDate: null, supplierInvoiceAmount: null, ...data };
+      const row = { id: `g${state.grns.length + 1}`, status: 'DRAFT', dcNumber: 'DC-1', supplierInvoiceNo: null, invoiceDate: null, supplierInvoiceAmount: null, ...data };
       state.grns.push(row);
       return { ...row };
     },
@@ -143,7 +143,7 @@ vi.mock('@/server/mis/roles', () => ({ getMisRole: (...a: unknown[]) => getMisRo
 const { addGRNItem, confirmGRN, createGRN, nextGrnNumber, updateGRNHeader } = await import('./grn');
 const { commitReceipt } = await import('./store');
 
-const grnRow = (id: string, over: Row = {}): Row => ({ id, grnNumber: id.toUpperCase(), poId: 'po1', status: 'DRAFT', supplierInvoiceNo: null, invoiceDate: null, supplierInvoiceAmount: null, ...over });
+const grnRow = (id: string, over: Row = {}): Row => ({ id, grnNumber: id.toUpperCase(), poId: 'po1', status: 'DRAFT', dcNumber: 'DC-1', supplierInvoiceNo: null, invoiceDate: null, supplierInvoiceAmount: null, ...over });
 const line = (grnId: string, poItemId: string, receivedQty: number, over: Row = {}): Row => ({ id: `${grnId}-${poItemId}-${state.grnItems.length}`, grnId, poItemId, receivedQty, damageQuantity: 0, dcQuantity: null, type: 'GENERAL', forOrderRef: null, ...over });
 const as = (role: string) => getMisRole.mockResolvedValue(role);
 const poStatus = (id = 'po1') => state.pos.find((p) => p.id === id)!.status;
@@ -217,8 +217,8 @@ describe('B03 receipt cap, 2% tolerance, ADMIN override', () => {
   beforeEach(() => { state.poItems = [state.poItems[0]]; });
 
   it('(a) 102 of 100 is fine; 102.01 is refused for a Store Guy', async () => {
-    await expect(addGRNItem('g1', { poItemId: 'pi1', receivedQty: 102 })).resolves.toBeTruthy();
-    await expect(addGRNItem('g2', { poItemId: 'pi1', receivedQty: 102.01 })).rejects.toThrow(/exceeds the order by more than 2% \(max 102 KG\)\. Ask an Admin to override\./);
+    await expect(addGRNItem('g1', { poItemId: 'pi1', receivedQty: 102, dcQuantity: 102 })).resolves.toBeTruthy();
+    await expect(addGRNItem('g2', { poItemId: 'pi1', receivedQty: 102.01, dcQuantity: 102.01 })).rejects.toThrow(/exceeds the order by more than 2% \(max 102 KG\)\. Ask an Admin to override\./);
     expect(state.grnItems).toHaveLength(1);
   });
 
@@ -238,13 +238,13 @@ describe('B03 receipt cap, 2% tolerance, ADMIN override', () => {
   it('a STORE_GUY cannot override with a reason, at confirm or at add', async () => {
     state.grnItems = [line('g1', 'pi1', 150)];
     await expect(confirmGRN('g1', { overReceiptReason: 'because I said so' })).rejects.toThrow(/Ask an Admin to override/);
-    await expect(addGRNItem('g2', { poItemId: 'pi1', receivedQty: 150, overReceiptReason: 'because I said so' })).rejects.toThrow(/Ask an Admin to override/);
+    await expect(addGRNItem('g2', { poItemId: 'pi1', receivedQty: 150, dcQuantity: 150, overReceiptReason: 'because I said so' })).rejects.toThrow(/Ask an Admin to override/);
   });
 
   it('an ADMIN can add the line beyond tolerance once they give the reason', async () => {
     as('ADMIN');
-    await expect(addGRNItem('g1', { poItemId: 'pi1', receivedQty: 110 })).rejects.toThrow(/Give a reason/);
-    await expect(addGRNItem('g1', { poItemId: 'pi1', receivedQty: 110, overReceiptReason: 'supplier over-shipped' })).resolves.toBeTruthy();
+    await expect(addGRNItem('g1', { poItemId: 'pi1', receivedQty: 110, dcQuantity: 110 })).rejects.toThrow(/Give a reason/);
+    await expect(addGRNItem('g1', { poItemId: 'pi1', receivedQty: 110, dcQuantity: 110, overReceiptReason: 'supplier over-shipped' })).resolves.toBeTruthy();
   });
 
   it('(c) commitReceipt of 500 against a line with 100 outstanding is refused for a Store Guy and writes nothing', async () => {
@@ -292,14 +292,14 @@ describe('B03 receipt cap, 2% tolerance, ADMIN override', () => {
 
 describe('B04 the confirm books what is on the GRN after the claim', () => {
   it('a line added before the claim is booked; an add or header edit racing a confirm (status already CONFIRMED) throws', async () => {
-    await addGRNItem('g1', { poItemId: 'pi1', receivedQty: 10 });
+    await addGRNItem('g1', { poItemId: 'pi1', receivedQty: 10, dcQuantity: 10 });
     await confirmGRN('g1');
     expect(state.ledger.at(-1)!.balanceQty).toBe(10);
     // The GRN is no longer a draft: the status condition on the write makes the late writes fail.
     state.grns.find((g) => g.id === 'g1')!.status = 'DRAFT'; // pass loadDraftGrn's read ...
     const racing = db.misGrn.updateMany;
     db.misGrn.updateMany = async () => ({ count: 0 }); // ... and lose the conditional write
-    await expect(addGRNItem('g1', { poItemId: 'pi1', receivedQty: 1 })).rejects.toThrow('GRN is no longer a draft');
+    await expect(addGRNItem('g1', { poItemId: 'pi1', receivedQty: 1, dcQuantity: 1 })).rejects.toThrow('GRN is no longer a draft');
     await expect(updateGRNHeader('g1', { dcNumber: 'DC-9' })).rejects.toThrow('GRN is no longer a draft');
     db.misGrn.updateMany = racing;
     expect(state.grnItems).toHaveLength(1);

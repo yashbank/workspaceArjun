@@ -2,8 +2,10 @@
 import Link from 'next/link';
 import { useState, useTransition } from 'react';
 
-import { approveMaterialRequestAction, rejectMaterialRequestAction } from '@/app/(mis)/mis/store/requests/actions';
+import { approveMaterialRequestAction, approveMaterialRequestForPickingAction, rejectMaterialRequestAction } from '@/app/(mis)/mis/store/requests/actions';
 import { unwrap } from '@/lib/mis/action-result';
+import { generalUseLabel } from '@/lib/mis/general-use';
+import { PICK_STATUS_LABEL, type PickStatus } from '@/lib/mis/pick-list';
 import { Button } from '@/components/mis/kit/button';
 import { Card, CardRow } from '@/components/mis/kit/card';
 import { Input, NumberInput } from '@/components/mis/kit/input';
@@ -28,6 +30,22 @@ export function RequestDetailScreen({ request, canDecide }: { request: Request; 
   const isOpen = request.status === 'PENDING';
 
   const overCap = request.lines.filter((l) => (Number(qty[l.id]) || 0) > l.requestedQty);
+
+  const approveForPicking = () => {
+    if (overCap.length > 0) return;
+    setError(null);
+    startTransition(async () => {
+      try {
+        unwrap(await approveMaterialRequestForPickingAction(
+          request.id,
+          request.lines.map((l) => ({ lineId: l.id, actualIssuedQty: Number(qty[l.id]) || 0 })),
+          note,
+        ));
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'That did not save.');
+      }
+    });
+  };
 
   const approve = () => {
     if (overCap.length > 0) return;
@@ -67,6 +85,13 @@ export function RequestDetailScreen({ request, canDecide }: { request: Request; 
       <Card>
         {request.order && <CardRow label="Order" value={<Link href={`/mis/orders/${request.order.id}`} className="font-mono text-blue-600 hover:underline">{request.order.orderNumber}</Link>} />}
         {request.department && <CardRow label="Department" value={request.department.name} />}
+        {generalUseLabel(request) && <CardRow label="Charged to" value={generalUseLabel(request)} />}
+        {request.pickList && (
+          <CardRow
+            label="Pick list"
+            value={<Link href={`/mis/store/pick-lists/${request.pickList.id}`} className="text-blue-600 hover:underline">{PICK_STATUS_LABEL[request.pickList.status as PickStatus] ?? request.pickList.status}</Link>}
+          />
+        )}
         {request.notes && <CardRow label="Notes" value={request.notes} />}
         {request.decisionNote && <CardRow label="Store note" value={request.decisionNote} />}
       </Card>
@@ -104,7 +129,8 @@ export function RequestDetailScreen({ request, canDecide }: { request: Request; 
           <Input label="Note (required to reject)" value={note} onChange={(e) => setNote(e.target.value)} />
           {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-2">
-            <Button onClick={approve} disabled={isPending || overCap.length > 0}>{isPending ? 'Saving…' : 'Approve & issue'}</Button>
+            <Button onClick={approveForPicking} disabled={isPending || overCap.length > 0}>{isPending ? 'Saving…' : 'Approve for picking'}</Button>
+            <Button variant="secondary" onClick={approve} disabled={isPending || overCap.length > 0}>Approve & issue now</Button>
             <Button variant="secondary" onClick={reject} disabled={isPending}>Reject</Button>
           </div>
         </div>

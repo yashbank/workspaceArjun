@@ -76,13 +76,13 @@ export function ItemScreen({ items, canWrite }: Props) {
         <div className="flex flex-col gap-4 p-4">
           <Input label={editing ? 'Code' : 'Code (auto if blank)'} value={vals.code} onChange={set('code')} placeholder="ITM-XXXX" />
           <Input label="Name" value={vals.name} onChange={set('name')} required />
-          <Input label="Substrate" value={vals.substrate} onChange={set('substrate')} />
-          <Input label="Coating" value={vals.coating} onChange={set('coating')} />
           <ItemOptionFields
             options={options}
-            gsm={vals.gsm} size={vals.size} unit={vals.unit}
+            gsm={vals.gsm} size={vals.size} substrate={vals.substrate} coating={vals.coating} unit={vals.unit}
             onGsm={(v) => setVals(p => ({ ...p, gsm: v }))}
             onSize={(v) => setVals(p => ({ ...p, size: v }))}
+            onSubstrate={(v) => setVals(p => ({ ...p, substrate: v }))}
+            onCoating={(v) => setVals(p => ({ ...p, coating: v }))}
             onUnit={(v) => setVals(p => ({ ...p, unit: v }))}
           />
           {saveError && <p role="alert" className="text-sm text-red-600">{saveError}</p>}

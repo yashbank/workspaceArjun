@@ -15,11 +15,13 @@ vi.mock('@/server/mis/roles', () => ({ getMisRole: (...a: unknown[]) => getMisRo
 const fake = createFakeDb();
 const employeeFindUnique = vi.fn();
 const workerFindFirst = vi.fn();
+// R2-47: the operator worker-lock read (no hold elsewhere unless a test says so).
+const workerFindMany = vi.fn();
 const allocFindMany = vi.fn();
 const machineFindUnique = vi.fn();
 const dbX = Object.assign(fake.db, {
   misEmployee: Object.assign(fake.db.misEmployee, { findUnique: (...a: unknown[]) => employeeFindUnique(...a) }),
-  misWorkerAllocation: { findFirst: (...a: unknown[]) => workerFindFirst(...a) },
+  misWorkerAllocation: { findFirst: (...a: unknown[]) => workerFindFirst(...a), findMany: (...a: unknown[]) => workerFindMany(...a) },
 });
 dbX.misMachineAllocation = Object.assign(dbX.misMachineAllocation, { findMany: (...a: unknown[]) => allocFindMany(...a) });
 dbX.misMachine = { findUnique: (...a: unknown[]) => machineFindUnique(...a) };
@@ -63,6 +65,7 @@ beforeEach(() => {
   getMisRole.mockResolvedValue('SUPERVISOR');
   employeeFindUnique.mockResolvedValue({ id: EMP, isActive: true, deletedAt: null });
   workerFindFirst.mockResolvedValue({ id: 'w1' });
+  workerFindMany.mockResolvedValue([]);
   allocFindMany.mockResolvedValue([]);
   machineFindUnique.mockResolvedValue({ name: 'Coater 1', isActive: true, deletedAt: null });
 });
@@ -168,8 +171,19 @@ describe('B122 operator, shift and crew', () => {
       { id: 'night', isActive: true, startTime: '22:00', endTime: '06:00' },
     ];
     const at = new Date('2026-10-13T04:30:00Z'); // 10:00 IST
-    await submitProductionLog(entry({}, { clientRecordedAt: at.toISOString() }));
-    expect(fake.state.logs[0].shiftId).toBe('day');
+    // The clock is pinned to the log time: the entry and its line clearance must be "now", not a
+    // fixed date that drifts into the past (the test date was hard-coded, the clock was not).
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date(at.getTime() + 60_000));
+      fake.state.clearances = [
+        { machineId: MACHINE, mode: 'MINUTES', orderId: ORDER, shiftId: null, clearedAt: new Date(Date.now() - 120_000), expiresAt: new Date(Date.now() + 3_600_000) },
+      ];
+      await submitProductionLog(entry({}, { clientRecordedAt: at.toISOString() }));
+      expect(fake.state.logs[0].shiftId).toBe('day');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

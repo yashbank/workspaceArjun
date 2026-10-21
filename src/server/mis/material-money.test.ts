@@ -97,8 +97,8 @@ beforeEach(() => {
 
 /** One reader: who may open it, what it hands back, and the price it must not carry. */
 const READERS: { name: string; readers: MisRoleName[]; run: () => Promise<unknown>; price: number; key: string }[] = [
-  { name: 'getPO', readers: ['OWNER', 'ADMIN', 'STORE_GUY'], run: () => getPO('po1'), price: RATE, key: 'ratePerUnit' },
-  { name: 'getGRN', readers: ['OWNER', 'ADMIN', 'SUPERVISOR', 'STORE_GUY'], run: () => getGRN('g1'), price: RATE, key: 'ratePerUnit' },
+  { name: 'getPO', readers: ['OWNER', 'ADMIN', 'STORE_GUY', 'QC'], run: () => getPO('po1'), price: RATE, key: 'ratePerUnit' },
+  { name: 'getGRN', readers: ['OWNER', 'ADMIN', 'SUPERVISOR', 'STORE_GUY', 'QC'], run: () => getGRN('g1'), price: RATE, key: 'ratePerUnit' },
   { name: 'listItems', readers: ['OWNER', 'ADMIN', 'SUPERVISOR', 'QC'], run: () => listItems(), price: PRICE, key: 'pricePerUnit' },
   { name: 'getItem', readers: ['OWNER', 'ADMIN', 'SUPERVISOR', 'QC'], run: () => getItem('i1'), price: PRICE, key: 'pricePerUnit' },
   { name: 'searchItems', readers: ['OWNER', 'ADMIN', 'SUPERVISOR', 'QC'], run: () => searchItems('kra'), price: PRICE, key: 'pricePerUnit' },

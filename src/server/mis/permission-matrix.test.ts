@@ -47,7 +47,15 @@ const reports = await import('./reports');
 const payComponents = await import('./pay-components');
 const extraPayDays = await import('./extra-pay-days');
 const payrollPeriod = await import('./payroll-period');
+const payrollLedger = await import('./payroll-ledger');
 const supplierInvoice = await import('./supplier-invoice');
+const grn = await import('./grn');
+const po = await import('./po');
+const store = await import('./store');
+const materialRequest = await import('./material-request');
+const pickList = await import('./pick-list');
+const storeReturn = await import('./store-return');
+const leavePay = await import('./leave-pay');
 
 type Entry = { module: string; name: string; requires: MisAction; call: () => Promise<unknown> };
 
@@ -56,6 +64,8 @@ const EMPLOYEE_INPUT = { employeeCode: 'E-9', name: 'X', role: 'WORKER' } as nev
 
 const TABLE: Entry[] = [
   { module: 'employee.ts', name: 'listEmployees', requires: 'employees.read', call: () => employee.listEmployees() },
+  // R2-83: the paged list — same door as the full list.
+  { module: 'employee.ts', name: 'listEmployeesPage', requires: 'employees.read', call: () => employee.listEmployeesPage() },
   { module: 'employee.ts', name: 'listEmployeeRoster', requires: 'employees.read', call: () => employee.listEmployeeRoster() },
   { module: 'employee.ts', name: 'getEmployee', requires: 'employees.read', call: () => employee.getEmployee('e1') },
   { module: 'employee.ts', name: 'createEmployee', requires: 'employees.write', call: () => employee.createEmployee(EMPLOYEE_INPUT) },
@@ -77,6 +87,8 @@ const TABLE: Entry[] = [
   { module: 'wage-type.ts', name: 'getWageAmount', requires: 'wages.read', call: () => wageType.getWageAmount('WG-DAILY-01') },
   { module: 'wage-type.ts', name: 'setWageTypeActive', requires: 'wages.read', call: () => wageType.setWageTypeActive('WG-DAILY-01', false) },
   { module: 'wage-type.ts', name: 'getWageTypeRowsForCodes', requires: 'wages.read', call: () => wageType.getWageTypeRowsForCodes(['WG-DAILY-01']) },
+  { module: 'wage-type.ts', name: 'updateWageTypeDetails', requires: 'wages.read', call: () => wageType.updateWageTypeDetails('WG-DAILY-01', { name: 'X' }) },
+  { module: 'wage-type.ts', name: 'listWageRateHistory', requires: 'wages.read', call: () => wageType.listWageRateHistory('2026-01-01') },
 
   { module: 'business-rules.ts', name: 'getBusinessRules', requires: 'settings.read', call: () => rules.getBusinessRules() },
   { module: 'business-rules.ts', name: 'updateBusinessRule', requires: 'settings.write', call: () => rules.updateBusinessRule('k', 'v') },
@@ -89,6 +101,10 @@ const TABLE: Entry[] = [
   // The payroll figures ARE wages (F-01, fixed in 14F: this used to be gated on attendance.read).
   { module: 'payroll.ts', name: 'calculateMonthlyPayroll', requires: 'wages.read', call: () => payroll.calculateMonthlyPayroll(2026, 1) },
   { module: 'payroll.ts', name: 'getMonthWageBill', requires: 'wages.read', call: () => payroll.getMonthWageBill(2026, 1) },
+  { module: 'payroll.ts', name: 'calculateEmployeePayroll', requires: 'wages.read', call: () => payroll.calculateEmployeePayroll('e1', 2026, 1) },
+  { module: 'payroll-ledger.ts', name: 'buildWageLedgerCsv', requires: 'wages.read', call: () => payrollLedger.buildWageLedgerCsv(2026, 1) },
+  { module: 'payroll-ledger.ts', name: 'buildBankTransferCsv', requires: 'wages.read', call: () => payrollLedger.buildBankTransferCsv(2026, 1) },
+  { module: 'payroll-ledger.ts', name: 'listBankDetailGaps', requires: 'wages.read', call: () => payrollLedger.listBankDetailGaps([]) },
 
   // Phase 25 (25.1) — per-employee payslip-row toggles are wage STRUCTURE, Owner only.
   { module: 'pay-components.ts', name: 'getPayComponents', requires: 'wages.read', call: () => payComponents.getPayComponents('e1') },
@@ -99,11 +115,18 @@ const TABLE: Entry[] = [
   // own words); every other door is wages.read, Owner only, from the moment a rupee/multiplier
   // figure can be read back.
   { module: 'extra-pay-days.ts', name: 'proposeExtraPayDay', requires: 'attendance.write', call: () => extraPayDays.proposeExtraPayDay({ date: new Date('2026-01-01'), kind: 'FLAT_AMOUNT', value: 500, scope: 'ALL_PRESENT', reason: 'test' }) },
+  { module: 'extra-pay-days.ts', name: 'listDepartmentOptions', requires: 'attendance.write', call: () => extraPayDays.listDepartmentOptions() },
+  { module: 'extra-pay-days.ts', name: 'listExtraPayProposals', requires: 'attendance.write', call: () => extraPayDays.listExtraPayProposals() },
   { module: 'extra-pay-days.ts', name: 'listExtraPayDays', requires: 'wages.read', call: () => extraPayDays.listExtraPayDays() },
   { module: 'extra-pay-days.ts', name: 'listApprovedExtraPayDaysForMonth', requires: 'wages.read', call: () => extraPayDays.listApprovedExtraPayDaysForMonth(2026, 1) },
   { module: 'extra-pay-days.ts', name: 'approveExtraPayDay', requires: 'wages.read', call: () => extraPayDays.approveExtraPayDay('x1') },
   { module: 'extra-pay-days.ts', name: 'rejectExtraPayDay', requires: 'wages.read', call: () => extraPayDays.rejectExtraPayDay('x1') },
   { module: 'extra-pay-days.ts', name: 'countPendingExtraPayDays', requires: 'wages.read', call: () => extraPayDays.countPendingExtraPayDays() },
+
+  // R2-102 — whether a leave type is PAID moves every payslip: Owner only, read and write.
+  { module: 'leave-pay.ts', name: 'getLeavePaySettings', requires: 'wages.read', call: () => leavePay.getLeavePaySettings() },
+  { module: 'leave-pay.ts', name: 'setLeavePay', requires: 'wages.read', call: () => leavePay.setLeavePay({ leaveType: 'CL', paid: false }) },
+  { module: 'leave-pay.ts', name: 'getLeavePayForMonth', requires: 'wages.read', call: () => leavePay.getLeavePayForMonth(2026, 1) },
 
   // Phase 25 (D27's missing half) — the period-close/snapshot flow. Every door is wages.read.
   { module: 'payroll-period.ts', name: 'getPayrollPeriod', requires: 'wages.read', call: () => payrollPeriod.getPayrollPeriod(2026, 1) },
@@ -126,6 +149,31 @@ const TABLE: Entry[] = [
   // F6 — the 3-way match board. Read: Owner/Admin/Store Guy; reconcile: Owner/Admin. Rupees stay Owner-only inside the payload.
   { module: 'supplier-invoice.ts', name: 'reconcilePO', requires: 'po.read', call: () => supplierInvoice.reconcilePO('po1') },
   { module: 'supplier-invoice.ts', name: 'listSupplierInvoices', requires: 'supplier_invoice.read', call: () => supplierInvoice.listSupplierInvoices() },
+  { module: 'supplier-invoice.ts', name: 'listSupplierInvoicesPage', requires: 'supplier_invoice.read', call: () => supplierInvoice.listSupplierInvoicesPage() },
+  // R2-37 — QC may VIEW PO / GRN read-only: po.view / grn.view (QC holds neither po.read nor any write).
+  { module: 'grn.ts', name: 'listGRNs', requires: 'grn.view', call: () => grn.listGRNs() },
+  { module: 'grn.ts', name: 'listGRNsPage', requires: 'grn.view', call: () => grn.listGRNsPage({}) },
+  { module: 'grn.ts', name: 'getGRN', requires: 'grn.view', call: () => grn.getGRN('g1') },
+  { module: 'po.ts', name: 'listPOs', requires: 'po.view', call: () => po.listPOs() },
+  { module: 'po.ts', name: 'listPOsPage', requires: 'po.view', call: () => po.listPOsPage({}) },
+  { module: 'po.ts', name: 'getPO', requires: 'po.view', call: () => po.getPO('p1') },
+  // R2-38/62/66/77/79 — Store: a Supervisor reads (store.read) and raises requests/returns; only store.write issues, picks, hands over.
+  { module: 'store.ts', name: 'createStoreOut', requires: 'store.write', call: () => store.createStoreOut({ itemId: 'i1', quantity: 1, general: { reason: 'grease', costCenter: 'Press' } }) },
+  { module: 'store.ts', name: 'commitIssue', requires: 'store.write', call: () => store.commitIssue([{ itemId: 'i1', qty: 1 }], { general: { reason: 'grease', costCenter: 'Press' } }) },
+  { module: 'store.ts', name: 'listItemBalances', requires: 'store.read', call: () => store.listItemBalances() },
+  { module: 'store.ts', name: 'listCostCenters', requires: 'store.read', call: () => store.listCostCenters() },
+  { module: 'material-request.ts', name: 'createMaterialRequest', requires: 'store.read', call: () => materialRequest.createMaterialRequest([{ itemId: 'i1', qty: 1 }], { general: { reason: 'grease', costCenter: 'Press' } }) },
+  { module: 'material-request.ts', name: 'approveMaterialRequest', requires: 'store.write', call: () => materialRequest.approveMaterialRequest('r1', []) },
+  { module: 'material-request.ts', name: 'approveMaterialRequestForPicking', requires: 'store.write', call: () => materialRequest.approveMaterialRequestForPicking('r1', []) },
+  { module: 'material-request.ts', name: 'rejectMaterialRequest', requires: 'store.write', call: () => materialRequest.rejectMaterialRequest('r1', 'no') },
+  { module: 'pick-list.ts', name: 'listPickLists', requires: 'store.read', call: () => pickList.listPickLists() },
+  { module: 'pick-list.ts', name: 'getPickList', requires: 'store.read', call: () => pickList.getPickList('p1') },
+  { module: 'pick-list.ts', name: 'recordPicks', requires: 'store.write', call: () => pickList.recordPicks('p1', []) },
+  { module: 'pick-list.ts', name: 'stagePickList', requires: 'store.write', call: () => pickList.stagePickList('p1') },
+  { module: 'pick-list.ts', name: 'handOverPickList', requires: 'store.write', call: () => pickList.handOverPickList('p1') },
+  { module: 'store-return.ts', name: 'createStoreReturn', requires: 'store.read', call: () => storeReturn.createStoreReturn({ itemId: 'i1', qty: 1, reason: 'unused' }) },
+  { module: 'store-return.ts', name: 'decideStoreReturn', requires: 'store.write', call: () => storeReturn.decideStoreReturn('r1', 'ACCEPT') },
+  { module: 'store-return.ts', name: 'listStoreReturns', requires: 'store.read', call: () => storeReturn.listStoreReturns() },
   { module: 'supplier-invoice.ts', name: 'reconcileSupplierInvoice', requires: 'supplier_invoice.write', call: () => supplierInvoice.reconcileSupplierInvoice('i1') },
 ];
 
@@ -140,7 +188,12 @@ const NOT_A_DOOR: Record<string, string[]> = {
   'pay-components.ts': [],
   'extra-pay-days.ts': [],
   'payroll-period.ts': [],
+  'payroll-ledger.ts': [],
+  'leave-pay.ts': [],
   'supplier-invoice.ts': [],
+  // R2 batch 2 — the Store flow modules are fully tabled (every async export is a door).
+  'pick-list.ts': [],
+  'store-return.ts': [],
 };
 
 async function refused(call: () => Promise<unknown>): Promise<boolean> {

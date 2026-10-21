@@ -154,46 +154,46 @@ beforeEach(() => {
 
 describe('createPO — FOR_ORDER validation (MIS-279 cases 2 & 3)', () => {
   it('FOR_ORDER with no reference is refused, and the message points at the buffer-stock path', async () => {
-    await expect(createPO({ purpose: 'FOR_ORDER', bomRef: '' })).rejects.toThrow(/buffer stock/i);
+    await expect(createPO({ supplierId: 's1', purpose: 'FOR_ORDER', bomRef: '' })).rejects.toThrow(/buffer stock/i);
   });
 
   it('FOR_ORDER with a blank (whitespace-only) reference is refused the same way', async () => {
-    await expect(createPO({ purpose: 'FOR_ORDER', bomRef: '   ' })).rejects.toThrow(/BOM reference/i);
+    await expect(createPO({ supplierId: 's1', purpose: 'FOR_ORDER', bomRef: '   ' })).rejects.toThrow(/BOM reference/i);
   });
 
   it('switching to BUFFER_STOCK strips a reference typed before the raiser switched paths', async () => {
-    const po = await createPO({ purpose: 'BUFFER_STOCK', bomRef: 'ORD-202610-00118' });
+    const po = await createPO({ supplierId: 's1', purpose: 'BUFFER_STOCK', bomRef: 'ORD-202610-00118' });
     expect(po.bomRef).toBeNull();
   });
 
   it('omitting purpose infers FOR_ORDER from a present bomRef, and BUFFER_STOCK from none — existing callers are unaffected', async () => {
-    expect((await createPO({ bomRef: 'ORD-202610-00009' })).bomRef).toBe('ORD-202610-00009');
-    expect((await createPO({})).bomRef).toBeNull();
+    expect((await createPO({ supplierId: 's1', bomRef: 'ORD-202610-00009' })).bomRef).toBe('ORD-202610-00009');
+    expect((await createPO({ supplierId: 's1' })).bomRef).toBeNull();
   });
 });
 
 describe('createPO writes `purpose` in step with `bomRef` (Track 4 Part B — the stored column, not just the derived one)', () => {
   it('a buffer-stock PO (null bomRef) is created with purpose=BUFFER_STOCK, never left at the FOR_ORDER default', async () => {
-    const po = await createPO({ purpose: 'BUFFER_STOCK' });
+    const po = await createPO({ supplierId: 's1', purpose: 'BUFFER_STOCK' });
     expect(po.bomRef).toBeNull();
     expect((po as Row).purpose).toBe('BUFFER_STOCK');
   });
 
   it('inferring BUFFER_STOCK from an absent bomRef also writes the column — never blocked, never flagged', async () => {
-    const po = await createPO({});
+    const po = await createPO({ supplierId: 's1' });
     expect(po.bomRef).toBeNull();
     expect((po as Row).purpose).toBe('BUFFER_STOCK');
   });
 
   it('a FOR_ORDER PO is created with purpose=FOR_ORDER, matching its bomRef', async () => {
-    const po = await createPO({ bomRef: 'ORD-202610-00900' });
+    const po = await createPO({ supplierId: 's1', bomRef: 'ORD-202610-00900' });
     expect((po as Row).purpose).toBe('FOR_ORDER');
   });
 });
 
 describe('buffer PO end to end (MIS-279 case 1) — never surfaces as an error (case 5)', () => {
   it('creates cleanly with no BOM, and commits a receipt against it with no special error state', async () => {
-    const po = await createPO({ purpose: 'BUFFER_STOCK', notes: 'Quarterly top-up' });
+    const po = await createPO({ supplierId: 's1', purpose: 'BUFFER_STOCK', notes: 'Quarterly top-up' });
     expect(po.bomRef).toBeNull();
 
     const poItem = await fakeDb.misPoItem.create({ data: { poId: po.id, itemId: 'i1', quantity: 50, ratePerUnit: 12 } });
@@ -225,7 +225,7 @@ describe('classification-on-issue (MIS-279 case 4)', () => {
 
 describe('partial-receipt arithmetic, to the paisa (this phase\'s own acceptance check)', () => {
   it('order 100, receive 40 then 35: outstanding, ledger and PO status are correct after EACH step, and the PO never auto-completes short of the full 100', async () => {
-    const po = await createPO({ bomRef: 'ORD-202610-00500' });
+    const po = await createPO({ supplierId: 's1', bomRef: 'ORD-202610-00500' });
     const poItem = await fakeDb.misPoItem.create({ data: { poId: po.id, itemId: 'i1', quantity: 100, ratePerUnit: 20 } });
 
     openPo(po.id);

@@ -5,16 +5,26 @@ import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { Button } from '@/components/mis/kit/button';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import { Select } from '@/components/mis/kit/select';
+import { Combobox } from '@/components/ui/combobox';
 import { Input, NumberInput } from '@/components/mis/kit/input';
 import { storeInAction, storeOutAction } from '@/app/(mis)/mis/store/actions';
 import { unwrap } from '@/lib/mis/action-result';
 import type { StoreTxnRow, StoreItemRow } from '@/server/mis/store';
+import { Pagination, HiddenParams } from '@/components/mis/kit/pagination';
 import { fmtDate as fmtFactoryDate, fmtTime as fmtFactoryTime } from '@/lib/mis/client-dates';
+
+type IssueTargets = {
+  orders: { id: string; orderNumber: string; customerName: string | null }[];
+  departments: { id: string; name: string }[];
+};
 
 type Props = {
   txns: StoreTxnRow[];
   items: StoreItemRow[];
   canWrite: boolean;
+  targets?: IssueTargets;
+  /** R2-83: the server-side page — total matching rows, the page number, and the URL filters (kept in the page links). */
+  paging?: { total: number; page: number; params: Record<string, string | undefined> };
 };
 
 function fmt(d: Date | string) {
@@ -56,14 +66,15 @@ function downloadCsv(rows: StoreTxnRow[]) {
 }
 
 const emptyIn = { itemId: '', quantity: '', referenceNo: '', notes: '' };
-const emptyOut = { itemId: '', quantity: '', referenceNo: '' };
+const emptyOut = { itemId: '', quantity: '', referenceNo: '', orderId: '', departmentId: '' };
 
-export function StoreTransactionsScreen({ txns, items, canWrite }: Props) {
-  const [search, setSearch] = useState('');
-  const [typeFilter, setTypeFilter] = useState('');
-  const [itemFilter, setItemFilter] = useState('');
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate] = useState('');
+export function StoreTransactionsScreen({ txns, items, canWrite, targets = { orders: [], departments: [] }, paging }: Props) {
+  const urlParams = paging?.params ?? {};
+  const search = urlParams.q ?? '';
+  const typeFilter = urlParams.type ?? '';
+  const itemFilter = urlParams.itemId ?? '';
+  const fromDate = urlParams.from ?? '';
+  const toDate = urlParams.to ?? '';
 
   const [isPending, startTransition] = useTransition();
   const [inOpen, setInOpen] = useState(false);
@@ -108,6 +119,7 @@ export function StoreTransactionsScreen({ txns, items, canWrite }: Props) {
     const quantity = parseFloat(outForm.quantity);
     if (!outForm.itemId) { setOutError('Select an item.'); return; }
     if (!outForm.quantity || Number.isNaN(quantity) || quantity <= 0) { setOutError('Enter a quantity greater than 0.'); return; }
+    if (!outForm.orderId && !outForm.departmentId) { setOutError('Pick an order or a department for this issue.'); return; }
     setOutError(null);
     startTransition(async () => {
       try {
@@ -115,6 +127,8 @@ export function StoreTransactionsScreen({ txns, items, canWrite }: Props) {
           itemId: outForm.itemId,
           quantity,
           referenceNo: outForm.referenceNo.trim() || undefined,
+          orderId: outForm.orderId || null,
+          departmentId: outForm.departmentId || null,
         }));
         setOutOpen(false);
         setOutForm(emptyOut);
@@ -124,24 +138,8 @@ export function StoreTransactionsScreen({ txns, items, canWrite }: Props) {
     });
   };
 
-  const filtered = useMemo(() => {
-    return txns.filter((r) => {
-      const q = search.trim().toLowerCase();
-      const matchSearch =
-        !q ||
-        r.txnNumber.toLowerCase().includes(q) ||
-        r.itemName.toLowerCase().includes(q) ||
-        r.itemCode.toLowerCase().includes(q) ||
-        (r.sku ?? '').toLowerCase().includes(q) ||
-        (r.referenceNo ?? '').toLowerCase().includes(q);
-      const matchType = !typeFilter || r.type === typeFilter;
-      const matchItem = !itemFilter || r.itemId === itemFilter;
-      const txnDate = new Date(r.createdAt);
-      const matchFrom = !fromDate || txnDate >= new Date(fromDate);
-      const matchTo = !toDate || txnDate <= new Date(toDate + 'T23:59:59');
-      return matchSearch && matchType && matchItem && matchFrom && matchTo;
-    });
-  }, [txns, search, typeFilter, itemFilter, fromDate, toDate]);
+  // R2-83: the server already applied search / type / item / dates and the page; these are that page's rows.
+  const filtered = txns;
 
   const totalIn = filtered.filter((r) => r.type === 'IN').reduce((s, r) => s + r.quantity, 0);
   const totalOut = filtered.filter((r) => r.type === 'OUT').reduce((s, r) => s + r.quantity, 0);
@@ -239,7 +237,7 @@ export function StoreTransactionsScreen({ txns, items, canWrite }: Props) {
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Transaction Log</h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            All store movements · {filtered.length} records
+            All store movements · {paging ? paging.total : filtered.length} records
             {(search || typeFilter || itemFilter || fromDate || toDate) && (
               <span className="ml-1 text-slate-400">(filtered)</span>
             )}
@@ -275,18 +273,18 @@ export function StoreTransactionsScreen({ txns, items, canWrite }: Props) {
         </div>
       )}
 
-      {/* Filters */}
-      <div className="flex flex-wrap gap-3 items-end">
+      {/* Filters: a GET form, so search, filters and page live in the URL (R2-83). */}
+      <form method="get" className="flex flex-wrap gap-3 items-end">
         <input
           type="search"
+          name="q"
           placeholder="Search by txn no., item, ref…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          defaultValue={search}
           className="w-full max-w-xs min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500"
         />
         <select
-          value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value)}
+          name="type"
+          defaultValue={typeFilter}
           className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400"
         >
           <option value="">All Types</option>
@@ -294,8 +292,8 @@ export function StoreTransactionsScreen({ txns, items, canWrite }: Props) {
           <option value="OUT">OUT only</option>
         </select>
         <select
-          value={itemFilter}
-          onChange={(e) => setItemFilter(e.target.value)}
+          name="itemId"
+          defaultValue={itemFilter}
           className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400 max-w-[200px]"
         >
           <option value="">All Items</option>
@@ -309,33 +307,25 @@ export function StoreTransactionsScreen({ txns, items, canWrite }: Props) {
           <span>From</span>
           <input
             type="date"
-            value={fromDate}
-            onChange={(e) => setFromDate(e.target.value)}
+            name="from"
+            defaultValue={fromDate}
             className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400"
           />
           <span>To</span>
           <input
             type="date"
-            value={toDate}
-            onChange={(e) => setToDate(e.target.value)}
+            name="to"
+            defaultValue={toDate}
             className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400"
           />
         </div>
+        <Button type="submit" variant="secondary">Apply</Button>
         {(search || typeFilter || itemFilter || fromDate || toDate) && (
-          <button
-            onClick={() => {
-              setSearch('');
-              setTypeFilter('');
-              setItemFilter('');
-              setFromDate('');
-              setToDate('');
-            }}
-            className="text-sm text-slate-400 hover:text-slate-600 underline"
-          >
+          <a href="/mis/store/transactions" className="inline-flex min-h-11 items-center text-sm text-slate-600 underline">
             Clear filters
-          </button>
+          </a>
         )}
-      </div>
+      </form>
 
       <DataTable
         columns={columns}
@@ -348,6 +338,7 @@ export function StoreTransactionsScreen({ txns, items, canWrite }: Props) {
             : 'No store movements recorded yet.'
         }
       />
+      {paging && <Pagination basePath="/mis/store/transactions" params={paging.params} page={paging.page} total={paging.total} />}
 
       <SlideOver
         open={inOpen}
@@ -362,7 +353,7 @@ export function StoreTransactionsScreen({ txns, items, canWrite }: Props) {
         }
       >
         <div className="flex flex-col gap-4 p-4">
-          <Select
+          <Combobox
             label="Item"
             value={inForm.itemId || null}
             options={itemOptions}
@@ -409,7 +400,7 @@ export function StoreTransactionsScreen({ txns, items, canWrite }: Props) {
         }
       >
         <div className="flex flex-col gap-4 p-4">
-          <Select
+          <Combobox
             label="Item"
             value={outForm.itemId || null}
             options={itemOptions}
@@ -430,6 +421,20 @@ export function StoreTransactionsScreen({ txns, items, canWrite }: Props) {
             onChange={(e) => setOutForm((f) => ({ ...f, quantity: e.target.value }))}
             min="0"
             step="0.01"
+          />
+          <Combobox
+            label="Against an order"
+            value={outForm.orderId || null}
+            options={targets.orders.map((o) => ({ value: o.id, label: `${o.orderNumber}${o.customerName ? ` — ${o.customerName}` : ''}` }))}
+            onChange={(v) => setOutForm((f) => ({ ...f, orderId: v }))}
+            placeholder="Select an order…"
+          />
+          <Select
+            label="To which department"
+            value={outForm.departmentId || null}
+            options={targets.departments.map((d) => ({ value: d.id, label: d.name }))}
+            onChange={(v) => setOutForm((f) => ({ ...f, departmentId: v }))}
+            placeholder="Select a department…"
           />
           <Input
             label="Reference No."

@@ -7,6 +7,8 @@ import { getWageRuleHistory } from '@/server/mis/business-rules';
 import { DEFAULT_DAILY_WAGE_CODE, getWageTypeRowsForCodes } from '@/server/mis/wage-type';
 import { getPayComponentsForEmployees, type PayComponentMap } from '@/server/mis/pay-components';
 import { listApprovedExtraPayDaysForMonth, type ExtraPayDayRow } from '@/server/mis/extra-pay-days';
+import { isPaidLeaveDay } from '@/lib/mis/leave-pay';
+import { getLeavePayForMonth } from '@/server/mis/leave-pay';
 
 /** Attendance statuses that earn a day's basic wage, and what fraction of it. */
 const DAY_FRACTION: Record<string, number> = { PRESENT: 1, HALF_DAY: 0.5 };
@@ -131,6 +133,8 @@ function computeEmployeeMonth(
   components: PayComponentMap,
   extraPayDays: ExtraPayDayRow[],
   workingDays: number,
+  /** R2-102: true when this LEAVE day is covered by an approved leave of a type the Owner marked PAID. */
+  paidLeaveOn: (date: Date) => boolean = () => false,
 ): PayrollRow {
   const payType: 'MONTHLY' | 'DAILY' = emp.payType === 'MONTHLY' ? 'MONTHLY' : 'DAILY';
   const monthEnd = new Date(Date.UTC(year, month, 0));
@@ -149,7 +153,11 @@ function computeEmployeeMonth(
 
   const priceDay = (date: Date, status: string, lateMinutes: number, otMinutes: number, synthetic: boolean) => {
     const monthlySunday = payType === 'MONTHLY' && isSunday(date);
-    const fraction = monthlySunday ? 1 : (DAY_FRACTION[status] ?? 0);
+    // R2-102: a PAID leave day earns a full day at the same day rate as a present day (same pay basis,
+    // same wage code as of that day); an UNPAID one (LWP, Other, or a LEAVE mark with no approved
+    // request behind it) earns nothing, as before.
+    const paidLeave = !synthetic && status === 'LEAVE' && paidLeaveOn(date);
+    const fraction = monthlySunday || paidLeave ? 1 : (DAY_FRACTION[status] ?? 0);
     const dayRate = dayRateOn(date);
     const row = rowOn(date);
 
@@ -220,7 +228,11 @@ function computeEmployeeMonth(
 
   const basicWageOn = components.BASIC ? basicWage : 0;
   const otPayOn = components.OT ? otPay : 0;
-  const grossPay = basicWageOn + otPayOn + hra + allowance + bonus + extraPay - latePenaltyTotal;
+  // R2-107: a late penalty can take the month to zero, never below it. The penalty is capped at
+  // the month's earnings, so the payslip's own lines still add up (earnings − penalty = gross ≥ 0).
+  const earnings = basicWageOn + otPayOn + hra + allowance + bonus + extraPay;
+  const latePenaltyApplied = Math.min(latePenaltyTotal, earnings);
+  const grossPay = Math.max(0, earnings - latePenaltyApplied);
 
   return {
     employeeId: emp.id,
@@ -241,7 +253,7 @@ function computeEmployeeMonth(
     otPay: round(otPayOn),
     bonus: round(bonus),
     extraPay: round(extraPay),
-    latePenalty: round(latePenaltyTotal),
+    latePenalty: round(latePenaltyApplied),
     grossPay: round(grossPay),
     wageTypeCode: emp.wageTypeCode ?? null,
     needsPayCode: !emp.wageTypeCode && !closingRow,
@@ -268,10 +280,30 @@ function computeEmployeeMonth(
  */
 export async function calculateMonthlyPayroll(year: number, month: number, client: Prisma.TransactionClient = db): Promise<PayrollRow[]> {
   await requirePermission('wages.read');
+  return computePayroll(year, month, client, null);
+}
 
+/**
+ * R2-112: one employee's payslip line — the same arithmetic as `calculateMonthlyPayroll`, but every
+ * query is scoped to that one employee (their attendance, their roster row, their snapshot line),
+ * so opening a payslip never recomputes the whole factory. `null` when they have no line that month.
+ */
+export async function calculateEmployeePayroll(
+  employeeId: string,
+  year: number,
+  month: number,
+  client: Prisma.TransactionClient = db,
+): Promise<PayrollRow | null> {
+  await requirePermission('wages.read');
+  const rows = await computePayroll(year, month, client, employeeId);
+  return rows.find((r) => r.employeeId === employeeId) ?? null;
+}
+
+async function computePayroll(year: number, month: number, client: Prisma.TransactionClient, onlyEmployeeId: string | null): Promise<PayrollRow[]> {
+  const scope = onlyEmployeeId ? { employeeId: onlyEmployeeId } : {};
   const period = await findPayrollPeriod(client, year, month);
   if (period?.status === 'CLOSED') {
-    const lines = await client.misPayrollSnapshotLine.findMany({ where: { periodId: period.id }, orderBy: { employeeName: 'asc' } });
+    const lines = await client.misPayrollSnapshotLine.findMany({ where: { periodId: period.id, ...scope }, orderBy: { employeeName: 'asc' } });
     return lines.map(snapshotToRow);
   }
 
@@ -289,13 +321,33 @@ export async function calculateMonthlyPayroll(year: number, month: number, clien
   const workingDays = daysInMonth(year, month);
 
   const attendance: AttendanceRow[] = await client.misAttendance.findMany({
-    where: { date: { gte: start, lte: end } },
+    where: { date: { gte: start, lte: end }, ...scope },
     include: {
       employee: { select: { id: true, name: true, employeeCode: true, payType: true, sundayPaid: true, wageTypeCode: true, departmentId: true } },
       shift: { select: { name: true } },
     },
     orderBy: [{ employee: { name: 'asc' } }, { date: 'asc' }],
   });
+
+  // R2-102: which LEAVE days are paid. Read only when the month has a LEAVE row in scope, so a month
+  // without leave costs no extra query.
+  const leaveEmployeeIds = [...new Set(attendance.filter((a) => a.status === 'LEAVE' && a.employee).map((a) => a.employee!.id))];
+  let paidLeaveOn: (employeeId: string, date: Date) => boolean = () => false;
+  if (leaveEmployeeIds.length > 0) {
+    const [leavePay, approvedLeaves] = await Promise.all([
+      getLeavePayForMonth(year, month, client),
+      client.misLeaveRequest.findMany({
+        where: {
+          status: 'APPROVED',
+          employeeId: { in: leaveEmployeeIds },
+          date: { lte: end },
+          OR: [{ endDate: null, date: { gte: start } }, { endDate: { gte: start } }],
+        },
+        select: { employeeId: true, date: true, endDate: true, leaveType: true },
+      }),
+    ]);
+    paidLeaveOn = (employeeId, date) => isPaidLeaveDay(approvedLeaves, employeeId, date, leavePay);
+  }
 
   const byEmployee: Record<string, AttendanceRow[]> = {};
   for (const a of attendance) {
@@ -306,7 +358,7 @@ export async function calculateMonthlyPayroll(year: number, month: number, clien
   // R3 B44: every active, non-deleted employee with a wage code gets a line, even with no attendance
   // rows at all (a MONTHLY employee is still paid Sundays, allowances and extra-pay days).
   const rosterEmployees = (await client.misEmployee.findMany({
-    where: { deletedAt: null, isActive: true, wageTypeCode: { not: null } },
+    where: { deletedAt: null, isActive: true, wageTypeCode: { not: null }, ...(onlyEmployeeId ? { id: onlyEmployeeId } : {}) },
     select: { id: true, name: true, employeeCode: true, payType: true, sundayPaid: true, wageTypeCode: true, departmentId: true },
   })) as PayrollEmployee[];
   const zeroRowEmployees = rosterEmployees.filter((e) => !byEmployee[e.id]);
@@ -343,6 +395,7 @@ export async function calculateMonthlyPayroll(year: number, month: number, clien
       componentsByEmployee.get(emp.id) ?? defaultComponents,
       extraPayDays,
       workingDays,
+      (date) => paidLeaveOn(emp.id, date),
     );
   });
 }

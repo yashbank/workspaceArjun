@@ -46,7 +46,33 @@ export type ExtraPayDayRow = {
   approvedAt: Date | null;
   employeeIds: string[];
   departmentIds: string[];
+  /** R2-116: who proposed it (name, else email). Null when the account is gone. */
+  proposedByName?: string | null;
 };
+
+/** R2-116: what a proposer may see of the list - never the value (a proposer is not a wage reader). */
+export type ExtraPayProposal = {
+  id: string;
+  date: string;
+  scope: MisExtraPayScope;
+  reason: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  proposedByName: string | null;
+};
+
+/** user-profile id -> display name. Best effort: a lookup failure leaves names blank, never breaks the list. */
+async function proposerNames(ids: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return out;
+  try {
+    const rows = await db.userProfile.findMany({ where: { id: { in: unique } }, select: { id: true, name: true, email: true } });
+    for (const r of rows) out.set(r.id, r.name?.trim() || r.email);
+  } catch {
+    /* names are a convenience */
+  }
+  return out;
+}
 
 function auditSafe(row: MisExtraPayDay) {
   return { id: row.id, date: row.date, kind: row.kind, scope: row.scope, status: row.status, reason: row.reason };
@@ -91,6 +117,12 @@ function normaliseDateKey(input: Date | string, timeZone: string): string {
   const db = dateKeyToDbDate(key);
   if (Number.isNaN(db.getTime()) || db.toISOString().slice(0, 10) !== key) throw new Error('The date is not a real calendar day.');
   return key;
+}
+
+/** R2-115: the live departments a DEPARTMENTS-scoped day can name — the proposer's own door, not `masters.read`. */
+export async function listDepartmentOptions(): Promise<{ id: string; name: string }[]> {
+  await requirePermission('attendance.write');
+  return db.misDepartment.findMany({ where: { deletedAt: null }, select: { id: true, name: true }, orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }] });
 }
 
 /** Admin or Super Attendance Operator propose; an Owner (who holds every action) may too. */
@@ -170,7 +202,31 @@ export async function listExtraPayDays(status?: 'PENDING' | 'APPROVED' | 'REJECT
     where: status ? { status } : undefined,
     orderBy: { date: 'desc' },
   });
-  return Promise.all(rows.map(toRow));
+  const out = await Promise.all(rows.map(toRow));
+  const names = await proposerNames(out.map((r) => r.proposedById));
+  return out.map((r) => ({ ...r, proposedByName: names.get(r.proposedById) ?? null }));
+}
+
+/**
+ * R2-116: the proposals list for the people who propose (Admin, Super Attendance Operator, Owner):
+ * date, who, why, status and the PROPOSER. The rupee value / multiplier is deliberately not selected.
+ */
+export async function listExtraPayProposals(): Promise<ExtraPayProposal[]> {
+  await requirePermission('attendance.write');
+  const rows = await db.misExtraPayDay.findMany({
+    select: { id: true, date: true, scope: true, reason: true, status: true, proposedById: true },
+    orderBy: { date: 'desc' },
+    take: 200,
+  });
+  const names = await proposerNames(rows.map((r) => r.proposedById));
+  return rows.map((r) => ({
+    id: r.id,
+    date: r.date.toISOString().slice(0, 10),
+    scope: r.scope,
+    reason: r.reason,
+    status: r.status as ExtraPayProposal['status'],
+    proposedByName: names.get(r.proposedById) ?? null,
+  }));
 }
 
 /** Every APPROVED extra-pay day touching `year`/`month` — what payroll folds in. Owner only. */

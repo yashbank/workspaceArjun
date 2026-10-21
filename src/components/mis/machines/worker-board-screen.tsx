@@ -17,6 +17,7 @@ import { useConfirm } from '@/components/ui/confirm-dialog';
 import { useToast } from '@/components/ui/toast';
 import { addDaysToDateKey } from '@/lib/mis/factory-time';
 import type { Presence } from '@/lib/mis/presence';
+import { splitByLock } from '@/lib/mis/worker-lock';
 
 type Shift = { id: string; name: string };
 
@@ -35,6 +36,10 @@ type AllocationEntry = {
   machineName: string;
   orderNumber: string | null;
   processName: string | null;
+  /** R2-47 — the supervisor holding this lock (who assigned them). */
+  holderName?: string | null;
+  /** R2-47 — may this viewer release / move it (holder, Admin or Owner). Absent = yes; the server re-checks. */
+  canRelease?: boolean;
 };
 
 export type AvailabilityRow = {
@@ -123,7 +128,8 @@ export function WorkerBoardScreen({
   const [isPending, startTransition] = useTransition();
   const [boardError, setBoardError] = useState<string | null>(null);
 
-  const freeWorkers = availability.filter((w) => w.allocations.length === 0);
+  // R2-47: a person on a machine is BLOCKED until their holder (or an Admin/Owner) releases them.
+  const { available, blocked } = splitByLock(availability);
 
   const copyYesterday = () => {
     if (!currentShiftId) return;
@@ -217,20 +223,36 @@ export function WorkerBoardScreen({
         )}
       </section>
 
-      <section>
-        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
-          {t('crew.free')} ({freeWorkers.length})
-        </h2>
-        {availability.length === 0 ? (
-          <div className="rounded-xl border border-gray-200 bg-white py-10 text-center text-sm text-gray-400">{t('crew.noWorkers')}</div>
-        ) : (
-          <div className="divide-y divide-gray-100 rounded-xl border border-gray-200 bg-white">
-            {availability.map((w) => (
-              <WorkerRow key={w.employeeId} worker={w} canWrite={canWrite} machines={machines} confirm={confirm} />
-            ))}
-          </div>
-        )}
-      </section>
+      {availability.length === 0 ? (
+        <div className="rounded-xl border border-gray-200 bg-white py-10 text-center text-sm text-gray-400">{t('crew.noWorkers')}</div>
+      ) : (
+        <>
+          <section aria-label="Available workers">
+            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Available ({available.length})</h2>
+            {available.length === 0 ? (
+              <div className="rounded-xl border border-gray-200 bg-white py-6 text-center text-sm text-gray-400">Everyone is assigned.</div>
+            ) : (
+              <div className="divide-y divide-gray-100 rounded-xl border border-gray-200 bg-white">
+                {available.map((w) => (
+                  <WorkerRow key={w.employeeId} worker={w} canWrite={canWrite} machines={machines} confirm={confirm} />
+                ))}
+              </div>
+            )}
+          </section>
+          <section aria-label="Blocked workers">
+            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Blocked ({blocked.length})</h2>
+            {blocked.length === 0 ? (
+              <div className="rounded-xl border border-gray-200 bg-white py-6 text-center text-sm text-gray-400">Nobody is locked to a machine.</div>
+            ) : (
+              <div className="divide-y divide-gray-100 rounded-xl border border-gray-200 bg-white">
+                {blocked.map((w) => (
+                  <WorkerRow key={w.employeeId} worker={w} canWrite={canWrite} machines={machines} confirm={confirm} />
+                ))}
+              </div>
+            )}
+          </section>
+        </>
+      )}
 
       {openMachine && (
         <AssignCrewSlideOver
@@ -305,8 +327,9 @@ function WorkerRow({
               <span className="truncate">
                 {t('crew.assignedTo')} {a.machineName}
                 {a.orderNumber ? ` · ${a.orderNumber}` : ''}
+                {a.holderName ? ` · held by ${a.holderName}` : ''}
               </span>
-              {canWrite && (
+              {canWrite && a.canRelease !== false && (
                 <span className="flex items-center gap-2">
                   {machines.filter((m) => m.machineAllocationId !== a.machineAllocationId).length > 0 && (
                     <select
@@ -379,6 +402,8 @@ function AssignCrewSlideOver({
   };
 
   const sorted = useMemo(() => sortPickerRows(availability), [availability]);
+  /** R2-47: on another machine and not released yet — a supervisor cannot pick them; an Admin/Owner override releases them from that machine first (server-side, audited). */
+  const lockedElsewhere = (w: AvailabilityRow) => w.allocations.some((a) => a.machineAllocationId !== machine.machineAllocationId);
   const alreadyHereIds = useMemo(
     () => new Set(availability.filter((w) => w.allocations.some((a) => a.machineAllocationId === machine.machineAllocationId)).map((w) => w.employeeId)),
     [availability, machine.machineAllocationId],
@@ -443,7 +468,7 @@ function AssignCrewSlideOver({
                   <input
                     type="checkbox"
                     checked={selected.has(w.employeeId) || hereAlready}
-                    disabled={hereAlready}
+                    disabled={hereAlready || (lockedElsewhere(w) && !canOverride)}
                     onChange={() => toggle(w.employeeId)}
                     className="h-5 w-5 rounded border-gray-300"
                   />
@@ -456,7 +481,7 @@ function AssignCrewSlideOver({
                       {hereAlready
                         ? `${t('crew.assignedTo')} ${machine.machineName}`
                         : w.allocations.length > 0
-                          ? `${t('crew.assignedTo')} ${w.allocations.map((a) => a.machineName).join(', ')}`
+                          ? `Blocked: ${w.allocations.map((a) => `${a.machineName}${a.holderName ? ` (held by ${a.holderName})` : ''}`).join(', ')}`
                           : t('crew.free')}
                     </span>
                   </span>

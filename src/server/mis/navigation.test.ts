@@ -26,7 +26,7 @@ const EXPECTED: Record<MisRoleName, string[]> = {
   OWNER: ALL,
   ADMIN: ALL.filter((id) => id !== 'payroll'), // Payroll is a wage screen: Owner only (F-01, D24)
   SUPERVISOR: ['masters', 'orders', 'production', 'quality', 'attendance', 'machine-board', 'reports', 'employees', 'grn', 'inventory', 'customers', 'documents', 'bom', 'traceability', 'store', 'crew'],
-  QC: ['masters', 'orders', 'production', 'quality', 'machine-board', 'reports', 'customers', 'documents', 'bom', 'traceability', 'crew'], // crew: R3-WRK (PR #84)
+  QC: ['masters', 'orders', 'production', 'quality', 'machine-board', 'reports', 'po', 'grn', 'customers', 'documents', 'bom', 'traceability', 'crew'], // crew: R3-WRK (PR #84)
   ATTENDANCE_OPERATOR: ['attendance', 'employees', 'kiosk'],
   SUPER_ATTENDANCE_OPERATOR: ['attendance', 'reports', 'employees', 'queue', 'kiosk'],
   // R3 B64: STORE_GUY gains orders.read, so the read-only Orders entry appears.

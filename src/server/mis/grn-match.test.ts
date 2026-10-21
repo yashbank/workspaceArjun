@@ -100,6 +100,7 @@ describe('confirm', () => {
   });
   it('writes no invoice when the header names none', async () => {
     state.grn.supplierInvoiceNo = null;
+    state.grn.dcNumber = 'DC-1'; // R2-73: a GRN needs a DC number or an invoice number
     await confirmGRN('g1');
     expect(state.invoices).toHaveLength(0);
   });

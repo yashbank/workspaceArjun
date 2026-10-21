@@ -99,7 +99,7 @@ vi.mock('@/server/mis/roles', () => ({ getMisRole: (...a: unknown[]) => getMisRo
 
 const { addGRNItem, confirmGRN, updateGRNItem } = await import('./grn');
 
-const grn = (id: string, status = 'DRAFT', poId = 'po1'): Row => ({ id, grnNumber: id.toUpperCase(), poId, status, supplierInvoiceNo: null, invoiceDate: null, supplierInvoiceAmount: null });
+const grn = (id: string, status = 'DRAFT', poId = 'po1'): Row => ({ id, grnNumber: id.toUpperCase(), poId, status, dcNumber: 'DC-1', supplierInvoiceNo: null, invoiceDate: null, supplierInvoiceAmount: null });
 const line = (grnId: string, poItemId: string, receivedQty: number, damageQuantity = 0): Row => ({ id: `${grnId}-${poItemId}`, grnId, poItemId, receivedQty, damageQuantity, dcQuantity: null, type: 'GENERAL', forOrderRef: null });
 
 beforeEach(() => {
@@ -150,16 +150,16 @@ describe('C. receipts are capped at what is outstanding; an empty GRN cannot be 
   it('refuses more than the PO line still has outstanding, but allows exactly that', async () => {
     state.poItems[0].receivedQuantity = 70;
     // R3-STK B03 changed the contract: ordered + 2% (here 102) is allowed, so the refusal moves from 30.01 to 32.01.
-    await expect(addGRNItem('g1', { poItemId: 'pi1', receivedQty: 32.01 })).rejects.toThrow(/more than 2%.*max 102/i);
-    await expect(addGRNItem('g1', { poItemId: 'pi1', receivedQty: 32 })).resolves.toBeTruthy();
+    await expect(addGRNItem('g1', { poItemId: 'pi1', receivedQty: 32.01, dcQuantity: 32.01 })).rejects.toThrow(/more than 2%.*max 102/i);
+    await expect(addGRNItem('g1', { poItemId: 'pi1', receivedQty: 32, dcQuantity: 32 })).resolves.toBeTruthy();
   });
 
   it('legitimate partial receipts keep working: 60 now, the remaining 40 on a later GRN', async () => {
-    await addGRNItem('g1', { poItemId: 'pi1', receivedQty: 60 });
+    await addGRNItem('g1', { poItemId: 'pi1', receivedQty: 60, dcQuantity: 60 });
     await confirmGRN('g1');
     // R3-STK B03: 60 + 43 = 103 is past 102; 60 + 40 is exactly the order.
-    await expect(addGRNItem('g2', { poItemId: 'pi1', receivedQty: 43 })).rejects.toThrow(/more than 2%.*max 102/i);
-    await addGRNItem('g2', { poItemId: 'pi1', receivedQty: 40 });
+    await expect(addGRNItem('g2', { poItemId: 'pi1', receivedQty: 43, dcQuantity: 43 })).rejects.toThrow(/more than 2%.*max 102/i);
+    await addGRNItem('g2', { poItemId: 'pi1', receivedQty: 40, dcQuantity: 40 });
     await confirmGRN('g2');
     expect(state.poItems[0].receivedQuantity).toBe(100);
     expect(state.ledger.at(-1)!.balanceQty).toBe(100);
@@ -168,8 +168,8 @@ describe('C. receipts are capped at what is outstanding; an empty GRN cannot be 
   it('an edit that pushes a line over the outstanding quantity is refused', async () => {
     state.grnItems = [line('g1', 'pi1', 10)];
     // R3-STK B03: the cap is ordered + 2%.
-    await expect(updateGRNItem('g1-pi1', { receivedQty: 102.5 })).rejects.toThrow(/more than 2%/i);
-    await expect(updateGRNItem('g1-pi1', { receivedQty: 100 })).resolves.toBeTruthy();
+    await expect(updateGRNItem('g1-pi1', { receivedQty: 102.5, dcQuantity: 102.5 })).rejects.toThrow(/more than 2%/i);
+    await expect(updateGRNItem('g1-pi1', { receivedQty: 100, dcQuantity: 100 })).resolves.toBeTruthy();
   });
 
   it('two drafts that each fit alone cannot BOTH be confirmed past the PO quantity (checked again at confirm, on fresh figures)', async () => {

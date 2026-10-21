@@ -9,6 +9,7 @@ import { Select } from '@/components/mis/kit/select';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { clearLineAction, editProductionLogAction } from '@/app/(mis)/mis/production/actions';
+import { voidProductionLogAction } from '@/app/(mis)/mis/production/correction-actions';
 import { useT } from '@/components/mis/shell/locale-provider';
 import { PendingSyncNote } from '@/components/mis/shell/pending-sync-note';
 import { useToast } from '@/components/ui/toast';
@@ -21,6 +22,7 @@ import {
   DEFAULT_PRODUCTION_UNIT,
   isClosedOrderStatus,
   machineMismatchNote,
+  makereadyError,
   preselectMachine,
   validateQuantities,
   type SelectChoice,
@@ -42,7 +44,15 @@ type Log = {
   machine: { name: string } | null;
   employee: { name: string } | null;
   shift: { name: string } | null;
+  /** BOM stage the entry belongs to (R2-18). */
+  stageName?: string | null;
+  /** R2-48 — set-up minutes before the run. */
+  makereadyMinutes?: number | null;
+  /** R2-17 — computed on the server with the rule it enforces; absent falls back to the 24 h check. */
+  canEdit?: boolean;
+  canDelete?: boolean;
 };
+
 
 type UnitTotal = { unit: string; produced: number; waste: number; wastePercent: number | null };
 type Summary = { totalProduced: number; totalWaste: number; entries: number; byUnit?: UnitTotal[] };
@@ -95,6 +105,7 @@ export function ProductionDetailScreen({ order, logs, summary, operators, machin
   const [machineId, setMachineId] = useState<string | null>(allocatedDefault);
   const [stageId, setStageId] = useState<string | null>(null);
   const [notes, setNotes] = useState('');
+  const [makeready, setMakeready] = useState('');
   const [isPending, startTransition] = useTransition();
   const [isClearing, startClearing] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -103,6 +114,10 @@ export function ProductionDetailScreen({ order, logs, summary, operators, machin
   const [editQty, setEditQty] = useState('');
   const [editWaste, setEditWaste] = useState('');
   const [editNotes, setEditNotes] = useState('');
+  const [editMakeready, setEditMakeready] = useState('');
+  const [editReason, setEditReason] = useState('');
+  const [deleting, setDeleting] = useState<Log | null>(null);
+  const [deleteReason, setDeleteReason] = useState('');
   const [isEditing, startEditing] = useTransition();
 
   const closed = isClosedOrderStatus(order.status);
@@ -119,13 +134,13 @@ export function ProductionDetailScreen({ order, logs, summary, operators, machin
 
   const resetForm = () => {
     setQty(''); setWaste(''); setUnitInput(DEFAULT_PRODUCTION_UNIT); setLogDate(todayIso());
-    setEmployeeId(null); setMachineId(allocatedDefault); setStageId(null); setNotes(''); setError(null); setBlockedReason(undefined);
+    setEmployeeId(null); setMachineId(allocatedDefault); setStageId(null); setNotes(''); setMakeready(''); setError(null); setBlockedReason(undefined);
     keyRef.current = newIdempotencyKey();
   };
 
   const handleLog = () => startTransition(async () => {
     if (!machineId) { setError('Select a machine before logging production.'); return; }
-    const invalid = validateQuantities(qty, waste);
+    const invalid = validateQuantities(qty, waste) ?? makereadyError(makeready);
     if (invalid) { setError(invalid); return; }
     setError(null);
     setBlockedReason(undefined);
@@ -141,6 +156,7 @@ export function ProductionDetailScreen({ order, logs, summary, operators, machin
         bomStageId: stageId ?? undefined,
         employeeId: employeeId ?? undefined,
         notes: notes || undefined,
+        makereadyMinutes: makeready.trim() === '' ? undefined : Number(makeready),
         // Only a deliberate back-date is sent. Left at today, the entry takes the
         // moment of the tap (D15), which is more truthful than midnight.
         producedOn: logDate && logDate !== todayIso() ? logDate : undefined,
@@ -251,8 +267,10 @@ export function ProductionDetailScreen({ order, logs, summary, operators, machin
                 <th className="px-5 py-3 text-left font-medium">Date/Time</th>
                 <th className="px-5 py-3 text-right font-medium">Produced</th>
                 <th className="px-5 py-3 text-right font-medium">Waste</th>
+                <th className="px-5 py-3 text-left font-medium">Stage</th>
                 <th className="px-5 py-3 text-left font-medium">Machine</th>
                 <th className="px-5 py-3 text-left font-medium">Operator</th>
+                <th className="px-5 py-3 text-right font-medium">Makeready</th>
                 <th className="px-5 py-3 text-left font-medium">Notes</th>
                 {canWrite && <th className="px-5 py-3" />}
               </tr>
@@ -263,12 +281,14 @@ export function ProductionDetailScreen({ order, logs, summary, operators, machin
                   <td className="px-5 py-3 text-gray-600">{fmt(log.loggedAt)}</td>
                   <td className="px-5 py-3 text-right font-medium text-gray-900">{Number(log.qtyProduced).toFixed(1)} {log.unit}</td>
                   <td className="px-5 py-3 text-right text-orange-600">{Number(log.qtyWaste).toFixed(1)}</td>
+                  <td className="px-5 py-3 text-gray-500">{log.stageName ?? '—'}</td>
                   <td className="px-5 py-3 text-gray-500">{log.machine?.name ?? '—'}</td>
                   <td className="px-5 py-3 text-gray-500">{log.employee?.name ?? '—'}</td>
+                  <td className="px-5 py-3 text-right text-gray-500">{log.makereadyMinutes != null ? `${log.makereadyMinutes} min` : '—'}</td>
                   <td className="px-5 py-3 text-gray-400 max-w-xs truncate">{log.notes ?? '—'}</td>
                   {canWrite && (
-                    <td className="px-5 py-3 text-right">
-                      {canEditLogNow(log, order.status, now) && (
+                    <td className="px-5 py-3 text-right whitespace-nowrap">
+                      {(log.canEdit ?? canEditLogNow(log, order.status, now)) && (
                         <Button
                           variant="ghost"
                           onClick={() => {
@@ -276,10 +296,24 @@ export function ProductionDetailScreen({ order, logs, summary, operators, machin
                             setEditQty(String(Number(log.qtyProduced)));
                             setEditWaste(String(Number(log.qtyWaste)));
                             setEditNotes(log.notes ?? '');
+                            setEditMakeready(log.makereadyMinutes != null ? String(log.makereadyMinutes) : '');
+                            setEditReason('');
                             setError(null);
                           }}
                         >
                           Edit
+                        </Button>
+                      )}
+                      {log.canDelete && (
+                        <Button
+                          variant="ghost"
+                          onClick={() => {
+                            setDeleting(log);
+                            setDeleteReason('');
+                            setError(null);
+                          }}
+                        >
+                          Delete
                         </Button>
                       )}
                     </td>
@@ -326,6 +360,7 @@ export function ProductionDetailScreen({ order, logs, summary, operators, machin
               placeholder="Select a stage…"
             />
           )}
+          <NumberInput label="Makeready (minutes, optional)" value={makeready} onChange={(e) => setMakeready(e.target.value)} />
           <Input label="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
           {error && (
             <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
@@ -349,24 +384,28 @@ export function ProductionDetailScreen({ order, logs, summary, operators, machin
         </div>
       </SlideOver>
 
-      {/* Edit an entry within 24 h (R3 B126) */}
+      {/* Edit an entry (R3 B126 / R2-17: supervisor 24 h, Admin/Owner 7 days, always with a reason) */}
       <SlideOver open={editing !== null} onClose={() => setEditing(null)} title="Edit entry">
         <div className="flex flex-col gap-4 p-4">
           <NumberInput label="Qty Produced" value={editQty} onChange={(e) => setEditQty(e.target.value)} />
           <NumberInput label="Qty Waste" value={editWaste} onChange={(e) => setEditWaste(e.target.value)} />
+          <NumberInput label="Makeready (minutes)" value={editMakeready} onChange={(e) => setEditMakeready(e.target.value)} />
           <Input label="Notes" value={editNotes} onChange={(e) => setEditNotes(e.target.value)} />
+          <Input label="Reason for the change" value={editReason} onChange={(e) => setEditReason(e.target.value)} />
           {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-2 pt-2">
             <Button
-              disabled={isEditing}
+              disabled={isEditing || editReason.trim().length < 3}
               onClick={() =>
                 startEditing(async () => {
-                  const invalid = validateQuantities(editQty, editWaste);
+                  const invalid = validateQuantities(editQty, editWaste) ?? makereadyError(editMakeready);
                   if (invalid) { setError(invalid); return; }
                   const res = await editProductionLogAction(editing!.id, {
                     qtyProduced: parseFloat(editQty),
                     qtyWaste: editWaste ? parseFloat(editWaste) : 0,
                     notes: editNotes,
+                    makereadyMinutes: editMakeready.trim() === '' ? null : Number(editMakeready),
+                    reason: editReason.trim(),
                   });
                   if (res.ok) { setEditing(null); setError(null); } else { setError(res.detail); }
                 })
@@ -375,6 +414,34 @@ export function ProductionDetailScreen({ order, logs, summary, operators, machin
               Save
             </Button>
             <Button variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
+          </div>
+        </div>
+      </SlideOver>
+
+      {/* Delete an entry (R2-17: Admin/Owner within 7 days, with a reason; kept in the audit trail) */}
+      <SlideOver open={deleting !== null} onClose={() => setDeleting(null)} title="Delete entry">
+        <div className="flex flex-col gap-4 p-4">
+          {deleting && (
+            <p className="text-sm text-gray-600">
+              {fmt(deleting.loggedAt)} · {Number(deleting.qtyProduced).toFixed(1)} {deleting.unit}. It leaves every total; the audit log keeps it.
+            </p>
+          )}
+          <Input label="Reason for deleting" value={deleteReason} onChange={(e) => setDeleteReason(e.target.value)} />
+          {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+          <div className="flex gap-2 pt-2">
+            <Button
+              variant="danger"
+              disabled={isEditing || deleteReason.trim().length < 3}
+              onClick={() =>
+                startEditing(async () => {
+                  const res = await voidProductionLogAction(deleting!.id, deleteReason.trim());
+                  if (res.ok) { setDeleting(null); setError(null); toast('success', 'Entry deleted'); } else { setError(res.detail); }
+                })
+              }
+            >
+              Delete entry
+            </Button>
+            <Button variant="ghost" onClick={() => setDeleting(null)}>Cancel</Button>
           </div>
         </div>
       </SlideOver>

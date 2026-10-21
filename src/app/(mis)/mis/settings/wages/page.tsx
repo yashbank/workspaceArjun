@@ -1,5 +1,6 @@
 import { requireMisAccess } from '@/server/mis/guard';
-import { listWageCodes, listWageTypes } from '@/server/mis/wage-type';
+import { DEFAULT_FACTORY_TIMEZONE, factoryDateKey } from '@/lib/mis/factory-time';
+import { listWageCodes, listWageRateHistory, listWageTypes } from '@/server/mis/wage-type';
 import { WageTypeScreen } from '@/components/mis/payroll/wage-type-screen';
 import { PageBack } from '@/components/mis/common/page-back';
 
@@ -10,11 +11,16 @@ import { PageBack } from '@/components/mis/common/page-back';
 // role check belongs here.
 export default async function WageTypesPage() {
   await requireMisAccess();
-  const [wageTypes, codes] = await Promise.all([listWageTypes(), listWageCodes()]);
+  // R2-114: the full dated rate history, each row marked scheduled / in force / past as of today.
+  const [wageTypes, codes, history] = await Promise.all([
+    listWageTypes(),
+    listWageCodes(),
+    listWageRateHistory(factoryDateKey(new Date(), DEFAULT_FACTORY_TIMEZONE)),
+  ]);
   return (
     <>
       <PageBack href="/mis/settings" label="Settings" />
-      <WageTypeScreen wageTypes={wageTypes} codes={codes} />
+      <WageTypeScreen wageTypes={wageTypes} codes={codes} history={history} />
     </>
   );
 }

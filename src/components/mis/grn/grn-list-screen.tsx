@@ -2,6 +2,7 @@
 import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/mis/kit/button';
+import { Pagination, HiddenParams } from '@/components/mis/kit/pagination';
 import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import { Select } from '@/components/mis/kit/select';
@@ -13,14 +14,14 @@ import { useRouter } from 'next/navigation';
 
 type Grn = { id: string; grnNumber: string; status: string; createdAt: Date; po: { id: string; poNumber: string; supplier: { name: string } | null } | null };
 type ApprovedPo = { id: string; poNumber: string; supplier: { id: string; name: string } | null };
-type Props = { grns: Grn[]; approvedPos: ApprovedPo[]; canWrite: boolean };
+type Props = { grns: Grn[]; approvedPos: ApprovedPo[]; canWrite: boolean;
+  /** R2-83: the server-side page — total matching rows, the page number, and the URL params kept in the page links. */
+  paging?: { total: number; page: number; params: Record<string, string | undefined> }; };
 
-export function GrnListScreen({ grns, approvedPos, canWrite }: Props) {
+export function GrnListScreen({ grns, approvedPos, canWrite, paging }: Props) {
   const router = useRouter();
-  const [search, setSearch] = useState('');
-  const filtered = search.trim()
-    ? grns.filter(g => g.grnNumber.toLowerCase().includes(search.toLowerCase()) || (g.po?.poNumber ?? '').toLowerCase().includes(search.toLowerCase()) || (g.po?.supplier?.name ?? '').toLowerCase().includes(search.toLowerCase()))
-    : grns;
+  const search = paging?.params.q ?? '';
+  const filtered = grns;
 
   function downloadCsv() {
     const headers = ['GRN #', 'PO #', 'Supplier', 'Status', 'Date'];
@@ -66,17 +67,20 @@ export function GrnListScreen({ grns, approvedPos, canWrite }: Props) {
         <h1 className="text-xl font-semibold text-slate-900">Goods Receipt Notes</h1>
         {canWrite && approvedPos.length > 0 && <Button onClick={() => setOpen(true)}>+ New GRN</Button>}
       </div>
-      <div className="flex items-center gap-3">
+      <form method="get" className="flex items-center gap-3">
+        {paging && <HiddenParams params={paging.params} />}
         <input
           type="search"
           placeholder="Search GRNs…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
+          name="q"
+          defaultValue={search}
           className="w-full max-w-sm min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500"
         />
-        <Button variant="ghost" onClick={downloadCsv}>↓ CSV</Button>
-      </div>
+        <Button type="submit" variant="secondary">Search</Button>
+        <Button type="button" variant="ghost" onClick={downloadCsv}>↓ CSV</Button>
+      </form>
       <DataTable columns={columns} rows={filtered} rowKey={(r) => r.id} emptyTitle="No GRNs yet" emptyBody="GRNs are created from approved purchase orders." />
+      {paging && <Pagination basePath="/mis/grn" params={paging.params} page={paging.page} total={paging.total} />}
       <SlideOver open={open} onClose={() => setOpen(false)} title="New GRN">
         <div className="flex flex-col gap-4 p-4">
           <Select

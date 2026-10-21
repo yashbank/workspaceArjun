@@ -1,3 +1,5 @@
+import { resolveGeneralUse, storedGeneralInput as generalOf, type GeneralUse, type GeneralUseInput } from '@/lib/mis/general-use';
+import { ISSUE_TARGET_REQUIRED } from '@/lib/mis/issue-target';
 import { cappedIssueQty, categoryRefusal } from '@/lib/mis/material-request';
 import { isOrderClosed } from '@/lib/mis/order-status';
 import { positiveQty, roundQty } from '@/lib/mis/quantity';
@@ -9,6 +11,7 @@ import { NOTIFICATION_TYPES } from '@/lib/mis/notification-copy';
 import { notifyRoles } from './notifications';
 import { isUniqueConstraintError } from './orders';
 import { commitIssue, type CartLineInput } from './store';
+import { notifyGeneralUse, notifyRequestDecided } from './store-notices';
 
 /**
  * V2 Epic 3 — Material Issue Notes.
@@ -21,7 +24,14 @@ import { commitIssue, type CartLineInput } from './store';
  */
 
 export type MaterialRequestLineInput = { itemId: string; qty: number };
-export type MaterialRequestMeta = { orderId?: string | null; departmentId?: string | null; notes?: string | null };
+export type MaterialRequestMeta = {
+  orderId?: string | null;
+  departmentId?: string | null;
+  notes?: string | null;
+  /** R2-80/62/Q11 — required when there is no order: "General / factory use" with a reason and a cost centre. */
+  general?: GeneralUseInput;
+};
+
 
 /** `attempt` offsets the clock-derived suffix on a unique-constraint retry (same shape as orders.ts#nextOrderNumber). */
 function nextRequestNumber(attempt = 0): string {
@@ -43,6 +53,8 @@ export async function createMaterialRequest(lines: MaterialRequestLineInput[], m
   if (items.length !== new Set(lines.map((l) => l.itemId)).size) {
     throw new Error('One of the items is no longer active.');
   }
+  if (!meta.orderId && !meta.departmentId && !meta.general) throw new Error(ISSUE_TARGET_REQUIRED);
+  const generalUse = resolveGeneralUse(meta.orderId, meta.general);
   const [order, department] = await Promise.all([
     meta.orderId ? db.misOrder.findUnique({ where: { id: meta.orderId }, select: { id: true, orderNumber: true, status: true } }) : Promise.resolve(null),
     meta.departmentId ? db.misDepartment.findUnique({ where: { id: meta.departmentId }, select: { id: true, name: true } }) : Promise.resolve(null),
@@ -63,6 +75,9 @@ export async function createMaterialRequest(lines: MaterialRequestLineInput[], m
           requestNumber: nextRequestNumber(attempt),
           orderId: meta.orderId ?? null,
           departmentId: meta.departmentId ?? null,
+          isGeneral: generalUse.isGeneral,
+          generalReason: generalUse.generalReason,
+          costCenter: generalUse.costCenter,
           notes: meta.notes?.trim() || null,
           requestedById: actor.userId,
           lines: { create: lines.map((l) => ({ itemId: l.itemId, requestedQty: l.qty })) },
@@ -78,7 +93,7 @@ export async function createMaterialRequest(lines: MaterialRequestLineInput[], m
     action: 'material_request.create',
     entity: 'MisMaterialRequest',
     entityId: created.id,
-    after: { requestNumber: created.requestNumber, orderId: created.orderId, departmentId: created.departmentId, lineCount: lines.length },
+    after: { requestNumber: created.requestNumber, orderId: created.orderId, departmentId: created.departmentId, lineCount: lines.length, isGeneral: generalUse.isGeneral, chargedTo: generalUse.costCenter, generalReason: generalUse.generalReason },
   });
   // V2 — the Store hears about it now. D7: Admin and Owner hear too (both hold store.write), so a note
   // is never stuck waiting for an absent Store Guy. Best-effort (notifyRoles never throws), after the write.
@@ -89,12 +104,20 @@ export async function createMaterialRequest(lines: MaterialRequestLineInput[], m
     orderNumber: order?.orderNumber ?? null,
     departmentName: department?.name ?? null,
   }, actor.userId);
+  // R2-80: a General / factory-use request (no order) tells Owner + Admin when it is raised.
+  await notifyGeneralUse(actor.userId, generalUse, { reference: created.requestNumber, kind: 'request', requestId: created.id });
   return created;
+}
+
+function generalFromRow(req: { orderId?: string | null; isGeneral?: boolean | null; generalReason?: string | null; costCenter?: string | null }): GeneralUse {
+  const g = generalOf(req);
+  return resolveGeneralUse(req.orderId, g);
 }
 
 const LIST_INCLUDE = {
   order: { select: { id: true, orderNumber: true } },
   department: { select: { id: true, name: true } },
+  pickList: { select: { id: true, status: true } },
   lines: { include: { item: { select: { id: true, code: true, name: true, unit: true, category: true } } } },
 } as const;
 
@@ -145,6 +168,9 @@ export async function approveMaterialRequest(id: string, decisions: ApproveLineI
   const result = await commitIssue(cart, {
     orderId: req.orderId,
     departmentId: req.departmentId,
+    general: generalOf(req),
+    materialRequestId: id,
+    skipGeneralNotice: true, // the approval below raises its own notice, carrying the request link
     notes: `${req.requestNumber}${note?.trim() ? ` · ${note.trim()}` : ''}`,
     inTransaction: async (tx) => {
       const claimed = await tx.misMaterialRequest.updateMany({
@@ -165,12 +191,16 @@ export async function approveMaterialRequest(id: string, decisions: ApproveLineI
     before: { status: 'PENDING' },
     after: { status: 'APPROVED', reference: result.reference, lineCount: result.lineCount, totalQty: String(result.totalQty) },
   });
+  // R2-67: the Supervisor who asked hears the decision; R2-80: Owner + Admin hear about an approved General-use issue.
+  await notifyRequestDecided(req.requestedById, { requestId: id, requestNumber: req.requestNumber, decision: 'APPROVED', note: note?.trim() || null });
+  await notifyGeneralUse(actor.userId, generalFromRow(req), { reference: req.requestNumber, kind: 'issue', requestId: id });
   return result;
 }
 
 export async function rejectMaterialRequest(id: string, reason: string) {
   const actor = await requirePermission('store.write');
   if (!reason?.trim()) throw new Error('A reason is required to reject a request.');
+  const asked = await db.misMaterialRequest.findUnique({ where: { id }, select: { requestNumber: true, requestedById: true } });
   const claimed = await db.misMaterialRequest.updateMany({
     where: { id, status: 'PENDING' },
     data: { status: 'REJECTED', decidedById: actor.userId, decidedAt: new Date(), decisionNote: reason.trim() },
@@ -184,4 +214,52 @@ export async function rejectMaterialRequest(id: string, reason: string) {
     before: { status: 'PENDING' },
     after: { status: 'REJECTED', reason: reason.trim() },
   });
+  // R2-67: the Supervisor who asked hears why.
+  if (asked) await notifyRequestDecided(asked.requestedById, { requestId: id, requestNumber: asked.requestNumber, decision: 'REJECTED', note: reason.trim() });
+}
+
+/**
+ * R2-77 — approve for picking. The Store decides how much of each line it will give, exactly as `approveMaterialRequest`,
+ * but NOTHING leaves the ledger: the request gets one pick list (PENDING). The Store Guy picks and stages it, and stock
+ * moves only when the list is handed over to the supervisor (`pick-list.ts#handOverPickList`).
+ */
+export async function approveMaterialRequestForPicking(id: string, decisions: ApproveLineInput[], note?: string | null) {
+  const actor = await requirePermission('store.write');
+  const req = await db.misMaterialRequest.findUnique({ where: { id }, include: { lines: true } });
+  if (!req) throw new Error('Request not found');
+  if (req.status !== 'PENDING') throw new Error(`Request is already ${req.status}`);
+  const byLine = new Map(decisions.map((d) => [d.lineId, d.actualIssuedQty]));
+  const planned = req.lines.map((line) => ({
+    lineId: line.id,
+    itemId: line.itemId,
+    qty: cappedIssueQty(line.requestedQty.toNumber(), roundQty(Number(byLine.get(line.id) ?? 0))),
+  }));
+  if (planned.every((l) => l.qty <= 0)) throw new Error('Nothing to pick — set at least one quantity above zero, or reject the request.');
+
+  const list = await db.$transaction(async (tx) => {
+    const claimed = await tx.misMaterialRequest.updateMany({
+      where: { id, status: 'PENDING' },
+      data: { status: 'APPROVED', decidedById: actor.userId, decidedAt: new Date(), decisionNote: note?.trim() || null },
+    });
+    if (claimed.count !== 1) throw new Error('Request was decided by someone else just now.');
+    for (const l of planned) await tx.misMaterialRequestLine.update({ where: { id: l.lineId }, data: { actualIssuedQty: l.qty } });
+    return tx.misPickList.create({
+      data: {
+        materialRequestId: id,
+        createdById: actor.userId,
+        lines: { create: planned.filter((l) => l.qty > 0).map((l) => ({ materialRequestLineId: l.lineId, itemId: l.itemId, requiredQty: l.qty })) },
+      },
+    });
+  });
+  await logAuditEvent({
+    actorId: actor.userId,
+    action: 'material_request.approve_for_picking',
+    entity: 'MisMaterialRequest',
+    entityId: id,
+    before: { status: 'PENDING' },
+    after: { status: 'APPROVED', pickListId: list.id, lineCount: planned.filter((l) => l.qty > 0).length },
+  });
+  await notifyRequestDecided(req.requestedById, { requestId: id, requestNumber: req.requestNumber, decision: 'APPROVED', note: note?.trim() || null, pickList: true });
+  await notifyGeneralUse(actor.userId, generalFromRow(req), { reference: req.requestNumber, kind: 'request', requestId: id });
+  return { pickListId: list.id };
 }

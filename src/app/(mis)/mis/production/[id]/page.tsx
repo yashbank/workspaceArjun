@@ -10,6 +10,8 @@ import { listMachines } from '@/server/mis/machine';
 import { notFound } from 'next/navigation';
 import { db } from '@/server/db';
 import { factoryDateKey } from '@/lib/mis/factory-time';
+import { correctionVerdict } from '@/lib/mis/entry-correction';
+import { isOrderClosed } from '@/lib/mis/order-status';
 import { getFactoryTimezone } from '@/server/mis/business-rules';
 import { ProductionDetailScreen } from '@/components/mis/production/production-detail-screen';
 
@@ -49,6 +51,13 @@ export default async function ProductionDetailPage({ params }: { params: Promise
     (crewByMachine[r.machineAllocation.machineId] ??= []).push(r.employeeId);
   }
   const timeZone = await getFactoryTimezone();
+  const now = new Date();
+  // R2-17: the same rule the server enforces decides whether Edit / Delete are drawn per row.
+  const mayCorrect = (l: (typeof logs)[number], action: 'EDIT' | 'DELETE') =>
+    canWrite &&
+    l.jobPhase?.status !== 'SIGNED_OFF' &&
+    !isOrderClosed(order.status) &&
+    correctionVerdict({ kind: 'PRODUCTION', action, role, actorId: user.id, ownerId: l.loggedById, at: l.loggedAt, now, timeZone }).allowed;
 
   return (
     <ProductionDetailScreen
@@ -66,6 +75,10 @@ export default async function ProductionDetailPage({ params }: { params: Promise
         machine: l.machine,
         employee: l.employee,
         shift: l.shift,
+        stageName: l.bomStage?.stageName ?? null,
+        makereadyMinutes: l.makereadyMinutes ?? null,
+        canEdit: mayCorrect(l, 'EDIT'),
+        canDelete: mayCorrect(l, 'DELETE'),
       }))}
       summary={summary}
       operators={operatorOptions(employees)}

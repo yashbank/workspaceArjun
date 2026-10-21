@@ -187,10 +187,16 @@ export async function getMasterList(
   const query = asString(input.q).trim();
   const canWrite = can(actor.role, 'masters.write');
 
-  const [all, departments] = await Promise.all([
+  const wantsAttrs = spec.key === 'items';
+  const [all, departments, optGsm, optSize, optSubstrate, optCoating, optUnit] = await Promise.all([
     adapter.list(true),
     spec.fields.some((f) => f.options === 'departments') ? listDepts(false) : Promise.resolve([]),
+    ...(['GSM', 'SIZE', 'SUBSTRATE', 'COATING', 'UNIT'] as const).map((g) => (wantsAttrs ? listOptions(g) : Promise.resolve([]))),
   ]);
+  type OptRow = { value: string; label: string; isActive?: boolean };
+  const act = (rows: unknown[]) => (rows as OptRow[]).filter((r) => r.isActive !== false);
+  const byLabel = (rows: unknown[]) => act(rows).map((r) => ({ value: r.label, label: r.label }));
+  const unitOpts = act(optUnit).map((r) => ({ value: r.value, label: r.label }));
 
   const counts = countsFrom(all.length, all.filter((r) => r.deletedAt !== null).length);
   const rows: MasterRowView[] = all
@@ -217,8 +223,9 @@ export async function getMasterList(
     editing,
     options: {
       departments: (departments as { id: string; name: string }[]).map((d) => ({ value: d.id, label: d.name })),
-      itemUnits: ITEM_UNIT_VALUES.map((v) => ({ value: v, label: v })),
+      itemUnits: unitOpts.length > 0 ? unitOpts : ITEM_UNIT_VALUES.map((v) => ({ value: v, label: v })),
       severities: SEVERITY_VALUES.map((v) => ({ value: v, label: v })),
+      ...(wantsAttrs ? { attrs: { gsm: byLabel(optGsm), size: byLabel(optSize), substrate: byLabel(optSubstrate), coating: byLabel(optCoating) } } : {}),
     },
     canWrite,
     error: asString(input.error).trim().slice(0, 200) || null,

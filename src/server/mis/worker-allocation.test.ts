@@ -431,3 +431,88 @@ describe('getCrewSummary — "My crew today", pool-scoped unlike the attendance 
     expect(attendanceFindMany).not.toHaveBeenCalled();
   });
 });
+
+// R2-47 (owner rule): Admin/Owner may RELEASE then reassign, audited with the reason, but an
+// override never leaves two simultaneous holds on one person for the same date and shift.
+describe('assignWorkers — R2-47 override releases the other hold first, never double-books', () => {
+  const TODAY = '2026-09-20';
+  const todayBooking = { id: 'ma-1', orderId: 'ord-1', releasedAt: null, startsAt: new Date('2026-09-20T00:30:00Z'), endsAt: new Date('2026-09-20T08:30:00Z') };
+  const HELD = { ...OTHER_ROW, assignedById: 'supA' };
+
+  const setup = (opts: { overlap: boolean; onLeave?: boolean }) => {
+    machineAllocationFindUnique.mockResolvedValue(todayBooking);
+    workerAllocationFindFirst.mockImplementation(({ where }: { where: { machineAllocationId?: unknown } }) =>
+      opts.overlap && typeof where.machineAllocationId === 'object' ? HELD : null,
+    );
+    attendanceFindMany.mockResolvedValue([{ employeeId: 'e1', clockIn: new Date(), clockOut: null, status: 'PRESENT' }]);
+    leaveFindMany.mockResolvedValue(opts.onLeave ? [{ employeeId: 'e1' }] : []);
+    return vi.spyOn(fakeDb.misWorkerAllocation, 'updateMany');
+  };
+  const assign = (extra: Record<string, unknown> = {}) =>
+    assignWorkers({ machineAllocationId: 'ma-1', employeeIds: ['e1'], shiftId: 's1', allocationDate: TODAY, ...extra });
+
+  it.each(['ADMIN', 'OWNER'])('%s override on an OVERLAP releases the other open row(s) BEFORE creating the new one', async (role) => {
+    getMisRole.mockResolvedValue(role);
+    const release = setup({ overlap: true });
+    const result = await assign({ override: { reason: 'cover for absence' } });
+    expect(result.created).toHaveLength(1);
+    expect(release).toHaveBeenCalledTimes(1);
+    const call = (release.mock.calls as unknown[][])[0][0] as { where: Record<string, unknown>; data: { releasedAt: unknown } };
+    expect(call.where).toMatchObject({ employeeId: 'e1', shiftId: 's1', releasedAt: null, deletedAt: null, machineAllocationId: { not: 'ma-1' } });
+    expect(call.data.releasedAt).toBeInstanceOf(Date);
+    expect(release.mock.invocationCallOrder[0]).toBeLessThan(workerAllocationCreate.mock.invocationCallOrder[0]);
+    release.mockRestore();
+  });
+
+  it('the release is audited with the override reason and the previous holder; the override row points back to it', async () => {
+    getMisRole.mockResolvedValue('ADMIN');
+    const release = setup({ overlap: true });
+    await assign({ override: { reason: 'cover for absence' } });
+    const entries = mockAudit.mock.calls.map((c) => c[0]);
+    const rel = entries.find((e) => e.action === 'RELEASE_WORKER');
+    expect(rel).toMatchObject({
+      entityId: 'wa-conflict',
+      before: { employeeId: 'e1', machineAllocationId: 'ma-OTHER', holderId: 'supA' },
+      after: { reason: 'MOVED', override: true, note: 'cover for absence', movedTo: 'wa-e1' },
+    });
+    const ov = entries.find((e) => e.action === 'ASSIGN_WORKER_OVERRIDE');
+    expect(ov.after).toMatchObject({ conflicts: ['OVERLAP'], reason: 'cover for absence', releasedFrom: 'wa-conflict', releasedFromMachine: 'Die Cutter 2' });
+    // Release audit comes before the new assignment's audit.
+    expect(entries.findIndex((e) => e.action === 'RELEASE_WORKER')).toBeLessThan(entries.findIndex((e) => e.action === 'ASSIGN_WORKER'));
+    release.mockRestore();
+  });
+
+  it('an override with no overlap (on leave only) releases nothing', async () => {
+    getMisRole.mockResolvedValue('OWNER');
+    const release = setup({ overlap: false, onLeave: true });
+    const result = await assign({ override: { reason: 'cover for absence' } });
+    expect(result.created).toHaveLength(1);
+    expect(release).not.toHaveBeenCalled();
+    expect(mockAudit.mock.calls.map((c) => c[0].action)).not.toContain('RELEASE_WORKER');
+    release.mockRestore();
+  });
+
+  it.each([
+    ['SUPERVISOR', { override: { reason: 'cover for absence' } }],
+    ['ADMIN', {}],
+    ['ADMIN', { confirmWarnings: true }],
+    ['OWNER', { override: { reason: 'x' } }],
+  ] as [string, Record<string, unknown>][])('%s %j: blocked, nothing released, nothing created', async (role, extra) => {
+    getMisRole.mockResolvedValue(role);
+    const release = setup({ overlap: true });
+    const result = await assign(extra);
+    expect(result.created).toHaveLength(0);
+    expect(result.blocked.map((b) => b.kind)).toEqual(['OVERLAP']);
+    expect(release).not.toHaveBeenCalled();
+    expect(workerAllocationCreate).not.toHaveBeenCalled();
+    release.mockRestore();
+  });
+
+  it.each(['QC', 'WORKER', 'STORE_GUY', 'ATTENDANCE_OPERATOR'])('%s cannot assign or override at all (production.write)', async (role) => {
+    getMisRole.mockResolvedValue(role);
+    const release = setup({ overlap: true });
+    await expect(assign({ override: { reason: 'cover for absence' } })).rejects.toThrow(/Not permitted: production\.write/);
+    expect(release).not.toHaveBeenCalled();
+    release.mockRestore();
+  });
+});
