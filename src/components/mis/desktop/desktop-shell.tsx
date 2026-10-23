@@ -22,6 +22,7 @@ import { cn } from '@/lib/utils';
 import type { NavEntry, NavIcon } from '@/server/mis/navigation';
 
 import { RoleBadge } from '../roles/role-badge';
+import { GlobalSearch } from '../search/global-search';
 import { useT } from '../shell/locale-provider';
 
 /**
@@ -159,25 +160,9 @@ export function DesktopShell({
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-30 flex min-h-[60px] items-center gap-4 border-b border-slate-200 bg-[#faf7f2]/95 px-[18px] backdrop-blur">
-          <label className="relative min-w-0 flex-1 max-w-xl">
-            <span className="sr-only">{t('desk.search')}</span>
-            <input
-              type="search"
-              placeholder={t('desk.search')}
-              className="h-11 w-full rounded-xl border border-slate-300 bg-white pl-10 pr-3 text-base text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-            />
-            <svg
-              aria-hidden="true"
-              viewBox="0 0 24 24"
-              className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <circle cx="11" cy="11" r="7" />
-              <path d="m20 20-3.5-3.5" />
-            </svg>
-          </label>
+          <div className="min-w-0 flex-1 max-w-xl">
+            <GlobalSearch />
+          </div>
           <div className="ml-auto flex items-center gap-3">{topBarRight}</div>
         </header>
 
