@@ -25,10 +25,15 @@ vi.mock('@/server/mis/grn-alerts', () => ({ notifyGrnConfirmed: vi.fn(async () =
 vi.mock('@/server/db', () => {
   const db: Row = {
     misPurchaseOrder: { create: async ({ data }: Row) => { const r = { id: 'po1', ...data }; state.po.push(r); return r; } },
-    misGrn: { findUnique: async () => state.grn },
+    misGrn: { findUnique: async () => state.grn, updateMany: async () => ({ count: 1 }) },
     misGrnItem: { findUnique: async () => state.grnItem, update: async ({ data }: Row) => { state.grnItemWrites.push(data); return data; } },
+    $transaction: async (fn: (tx: Row) => Promise<unknown>) => fn(db),
     misItem: { findFirst: async () => ({ id: 'i1', name: 'Kraft', code: 'K1', sku: null, category: 'RAW_MATERIAL' }) },
-    misOrder: { findUnique: async () => ({ orderNumber: 'ORD-1', status: 'CONFIRMED' }), findFirst: async () => null },
+    misOrder: {
+      findUnique: async () => ({ orderNumber: 'ORD-1', status: 'CONFIRMED' }),
+      // R2-119: a bom-number-shaped ref resolves through the BOM's own number to its order.
+      findFirst: async ({ where }: Row) => (where?.bom?.bomNumber === 'BOM-202610-00001' ? { orderNumber: 'ORD-202610-00001' } : null),
+    },
     misDepartment: { findUnique: async () => ({ name: 'Press' }) },
     misInventoryLedger: { create: async ({ data }: Row) => { state.ledger.push(data); return data; } },
   };
@@ -88,6 +93,13 @@ describe('R2-71 a "for an order" line names a real order — on edit too', () =>
     await expect(updateGRNItem('gi1', { type: 'FOR_ORDER' })).rejects.toThrow(/pick the order/i);
     await expect(updateGRNItem('gi1', { type: 'FOR_ORDER', forOrderRef: 'ORD-202610-00099' })).rejects.toThrow(/not found/i);
     expect(state.grnItemWrites).toHaveLength(0);
+  });
+
+  it('R2-119: a FOR_ORDER line also accepts the BOM\'s own number, resolving to its order', async () => {
+    state.grn = { id: 'g1', status: 'DRAFT', po: { items: [{ id: 'pi1', quantity: D(10), receivedQuantity: D(0) }] }, items: [{ id: 'gi1', poItemId: 'pi1', receivedQty: D(2) }] };
+    state.grnItem = { id: 'gi1', grnId: 'g1', poItemId: 'pi1', type: 'GENERAL', forOrderRef: null, receivedQty: D(2), dcQuantity: null, damageQuantity: D(0) };
+    await updateGRNItem('gi1', { type: 'FOR_ORDER', forOrderRef: 'BOM-202610-00001', dcQuantity: 2 });
+    expect(state.grnItemWrites[0]).toMatchObject({ type: 'FOR_ORDER', forOrderRef: 'BOM-202610-00001' });
   });
 });
 

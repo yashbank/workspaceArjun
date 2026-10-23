@@ -207,6 +207,28 @@ export async function listBomOverviewPage(opts: { q?: string; page?: number | st
   return { rows, total };
 }
 
+/**
+ * `BOM-YYYYMM-nnnnn`, the same shape as `nextOrderNumber`/`nextGrnNumber`. `attempt` offsets the
+ * suffix on a retry, so a clash does not need the clock to tick first.
+ */
+export function nextBomNumber(attempt = 0, now: Date = new Date()): string {
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const suffix = String(now.getTime() + attempt * 7919 + Math.floor(Math.random() * 97)).slice(-5);
+  return `BOM-${y}${m}-${suffix}`;
+}
+
+export const BOM_NUMBER_ATTEMPTS = 5;
+
+/** A clash on `bomNumber` (the only unique column a new BOM can clash on). */
+export function isBomNumberClash(error: unknown): boolean {
+  const e = error as { code?: string; meta?: { target?: unknown } } | null;
+  if (e?.code !== 'P2002') return false;
+  const target = e.meta?.target;
+  if (target === undefined) return true;
+  return String(Array.isArray(target) ? target.join(',') : target).includes('bom_number');
+}
+
 export async function createBom(orderId: string, notes?: string) {
   const actor = await requirePermission('orders.write');
   const existing = await db.misBom.findUnique({ where: { orderId } });
@@ -214,7 +236,16 @@ export async function createBom(orderId: string, notes?: string) {
   const order = await db.misOrder.findUnique({ where: { id: orderId }, select: { orderNumber: true, status: true } });
   if (!order) throw new Error('Order not found');
   assertOrderOpen(order);
-  const rec = await db.misBom.create({ data: { orderId, notes, createdById: actor.userId } });
+
+  let rec;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      rec = await db.misBom.create({ data: { orderId, notes, createdById: actor.userId, bomNumber: nextBomNumber(attempt) } });
+      break;
+    } catch (err) {
+      if (!isBomNumberClash(err) || attempt >= BOM_NUMBER_ATTEMPTS - 1) throw err;
+    }
+  }
   await logAuditEvent({ actorId: actor.userId, action: 'CREATE_BOM', entity: 'MisBom', entityId: rec.id, after: rec });
   return rec;
 }

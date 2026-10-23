@@ -952,6 +952,11 @@ model MisLeavePayRule {
 model MisBom {
   id            String           @id @default(uuid()) @db.Uuid
   orderId       String           @unique @map("order_id") @db.Uuid
+  /// R2-117. `BOM-YYYYMM-nnnnn`, generated in createBom() — the human-readable id procurement,
+  /// shop-floor routing and ERP tracking use, since `id` (a UUID) is not fit for that. NULL on a
+  /// BOM created before this column existed; never backfilled retroactively (D-honesty: a BOM
+  /// that was never issued a number does not get a fabricated one).
+  bomNumber     String?          @unique @map("bom_number")
   status        String           @default("DRAFT")
   notes         String?
   createdById   String?          @map("created_by_id") @db.Uuid

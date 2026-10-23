@@ -9,11 +9,22 @@
  */
 
 const ORDER_NUMBER = /^ORD-\d{6}-\d{5}$/i;
+const BOM_NUMBER = /^BOM-\d{6}-\d{5}$/i;
 
 /** The order number a reference names, normalised, or null when it is not one. */
 export function orderNumberFromRef(ref: string | null | undefined): string | null {
   const trimmed = ref?.trim().toUpperCase() ?? '';
   return ORDER_NUMBER.test(trimmed) ? trimmed : null;
+}
+
+/**
+ * R2-117/118/119. The BOM number a reference names, normalised, or null when it is not one
+ * (`BOM-YYYYMM-nnnnn`, `bom.ts#nextBomNumber`) — the same shape `orderNumberFromRef` resolves for
+ * order numbers, so a PO's "BOM Ref" or a GRN line's reference can now be either.
+ */
+export function bomNumberFromRef(ref: string | null | undefined): string | null {
+  const trimmed = ref?.trim().toUpperCase() ?? '';
+  return BOM_NUMBER.test(trimmed) ? trimmed : null;
 }
 
 export type AllocationFigures = { allocated: number; issued: number };

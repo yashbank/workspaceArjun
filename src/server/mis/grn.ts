@@ -1,7 +1,7 @@
 import { DEFAULT_FACTORY_TIMEZONE, factoryDateKey } from '@/lib/mis/factory-time';
 import { shortQuantity, withoutInvoiceMoney } from '@/lib/mis/grn-match';
 import { matchSupplierInvoice } from '@/lib/mis/invoice-match';
-import { orderNumberFromRef } from '@/lib/mis/order-allocation';
+import { bomNumberFromRef, orderNumberFromRef } from '@/lib/mis/order-allocation';
 import { roundQty } from '@/lib/mis/quantity';
 import {
   isReceivablePoStatus,
@@ -462,13 +462,34 @@ function assertPaperwork(h: { dcNumber?: string | null; supplierInvoiceNo?: stri
   if (!h.dcNumber?.trim() && !h.supplierInvoiceNo?.trim()) throw new GrnStateError(GRN_PAPERWORK_REQUIRED);
 }
 
+/**
+ * R2-119. A "for an order" reference may name the order directly, or the BOM built for it (the
+ * field accepts either shape, same as the PO's "BOM Ref" does, R2-118). Resolves to the real
+ * order number, or null when the reference names neither. `client` is `db` outside a transaction,
+ * `tx` inside one — both expose `misOrder.findFirst`.
+ */
+async function resolveOrderRef(
+  client: { misOrder: { findFirst: (args: { where: Record<string, unknown>; select: { orderNumber: true } }) => Promise<{ orderNumber: string } | null> } },
+  ref: string | null | undefined,
+): Promise<string | null> {
+  const orderNumber = orderNumberFromRef(ref);
+  if (orderNumber) {
+    const order = await client.misOrder.findFirst({ where: { orderNumber }, select: { orderNumber: true } });
+    return order?.orderNumber ?? null;
+  }
+  const bomNumber = bomNumberFromRef(ref);
+  if (!bomNumber) return null;
+  const order = await client.misOrder.findFirst({ where: { bom: { bomNumber } }, select: { orderNumber: true } });
+  return order?.orderNumber ?? null;
+}
+
 /** R2-71: a "for an order" line must name a real order — a typo would silently skip the stock earmark. */
 async function assertOrderRef(type: string | undefined, ref: string | null | undefined) {
   if (type !== 'FOR_ORDER') return;
-  const orderNumber = orderNumberFromRef(ref);
-  if (!orderNumber) throw new Error('Pick the order this line is for.');
-  const order = await db.misOrder.findFirst({ where: { orderNumber }, select: { id: true } });
-  if (!order) throw new Error(`Order ${orderNumber} was not found — pick it from the list.`);
+  const shaped = orderNumberFromRef(ref) ?? bomNumberFromRef(ref);
+  if (!shaped) throw new Error('Pick the order this line is for.');
+  const resolved = await resolveOrderRef(db, ref);
+  if (!resolved) throw new Error(`${shaped} was not found — pick it from the list.`);
 }
 
 /** A confirmable GRN has a line with something on it, and every received line lands in the catalog (D4). */
@@ -637,8 +658,11 @@ export async function confirmGRN(grnId: string, opts: { overReceiptReason?: stri
       seq += 1;
 
       // V2 Epic 2: a PO raised against an order (BOM ref = order number) earmarks every line, exactly as
-      // the store cart does; a FOR_ORDER line may name a different order with its own ref.
-      const ref = grnItem.type === 'FOR_ORDER' && orderNumberFromRef(grnItem.forOrderRef) ? grnItem.forOrderRef : fresh.po.bomRef;
+      // the store cart does; a FOR_ORDER line with its own ref (an order number, or its BOM's number,
+      // R2-119) earmarks against THAT order instead. No ref of its own (or not FOR_ORDER) falls back
+      // to the PO's own BOM ref, exactly as before.
+      const ownRefShaped = grnItem.type === 'FOR_ORDER' && (orderNumberFromRef(grnItem.forOrderRef) ?? bomNumberFromRef(grnItem.forOrderRef));
+      const ref = ownRefShaped ? await resolveOrderRef(tx, grnItem.forOrderRef) : fresh.po.bomRef;
       await allocateFromReceipt(tx, { ref, itemId, qty: grnItem.receivedQty.toNumber(), sourceId: grnId });
 
       // Update received quantity on PO item

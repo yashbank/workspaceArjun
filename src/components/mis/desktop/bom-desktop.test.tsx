@@ -19,6 +19,7 @@ import { BomDesktop } from './bom-desktop';
 const OWNER: BomDesktopData = {
   orderId: 'o1',
   orderNumber: 'ORD-2026-118',
+  bomNumber: 'BOM-202610-00042',
   description: 'Duplex carton',
   bomStatus: 'APPROVED',
   approvedLabel: '05/09',
@@ -187,11 +188,16 @@ describe('the rest of the screen', () => {
     expect(screen.getByRole('link', { name: 'Edit structure' }).getAttribute('href')).toBe('/mis/bom/o1?view=edit');
   });
 
-  it('names the BOM by its order, with the item count — and does not invent a quantity', () => {
+  it('names the BOM by its order and BOM number, with the item count — and does not invent a quantity', () => {
     const { container } = renderScreen(OWNER);
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Duplex carton');
-    expect(container.textContent).toContain('ORD-2026-118 · 4 items · 2 stages');
+    expect(container.textContent).toContain('ORD-2026-118 · BOM-202610-00042 · 4 items · 2 stages');
     expect(container.textContent).not.toMatch(/40,000|per unit\b(?!.*not recorded)/i);
+  });
+
+  it('falls back to the order number alone when the BOM predates bomNumber (R2-120)', () => {
+    const { container } = renderScreen({ ...OWNER, bomNumber: null });
+    expect(container.textContent).toContain('ORD-2026-118 · 4 items · 2 stages');
   });
 
   it('says versions are not recorded rather than drawing a version list', () => {

@@ -29,7 +29,7 @@ import { ItemPicker } from './item-picker';
 
 type Material = { id: string; description: string; itemId?: string | null; quantity: number; unit: string; ratePerUnit: number | null; item: { name: string; unit: string } | null };
 type Stage = { id: string; stageName: string; seq: number; processId?: string | null; process: { name: string } | null; materials: Material[] };
-type Bom = { id: string; status: string; approvedAt: Date | null; stages: Stage[] } | null;
+type Bom = { id: string; bomNumber?: string | null; status: string; approvedAt: Date | null; stages: Stage[] } | null;
 
 export function BomScreen({ bom, orderId, canWrite, isOwner, processes = [], items = [], units = [] }: { bom: Bom; orderId: string; canWrite: boolean; isOwner: boolean; processes?: { id: string; name: string }[]; /** R2-10: active catalog items for the material picker. */ items?: CatalogItem[]; /** R2-154: Master Units (group UNIT), for the Unit combobox. Free-text fallback when empty (no masters.read). */ units?: OptionLike[] }) {
   const unitOptions = unitChoices(units, undefined, true);
@@ -119,7 +119,9 @@ export function BomScreen({ bom, orderId, canWrite, isOwner, processes = [], ite
 
   return (
     <div className="flex flex-col gap-4 text-slate-900">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
+        {/* R2-120: the BOM number, alongside the status — previously only the order number was shown anywhere on this screen. */}
+        {bom.bomNumber && <span className="font-mono text-sm font-semibold text-slate-700">{bom.bomNumber}</span>}
         <StatusBadge tone={STATUS_TONE[bom.status] ?? 'neutral'}>{bom.status.replace(/_/g, ' ')}</StatusBadge>
         {canWrite && bom.status === 'DRAFT' && <Button onClick={() => setStageOpen(true)}>+ Stage</Button>}
         {canWrite && bom.status === 'DRAFT' && <Button onClick={() => startTransition(async () => { settle(await submitBomAction(bom.id)); })}>Submit for Approval</Button>}

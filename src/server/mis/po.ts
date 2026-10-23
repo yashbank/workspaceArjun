@@ -7,7 +7,7 @@ import { requirePermission } from './auth';
 import { logAuditEvent } from './audit';
 
 import { poPurpose, poPurposeLabel, type PoPurpose } from '@/lib/mis/po-purpose';
-import { orderNumberFromRef } from '@/lib/mis/order-allocation';
+import { bomNumberFromRef, orderNumberFromRef } from '@/lib/mis/order-allocation';
 import { BomNotApprovedError } from '@/lib/mis/po-errors';
 import { getPoApprovalThreshold } from './business-rules';
 import type { MisPoApprovalMode } from '@/generated/prisma/enums';
@@ -149,25 +149,37 @@ async function resolvePurposeAndRef(input: { purpose?: PoPurpose; bomRef?: strin
   if (!trimmedBomRef) {
     throw new Error('A PO raised from a BOM needs the BOM reference. For a stock top-up, raise it as buffer stock instead.');
   }
+  // R2-118: the field is still called "BOM Ref", so it now takes either shape — an order number
+  // or the BOM's own human-readable number — and resolves to the one order either way. The stored
+  // value stays the order-number string: that is what `orderNumberFromRef` (PO) and the GRN side
+  // already key off, so nothing downstream needs to learn a second identifier.
   const orderNumber = orderNumberFromRef(trimmedBomRef);
+  const bomNumber = orderNumber ? null : bomNumberFromRef(trimmedBomRef);
   const order = orderNumber
     ? await db.misOrder.findUnique({ where: { orderNumber }, select: { orderNumber: true, bom: { select: { status: true } } } })
-    : null;
-  if (!order || order.bom?.status !== 'APPROVED') throw new BomNotApprovedError(orderNumber ?? trimmedBomRef);
+    : bomNumber
+      ? await db.misOrder.findFirst({ where: { bom: { bomNumber } }, select: { orderNumber: true, bom: { select: { status: true } } } })
+      : null;
+  if (!order || order.bom?.status !== 'APPROVED') throw new BomNotApprovedError(orderNumber ?? bomNumber ?? trimmedBomRef);
   return { purpose, bomRef: order.orderNumber };
 }
 
 /** Orders whose BOM is APPROVED — what the BOM Ref picker offers (D1/#8). Plain data, no money. */
-export async function listApprovedBomOrders(): Promise<{ orderNumber: string; customerName: string | null; label: string }[]> {
+export async function listApprovedBomOrders(): Promise<{ orderNumber: string; bomNumber: string | null; customerName: string | null; label: string }[]> {
   await requirePermission('po.read');
   const boms = await db.misBom.findMany({
     where: { status: 'APPROVED' },
-    select: { order: { select: { orderNumber: true, customer: { select: { name: true } } } } },
+    select: { bomNumber: true, order: { select: { orderNumber: true, customer: { select: { name: true } } } } },
     orderBy: { updatedAt: 'desc' },
   });
   return boms.flatMap((b) =>
     b.order
-      ? [{ orderNumber: b.order.orderNumber, customerName: b.order.customer?.name ?? null, label: b.order.customer?.name ? `${b.order.orderNumber} · ${b.order.customer.name}` : b.order.orderNumber }]
+      ? [{
+          orderNumber: b.order.orderNumber,
+          bomNumber: b.bomNumber ?? null,
+          customerName: b.order.customer?.name ?? null,
+          label: [b.bomNumber ?? b.order.orderNumber, b.order.customer?.name].filter(Boolean).join(' · '),
+        }]
       : [],
   );
 }
