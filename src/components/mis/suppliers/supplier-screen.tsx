@@ -7,17 +7,18 @@ import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import { Input, NumberInput } from '@/components/mis/kit/input';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
+import { Pagination, HiddenParams } from '@/components/mis/kit/pagination';
 import { saveSupplierAction, deleteSupplierAction, restoreSupplierAction } from '@/app/(mis)/mis/suppliers/actions';
 
 type Supplier = { id: string; code: string; name: string; phone: string | null; city: string | null; gstNo: string | null; paymentTermsDays: number | null; isActive: boolean; deletedAt: Date | null };
-type Props = { suppliers: Supplier[]; canWrite: boolean };
+type Props = { suppliers: Supplier[]; canWrite: boolean; paging?: { total: number; page: number; params: Record<string, string | undefined> } };
 
-export function SupplierScreen({ suppliers, canWrite }: Props) {
+export function SupplierScreen({ suppliers, canWrite, paging }: Props) {
   const [open, setOpen] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Supplier | null>(null);
   const [vals, setVals] = useState({ code: '', name: '', phone: '', address: '', city: '', gstNo: '', paymentDays: '' });
-  const [search, setSearch] = useState('');
+  const search = paging?.params.q ?? '';
   const [isPending, startTransition] = useTransition();
   const [listError, setListError] = useState<string | null>(null);
   const { confirm, confirmDialog } = useConfirm();
@@ -29,9 +30,7 @@ export function SupplierScreen({ suppliers, canWrite }: Props) {
   };
   const restoreRow = (r: Supplier) => startTransition(async () => { const res = await restoreSupplierAction(r.id); setListError(res.ok ? null : res.detail); });
 
-  const filtered = search.trim()
-    ? suppliers.filter(s => s.code.toLowerCase().includes(search.toLowerCase()) || s.name.toLowerCase().includes(search.toLowerCase()) || (s.city ?? '').toLowerCase().includes(search.toLowerCase()) || (s.phone ?? '').toLowerCase().includes(search.toLowerCase()))
-    : suppliers;
+  const filtered = suppliers;
 
   const set = (k: keyof typeof vals) => (e: React.ChangeEvent<HTMLInputElement>) => setVals(v => ({ ...v, [k]: e.target.value }));
 
@@ -82,12 +81,15 @@ export function SupplierScreen({ suppliers, canWrite }: Props) {
           {canWrite && <Button onClick={openAdd}>+ Add Supplier</Button>}
         </div>
       </div>
-      <div>
-        <input type="search" placeholder="Search suppliers…" value={search} onChange={e => setSearch(e.target.value)} className="w-full max-w-sm min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500" />
-      </div>
+      <form method="get" className="flex items-center gap-3">
+        {paging && <HiddenParams params={paging.params} />}
+        <input type="search" placeholder="Search suppliers…" name="q" defaultValue={search} className="w-full max-w-sm min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500" />
+        <Button type="submit" variant="secondary">Search</Button>
+      </form>
       {listError && <p role="alert" className="text-sm text-red-600">{listError}</p>}
       {confirmDialog}
       <DataTable columns={columns} rows={filtered} rowKey={(r) => r.id} emptyTitle="No suppliers yet" emptyBody="Add suppliers to raise purchase orders." />
+      {paging && <Pagination basePath="/mis/suppliers" params={paging.params} page={paging.page} total={paging.total} />}
       <SlideOver open={open} onClose={() => setOpen(false)} title={editing ? 'Edit Supplier' : 'Add Supplier'}>
         <div className="flex flex-col gap-4 p-4">
           <Input label="Code" value={vals.code} onChange={set('code')} required />

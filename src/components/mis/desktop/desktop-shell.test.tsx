@@ -11,7 +11,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { NavEntry } from '@/server/mis/navigation';
 
 let pathname = '/mis/dashboard';
-vi.mock('next/navigation', () => ({ usePathname: () => pathname }));
+vi.mock('next/navigation', () => ({ usePathname: () => pathname, useRouter: () => ({ push: vi.fn() }) }));
 
 const { DesktopShell, DesktopPageHeader } = await import('./desktop-shell');
 
@@ -51,8 +51,10 @@ describe('the frame', () => {
   });
 
   it('carries the search, and labels it for assistive tech', () => {
+    // R2-144: the search is now a working combobox (type-to-filter, a results listbox), not a
+    // plain searchbox — same accessible name, a more accurate role.
     renderShell();
-    expect(screen.getByRole('searchbox')).toBeTruthy();
+    expect(screen.getByRole('combobox')).toBeTruthy();
   });
 });
 

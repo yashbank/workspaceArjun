@@ -6,6 +6,7 @@ import { getBom } from '@/server/mis/bom';
 import { getBomDesktopView } from '@/server/mis/bom-desktop';
 import { listProcesses } from '@/server/mis/process';
 import { listItems } from '@/server/mis/item';
+import { listOptions } from '@/server/mis/master-option';
 import { getMisRole } from '@/server/mis/roles';
 import { can } from '@/lib/mis/permissions';
 import { BomScreen } from '@/components/mis/bom/bom-screen';
@@ -38,7 +39,11 @@ export default async function BomDetailPage({
           .filter((i) => i.isActive !== false && !i.deletedAt)
           .map((i) => ({ id: i.id, code: i.code, name: i.name, unit: String(i.unit ?? '') }))
       : [];
-  const phone = <BomScreen bom={toPlain(bom) as unknown as BomProp} orderId={orderId} canWrite={canWrite} isOwner={isOwner} processes={processes} items={items} />;
+  // R2-154: the Unit field is a searchable dropdown from Master Units (needs masters.read; without it it falls back to free text).
+  const units = canWrite && can(role, 'masters.read')
+    ? (await listOptions('UNIT').catch(() => [])).map((o) => ({ value: o.value, label: o.label }))
+    : [];
+  const phone = <BomScreen bom={toPlain(bom) as unknown as BomProp} orderId={orderId} canWrite={canWrite} isOwner={isOwner} processes={processes} items={items} units={units} />;
 
   // D6 from 1024px up. `?view=edit` keeps the editable structure (add stage / add material, approve)
   // one link away on a desktop, because D6 is the reading view. `?costing=off` drops the cost

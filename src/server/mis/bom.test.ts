@@ -86,6 +86,11 @@ describe('BOM tree integrity (MIS-114, MIS-126)', () => {
     expect(state.boms).toHaveLength(1);
   });
 
+  it('createBom assigns a human-readable bomNumber (R2-117)', async () => {
+    const bom = await createBom('order-1');
+    expect(bom.bomNumber).toMatch(/^BOM-\d{6}-\d{5}$/);
+  });
+
   it('stages and materials are fully data-driven — nothing is hardcoded per order type (MIS-126)', async () => {
     const bom = await createBom('order-1');
     const stage = await addBomStage(bom.id, { stageName: 'Any custom stage name', seq: 1 });

@@ -2,6 +2,7 @@ import { db } from '@/server/db';
 import { requirePermission } from './auth';
 import { logAuditEvent } from './audit';
 import type { MisPoStatus } from '@/generated/prisma/enums';
+import { pageQuery, parseSearch, type Paged } from '@/lib/mis/pagination';
 
 export type SupplierInput = {
   code: string;
@@ -19,6 +20,24 @@ export async function listSuppliers(includeDeleted = false) {
     where: includeDeleted ? {} : { deletedAt: null },
     orderBy: { name: 'asc' },
   });
+}
+
+/** R2-133: the paged supplier directory (10 rows a page). `listSuppliers()` stays unpaginated for pickers. */
+export async function listSuppliersPage(opts: { q?: string; page?: number | string } = {}): Promise<Paged<Awaited<ReturnType<typeof listSuppliers>>[number]>> {
+  await requirePermission('po.read');
+  const q = parseSearch(opts.q);
+  const where = {
+    deletedAt: null,
+    ...(q
+      ? { OR: [{ name: { contains: q, mode: 'insensitive' as const } }, { code: { contains: q, mode: 'insensitive' as const } }] }
+      : {}),
+  };
+  const { skip, take } = pageQuery(opts.page);
+  const [rows, total] = await Promise.all([
+    db.misSupplier.findMany({ where, orderBy: { name: 'asc' }, skip, take }),
+    db.misSupplier.count({ where }),
+  ]);
+  return { rows, total };
 }
 
 export async function getSupplier(id: string) {

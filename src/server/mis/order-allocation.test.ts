@@ -18,7 +18,10 @@ const db: Row = {
   misItem: { findMany: async () => [item] },
   misOrder: {
     findUnique: async () => ORDER,
-    findFirst: async ({ where }: Row) => (where.orderNumber === ORDER.orderNumber ? { id: ORDER.id } : null),
+    findFirst: async ({ where }: Row) =>
+      (where.orderNumber === ORDER.orderNumber || where.bom?.bomNumber === ORDER.orderNumber)
+        ? { id: ORDER.id, orderNumber: ORDER.orderNumber }
+        : null,
   },
   misDepartment: { findUnique: async () => ({ name: 'Press' }) },
   misOrderStockAllocation: {

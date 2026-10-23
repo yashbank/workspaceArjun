@@ -115,3 +115,66 @@ export async function getOrderAllocations(orderId: string): Promise<OrderAllocat
     })
     .sort((a, b) => a.name.localeCompare(b.name));
 }
+
+export type OrderBomMaterialRow = {
+  stageName: string;
+  description: string;
+  itemId: string | null;
+  required: number;
+  unit: string;
+  /** Issued-so-far against THIS order, for a catalogued material; null for one with no itemId (nothing to match against the ledger). */
+  issued: number | null;
+  remaining: number | null;
+};
+
+/**
+ * R2-121: the BOM stage materials behind every open order with an APPROVED BOM, so the Issue
+ * screen can show what the BOM actually calls for and how much of it has gone out — not just the
+ * aggregate `MisOrderStockAllocation` figure. Read-only context: issuance is still capped by the
+ * allocation figure above, same as before (D1's earmark rule is unchanged by this).
+ */
+export async function listOpenOrderBomMaterials(): Promise<Record<string, OrderBomMaterialRow[]>> {
+  await requirePermission('store.read');
+  const boms = await db.misBom.findMany({
+    where: { status: 'APPROVED', order: { status: { in: ['CONFIRMED', 'IN_PRODUCTION'] } } },
+    select: {
+      orderId: true,
+      stages: {
+        orderBy: { seq: 'asc' },
+        select: { stageName: true, materials: { orderBy: { seq: 'asc' }, select: { description: true, itemId: true, quantity: true, unit: true } } },
+      },
+    },
+  });
+  if (boms.length === 0) return {};
+
+  const orderIds = boms.map((b) => b.orderId);
+  const itemIds = [...new Set(boms.flatMap((b) => b.stages.flatMap((s) => s.materials.flatMap((m) => (m.itemId ? [m.itemId] : [])))))];
+  const issues = itemIds.length > 0
+    ? await db.misInventoryLedger.findMany({ where: { source: 'STORE_ISSUE', sourceId: { in: orderIds }, itemId: { in: itemIds } }, select: { sourceId: true, itemId: true, changeQty: true } })
+    : [];
+  const issuedByKey = new Map<string, number>();
+  for (const i of issues) {
+    const key = `${i.sourceId}|${i.itemId}`;
+    issuedByKey.set(key, (issuedByKey.get(key) ?? 0) - i.changeQty.toNumber()); // STORE_ISSUE writes a negative changeQty
+  }
+
+  const out: Record<string, OrderBomMaterialRow[]> = {};
+  for (const bom of boms) {
+    out[bom.orderId] = bom.stages.flatMap((stage) =>
+      stage.materials.map((m) => {
+        const required = m.quantity.toNumber();
+        const issued = m.itemId ? issuedByKey.get(`${bom.orderId}|${m.itemId}`) ?? 0 : null;
+        return {
+          stageName: stage.stageName,
+          description: m.description,
+          itemId: m.itemId,
+          required,
+          unit: m.unit,
+          issued,
+          remaining: issued === null ? null : Math.max(0, required - issued),
+        };
+      }),
+    );
+  }
+  return out;
+}

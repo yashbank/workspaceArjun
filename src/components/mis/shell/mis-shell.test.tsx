@@ -11,7 +11,7 @@ import { render, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 let pathname = '/mis';
-vi.mock('next/navigation', () => ({ usePathname: () => pathname }));
+vi.mock('next/navigation', () => ({ usePathname: () => pathname, useRouter: () => ({ push: vi.fn() }) }));
 
 const { MisShell } = await import('./mis-shell');
 

@@ -1,12 +1,16 @@
 'use client';
 
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
-import { LogOut, Sun, Moon, Monitor, Menu, User, ChevronDown } from 'lucide-react';
+import { LogOut, Sun, Moon, Monitor, Menu, User, ChevronDown, Search, FileText, Folder } from 'lucide-react';
 import { useTheme } from '@/components/providers/theme-provider';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { FixedMenu } from '@/components/ui/fixed-menu';
 import { getUserDisplayName } from '@/lib/user-display';
+import { apiFetch } from '@/lib/api';
+
+type TopbarSearchResult = { id: string; name: string; type: 'file' | 'folder'; folderId?: string | null };
 
 const ROLE_COLORS: Record<string, string> = {
   owner: 'bg-amber-500/12 text-amber-800 ring-amber-500/20 dark:text-amber-300',
@@ -51,10 +55,12 @@ export function Topbar({
             <Menu className="h-4 w-4" />
           </button>
         )}
-        <p className="truncate text-[11px] font-medium text-muted-foreground/50 sm:text-xs">
+        <p className="hidden truncate text-[11px] font-medium text-muted-foreground/50 sm:text-xs md:block">
           Premium asset workspace
         </p>
       </div>
+
+      <TopbarSearch />
 
       <div className="ml-auto flex items-center gap-2 sm:gap-3">
         <ThemeToggle theme={theme} setTheme={setTheme} />
@@ -123,6 +129,75 @@ export function Topbar({
         </FixedMenu>
       </div>
     </header>
+  );
+}
+
+/** R2-149 — a search entry point in the main workspace header, consistent with the rest of this bar; reuses the same file/folder search the Files page's own search already calls. */
+function TopbarSearch() {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<TopbarSearchResult[]>([]);
+  const root = useRef<HTMLDivElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => { if (!root.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', away);
+    return () => document.removeEventListener('mousedown', away);
+  }, [open]);
+
+  function handleInput(value: string) {
+    setQuery(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!value.trim()) { setResults([]); return; }
+    debounceRef.current = setTimeout(async () => {
+      try {
+        setResults(await apiFetch<TopbarSearchResult[]>(`/api/search?q=${encodeURIComponent(value)}`));
+      } catch {
+        setResults([]);
+      }
+    }, 250);
+  }
+
+  function select(r: TopbarSearchResult) {
+    const folderId = r.type === 'folder' ? r.id : r.folderId;
+    router.push(folderId ? `/files?folderId=${folderId}` : '/files');
+    setOpen(false);
+    setQuery('');
+    setResults([]);
+  }
+
+  return (
+    <div ref={root} className="relative hidden min-w-0 max-w-xs flex-1 md:block">
+      <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/50" />
+      <input
+        type="search"
+        value={query}
+        onChange={(e) => handleInput(e.target.value)}
+        onFocus={() => setOpen(true)}
+        placeholder="Search files and folders…"
+        className="h-9 w-full rounded-xl border border-border/40 bg-card/60 pl-9 pr-3 text-[13px] text-foreground placeholder:text-muted-foreground/50 focus:border-primary/40 focus:outline-none focus:ring-2 focus:ring-primary/15"
+      />
+      {open && query.trim() && (
+        <ul className="absolute left-0 right-0 top-full z-30 mt-1 max-h-72 overflow-auto rounded-xl border border-border/40 bg-card shadow-float">
+          {results.length === 0 && <li className="px-3 py-2.5 text-[13px] text-muted-foreground">No matches.</li>}
+          {results.map((r) => (
+            <li key={`${r.type}-${r.id}`}>
+              <button
+                type="button"
+                onMouseDown={(e) => { e.preventDefault(); select(r); }}
+                className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-[13px] hover:bg-accent"
+              >
+                {r.type === 'folder' ? <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" /> : <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />}
+                <span className="truncate">{r.name}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 

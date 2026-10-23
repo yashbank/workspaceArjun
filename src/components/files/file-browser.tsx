@@ -594,6 +594,14 @@ export function FileBrowser({
     setSelectedIds(new Set());
   }, []);
 
+  // R2-149: a result picked from the Topbar's search (outside this page) lands here with the
+  // folder to open — once, on mount, the same way a bookmark would. Never re-runs on its own.
+  useEffect(() => {
+    const folderId = new URLSearchParams(window.location.search).get('folderId');
+    if (folderId) navigateTo(folderId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally mount-only
+  }, []);
+
   const toggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);

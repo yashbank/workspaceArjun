@@ -18,7 +18,7 @@ import { useRouter } from 'next/navigation';
 
 type Po = { id: string; poNumber: string; status: string; bomRef: string | null; supplier: { id: string; name: string } | null; _count: { items: number }; createdAt: Date };
 type Supplier = { id: string; name: string };
-type ApprovedBom = { orderNumber: string; label: string };
+type ApprovedBom = { orderNumber: string; bomNumber: string | null; label: string };
 type Props = { pos: Po[]; suppliers: Supplier[]; canWrite: boolean; approvedBoms?: ApprovedBom[];
   /** R2-83: the server-side page — total matching rows, the page number, and the URL params kept in the page links. */
   paging?: { total: number; page: number; params: Record<string, string | undefined> }; };
@@ -136,7 +136,7 @@ export function PoListScreen({ pos, suppliers, canWrite, approvedBoms = [], pagi
                 label="BOM Ref"
                 value={bomRef}
                 onChange={setBomRef}
-                options={[{ value: '', label: '— Select an order with an approved BOM —' }, ...approvedBoms.map(b => ({ value: b.orderNumber, label: b.label }))]}
+                options={[{ value: '', label: '— Select an order with an approved BOM —' }, ...approvedBoms.map(b => ({ value: b.bomNumber ?? b.orderNumber, label: b.label }))]}
               />
             )
           ) : (
