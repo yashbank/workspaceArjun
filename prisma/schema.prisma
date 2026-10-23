@@ -346,6 +346,8 @@ model MisEmployee {
   employeeCode  String   @unique @map("employee_code")
   name          String
   nameHi        String?  @map("name_hi")
+  /// R2-91. Emergency factory contact — never an auth channel, no login or OTP ever goes to it.
+  phone         String?
   role          MisRole  @default(WORKER)
   managerId     String?  @map("manager_id") @db.Uuid
   departmentId  String?  @map("department_id") @db.Uuid
