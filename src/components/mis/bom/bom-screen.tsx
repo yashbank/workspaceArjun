@@ -21,15 +21,18 @@ import {
 } from '@/app/(mis)/mis/bom/actions';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { useToast } from '@/components/ui/toast';
+import { Combobox } from '@/components/ui/combobox';
 import type { ActionResult } from '@/lib/mis/action-result';
 import type { CatalogItem } from '@/lib/mis/catalog-search';
+import { unitChoices, type OptionLike } from '@/lib/mis/item-options';
 import { ItemPicker } from './item-picker';
 
 type Material = { id: string; description: string; itemId?: string | null; quantity: number; unit: string; ratePerUnit: number | null; item: { name: string; unit: string } | null };
 type Stage = { id: string; stageName: string; seq: number; processId?: string | null; process: { name: string } | null; materials: Material[] };
 type Bom = { id: string; status: string; approvedAt: Date | null; stages: Stage[] } | null;
 
-export function BomScreen({ bom, orderId, canWrite, isOwner, processes = [], items = [] }: { bom: Bom; orderId: string; canWrite: boolean; isOwner: boolean; processes?: { id: string; name: string }[]; /** R2-10: active catalog items for the material picker. */ items?: CatalogItem[] }) {
+export function BomScreen({ bom, orderId, canWrite, isOwner, processes = [], items = [], units = [] }: { bom: Bom; orderId: string; canWrite: boolean; isOwner: boolean; processes?: { id: string; name: string }[]; /** R2-10: active catalog items for the material picker. */ items?: CatalogItem[]; /** R2-154: Master Units (group UNIT), for the Unit combobox. Free-text fallback when empty (no masters.read). */ units?: OptionLike[] }) {
+  const unitOptions = unitChoices(units, undefined, true);
   const [stageOpen, setStageOpen] = useState(false);
   const [matOpen, setMatOpen] = useState(false);
   const [selectedStageId, setSelectedStageId] = useState('');
@@ -220,7 +223,7 @@ export function BomScreen({ bom, orderId, canWrite, isOwner, processes = [], ite
           )}
           <Input label="Description" value={editMatDesc} onChange={e => setEditMatDesc(e.target.value)} />
           <NumberInput label="Quantity" value={editMatQty} onChange={e => setEditMatQty(e.target.value)} />
-          <Input label="Unit" value={editMatUnit} onChange={e => setEditMatUnit(e.target.value)} />
+          <Combobox label="Unit" value={editMatUnit || null} options={unitOptions} onChange={(v) => setEditMatUnit(v ?? '')} placeholder="Select unit" />
           {isOwner && <NumberInput label="Rate/Unit (₹)" value={editMatRate} onChange={e => setEditMatRate(e.target.value)} />}
           <div className="flex gap-2 pt-2">
             <Button onClick={saveMaterial} disabled={isPending || !editMatDesc.trim() || !editMatQty || !editMatUnit.trim()}>Save</Button>
@@ -257,7 +260,7 @@ export function BomScreen({ bom, orderId, canWrite, isOwner, processes = [], ite
           )}
           <Input label="Description" value={matDesc} onChange={e => setMatDesc(e.target.value)} />
           <NumberInput label="Quantity" value={matQty} onChange={e => setMatQty(e.target.value)} />
-          <Input label="Unit" value={matUnit} onChange={e => setMatUnit(e.target.value)} />
+          <Combobox label="Unit" value={matUnit || null} options={unitOptions} onChange={(v) => setMatUnit(v ?? '')} placeholder="Select unit" />
           {isOwner && <NumberInput label="Rate/Unit (₹)" value={matRate} onChange={e => setMatRate(e.target.value)} />}
           <div className="flex gap-2 pt-2">
             <Button onClick={addMat} disabled={isPending || !matDesc || !matQty}>Add</Button>
