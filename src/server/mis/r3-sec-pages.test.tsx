@@ -88,20 +88,20 @@ describe('B42 every export of the actions files returns an ActionResult', () => 
   });
 });
 
-describe('B39 the audit page (R2-83: 25 a page, filters in the URL)', () => {
+describe('B39 the audit page (R2-83: 10 a page, filters in the URL)', () => {
   it('?page=abc&from=zzz renders the first page with no date filter', async () => {
     const { default: AuditPage } = await import('@/app/(mis)/mis/audit/page');
     await AuditPage({ searchParams: Promise.resolve({ page: 'abc', from: 'zzz', to: '2026-13-99x' }) });
     const args = findMany.mock.calls[0][0] as { take: number; skip: number; where: Record<string, unknown> };
-    expect(args.take).toBe(25);
+    expect(args.take).toBe(10);
     expect(args.skip).toBe(0);
     expect(args.where.createdAt).toBeUndefined();
   });
 
-  it.each([['0', 0], ['-5', 0], ['1', 0], ['3', 50]])('page %s skips %i rows', async (page, skip) => {
+  it.each([['0', 0], ['-5', 0], ['1', 0], ['3', 20]])('page %s skips %i rows', async (page, skip) => {
     const { default: AuditPage } = await import('@/app/(mis)/mis/audit/page');
     await AuditPage({ searchParams: Promise.resolve({ page }) });
-    expect((findMany.mock.calls[0][0] as { skip: number; take: number })).toMatchObject({ skip, take: 25 });
+    expect((findMany.mock.calls[0][0] as { skip: number; take: number })).toMatchObject({ skip, take: 10 });
   });
 
   it('a well-formed date range is used', async () => {

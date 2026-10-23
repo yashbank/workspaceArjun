@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-import { PAGE_SIZE, clampPage, pageCount, pageHref, pageWindow, rangeLabel } from '@/lib/mis/pagination';
+import { PAGE_SIZE, clampPage, pageCount, pageHref, pageLabel, pageWindow } from '@/lib/mis/pagination';
 
 type Params = Record<string, string | string[] | undefined | null>;
 
@@ -16,21 +16,21 @@ type Props = {
 
 const BTN = 'inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border px-3 text-sm font-semibold';
 
-/** R2-83: the footer under a server-paged list — total, prev / next and page numbers; plain links so it works server-side. */
+/** R2-83/R2-128: the footer under a server-paged list — "Page X of Y", prev / next and page numbers; plain links so it works server-side. */
 export function Pagination({ basePath, params, page, total, pageSize = PAGE_SIZE }: Props) {
   const pages = pageCount(total, pageSize);
   const current = clampPage(page, total, pageSize);
   const href = (p: number) => pageHref(basePath, params, p);
   return (
     <nav aria-label="Pages" className="flex flex-wrap items-center justify-between gap-3 py-2">
-      <p className="text-sm text-slate-700" data-testid="pagination-range">{rangeLabel(current, total, pageSize)}</p>
+      <p className="text-sm font-semibold text-slate-700" data-testid="pagination-range">{pageLabel(current, total, pageSize)}</p>
       {pages > 1 && (
         <ul className="flex flex-wrap items-center gap-1">
           <li>
             {current > 1 ? (
-              <Link href={href(current - 1)} rel="prev" className={`${BTN} border-slate-300 bg-white text-slate-900 hover:bg-slate-50`}>Previous</Link>
+              <Link href={href(current - 1)} rel="prev" className={`${BTN} border-slate-300 bg-white text-slate-900 hover:bg-slate-50`}>‹ Previous</Link>
             ) : (
-              <span aria-disabled="true" className={`${BTN} border-slate-200 bg-slate-50 text-slate-400`}>Previous</span>
+              <span aria-disabled="true" className={`${BTN} border-slate-200 bg-slate-50 text-slate-400`}>‹ Previous</span>
             )}
           </li>
           {pageWindow(current, pages).map((p, i) =>
@@ -41,7 +41,7 @@ export function Pagination({ basePath, params, page, total, pageSize = PAGE_SIZE
                 <Link
                   href={href(p)}
                   aria-current={p === current ? 'page' : undefined}
-                  className={`${BTN} ${p === current ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-300 bg-white text-slate-900 hover:bg-slate-50'}`}
+                  className={`${BTN} ${p === current ? 'border-indigo-600 bg-indigo-600 text-white font-semibold' : 'border-slate-300 bg-white text-slate-900 hover:bg-slate-50'}`}
                 >
                   {p}
                 </Link>
@@ -50,9 +50,9 @@ export function Pagination({ basePath, params, page, total, pageSize = PAGE_SIZE
           )}
           <li>
             {current < pages ? (
-              <Link href={href(current + 1)} rel="next" className={`${BTN} border-slate-300 bg-white text-slate-900 hover:bg-slate-50`}>Next</Link>
+              <Link href={href(current + 1)} rel="next" className={`${BTN} border-slate-300 bg-white text-slate-900 hover:bg-slate-50`}>Next ›</Link>
             ) : (
-              <span aria-disabled="true" className={`${BTN} border-slate-200 bg-slate-50 text-slate-400`}>Next</span>
+              <span aria-disabled="true" className={`${BTN} border-slate-200 bg-slate-50 text-slate-400`}>Next ›</span>
             )}
           </li>
         </ul>

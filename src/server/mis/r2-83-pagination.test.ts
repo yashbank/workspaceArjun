@@ -1,5 +1,5 @@
 /**
- * R2-83 server-side pagination, db-free: every list function returns `{ rows, total }`, pages 25 at a time, turns the
+ * R2-83 server-side pagination, db-free: every list function returns `{ rows, total }`, pages 10 at a time, turns the
  * search into a where clause (not a client filter), and keeps its permission gate and scoping.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -60,7 +60,7 @@ beforeEach(() => { state.role = 'OWNER'; state.calls = {}; state.total = 61; });
 
 const first = (key: string) => state.calls[key][0];
 
-describe('list functions return { rows, total } and page by 25', () => {
+describe('list functions return { rows, total } and page by 10', () => {
   it.each([
     ['listPOsPage', () => listPOsPage({ page: '3' }), 'po'],
     ['listGRNsPage', () => listGRNsPage({ page: '3' }), 'grn'],
@@ -74,13 +74,13 @@ describe('list functions return { rows, total } and page by 25', () => {
     const out = await call();
     expect(out.total).toBe(61);
     expect(Array.isArray(out.rows)).toBe(true);
-    expect(first(`${key}.findMany`)).toMatchObject({ skip: 50, take: 25 });
+    expect(first(`${key}.findMany`)).toMatchObject({ skip: 20, take: 10 });
     expect(first(`${key}.count`)).toBeDefined();
   });
 
   it('page 1 / junk page start at the top', async () => {
     await listPOsPage({ page: 'zzz' });
-    expect(first('po.findMany')).toMatchObject({ skip: 0, take: 25 });
+    expect(first('po.findMany')).toMatchObject({ skip: 0, take: 10 });
   });
 });
 

@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { PAGE_SIZE, clampPage, pageCount, pageHref, pageQuery, pageWindow, parsePage, parseSearch, rangeLabel } from './pagination';
+import { PAGE_SIZE, clampPage, pageCount, pageHref, pageLabel, pageQuery, pageWindow, parsePage, parseSearch, rangeLabel } from './pagination';
 
 describe('pagination helper', () => {
-  it('pages 25 at a time', () => {
-    expect(PAGE_SIZE).toBe(25);
-    expect(pageQuery('3')).toEqual({ page: 3, pageSize: 25, skip: 50, take: 25 });
+  it('pages 10 at a time', () => {
+    expect(PAGE_SIZE).toBe(10);
+    expect(pageQuery('3')).toEqual({ page: 3, pageSize: 10, skip: 20, take: 10 });
   });
   it('treats junk page values as page 1', () => {
     for (const bad of [undefined, null, '', 'abc', '0', '-4', 'NaN']) expect(parsePage(bad)).toBe(1);
@@ -14,12 +14,12 @@ describe('pagination helper', () => {
   });
   it('counts pages, at least one', () => {
     expect(pageCount(0)).toBe(1);
-    expect(pageCount(25)).toBe(1);
-    expect(pageCount(26)).toBe(2);
-    expect(pageCount(130)).toBe(6);
+    expect(pageCount(10)).toBe(1);
+    expect(pageCount(11)).toBe(2);
+    expect(pageCount(130)).toBe(13);
   });
   it('clamps a page past the end to the last page', () => {
-    expect(clampPage(999, 130)).toBe(6);
+    expect(clampPage(999, 130)).toBe(13);
     expect(clampPage(0, 130)).toBe(1);
   });
   it('trims and caps the search text', () => {
@@ -29,8 +29,13 @@ describe('pagination helper', () => {
   });
   it('labels the range', () => {
     expect(rangeLabel(1, 0)).toBe('0 of 0');
-    expect(rangeLabel(1, 130)).toBe('1-25 of 130');
-    expect(rangeLabel(6, 130)).toBe('126-130 of 130');
+    expect(rangeLabel(1, 130)).toBe('1-10 of 130');
+    expect(rangeLabel(6, 130)).toBe('51-60 of 130');
+  });
+  it('labels the page', () => {
+    expect(pageLabel(1, 0)).toBe('Page 1 of 1');
+    expect(pageLabel(1, 130)).toBe('Page 1 of 13');
+    expect(pageLabel(999, 130)).toBe('Page 13 of 13');
   });
   it('windows page numbers with gaps', () => {
     expect(pageWindow(1, 3)).toEqual([1, 2, 3]);
