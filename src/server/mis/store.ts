@@ -426,6 +426,55 @@ export type StockSummaryRow = {
   isDemo: boolean;
 };
 
+/** R2-134: the paged store stock summary (10 rows a page). `listStockSummary()` stays unpaginated for callers that need the whole book (totals, CSV). */
+export async function listStockSummaryPage(opts: { q?: string; page?: number | string } = {}): Promise<Paged<StockSummaryRow>> {
+  const actor = await requirePermission('store.read');
+  const q = parseSearch(opts.q);
+  const where: Prisma.MisItemWhereInput = {
+    isActive: true,
+    deletedAt: null,
+    ...(q
+      ? { OR: [{ name: { contains: q, mode: 'insensitive' } }, { code: { contains: q, mode: 'insensitive' } }, { sku: { contains: q, mode: 'insensitive' } }] }
+      : {}),
+  };
+  const { skip, take } = pageQuery(opts.page);
+  const [items, total, balances] = await Promise.all([
+    db.misItem.findMany({
+      where,
+      orderBy: [{ category: 'asc' }, { code: 'asc' }],
+      skip,
+      take,
+      select: { id: true, code: true, sku: true, name: true, category: true, unit: true, reorderLevel: true, pricePerUnit: true, isDemo: true },
+    }),
+    db.misItem.count({ where }),
+    getStockBalances(),
+  ]);
+  const rows = items.map((item) => {
+    const balance = balances.get(item.id) ?? 0;
+    const reorderLevel = item.reorderLevel != null ? Number(item.reorderLevel) : null;
+    const row: StockSummaryRow = {
+      id: item.id,
+      code: item.code,
+      sku: item.sku,
+      name: item.name,
+      category: item.category,
+      unit: item.unit,
+      stockBalance: balance,
+      reorderLevel,
+      belowReorder: isLowStock(balance, reorderLevel),
+      isDemo: item.isDemo,
+    };
+    if (actor.role === 'OWNER') {
+      const price = item.pricePerUnit ? Number(item.pricePerUnit) : null;
+      row.pricePerUnit = price;
+      row.stockValue = price !== null ? round2(price * balance) : null;
+      row.stockValueLabel = row.stockValue !== null ? formatMoney(row.stockValue) : null;
+    }
+    return row;
+  });
+  return { rows, total };
+}
+
 export async function listStockSummary(): Promise<StockSummaryRow[]> {
   const actor = await requirePermission('store.read');
 

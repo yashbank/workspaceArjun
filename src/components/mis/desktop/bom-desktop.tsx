@@ -47,7 +47,7 @@ export function BomDesktop({ data }: { data: BomDesktopData }) {
 
       <DesktopPageHeader
         title={data.description ?? data.orderNumber}
-        summary={`${data.orderNumber} · ${data.itemCount} ${t('d6.items')} · ${data.stages.length} ${t('d6.stages')}`}
+        summary={`${data.orderNumber}${data.bomNumber ? ` · ${data.bomNumber}` : ''} · ${data.itemCount} ${t('d6.items')} · ${data.stages.length} ${t('d6.stages')}`}
         secondary={
           data.canCost ? (
             // A link, not a client toggle: turning costing off reloads the page WITHOUT the column

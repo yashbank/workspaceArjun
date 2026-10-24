@@ -26,7 +26,7 @@ const actionLinkClass =
   'inline-flex min-h-11 flex-1 items-center justify-center rounded-lg px-3 text-base font-medium text-slate-700 transition-colors hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900';
 
 type Employee = {
-  id: string; employeeCode: string; name: string; nameHi: string | null; role: string; isActive: boolean;
+  id: string; employeeCode: string; name: string; nameHi: string | null; phone: string | null; role: string; isActive: boolean;
   deletedAt: Date | null; managerId: string | null; userProfile: { email: string } | null;
   department?: { name: string } | null;
   departmentId?: string | null;
@@ -87,6 +87,7 @@ export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
   const [nameHi, setNameHi] = useState('');
+  const [phone, setPhone] = useState('');
   const [role, setRole] = useState('WORKER');
   const [managerId, setManagerId] = useState<string | null>(null);
   const [departmentId, setDepartmentId] = useState<string | null>(null);
@@ -101,8 +102,8 @@ export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes
   const [photo, setPhoto] = useState<File | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  const openAdd = () => { setEditing(null); setCode(''); setName(''); setNameHi(''); setRole('WORKER'); setManagerId(null); setDepartmentId(null); setWageTypeCode(null); setPayType('DAILY'); setSundayPaid(false); setBankName(''); setBankAccountNo(''); setIfsc(''); setSaveError(null); setPhoto(null); setOpen(true); };
-  const openEdit = (emp: Employee) => { setEditing(emp); setCode(emp.employeeCode); setName(emp.name); setNameHi(emp.nameHi ?? ''); setRole(emp.role); setManagerId(emp.managerId); setDepartmentId(emp.departmentId ?? null); setWageTypeCode(emp.wageTypeCode); setPayType(emp.payType); setSundayPaid(emp.sundayPaid); setBankName(emp.bankName ?? ''); setBankAccountNo(emp.bankAccountNo ?? ''); setIfsc(emp.ifsc ?? ''); setSaveError(null); setPhoto(null); setOpen(true); };
+  const openAdd = () => { setEditing(null); setCode(''); setName(''); setNameHi(''); setPhone(''); setRole('WORKER'); setManagerId(null); setDepartmentId(null); setWageTypeCode(null); setPayType('DAILY'); setSundayPaid(false); setBankName(''); setBankAccountNo(''); setIfsc(''); setSaveError(null); setPhoto(null); setOpen(true); };
+  const openEdit = (emp: Employee) => { setEditing(emp); setCode(emp.employeeCode); setName(emp.name); setNameHi(emp.nameHi ?? ''); setPhone(emp.phone ?? ''); setRole(emp.role); setManagerId(emp.managerId); setDepartmentId(emp.departmentId ?? null); setWageTypeCode(emp.wageTypeCode); setPayType(emp.payType); setSundayPaid(emp.sundayPaid); setBankName(emp.bankName ?? ''); setBankAccountNo(emp.bankAccountNo ?? ''); setIfsc(emp.ifsc ?? ''); setSaveError(null); setPhoto(null); setOpen(true); };
 
   // R2-88: open the edit form once for the person named in ?edit=, never again after it is closed.
   const [autoOpened, setAutoOpened] = useState(false);
@@ -131,6 +132,7 @@ export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes
           employeeCode: code,
           name,
           nameHi: nameHi || undefined,
+          phone: phone || undefined,
           // The <Select> only ever offers ROLE_OPTIONS' values (every MisRoleName), so this is
           // always true in practice — the guard keeps the type honest without an unchecked cast.
           role: isMisRole(role) ? role : undefined,
@@ -150,7 +152,7 @@ export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes
           try {
             unwrap(await uploadEmployeePhotoAction(saved.id, form));
           } catch (photoError) {
-            setEditing((current) => current ?? { id: saved.id, employeeCode: code, name, nameHi: nameHi || null, role, isActive: true, deletedAt: null, managerId, userProfile: null, wageTypeCode, payType, sundayPaid });
+            setEditing((current) => current ?? { id: saved.id, employeeCode: code, name, nameHi: nameHi || null, phone: phone || null, role, isActive: true, deletedAt: null, managerId, userProfile: null, wageTypeCode, payType, sundayPaid });
             setSaveError(`Saved, but the photo did not upload: ${photoError instanceof Error ? photoError.message : 'try again'}`);
             return;
           }
@@ -168,8 +170,8 @@ export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes
   const filtered = employees;
 
   function downloadCsv() {
-    const headers = ['Code', 'Name', 'Name (Hindi)', 'Role', 'Login Email', 'Active'];
-    const rows = employees.map(e => [e.employeeCode, e.name, e.nameHi ?? '', roleLabel(e.role), e.userProfile?.email ?? '', e.isActive ? 'Yes' : 'No']);
+    const headers = ['Code', 'Name', 'Name (Hindi)', 'Phone', 'Role', 'Login Email', 'Active'];
+    const rows = employees.map(e => [e.employeeCode, e.name, e.nameHi ?? '', e.phone ?? '', roleLabel(e.role), e.userProfile?.email ?? '', e.isActive ? 'Yes' : 'No']);
     const lines = [headers, ...rows].map(row => row.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(','));
     const blob = new Blob([lines.join('\r\n')], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -263,6 +265,7 @@ export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes
           <Input label="Employee Code" value={code} onChange={(e) => setCode(e.target.value)} required />
           <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} required />
           <Input label="Name (Hindi)" value={nameHi} onChange={(e) => setNameHi(e.target.value)} />
+          <Input label="Phone (emergency contact)" value={phone} onChange={(e) => setPhone(e.target.value)} />
           <PhotoPicker file={photo} onChange={setPhoto} currentUrl={editing?.photoUrl ?? null} />
           <Select label="Role" value={role} options={ROLE_OPTIONS} onChange={setRole} />
           <Select

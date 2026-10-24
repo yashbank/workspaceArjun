@@ -6,6 +6,7 @@ import { Input, NumberInput } from '@/components/mis/kit/input';
 import { Select, type SelectOption } from '@/components/mis/kit/select';
 import { Combobox } from '@/components/ui/combobox';
 import { SlideOver } from '@/components/mis/kit/slide-over';
+import { Pagination, HiddenParams } from '@/components/mis/kit/pagination';
 import { addQcCheckAction } from '@/app/(mis)/mis/qc/actions';
 
 type Order = { id: string; orderNumber: string; status: string; customer: { name: string } | null };
@@ -22,7 +23,9 @@ const statusColors: Record<string, string> = {
  * comes from the master, never the person" — anything else stays honestly unclassified). */
 const OTHER_DEFECT = '';
 
-export function QcScreen({ orders, canWrite, defectTypes }: { orders: Order[]; canWrite: boolean; defectTypes: DefectTypeOption[] }) {
+type Paging = { total: number; page: number; params: Record<string, string | undefined> };
+
+export function QcScreen({ orders, pickerOrders = orders, canWrite, defectTypes, paging }: { orders: Order[]; pickerOrders?: Order[]; canWrite: boolean; defectTypes: DefectTypeOption[]; paging?: Paging }) {
   const [open, setOpen] = useState(false);
   const [orderId, setOrderId] = useState('');
   const [result, setResult] = useState<'PASS' | 'FAIL' | 'NA'>('PASS');
@@ -32,16 +35,14 @@ export function QcScreen({ orders, canWrite, defectTypes }: { orders: Order[]; c
   const [defectQty, setDefectQty] = useState('');
   const [notes, setNotes] = useState('');
   const [isPending, startTransition] = useTransition();
-  const [search, setSearch] = useState('');
+  const search = paging?.params.q ?? '';
   const [error, setError] = useState<string | null>(null);
 
-  const filtered = search.trim()
-    ? orders.filter(o => o.orderNumber.toLowerCase().includes(search.toLowerCase()) || (o.customer?.name ?? '').toLowerCase().includes(search.toLowerCase()) || o.status.toLowerCase().includes(search.toLowerCase()))
-    : orders;
+  const filtered = orders;
 
   const orderOptions: SelectOption[] = [
     { value: '', label: '— Select Order —' },
-    ...orders.map((o) => ({ value: o.id, label: `${o.orderNumber} — ${o.customer?.name ?? ''}` })),
+    ...pickerOrders.map((o) => ({ value: o.id, label: `${o.orderNumber} — ${o.customer?.name ?? ''}` })),
   ];
   const resultOptions: SelectOption[] = [
     { value: 'PASS', label: 'Pass' },
@@ -79,15 +80,17 @@ export function QcScreen({ orders, canWrite, defectTypes }: { orders: Order[]; c
         </div>
       </div>
 
-      <div>
+      <form method="get" className="flex items-center gap-3">
+        {paging && <HiddenParams params={paging.params} />}
         <input
           type="search"
           placeholder="Search orders…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
+          name="q"
+          defaultValue={search}
           className="w-full max-w-sm min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500"
         />
-      </div>
+        <Button type="submit" variant="secondary">Search</Button>
+      </form>
 
       {filtered.length === 0 ? (
         <div className="rounded-xl border border-gray-200 bg-white py-16 text-center text-gray-400 text-sm">
@@ -113,6 +116,7 @@ export function QcScreen({ orders, canWrite, defectTypes }: { orders: Order[]; c
           ))}
         </div>
       )}
+      {paging && <Pagination basePath="/mis/qc" params={paging.params} page={paging.page} total={paging.total} />}
 
       <SlideOver open={open} onClose={() => setOpen(false)} title="Add QC Check">
         <div className="flex flex-col gap-4 p-4">

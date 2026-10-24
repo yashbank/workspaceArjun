@@ -42,10 +42,16 @@ const db: Row = {
       const order = state.orders.find((o) => o.orderNumber === where.orderNumber);
       return order ? { orderNumber: order.orderNumber, bom: state.boms.find((b) => b.orderId === order.id) ?? null } : null;
     },
+    // R2-118: the "BOM Ref" field now also accepts the BOM's own number.
+    findFirst: async ({ where }: Row) => {
+      const bom = state.boms.find((b) => b.bomNumber === where.bom.bomNumber);
+      const order = bom ? state.orders.find((o) => o.id === bom.orderId) : null;
+      return order ? { orderNumber: order.orderNumber, bom: { status: bom!.status } } : null;
+    },
   },
   misBom: {
     findMany: async ({ where }: Row) =>
-      state.boms.filter((b) => b.status === where.status).map((b) => ({ order: state.orders.find((o) => o.id === b.orderId) })),
+      state.boms.filter((b) => b.status === where.status).map((b) => ({ bomNumber: b.bomNumber, order: state.orders.find((o) => o.id === b.orderId) })),
   },
   // R3-MST B28: cancelPO now reads the GRN count and writes the status inside one interactive transaction.
   misItem: { findFirst: async ({ where }: Row) => (where.id === 'i-gone' ? null : { id: where.id }) },
@@ -59,6 +65,7 @@ const { isBomNotApprovedDetail } = await import('@/lib/mis/po-errors');
 const ORD_OK = 'ORD-202610-00001'; // BOM APPROVED
 const ORD_DRAFT = 'ORD-202610-00002'; // BOM DRAFT
 const ORD_NO_BOM = 'ORD-202610-00003'; // no BOM at all
+const BOM_OK = 'BOM-202610-00001'; // ORD_OK's BOM number
 
 beforeEach(() => {
   seq = 0;
@@ -68,7 +75,7 @@ beforeEach(() => {
     { id: 'o2', orderNumber: ORD_DRAFT, customer: null },
     { id: 'o3', orderNumber: ORD_NO_BOM, customer: null },
   ];
-  state.boms = [{ id: 'b1', orderId: 'o1', status: 'APPROVED' }, { id: 'b2', orderId: 'o2', status: 'DRAFT' }];
+  state.boms = [{ id: 'b1', orderId: 'o1', status: 'APPROVED', bomNumber: BOM_OK }, { id: 'b2', orderId: 'o2', status: 'DRAFT', bomNumber: null }];
   vi.clearAllMocks();
   getCurrentUser.mockResolvedValue({ id: 'u1' });
   getMisRole.mockResolvedValue('ADMIN');
@@ -220,6 +227,16 @@ describe('D1 / #9 a PO against an unapproved BOM is blocked', () => {
     expect(created.bomRef).toBe(ORD_OK);
   });
 
+  it('R2-118: the BOM Ref field also accepts the BOM\'s own number, resolving to the same order', async () => {
+    const created = await po.createPO({ supplierId: 's1', purpose: 'FOR_ORDER', bomRef: ` ${BOM_OK.toLowerCase()} ` });
+    expect(created.bomRef).toBe(ORD_OK);
+  });
+
+  it('R2-118: a BOM number for an unapproved BOM is refused the same as an order number would be', async () => {
+    state.boms[1].bomNumber = 'BOM-202610-00002';
+    await expect(po.createPO({ supplierId: 's1', purpose: 'FOR_ORDER', bomRef: 'BOM-202610-00002' })).rejects.toThrow(/BOM is not approved/);
+  });
+
   it.each([
     ['a DRAFT BOM', ORD_DRAFT],
     ['an order with no BOM', ORD_NO_BOM],
@@ -245,9 +262,9 @@ describe('D1 / #9 a PO against an unapproved BOM is blocked', () => {
 });
 
 describe('#8 / #30 listApprovedBomOrders', () => {
-  it('returns only orders with an APPROVED BOM, as plain data labelled "order · customer"', async () => {
+  it('returns only orders with an APPROVED BOM, labelled by BOM number · customer', async () => {
     const rows = await po.listApprovedBomOrders();
-    expect(rows).toEqual([{ orderNumber: ORD_OK, customerName: 'Acme Foods', label: `${ORD_OK} · Acme Foods` }]);
+    expect(rows).toEqual([{ orderNumber: ORD_OK, bomNumber: BOM_OK, customerName: 'Acme Foods', label: `${BOM_OK} · Acme Foods` }]);
   });
 
   it('is behind po.read', async () => {

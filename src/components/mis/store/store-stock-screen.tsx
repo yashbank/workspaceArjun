@@ -3,6 +3,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
+import { Pagination, HiddenParams } from '@/components/mis/kit/pagination';
 
 type StockRow = {
   id: string;
@@ -25,6 +26,7 @@ type Props = {
   isOwner: boolean;
   /** Server-formatted total (Owner only). The screen does no money arithmetic. */
   totalValueLabel?: string | null;
+  paging?: { total: number; page: number; params: Record<string, string | undefined> };
 };
 
 const CATEGORY_LABEL: Record<string, string> = {
@@ -62,25 +64,19 @@ function downloadCsv(rows: StockRow[], isOwner: boolean) {
   URL.revokeObjectURL(url);
 }
 
-export function StoreStockScreen({ rows, isOwner, totalValueLabel = null }: Props) {
-  const [search, setSearch] = useState('');
+export function StoreStockScreen({ rows, isOwner, totalValueLabel = null, paging }: Props) {
   const [categoryFilter, setCategoryFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const search = paging?.params.q ?? '';
 
   const filtered = rows.filter((r) => {
-    const q = search.trim().toLowerCase();
-    const matchSearch =
-      !q ||
-      r.name.toLowerCase().includes(q) ||
-      r.code.toLowerCase().includes(q) ||
-      (r.sku ?? '').toLowerCase().includes(q);
     const matchCat = !categoryFilter || r.category === categoryFilter;
     const matchStatus =
       !statusFilter ||
       (statusFilter === 'critical' && r.stockBalance <= 0) ||
       (statusFilter === 'warning' && r.belowReorder && r.stockBalance > 0) ||
       (statusFilter === 'ok' && !r.belowReorder && r.stockBalance > 0);
-    return matchSearch && matchCat && matchStatus;
+    return matchCat && matchStatus;
   });
 
   const criticalCount = rows.filter((r) => r.stockBalance <= 0).length;
@@ -170,7 +166,7 @@ export function StoreStockScreen({ rows, isOwner, totalValueLabel = null }: Prop
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Stock Summary</h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            {rows.length} items
+            {paging ? paging.total : rows.length} items
             {criticalCount > 0 && (
               <span className="ml-2 text-red-600 font-medium">· {criticalCount} out of stock</span>
             )}
@@ -201,14 +197,16 @@ export function StoreStockScreen({ rows, isOwner, totalValueLabel = null }: Prop
       )}
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-3">
+      <form method="get" className="flex flex-wrap gap-3">
+        {paging && <HiddenParams params={paging.params} />}
         <input
           type="search"
           placeholder="Search by name, code or SKU…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          name="q"
+          defaultValue={search}
           className="w-full max-w-xs min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500"
         />
+        <button type="submit" className="min-h-12 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">Search</button>
         <select
           value={categoryFilter}
           onChange={(e) => setCategoryFilter(e.target.value)}
@@ -230,7 +228,7 @@ export function StoreStockScreen({ rows, isOwner, totalValueLabel = null }: Prop
           <option value="warning">Low Stock</option>
           <option value="ok">OK</option>
         </select>
-      </div>
+      </form>
 
       <DataTable
         columns={columns}
@@ -239,6 +237,7 @@ export function StoreStockScreen({ rows, isOwner, totalValueLabel = null }: Prop
         emptyTitle="No items"
         emptyBody={search || categoryFilter || statusFilter ? 'Try clearing filters.' : 'No items configured.'}
       />
+      {paging && <Pagination basePath="/mis/store/stock" params={paging.params} page={paging.page} total={paging.total} />}
     </div>
   );
 }

@@ -38,7 +38,9 @@ describe('R2-10 BOM item picker', () => {
     fireEvent.click(screen.getByRole('button', { name: 'INK-R · Red ink (LITRE)' }));
     expect(screen.getByTestId('picked-item').textContent).toBe('INK-R · Red ink (LITRE)');
     expect((screen.getByLabelText('Description') as HTMLInputElement).value).toBe('Red ink');
-    expect((screen.getByLabelText('Unit') as HTMLInputElement).value).toBe('LITRE');
+    // R2-154: Unit is now a Combobox (Master Units, falling back to the legacy 4 when the
+    // catalog has none) — it displays the option's label, "Litre", not the raw stored value.
+    expect((screen.getByLabelText('Unit') as HTMLInputElement).value).toBe('Litre');
     fireEvent.change(screen.getByLabelText('Quantity'), { target: { value: '2' } });
     fireEvent.click(screen.getByRole('button', { name: 'Add' }));
     await waitFor(() => expect(addMaterialAction).toHaveBeenCalledWith('s1', expect.objectContaining({ itemId: 'i2', description: 'Red ink', unit: 'LITRE', quantity: 2 })));

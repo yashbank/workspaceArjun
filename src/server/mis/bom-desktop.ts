@@ -64,6 +64,7 @@ export async function getBomDesktopView(
   return {
     orderId: order.id,
     orderNumber: order.orderNumber,
+    bomNumber: bom.bomNumber ?? null,
     description: order.description ?? null,
     bomStatus: bom.status,
     approvedLabel: key ? `${key.slice(8, 10)}/${key.slice(5, 7)}` : null,
