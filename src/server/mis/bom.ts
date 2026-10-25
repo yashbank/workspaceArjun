@@ -2,6 +2,7 @@ import { isOrderClosed } from '@/lib/mis/order-status';
 import { formatRupees, rollUp, withoutRates } from '@/lib/mis/bom-costing';
 import { forRole } from '@/lib/mis/money-fields';
 import { can } from '@/lib/mis/permissions';
+import { pageQuery } from '@/lib/mis/pagination';
 import { db } from '@/server/db';
 import { requirePermission } from '@/server/mis/auth';
 import { logAuditEvent } from '@/server/mis/audit';
@@ -137,6 +138,97 @@ export async function getBomCosting(orderId: string): Promise<BomCostingView | n
   return view;
 }
 
+export type BomOverviewRow = {
+  orderId: string;
+  orderNumber: string;
+  orderStatus: string;
+  customerName: string | null;
+  description: string | null;
+  /** `NO_BOM` when the order has no BOM row yet — the fourth state the list badge needs beyond MisBom.status. */
+  bomStatus: 'NO_BOM' | 'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED';
+  stageCount: number;
+  materialCount: number;
+  /** Owner only (`wages.read`, D24) — `null` for every other role, same gate as `getBomCosting`. */
+  estimatedCostLabel: string | null;
+};
+
+/**
+ * R2-123/137: header-level data for the BOM list — order, customer, BOM lifecycle badge, stage/material
+ * counts and the rolled-up cost — so a role can tell a draft from an approved BOM without opening each
+ * order. The cost column reuses `rollUp` (the one place a BOM total is computed, D24) and is blank for
+ * anyone without `wages.read`, never a second route to the figure.
+ */
+export async function listBomOverviewPage(opts: { q?: string; page?: number | string } = {}) {
+  const actor = await requirePermission('orders.read');
+  const q = (opts.q ?? '').trim().slice(0, 100);
+  const where = {
+    status: { notIn: ['CANCELLED', 'DELIVERED'] },
+    ...(q
+      ? {
+          OR: [
+            { orderNumber: { contains: q, mode: 'insensitive' as const } },
+            { description: { contains: q, mode: 'insensitive' as const } },
+            { customer: { name: { contains: q, mode: 'insensitive' as const } } },
+          ],
+        }
+      : {}),
+  };
+  const { skip, take } = pageQuery(opts.page);
+  const [orders, total] = await Promise.all([
+    db.misOrder.findMany({
+      where,
+      include: {
+        customer: { select: { name: true } },
+        bom: { select: { status: true, stages: { select: { id: true, materials: { select: { id: true, quantity: true, ratePerUnit: true } } } } } },
+      },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take,
+    }),
+    db.misOrder.count({ where }),
+  ]);
+  const canSeeCost = can(actor.role, 'wages.read');
+  const rows: BomOverviewRow[] = orders.map((order) => {
+    const stages = order.bom?.stages ?? [];
+    const materialCount = stages.reduce((n, s) => n + s.materials.length, 0);
+    const estimatedCostLabel = canSeeCost && order.bom ? formatRupees(rollUp(stages).total) : null;
+    return {
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      orderStatus: order.status,
+      customerName: order.customer?.name ?? null,
+      description: order.description,
+      bomStatus: (order.bom?.status as BomOverviewRow['bomStatus']) ?? 'NO_BOM',
+      stageCount: stages.length,
+      materialCount,
+      estimatedCostLabel,
+    };
+  });
+  return { rows, total };
+}
+
+/**
+ * `BOM-YYYYMM-nnnnn`, the same shape as `nextOrderNumber`/`nextGrnNumber`. `attempt` offsets the
+ * suffix on a retry, so a clash does not need the clock to tick first.
+ */
+export function nextBomNumber(attempt = 0, now: Date = new Date()): string {
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const suffix = String(now.getTime() + attempt * 7919 + Math.floor(Math.random() * 97)).slice(-5);
+  return `BOM-${y}${m}-${suffix}`;
+}
+
+export const BOM_NUMBER_ATTEMPTS = 5;
+
+/** A clash on `bomNumber` (the only unique column a new BOM can clash on). */
+export function isBomNumberClash(error: unknown): boolean {
+  const e = error as { code?: string; meta?: { target?: unknown } } | null;
+  if (e?.code !== 'P2002') return false;
+  const target = e.meta?.target;
+  if (target === undefined) return true;
+  return String(Array.isArray(target) ? target.join(',') : target).includes('bom_number');
+}
+
 export async function createBom(orderId: string, notes?: string) {
   const actor = await requirePermission('orders.write');
   const existing = await db.misBom.findUnique({ where: { orderId } });
@@ -144,7 +236,16 @@ export async function createBom(orderId: string, notes?: string) {
   const order = await db.misOrder.findUnique({ where: { id: orderId }, select: { orderNumber: true, status: true } });
   if (!order) throw new Error('Order not found');
   assertOrderOpen(order);
-  const rec = await db.misBom.create({ data: { orderId, notes, createdById: actor.userId } });
+
+  let rec;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      rec = await db.misBom.create({ data: { orderId, notes, createdById: actor.userId, bomNumber: nextBomNumber(attempt) } });
+      break;
+    } catch (err) {
+      if (!isBomNumberClash(err) || attempt >= BOM_NUMBER_ATTEMPTS - 1) throw err;
+    }
+  }
   await logAuditEvent({ actorId: actor.userId, action: 'CREATE_BOM', entity: 'MisBom', entityId: rec.id, after: rec });
   return rec;
 }

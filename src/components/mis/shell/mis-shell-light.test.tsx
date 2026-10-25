@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { render } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('next/navigation', () => ({ usePathname: () => '/mis/bom' }));
+vi.mock('next/navigation', () => ({ usePathname: () => '/mis/bom', useRouter: () => ({ push: vi.fn() }) }));
 
 const { MisShell } = await import('./mis-shell');
 

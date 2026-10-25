@@ -32,6 +32,8 @@ export type BomStageView = {
 export type BomDesktopData = {
   orderId: string;
   orderNumber: string;
+  /** R2-120. Null on a BOM created before bomNumber existed — the header shows "—", never a fabricated id. */
+  bomNumber: string | null;
   description: string | null;
   bomStatus: string;
   approvedLabel: string | null;

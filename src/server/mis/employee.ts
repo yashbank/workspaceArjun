@@ -12,6 +12,8 @@ export type EmployeeInput = {
   employeeCode: string;
   name: string;
   nameHi?: string | null;
+  /** R2-91. Emergency factory contact — never an auth channel, no login/OTP goes here. */
+  phone?: string | null;
   role?: MisRoleName;
   departmentId?: string | null;
   /**
@@ -224,6 +226,7 @@ export async function createEmployee(input: EmployeeInput) {
       employeeCode: input.employeeCode.trim().toUpperCase(),
       name: input.name.trim(),
       nameHi: input.nameHi?.trim() || null,
+      phone: input.phone?.trim() || null,
       role: input.role || 'WORKER',
       departmentId: input.departmentId || null,
       wageTypeCode: input.wageTypeCode ?? null,
@@ -268,6 +271,7 @@ export async function updateEmployee(id: string, patch: Partial<EmployeeInput>) 
     ...(patch.employeeCode !== undefined ? { employeeCode: patch.employeeCode.trim().toUpperCase() } : {}),
     ...(patch.name !== undefined ? { name: patch.name.trim() } : {}),
     ...(patch.nameHi !== undefined ? { nameHi: patch.nameHi?.trim() || null } : {}),
+    ...(patch.phone !== undefined ? { phone: patch.phone?.trim() || null } : {}),
     ...(patch.role ? { role: patch.role } : {}),
     ...(patch.managerId !== undefined ? { managerId: patch.managerId } : {}),
     ...(patch.departmentId !== undefined ? { departmentId: patch.departmentId || null } : {}),

@@ -39,7 +39,7 @@ export function isUniqueConstraintError(err: unknown): boolean {
   return Boolean(err && typeof err === 'object' && (err as { code?: unknown }).code === 'P2002');
 }
 
-/** R2-83: one page of orders (25); `q` matches the order number, customer or description; `customerId` narrows to one customer. */
+/** R2-83: one page of orders (10); `q` matches the order number, customer or description; `customerId` narrows to one customer. */
 export async function listOrdersPage(opts: { q?: string; customerId?: string; page?: number | string } = {}): Promise<Paged<Awaited<ReturnType<typeof listOrders>>[number]>> {
   await requirePermission('orders.read');
   const q = parseSearch(opts.q);
@@ -50,6 +50,29 @@ export async function listOrdersPage(opts: { q?: string; customerId?: string; pa
           OR: [
             { orderNumber: { contains: q, mode: 'insensitive' } },
             { description: { contains: q, mode: 'insensitive' } },
+            { customer: { name: { contains: q, mode: 'insensitive' } } },
+          ],
+        }
+      : {}),
+  };
+  const { skip, take } = pageQuery(opts.page);
+  const [rows, total] = await Promise.all([
+    db.misOrder.findMany({ where, include: { customer: { select: { id: true, name: true } } }, orderBy: { createdAt: 'desc' }, skip, take }),
+    db.misOrder.count({ where }),
+  ]);
+  return { rows, total };
+}
+
+/** R2-130: the QC order list (10 rows a page) — the same "not CANCELLED/DELIVERED" filter `/mis/qc` used to apply in-memory. */
+export async function listQcOrdersPage(opts: { q?: string; page?: number | string } = {}): Promise<Paged<Awaited<ReturnType<typeof listOrders>>[number]>> {
+  await requirePermission('orders.read');
+  const q = parseSearch(opts.q);
+  const where: Prisma.MisOrderWhereInput = {
+    status: { notIn: ['CANCELLED', 'DELIVERED'] },
+    ...(q
+      ? {
+          OR: [
+            { orderNumber: { contains: q, mode: 'insensitive' } },
             { customer: { name: { contains: q, mode: 'insensitive' } } },
           ],
         }

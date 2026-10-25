@@ -1,10 +1,11 @@
 /**
- * R2-83: server-side pagination for the MIS lists. Pure — no db, no React — so the rule is testable
- * and every list pages the same way: 25 rows a page, the page number and the search / filters live
- * in the URL, so a refresh or a shared link lands on the same rows.
+ * R2-83 (page size unified to 10 per R2-128/131/132/135): server-side pagination for the MIS
+ * lists. Pure — no db, no React — so the rule is testable and every list pages the same way: 10
+ * rows a page, the page number and the search / filters live in the URL, so a refresh or a
+ * shared link lands on the same rows.
  */
 
-export const PAGE_SIZE = 25;
+export const PAGE_SIZE = 10;
 
 /** What a list function returns: one page of rows and the count of ALL rows matching the filters. */
 export type Paged<T> = { rows: T[]; total: number };
@@ -42,12 +43,17 @@ export function parseSearch(raw: string | string[] | null | undefined): string {
   return (v ?? '').trim().slice(0, 100);
 }
 
-/** "1-25 of 130" — `0 of 0` for an empty list. */
+/** "1-10 of 130" — `0 of 0` for an empty list. */
 export function rangeLabel(page: number, total: number, pageSize: number = PAGE_SIZE): string {
   if (total <= 0) return '0 of 0';
   const from = (page - 1) * pageSize + 1;
   const to = Math.min(total, page * pageSize);
   return `${from}-${to} of ${total}`;
+}
+
+/** R2-128/131/132/135: the unified footer label — "Page 1 of 13" — `Page 1 of 1` for an empty list. */
+export function pageLabel(page: number, total: number, pageSize: number = PAGE_SIZE): string {
+  return `Page ${clampPage(page, total, pageSize)} of ${pageCount(total, pageSize)}`;
 }
 
 /** Page numbers to show: first, last, and two either side of the current page, with '…' for gaps. */

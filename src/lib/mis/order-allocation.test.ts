@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { foldAllocationFigures, issueRefusal, orderNumberFromRef, remainingAllocation } from './order-allocation';
+import { bomNumberFromRef, foldAllocationFigures, issueRefusal, orderNumberFromRef, remainingAllocation } from './order-allocation';
 
 describe('orderNumberFromRef', () => {
   it('accepts an order number in any case or with spaces, and refuses anything else', () => {
@@ -8,6 +8,15 @@ describe('orderNumberFromRef', () => {
     expect(orderNumberFromRef('BOM-500')).toBeNull();
     expect(orderNumberFromRef(null)).toBeNull();
     expect(orderNumberFromRef('ORD-202610-1234')).toBeNull();
+  });
+});
+
+describe('bomNumberFromRef (R2-117/118/119)', () => {
+  it('accepts a BOM number in any case or with spaces, and refuses anything else', () => {
+    expect(bomNumberFromRef(' bom-202610-12345 ')).toBe('BOM-202610-12345');
+    expect(bomNumberFromRef('ORD-202610-12345')).toBeNull();
+    expect(bomNumberFromRef(null)).toBeNull();
+    expect(bomNumberFromRef('BOM-118')).toBeNull();
   });
 });
 

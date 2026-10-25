@@ -31,9 +31,11 @@ type Props = {
   costCenters?: { value: string; label: string }[];
   /** V2 Epic 2 — per open order, what is earmarked and what is left; the server enforces the same cap on Confirm. */
   allocations?: Record<string, { itemId: string; name: string; code: string; unit: string; allocated: number; issued: number; remaining: number }[]>;
+  /** R2-121 — per open order with an APPROVED BOM, what each BOM stage material calls for and how much of it has gone out so far. Read-only context; the allocation cap above is unchanged. */
+  bomMaterials?: Record<string, { stageName: string; description: string; itemId: string | null; required: number; unit: string; issued: number | null; remaining: number | null }[]>;
 };
 
-export function IssueScreen({ header, items, orders, departments, costCenters = [], allocations = {} }: Props) {
+export function IssueScreen({ header, items, orders, departments, costCenters = [], allocations = {}, bomMaterials = {} }: Props) {
   const [orderId, setOrderId] = useState<string | null>(null);
   const [departmentId, setDepartmentId] = useState<string | null>(null);
   const [general, setGeneral] = useState<GeneralFields>(EMPTY_GENERAL);
@@ -128,6 +130,21 @@ export function IssueScreen({ header, items, orders, departments, costCenters = 
                   ))}
                 </ul>
                 <p className="mt-1 text-xs text-slate-500">Issues against this order cannot exceed what is left. Other items issue from general stock.</p>
+              </div>
+            )}
+            {orderId && (bomMaterials[orderId]?.length ?? 0) > 0 && (
+              <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <SectionLabel>BOM materials for this order</SectionLabel>
+                <ul className="mt-1 text-sm text-slate-700">
+                  {bomMaterials[orderId].map((m, i) => (
+                    <li key={i} className="flex justify-between gap-2">
+                      <span className="truncate">{m.stageName} · {m.description}</span>
+                      <span className={m.remaining !== null && m.remaining <= 0 ? 'font-semibold text-red-700' : ''}>
+                        {m.remaining !== null ? `${m.remaining} / ${m.required} ${m.unit} left` : `${m.required} ${m.unit} called for (not in catalog)`}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
           </InfoCard>

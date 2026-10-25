@@ -50,7 +50,7 @@ describe('R2-83 — page param is clamped', () => {
     expect(parsePage('999999999999')).toBe(MAX_PAGE);
     expect(parsePage('-3')).toBe(1);
     expect(parsePage('abc')).toBe(1);
-    expect(pageQuery('999999999999')).toMatchObject({ take: 25, skip: (MAX_PAGE - 1) * 25 });
+    expect(pageQuery('999999999999')).toMatchObject({ take: 10, skip: (MAX_PAGE - 1) * 10 });
   });
 });
 
