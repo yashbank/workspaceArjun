@@ -1484,6 +1484,25 @@ model MisAttendancePunch {
   @@map("mis_attendance_punches")
 }
 
+/// Tester-tracker rows 161-176 follow-up — a minimal, auditable shift-handover record.
+/// Derived server-side from the operatorId already carried on every punch (K9/R3 B57); no
+/// new kiosk endpoint or app change. Written once, the moment a device's punch stream shows
+/// a different operatorId than its immediately-preceding punch — i.e. the first punch under
+/// the new operator. Soft references only (no @relation), matching operatorId/deviceId on
+/// MisAttendancePunch above.
+model MisShiftHandover {
+  id             String   @id @default(uuid()) @db.Uuid
+  deviceId       String   @map("device_id") @db.Uuid
+  fromOperatorId String?  @map("from_operator_id") @db.Uuid
+  toOperatorId   String   @map("to_operator_id") @db.Uuid
+  shiftId        String?  @map("shift_id") @db.Uuid
+  occurredAt     DateTime @map("occurred_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([deviceId, occurredAt])
+  @@map("mis_shift_handovers")
+}
+
 // ---------------------------------------------------------------------------
 // MIS Wage Types — Phase 1 (E1-06, MIS-9/44/45, Owner-only finance)
 // ---------------------------------------------------------------------------

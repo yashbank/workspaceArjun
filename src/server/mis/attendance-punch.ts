@@ -179,6 +179,22 @@ async function applyPunch(
   }
   const hintShiftId = payload.shiftId ?? null;
 
+  // Minimal shift handover (tracker rows 161-176 follow-up): if this device's immediately
+  // preceding punch was processed by a DIFFERENT named operator, this punch is the first one
+  // under the new operator — record the handover. Nothing new flows from the kiosk; this is
+  // derived entirely from operatorId, which R3 B57 already requires and validates above.
+  let handover: { fromOperatorId: string; toOperatorId: string } | null = null;
+  if (source.kind === 'device' && payload.operatorId) {
+    const priorDevicePunch = await tx.misAttendancePunch.findFirst({
+      where: { deviceId: source.deviceId, operatorId: { not: null } },
+      orderBy: { punchedAt: 'desc' },
+      select: { operatorId: true },
+    });
+    if (priorDevicePunch?.operatorId && priorDevicePunch.operatorId !== payload.operatorId) {
+      handover = { fromOperatorId: priorDevicePunch.operatorId, toOperatorId: payload.operatorId };
+    }
+  }
+
   // The day is a function of ALL this person's active punches (D20). Superseded ones
   // are not active — `supersededBy: null` is "nothing has replaced me".
   const nearby = await tx.misAttendancePunch.findMany({
@@ -235,6 +251,18 @@ async function applyPunch(
       shiftId: hintShiftId,
     },
   });
+
+  if (handover && source.kind === 'device') {
+    await tx.misShiftHandover.create({
+      data: {
+        deviceId: source.deviceId,
+        fromOperatorId: handover.fromOperatorId,
+        toOperatorId: handover.toOperatorId,
+        shiftId: hintShiftId,
+        occurredAt: recordedAt,
+      },
+    });
+  }
 
   // K2's Fix: the earlier scan that parked as an unrecognised badge is now accounted for.
   // Scoped to the SAME device (or the same user) and to that one reason, so this can close

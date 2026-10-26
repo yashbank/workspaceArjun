@@ -74,8 +74,9 @@ import com.example.mis_kiosk.ui.health.DeviceHealthScreen
 import com.example.mis_kiosk.ui.scan.QrScannerView
 import com.example.mis_kiosk.ui.theme.KioskColors
 import com.example.mis_kiosk.ui.theme.KioskMono
-import java.text.SimpleDateFormat
-import java.util.Date
+import com.example.mis_kiosk.data.local.RosterPreferences
+import java.time.Instant
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlinx.coroutines.delay
 
@@ -320,10 +321,16 @@ private fun PunchScreenContent(
 
 @Composable
 private fun liveClock(): String {
-    var now by remember { mutableStateOf(SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())) }
-    LaunchedEffect(Unit) {
+    // The factory's zone (Asia/Kolkata in practice), not the device's — matches every other
+    // time computation in the app (FactoryDay, WorkDate, NextKind, StuckRow). A status-bar
+    // clock reading the device's own zone would silently disagree with the rest of the UI on
+    // a tablet whose system zone was never set to the factory's.
+    val zone = RosterPreferences(LocalContext.current).factoryZone
+    val formatter = remember(zone) { DateTimeFormatter.ofPattern("HH:mm", Locale.ENGLISH).withZone(zone) }
+    var now by remember(formatter) { mutableStateOf(formatter.format(Instant.now())) }
+    LaunchedEffect(formatter) {
         while (true) {
-            now = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+            now = formatter.format(Instant.now())
             delay(1000)
         }
     }

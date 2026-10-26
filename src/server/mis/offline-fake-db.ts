@@ -32,6 +32,8 @@ export type FakeState = {
   shifts: Row[];
   /** R2-40/41/45 — machine-board rows a production log auto-creates (source PRODUCTION_LOG). */
   allocations: Row[];
+  /** Tracker rows 161-176 follow-up — shift-handover rows derived from a device's operator change. */
+  handovers: Row[];
 };
 
 const unique = () => Object.assign(new Error('Unique constraint failed on the fields: (`key`)'), { code: 'P2002' });
@@ -117,6 +119,7 @@ export function createFakeDb() {
     employees: [],
     shifts: [],
     allocations: [],
+    handovers: [],
   };
   const hooks: { failOn?: string } = {};
   let nextLog = 1;
@@ -134,6 +137,14 @@ export function createFakeDb() {
 
   /** `supersededBy: null` — no other punch names this one as the one it replaces. */
   const punchesApi = (get: () => FakeState) => ({
+    // Tracker rows 161-176 follow-up: attendance-punch.ts's handover detection — the most
+    // recent punch on this device that named an operator, newest first.
+    findFirst: async ({ where }: { where: { deviceId: string; operatorId?: { not: null } } }) => {
+      const rows = get()
+        .punches.filter((p) => p.deviceId === where.deviceId && (!where.operatorId || p.operatorId != null))
+        .sort((a, b) => (b.punchedAt as Date).getTime() - (a.punchedAt as Date).getTime());
+      return rows[0] ? { ...rows[0] } : null;
+    },
     findMany: async ({ where }: { where: { employeeId: string; punchedAt: { gte: Date; lte: Date }; supersededBy?: null } }) =>
       get().punches
         .filter((p) => p.employeeId === where.employeeId)
@@ -153,6 +164,15 @@ export function createFakeDb() {
     },
     delete: async () => {
       throw new Error('mis_attendance_punch_immutable: punches are never deleted — record a correction instead');
+    },
+  });
+
+  let nextHandover = 1;
+  const handoversApi = (get: () => FakeState) => ({
+    create: async ({ data }: { data: Row }) => {
+      const rec = { id: `handover-${nextHandover++}`, createdAt: new Date(), ...data };
+      get().handovers.push(rec);
+      return { ...rec };
     },
   });
 
@@ -202,6 +222,7 @@ export function createFakeDb() {
     misAttendance: attendanceApi(() => state),
     misEmployee: employeesApi(() => state),
     misProductionLog: logsApi(() => state),
+    misShiftHandover: handoversApi(() => state),
 
     misOrder: {
       findUnique: async ({ where }: { where: { id: string } }) => {
@@ -254,6 +275,7 @@ export function createFakeDb() {
         logs: state.logs.map((l) => ({ ...l })),
         punches: state.punches.map((p) => ({ ...p })),
         attendance: state.attendance.map((a) => ({ ...a })),
+        handovers: state.handovers.map((h) => ({ ...h })),
       };
       const get = () => staged;
       const tx = {
@@ -262,6 +284,7 @@ export function createFakeDb() {
         misAttendancePunch: punchesApi(get),
         misAttendance: attendanceApi(get),
         misEmployee: employeesApi(get),
+        misShiftHandover: handoversApi(get),
         misShift: db.misShift,
         misMachineAllocation: db.misMachineAllocation,
       };
@@ -270,6 +293,7 @@ export function createFakeDb() {
       state.logs = staged.logs;
       state.punches = staged.punches;
       state.attendance = staged.attendance;
+      state.handovers = staged.handovers;
       return result;
     },
   };

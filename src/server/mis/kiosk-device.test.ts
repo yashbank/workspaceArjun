@@ -133,6 +133,11 @@ vi.mock('@/server/db', () => ({
       findMany: async ({ where, select }: { where: Record<string, unknown>; select?: Record<string, boolean> }) =>
         state.attendance.filter((r) => matches(r, where)).map((r) => pick(r, select)),
     },
+    // Tracker rows 161-176 follow-up — no test here seeds a handover, so every device's
+    // `lastHandover` resolves to null, same as before this field existed.
+    misShiftHandover: {
+      findMany: async () => [],
+    },
   },
 }));
 

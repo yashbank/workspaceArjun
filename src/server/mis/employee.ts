@@ -238,6 +238,78 @@ export async function createEmployee(input: EmployeeInput) {
   return created;
 }
 
+/** One row of the bulk-import CSV, before validation. `role` is raw text from the file's Role column. */
+export type EmployeeCsvRow = {
+  employeeCode: string;
+  name: string;
+  nameHi?: string;
+  phone?: string;
+  role?: string;
+};
+
+export type ImportEmployeesCsvResult = {
+  created: number;
+  /** `row` is 1-based over the data rows handed in — the header is not counted. */
+  errors: { row: number; message: string }[];
+};
+
+/** Above this many rows in one file, the whole request is refused rather than half-imported. */
+const IMPORT_ROW_LIMIT = 500;
+
+/**
+ * Bulk employee CSV import (Owner/Admin only, matching the "+ Add Employee" door).
+ *
+ * Every row goes through `createEmployee` itself — the same `employees.write` gate, the same
+ * `assertMayAssignRole` door for the Role column, and the same audit trail — so this never grows
+ * a second way to create an employee. A bad row (a missing field, an unknown or unassignable
+ * role, a duplicate code already on the roll or repeated within the file) is recorded as an error
+ * and the batch carries on; nothing here aborts the rows that already succeeded.
+ */
+export async function importEmployeesCsv(rows: EmployeeCsvRow[]): Promise<ImportEmployeesCsvResult> {
+  await requirePermission('employees.write');
+  if (rows.length > IMPORT_ROW_LIMIT) {
+    throw new Error(`Too many rows (${rows.length}). Import at most ${IMPORT_ROW_LIMIT} employees at a time.`);
+  }
+
+  const errors: ImportEmployeesCsvResult['errors'] = [];
+  const seenCodes = new Set<string>();
+  let created = 0;
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const employeeCode = row.employeeCode?.trim().toUpperCase() ?? '';
+    try {
+      if (!employeeCode) throw new Error('Employee code is required.');
+      if (!row.name?.trim()) throw new Error('Name is required.');
+      if (seenCodes.has(employeeCode)) throw new Error(`Duplicate employee code "${employeeCode}" in this file.`);
+
+      // The Role column carries text, not a typed value — createEmployee's own
+      // assertMayAssignRole (isMisRole + assignableRoles) is what actually accepts or
+      // refuses it, exactly as it does for the Add Employee form. Nothing here pre-filters it.
+      const roleText = row.role?.trim();
+      await createEmployee({
+        employeeCode,
+        name: row.name.trim(),
+        nameHi: row.nameHi?.trim() || undefined,
+        phone: row.phone?.trim() || undefined,
+        role: roleText ? (roleText.toUpperCase().replace(/[\s-]+/g, '_') as MisRoleName) : undefined,
+      });
+      seenCodes.add(employeeCode);
+      created += 1;
+    } catch (error) {
+      const isDbDuplicate = (error as { code?: unknown } | null)?.code === 'P2002';
+      errors.push({
+        row: i + 1,
+        message: isDbDuplicate
+          ? `Employee code "${employeeCode}" already exists.`
+          : error instanceof Error ? error.message : 'Could not import this row.',
+      });
+    }
+  }
+
+  return { created, errors };
+}
+
 export async function updateEmployee(id: string, patch: Partial<EmployeeInput>) {
   const actor = await requirePermission('employees.write');
   const before = await findVisibleEmployee(actor, id);

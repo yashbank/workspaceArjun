@@ -1,6 +1,6 @@
 'use server';
 import { revalidatePath } from 'next/cache';
-import { createEmployee, updateEmployee, deleteEmployee, restoreEmployee, type EmployeeInput } from '@/server/mis/employee';
+import { createEmployee, updateEmployee, deleteEmployee, restoreEmployee, importEmployeesCsv, type EmployeeInput, type EmployeeCsvRow } from '@/server/mis/employee';
 import { setEmployeePhoto } from '@/server/mis/employee-photo';
 import { asResult } from '@/lib/mis/action-result';
 
@@ -21,6 +21,13 @@ export async function uploadEmployeePhotoAction(id: string, formData: FormData) 
     revalidatePath('/mis/employees');
     revalidatePath(`/mis/employees/${id}`);
     revalidatePath('/mis/kiosk');
+  });
+}
+export async function importEmployeesCsvAction(rows: EmployeeCsvRow[]) {
+  return asResult(async () => {
+    const summary = await importEmployeesCsv(rows);
+    revalidatePath('/mis/employees');
+    return summary;
   });
 }
 export async function deleteEmployeeAction(id: string) {

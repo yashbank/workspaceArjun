@@ -72,6 +72,7 @@ const TABLE: Entry[] = [
   { module: 'employee.ts', name: 'updateEmployee', requires: 'employees.write', call: () => employee.updateEmployee('e1', {}) },
   { module: 'employee.ts', name: 'deleteEmployee', requires: 'employees.write', call: () => employee.deleteEmployee('e1') },
   { module: 'employee.ts', name: 'restoreEmployee', requires: 'employees.write', call: () => employee.restoreEmployee('e1') },
+  { module: 'employee.ts', name: 'importEmployeesCsv', requires: 'employees.write', call: () => employee.importEmployeesCsv([{ employeeCode: 'E-9', name: 'X' }]) },
 
   { module: 'users.ts', name: 'listMisUsers', requires: 'employees.read', call: () => users.listMisUsers() },
   { module: 'users.ts', name: 'getMisSeatSummary', requires: 'employees.read', call: () => users.getMisSeatSummary() },
