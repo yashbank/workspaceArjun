@@ -1,3 +1,5 @@
+'use client';
+
 import Link from 'next/link';
 import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { StatusBadge, type BadgeTone } from '@/components/mis/kit/status-badge';
