@@ -10,7 +10,7 @@ Details per ticket: `docs/qa/R2_ROUND5_TRIAGE.md` (plan) · `HANDOFF.md` (contex
 | # | Task | Status |
 |---|---|---|
 | 0 | Phase 0 triage → `docs/qa/R2_ROUND5_TRIAGE.md` | DONE (commit on Mac-1, local only until pushed) |
-| 0a | Push `fix/r2-round5` from Mac-1 (`git push -u origin fix/r2-round5`) | TODO — human, Mac-1 |
+| 0a | Push `fix/r2-round5` from Mac-1 (`git push -u origin fix/r2-round5`) | DONE 1a87908 (already on origin) |
 | 0b | Full test suite baseline run, results recorded below (no code changes) | TODO |
 | 0c | Commit `HANDOFF.md` + `PROGRESS.md` + CLAUDE.md pointer, push | TODO |
 | 1A | Batch A attendance/payroll: 161, 163, 165, 166, 168, 169, 170, 171, 172, 184 | TODO |
@@ -31,4 +31,5 @@ Details per ticket: `docs/qa/R2_ROUND5_TRIAGE.md` (plan) · `HANDOFF.md` (contex
 - typecheck: green (Mac-1, 2026-10-27) · lint: not finished · full suite: 4 failures seen mid-run on Mac-1, all slow-machine timeouts (>5 s): `wage-screens.test.tsx`, `r2-qc-corrections.test.tsx`, `r3-mst-import.test.ts`, `permission-matrix.test.ts`. Final totals not captured — rerun and record here.
 
 ## Log (newest first, one line each: date · account · what · sha)
+- 2026-10-28 · pravin · 0a verified: origin/fix/r2-round5 = 1a87908, nothing to push · 1a87908
 - 2026-10-27 · Mac-1 · Phase 0 triage done, HANDOFF.md written, session limit hit before commit/push · (unpushed)
