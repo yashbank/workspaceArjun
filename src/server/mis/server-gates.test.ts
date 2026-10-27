@@ -103,6 +103,8 @@ const REVIEWED_UNGATED: Record<string, Reviewed> = {
   // row), not a role grant; wages.read stays Owner-only. Proven per role in payslips.test.ts.
   'payslips.ts#listMyPayslips': { reason: "the caller's own released payslip months; employee id from the login", alsoContains: 'requireOwnEmployee', door: true },
   'payslips.ts#getMyPayslip': { reason: "the caller's own released, closed, previous-month slip; employee id from the login", alsoContains: 'requireOwnEmployee', door: true },
+  // R2-172: an employee reads ONLY their own attendance — an identity gate (the login's own employee row), no money.
+  'my-attendance.ts#getMyAttendanceMonth': { reason: "the caller's own punches; employee id from the login, never the request", alsoContains: 'userProfileId: user.id', door: true },
   'navigation.ts#getNavigationFor': { reason: 'derives the menu from the role; returns labels only' },
   // The dashboard catalogue is the navigation menu's shape, for widgets: it derives from the
   // role and returns labels and grid sizes, never factory data. Omission IS the rule here
