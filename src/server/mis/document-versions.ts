@@ -9,7 +9,7 @@ import { parseSnapshot, sameSnapshotContent, type DocSnapshot } from '@/lib/mis/
 import type { Prisma } from '@/generated/prisma/client';
 import { can, type MisAction } from '@/lib/mis/permissions';
 import { db } from '@/server/db';
-import { requirePermission } from '@/server/mis/auth';
+import { MisForbiddenError, requirePermission, type MisActor } from '@/server/mis/auth';
 import { logAuditEvent } from '@/server/mis/audit';
 import { captureDocumentSnapshot } from '@/server/mis/document-snapshots';
 
@@ -43,6 +43,8 @@ export type DocumentVersionRow = {
   hasSnapshot?: boolean;
   /** May the viewer approve this row (second level). */
   canApprove: boolean;
+  /** May the viewer discard this PREPARED row: its preparer, an Admin or the Owner (R2-158). */
+  canVoid?: boolean;
 };
 
 export type DocumentVersionView = {
@@ -78,6 +80,8 @@ export async function getDocumentVersionView(docType: DocVersionType, refId: str
   assertType(docType);
   const rows = await db.misDocumentVersion.findMany({ where: { docType, refId }, orderBy: { version: 'desc' } });
   const names = await namesFor((rows ?? []).flatMap((r) => [r.preparedById, r.approvedById]));
+  // R2-157: only the newest version that is not discarded may be approved.
+  const newestId = (rows ?? []).find((r) => r.status !== 'VOID')?.id;
   const versions: DocumentVersionRow[] = (rows ?? []).map((r) => ({
     id: r.id,
     version: r.version,
@@ -88,11 +92,14 @@ export async function getDocumentVersionView(docType: DocVersionType, refId: str
     approvedAt: r.approvedAt ? r.approvedAt.toISOString() : null,
     notes: r.notes,
     hasSnapshot: r.snapshot != null,
+    canVoid: r.status === 'PREPARED' && canVoidRow(actor, docType, r.preparedById),
     canApprove:
+      r.id === newestId &&
       can(actor.role, 'approvals.read') &&
       approvalRefusal({ role: actor.role, actorId: actor.userId, preparedById: r.preparedById, status: r.status as DocVersionStatus }) === null,
   }));
-  const latest = versions[0] ?? null;
+  // A discarded (VOID) version is history only: the live "latest" is the newest one that is not.
+  const latest = versions.find((v) => v.status !== 'VOID') ?? null;
   return {
     docType,
     refId,
@@ -104,6 +111,18 @@ export async function getDocumentVersionView(docType: DocVersionType, refId: str
 }
 
 const isApproverRole = (role: string | null | undefined) => role === 'ADMIN' || role === 'OWNER';
+
+/** R2-158: the preparer (who still holds the prepare permission), an Admin or the Owner. */
+function canVoidRow(actor: Pick<MisActor, 'role' | 'userId'>, docType: DocVersionType, preparedById: string | null): boolean {
+  if (isApproverRole(actor.role) && can(actor.role, 'approvals.read')) return true;
+  return preparedById != null && preparedById === actor.userId && can(actor.role, PREPARE_ACTION[docType]);
+}
+
+/** The newest version of a document that has not been discarded (VOID). */
+async function newestLiveVersion(docType: DocVersionType, refId: string) {
+  const all = await db.misDocumentVersion.findMany({ where: { docType, refId }, select: { version: true, status: true } });
+  return (all ?? []).filter((r) => r.status !== 'VOID').sort((a, b) => b.version - a.version)[0] ?? null;
+}
 
 /**
  * The frozen copy of one version, or null when it has none. Throws when a stored snapshot cannot be
@@ -152,6 +171,11 @@ export async function prepareDocumentVersion(docType: DocVersionType, refId: str
   const actor = await requirePermission(PREPARE_ACTION[docType]);
   assertType(docType);
   await assertOrderExists(refId);
+  // R2-156: one pending version at a time. Approve or discard V(n) before issuing V(n+1).
+  const live = await newestLiveVersion(docType, refId);
+  if (live?.status === 'PREPARED') {
+    throw new Error(`V${live.version} is still waiting for approval. Approve or discard it before issuing another version.`);
+  }
   const { rec, version } = await issueNext(actor.userId, docType, refId, notes?.trim() || null);
   await logAuditEvent({
     actorId: actor.userId,
@@ -170,6 +194,9 @@ export async function approveDocumentVersion(versionId: string) {
   if (!row) throw new Error('That document version no longer exists.');
   const refusal = approvalRefusal({ role: actor.role, actorId: actor.userId, preparedById: row.preparedById, status: row.status as DocVersionStatus });
   if (refusal) throw new Error(refusal);
+  // R2-157: approving an old draft would leave a newer unapproved one behind. Newest only.
+  const live = await newestLiveVersion(row.docType as DocVersionType, row.refId);
+  if (live && live.version > row.version) throw new Error(`Only the newest version (V${live.version}) can be approved.`);
   // Freeze what the approver saw: a PREPARED version prints live, so re-capture now.
   const snapshot = await captureDocumentSnapshot(row.docType as DocVersionType, row.refId);
   const issued = row.snapshot == null ? null : parseSnapshot(row.snapshot, row.docType as DocVersionType);
@@ -215,8 +242,7 @@ export async function updateDocumentVersionToLatest(versionId: string) {
   if (row.status !== 'APPROVED') throw new Error('Only an approved version can be updated to latest.');
   const docType = row.docType as DocVersionType;
   assertType(docType);
-  const existing = await db.misDocumentVersion.findMany({ where: { docType, refId: row.refId }, select: { version: true } });
-  const newest = (existing ?? []).reduce((m, v) => Math.max(m, v.version), 0);
+  const newest = (await newestLiveVersion(docType, row.refId))?.version ?? 0;
   if (newest > row.version) throw new Error(`V${newest} is already issued — open it instead.`);
   await assertOrderExists(row.refId);
   const { rec, version } = await issueNext(actor.userId, docType, row.refId, `Updated to latest from V${row.version}`);
@@ -229,4 +255,32 @@ export async function updateDocumentVersionToLatest(versionId: string) {
     after: { docType, refId: row.refId, version, status: 'PREPARED', fromVersionId: row.id },
   });
   return rec;
+}
+
+/**
+ * R2-158: discard a PREPARED version (soft void: the row stays, as VOID, with the reason in the audit
+ * log). Its preparer, an Admin or the Owner may do it. An APPROVED version is never voided; issue a
+ * new version instead. The voided number is not reused, so V2 stays V2 in the history.
+ */
+export async function voidDocumentVersion(versionId: string, reason: string) {
+  const actor = await requirePermission('orders.read');
+  const row = await db.misDocumentVersion.findUnique({ where: { id: versionId } });
+  if (!row) throw new Error('That document version no longer exists.');
+  const docType = row.docType as DocVersionType;
+  assertType(docType);
+  if (!canVoidRow(actor, docType, row.preparedById)) throw new MisForbiddenError('approvals.read', 'discard a document version');
+  const why = reason?.trim();
+  if (!why) throw new Error('Give a reason for discarding this version.');
+  if (row.status !== 'PREPARED') throw new Error('Only a version still waiting for approval can be discarded.');
+  const updated = await db.misDocumentVersion.updateMany({ where: { id: versionId, status: 'PREPARED' }, data: { status: 'VOID' } });
+  if (!updated || updated.count === 0) throw new Error('Only a version still waiting for approval can be discarded.');
+  await logAuditEvent({
+    actorId: actor.userId,
+    action: 'DOC_VERSION_VOID',
+    entity: 'MisDocumentVersion',
+    entityId: versionId,
+    before: { status: 'PREPARED' },
+    after: { docType, refId: row.refId, version: row.version, status: 'VOID', reason: why },
+  });
+  return { ...row, status: 'VOID' as const };
 }

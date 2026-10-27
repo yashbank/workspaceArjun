@@ -1932,6 +1932,8 @@ enum MisDocVersionType {
 enum MisDocVersionStatus {
   PREPARED
   APPROVED
+  /// R2-158: a PREPARED draft discarded by its preparer, an Admin or the Owner. The row is kept.
+  VOID
   @@map("mis_doc_version_status")
 }
 

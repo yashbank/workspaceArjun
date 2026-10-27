@@ -36,7 +36,7 @@ vi.mock('@/server/db', () => ({
   },
 }));
 
-const { prepareDocumentVersion, approveDocumentVersion, getDocumentVersionView } = await import('./document-versions');
+const { prepareDocumentVersion, approveDocumentVersion, voidDocumentVersion, getDocumentVersionView } = await import('./document-versions');
 
 const as = (role: string, id: string) => {
   getCurrentUser.mockResolvedValue({ id });
@@ -51,7 +51,12 @@ beforeEach(() => {
 describe('prepare (first level)', () => {
   it('numbers versions V1, V2, … per document and audits each', async () => {
     as('QC', 'qc1');
-    expect((await prepareDocumentVersion('COA', 'o1')).version).toBe(1);
+    const first = await prepareDocumentVersion('COA', 'o1');
+    expect(first.version).toBe(1);
+    // R2-156: V2 can only follow once V1 is approved (one pending version at a time).
+    as('ADMIN', 'adm');
+    await approveDocumentVersion(first.id);
+    as('QC', 'qc1');
     expect((await prepareDocumentVersion('COA', 'o1', 'reprint after recheck')).version).toBe(2);
     as('SUPERVISOR', 'sup');
     expect((await prepareDocumentVersion('JOB_CARD', 'o1')).version).toBe(1);
@@ -110,16 +115,80 @@ describe('approve (second level)', () => {
   });
 });
 
+describe('R2-156 / R2-157 — one pending version, newest only', () => {
+  it('R2-156: issuing V2 while V1 is still PREPARED is refused in words', async () => {
+    as('QC', 'qc1');
+    await prepareDocumentVersion('COA', 'o1');
+    await expect(prepareDocumentVersion('COA', 'o1')).rejects.toThrow(/V1 is still waiting for approval/);
+    expect(rows).toHaveLength(1);
+  });
+  it('R2-156: after V1 is approved, V2 can be issued', async () => {
+    as('QC', 'qc1');
+    const v1 = await prepareDocumentVersion('COA', 'o1');
+    as('ADMIN', 'adm');
+    await approveDocumentVersion(v1.id);
+    as('QC', 'qc1');
+    expect((await prepareDocumentVersion('COA', 'o1')).version).toBe(2);
+  });
+  it('R2-157: an older PREPARED version cannot be approved once a newer one exists', async () => {
+    rows.push({ id: 'a', docType: 'COA', refId: 'o1', version: 1, status: 'PREPARED', preparedById: 'qc1', preparedAt: new Date(), approvedById: null, approvedAt: null, notes: null });
+    rows.push({ id: 'b', docType: 'COA', refId: 'o1', version: 2, status: 'PREPARED', preparedById: 'qc1', preparedAt: new Date(), approvedById: null, approvedAt: null, notes: null });
+    as('ADMIN', 'adm');
+    await expect(approveDocumentVersion('a')).rejects.toThrow(/Only the newest version \(V2\) can be approved/);
+    expect(rows[0].status).toBe('PREPARED');
+    await approveDocumentVersion('b');
+  });
+});
+
+describe('R2-158 — discard (void) a PREPARED version', () => {
+  it('the preparer voids their own draft with a reason; the row stays, is audited, and the next issue skips the number', async () => {
+    as('QC', 'qc1');
+    const v1 = await prepareDocumentVersion('COA', 'o1');
+    expect((await getDocumentVersionView('COA', 'o1')).versions[0].canVoid).toBe(true);
+    await voidDocumentVersion(v1.id, 'issued by mistake');
+    expect(rows[0]).toMatchObject({ id: v1.id, status: 'VOID' });
+    expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: 'DOC_VERSION_VOID', entityId: v1.id, after: expect.objectContaining({ status: 'VOID', reason: 'issued by mistake' }) }));
+    const view = await getDocumentVersionView('COA', 'o1');
+    expect(view.latest).toBeNull();
+    expect((await prepareDocumentVersion('COA', 'o1')).version).toBe(2);
+  });
+  it('an Admin or Owner may void someone else\'s draft; another QC may not', async () => {
+    as('QC', 'qc1');
+    const v1 = await prepareDocumentVersion('COA', 'o1');
+    as('SUPERVISOR', 'sup');
+    await expect(voidDocumentVersion(v1.id, 'x')).rejects.toMatchObject({ name: 'MisForbiddenError' });
+    as('ADMIN', 'adm');
+    await voidDocumentVersion(v1.id, 'wrong data');
+    expect(rows[0].status).toBe('VOID');
+  });
+  it('needs a reason, and only a PREPARED version can be voided', async () => {
+    as('QC', 'qc1');
+    const v1 = await prepareDocumentVersion('COA', 'o1');
+    await expect(voidDocumentVersion(v1.id, '  ')).rejects.toThrow(/reason/i);
+    as('ADMIN', 'adm');
+    await approveDocumentVersion(v1.id);
+    await expect(voidDocumentVersion(v1.id, 'oops')).rejects.toThrow(/Only a version still waiting for approval/);
+  });
+  it('a voided version cannot be approved', async () => {
+    as('QC', 'qc1');
+    const v1 = await prepareDocumentVersion('COA', 'o1');
+    await voidDocumentVersion(v1.id, 'oops');
+    as('ADMIN', 'adm');
+    await expect(approveDocumentVersion(v1.id)).rejects.toThrow(/discarded/);
+  });
+});
+
 describe('view', () => {
   it('lists newest first and says who may prepare / approve', async () => {
     as('QC', 'qc1');
-    await prepareDocumentVersion('COA', 'o1');
-    await prepareDocumentVersion('COA', 'o1');
+    // R2-156/157: a second PREPARED version cannot be issued through the server, so seed the older rows directly.
+    rows.push({ id: 'old1', docType: 'COA', refId: 'o1', version: 1, status: 'PREPARED', preparedById: 'qc1', preparedAt: new Date(), approvedById: null, approvedAt: null, notes: null });
+    rows.push({ id: 'new2', docType: 'COA', refId: 'o1', version: 2, status: 'PREPARED', preparedById: 'qc1', preparedAt: new Date(), approvedById: null, approvedAt: null, notes: null });
     expect((await getDocumentVersionView('COA', 'o1')).canPrepare).toBe(true);
     as('ADMIN', 'adm');
     const view = await getDocumentVersionView('COA', 'o1');
     expect(view.versions.map((v) => v.version)).toEqual([2, 1]);
-    expect(view.versions.every((v) => v.canApprove)).toBe(true);
+    expect(view.versions.map((v) => v.canApprove)).toEqual([true, false]); // R2-157: only the newest
     as('SUPERVISOR', 'sup');
     expect((await getDocumentVersionView('COA', 'o1')).canPrepare).toBe(true); // supervisor holds qc.write
     expect((await getDocumentVersionView('JOB_CARD', 'o1')).latest).toBeNull();
