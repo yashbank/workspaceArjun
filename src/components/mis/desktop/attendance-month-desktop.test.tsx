@@ -293,3 +293,11 @@ describe('the page and the source', () => {
     expect(container.textContent).not.toMatch(/₹|rupee|hourly|wage|salary|gross/i);
   });
 });
+
+describe('R2-184 horizontal scroll hint', () => {
+  it('tells the user the grid scrolls sideways and makes the scroll area keyboard-focusable', () => {
+    renderView();
+    expect(screen.getByText(/Scroll sideways/)).toBeTruthy();
+    expect(screen.getByTestId('month-grid-scroll').getAttribute('tabindex')).toBe('0');
+  });
+});
