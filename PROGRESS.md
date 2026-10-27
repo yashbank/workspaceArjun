@@ -13,18 +13,26 @@ Details per ticket: `docs/qa/R2_ROUND5_TRIAGE.md` (plan) · `HANDOFF.md` (contex
 | 0a | Push `fix/r2-round5` from Mac-1 (`git push -u origin fix/r2-round5`) | DONE 1a87908 (already on origin) |
 | 0b | Full test suite baseline run, results recorded below (no code changes) | DONE 88d7749 |
 | 0c | Commit `HANDOFF.md` + `PROGRESS.md` + CLAUDE.md pointer, push | DONE 1a87908 |
-| 1A | Batch A attendance/payroll: 161, 163, 165, 166, 168, 169, 170, 171, 172, 184 | TODO |
+| 1A | Batch A attendance/payroll: 161, 163, 165, 166, 167 (half-day leave), 168, 169, 170, 171, 172, 175 (reopen, conditional), 184 | TODO |
 | 1B | Batch B BOM list + search UX: 124–126, 138–142, 146, 147, 151 (clamp), 152 | TODO |
 | 1C | Batch C documents: 155 (owner: self-approve allowed), 156–160 (158 = write VOID migration, do NOT apply; 160 = inline alert, never print corrupt copy) | TODO |
 | 1D | Batch D store/orders integrity 185–196: mostly ALREADY_FIXED → characterization tests only | TODO |
-| 1E | Batch E employees/kiosk/APK 177–182 (177 unsigned release build; 181 accept pull-based revoke; 182 defer) | TODO |
+| 1E | Batch E employees/kiosk/APK 177–182 (177 unsigned release build; 181 accept pull-based revoke; 182 no photo capture, no code) | TODO |
 | 1F | Batch F test health 197–209: `.gitattributes` `* text=auto eol=lf`, wage-rule-keys timeout, store-tap-targets `\r?\n`. Do not weaken assertions | TODO |
+| 1G | R2-173 shift/overtime/auto clock-out/busy carry-over (after 1A) | TODO |
+| 1H | R2-179 paid lunch break punches, duration in Owner settings (after 1F) | TODO |
 | 2 | P2 gates: unit → full suite+typecheck+lint+build → browser pass per role → independent verifier on sheet Steps | TODO |
 | 3 | P3: PR + merge, confirm Vercel Ready for SHA, update tracker xlsx + `docs/qa/R2_ROUND5_RESULTS.md`, tester message (sheet rows → "Fixed - Ready to Retest" + notes + release + SHA), ≤15-line report | TODO |
 
 ## Owner decisions
 - R2-155: Owner MAY approve a version they prepared — no second person required. **DECIDED**
-- Taking defaults unless the owner says otherwise: 167 half-day leave → defer · 173 shift change at clock-out → no (by design) · 175 reopen closed payroll month → defer · 179 break punches → defer · 181 revoked device → accept next-sync revoke · 182 kiosk photo per punch → defer · 177 APK → rebuild unsigned from HEAD · 158 VOID migration → write, owner runs · 160 → inline alert.
+- **FINAL owner decisions (2026-10-28, supersede any earlier default):**
+  - 167 half-day leave: BUILD. Attendance Operator raises request; Owner OR Admin (either) approves; then 0.5 day applied to that employee (attendance + pay, correct calculation).
+  - 173 shifts: BUILD as own batch 1G after 1A. Shift dropdown also at clock-out (prefilled); worker who stays past shift end: auto clock-out of shift 1, time beyond counts as overtime; if still on a task show busy in next shift, else back in available pool.
+  - 175 reopen closed month: BUILD for Owner with mandatory reason, ONLY if it reflects correctly in widgets/payroll/exports with no errors; if any issue arises, DEFER.
+  - 179 break punches: build LATER (row 1H). Lunch is PAID; duration set in Owner settings. Record break without overwriting morning punch; net hours/OT correct.
+  - 181 accept pull-based revoke. 182 NO photo capture; employee photos set by Admin/Owner in portal, operator sees the right photo on each punch (already shown from roster).
+  - 177 unsigned release APK from HEAD, report path. 158 VOID migration: write, do not apply. 160 inline alert, never print corrupt copy.
 - Earlier: 24h time by design (164). Page size 10 (`src/lib/mis/pagination.ts`); `R2_DECISIONS.md` R2-83 "25" is stale.
 
 ## Baseline test results (fill at 0b)
