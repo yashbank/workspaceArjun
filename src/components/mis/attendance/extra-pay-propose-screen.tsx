@@ -8,7 +8,7 @@ import { DateInput, Input, NumberInput } from '@/components/mis/kit/input';
 import { ListPager, usePagedRows } from './list-pager';
 import { Select } from '@/components/mis/kit/select';
 import { DEFAULT_FACTORY_TIMEZONE, factoryDateKey } from '@/lib/mis/factory-time';
-import { proposeExtraPayDayAction } from '@/app/(mis)/mis/attendance/extra-pay/actions';
+import { proposeExtraPayDayAction, withdrawExtraPayProposalAction } from '@/app/(mis)/mis/attendance/extra-pay/actions';
 
 /**
  * 25.4/D28 — propose an extra-pay day. R2-115: DEPARTMENTS scope is offered too; its options come from
@@ -16,7 +16,7 @@ import { proposeExtraPayDayAction } from '@/app/(mis)/mis/attendance/extra-pay/a
  * Super Attendance Operator does not hold.
  */
 
-type Proposal = { id: string; date: string; scope: string; reason: string; status: string; proposedByName: string | null };
+type Proposal = { id: string; date: string; scope: string; reason: string; status: string; proposedByName: string | null; mine?: boolean };
 type EmployeeOption = { id: string; name: string; employeeCode: string };
 
 /** R2-116: case-insensitive contains-all-words filter. */
@@ -47,6 +47,12 @@ export function ExtraPayProposeScreen({ employees, departments = [], proposals =
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
+  const [listError, setListError] = useState<string | null>(null);
+  const withdraw = (id: string) => startTransition(async () => {
+    setListError(null);
+    const res = await withdrawExtraPayProposalAction(id);
+    if (!res.ok) setListError(res.detail);
+  });
 
   const toggleEmployee = (id: string) => {
     setEmployeeIds((prev) => {
@@ -172,19 +178,21 @@ export function ExtraPayProposeScreen({ employees, departments = [], proposals =
         <section aria-label="Proposals" className="mt-6 flex flex-col gap-3">
           <h2 className="text-base font-semibold text-slate-900">Proposals</h2>
           <input type="search" aria-label="Search proposals" placeholder="Search by date, reason, status or proposer…" value={listSearch} onChange={(e) => setListSearch(e.target.value)} className="w-full min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500" />
+          {listError && <p role="alert" className="text-sm text-red-600">{listError}</p>}
           <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                <tr><th className="px-3 py-2">Date</th><th className="px-3 py-2">Reason</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Proposed by</th></tr>
+                <tr><th className="px-3 py-2">Date</th><th className="px-3 py-2">Reason</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Proposed by</th><th className="px-3 py-2"><span className="sr-only">Actions</span></th></tr>
               </thead>
               <tbody>
-                {shownProposals.length === 0 && <tr><td colSpan={4} className="px-3 py-3 text-slate-500">No proposal matches.</td></tr>}
+                {shownProposals.length === 0 && <tr><td colSpan={5} className="px-3 py-3 text-slate-500">No proposal matches.</td></tr>}
                 {shownProposals.map((p) => (
                   <tr key={p.id} className="border-t border-slate-100">
                     <td className="px-3 py-2 whitespace-nowrap">{p.date}</td>
                     <td className="px-3 py-2">{p.reason}</td>
                     <td className="px-3 py-2">{p.status.charAt(0) + p.status.slice(1).toLowerCase()}</td>
                     <td className="px-3 py-2">{p.proposedByName ?? '—'}</td>
+                    <td className="px-3 py-2 text-right">{p.mine && p.status === 'PENDING' && <Button variant="ghost" onClick={() => withdraw(p.id)} disabled={isPending}>Withdraw</Button>}</td>
                   </tr>
                 ))}
               </tbody>
