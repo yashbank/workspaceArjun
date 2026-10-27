@@ -28,7 +28,11 @@ Details per ticket: `docs/qa/R2_ROUND5_TRIAGE.md` (plan) · `HANDOFF.md` (contex
 - Earlier: 24h time by design (164). Page size 10 (`src/lib/mis/pagination.ts`); `R2_DECISIONS.md` R2-83 "25" is stale.
 
 ## Baseline test results (fill at 0b)
-- typecheck: green (Mac-1, 2026-10-27) · lint: not finished · full suite: 4 failures seen mid-run on Mac-1, all slow-machine timeouts (>5 s): `wage-screens.test.tsx`, `r2-qc-corrections.test.tsx`, `r3-mst-import.test.ts`, `permission-matrix.test.ts`. Final totals not captured — rerun and record here.
+- typecheck: green (Mac-1, 2026-10-27) · lint: not finished · Mac-1 mid-run: 4 slow-machine timeouts (`wage-screens`, `r2-qc-corrections`, `r3-mst-import`, `permission-matrix`).
+- **0b run 2026-10-28 (pravin, branch @ 8340dd0, `pnpm test`, 118.9 s):** Test Files 5 failed | 373 passed | 1 skipped (379) · Tests 6437 passed | 5 expected fail | 9 skipped (6451).
+- All 5 failed files are import-time `ENOSPC: no space left on device` (vitest temp dir; disk at 177 MB free), not assertion failures — their tests never ran:
+  `src/server/mis/r3-stk-grn.test.ts`, `src/server/mis/r3-stk-store.test.ts`, `src/server/mis/r3-wrk-engine.test.ts`, `src/server/mis/traceability-view.test.ts`, `src/components/mis/desktop/attendance-month-desktop.test.tsx`.
+- The 4 Mac-1 timeout files passed this run. Rerun those 5 after freeing disk to get a clean baseline.
 
 ## Log (newest first, one line each: date · account · what · sha)
 - 2026-10-28 · pravin · 0a verified: origin/fix/r2-round5 = 1a87908, nothing to push · 1a87908
