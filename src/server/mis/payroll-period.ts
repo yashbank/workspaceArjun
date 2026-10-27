@@ -79,8 +79,7 @@ export async function getPayrollPreflight(year: number, month: number): Promise<
 /**
  * Close the month: freeze the live figures into one snapshot line per employee, then flip the
  * period CLOSED. Re-running a close on an already-closed month is refused — reopening is a
- * separate, deliberate act this phase does not build (D27 leaves it for a later phase; closing
- * again silently would defeat the whole point).
+ * separate, deliberate act (`reopenPayrollPeriod`, R2-175); closing again silently would defeat the whole point.
  */
 export async function closePayrollPeriod(
   year: number,
@@ -171,6 +170,60 @@ export async function closePayrollPeriod(
     },
   });
 
+  return getPayrollPeriod(year, month);
+}
+
+/**
+ * R2-175: the Owner unfreezes a CLOSED month, with a reason, so a mistake found before disbursement can be fixed.
+ * Everything that depended on the frozen state is put back in step:
+ *  - the period goes OPEN, so `calculateMonthlyPayroll` computes live again (it reads the snapshot only for CLOSED), and
+ *    exports, the bank-transfer file and the payroll screen follow it;
+ *  - payslips already SENT for the month are taken back (an employee may only open a slip of a CLOSED month, and a
+ *    slip they were sent must match what is finally closed), so the Owner re-sends after closing again;
+ *  - the old snapshot lines stay until the next close, which deletes and rewrites them, and nothing reads them while OPEN;
+ *  - the register's closed-month guard lifts, so ordinary correction-window rules apply again;
+ *  - `correctionsAfterClose` and the export stamp are history and are kept.
+ * Same advisory lock as close, so a reopen and a close of one month serialise. D24: the audit row names the
+ * month, the reason and counts, never a figure.
+ */
+export async function reopenPayrollPeriod(year: number, month: number, reason: string): Promise<PayrollPeriod> {
+  const actor = await requirePermission('wages.read');
+  if (actor.role !== 'OWNER') throw new Error('Only the Owner can reopen a closed month.');
+  if (!Number.isInteger(year) || year < 2000 || year > 2100) throw new Error('Choose a year between 2000 and 2100.');
+  if (!Number.isInteger(month) || month < 1 || month > 12) throw new Error('Choose a month between 1 and 12.');
+  const why = reason?.trim() ?? '';
+  if (why.length < 3) throw new Error('A reason is required to reopen a closed month.');
+
+  const lockKey = 'payroll-close-' + year + '-' + String(month).padStart(2, '0');
+  const { period } = await db.$transaction(
+    async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+      const existing = await tx.misPayrollPeriod.findUnique({ where: { year_month: { year, month } } });
+      if (!existing || existing.status !== 'CLOSED') throw new Error(`${year}-${month} is not closed.`);
+      const p = await tx.misPayrollPeriod.update({ where: { id: existing.id }, data: { status: 'OPEN', closedById: null, closedAt: null } });
+      return { period: p };
+    },
+    { timeout: 10_000, maxWait: 5_000 },
+  );
+
+  // Sent payslips are withdrawn outside the transaction: the table may not exist before the R2 batch-2 migration.
+  let withdrawnPayslips = 0;
+  try {
+    withdrawnPayslips = (await db.misPayslipRelease.deleteMany({ where: { year, month } })).count;
+  } catch (error) {
+    const e = error as { code?: unknown; message?: unknown } | null;
+    const missing = e?.code === 'P2021' || (typeof e?.message === 'string' && /relation .* does not exist/i.test(e.message));
+    if (!missing) throw error;
+  }
+
+  await logAuditEvent({
+    actorId: actor.userId,
+    action: 'payrollPeriod.reopen',
+    entity: 'MisPayrollPeriod',
+    entityId: period.id,
+    before: { year, month, status: 'CLOSED' },
+    after: { year, month, status: 'OPEN', reason: why, withdrawnPayslips },
+  });
   return getPayrollPeriod(year, month);
 }
 

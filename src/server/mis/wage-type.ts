@@ -192,53 +192,30 @@ export async function addWageRate(
   if (!existing) throw new Error(`Wage type ${code} not found`);
 
   // R2-161 — a rate already starting on this day is corrected in place (audited), never a P2002.
-  const sameDay = await db.misWageType.findFirst({ where: { code, effectiveFrom } });
-  if (sameDay && sameDay.effectiveFrom.toISOString().slice(0, 10) === effectiveFrom.toISOString().slice(0, 10)) {
-    const updated = await db.misWageType.update({
-      where: { id: sameDay.id },
-      data: {
-        amount,
-        otRatePerHour: extra.otRatePerHour !== undefined ? extra.otRatePerHour : sameDay.otRatePerHour,
-        multiplierBasis: extra.multiplierBasis ?? sameDay.multiplierBasis,
-        hraAmount: extra.hraAmount !== undefined ? extra.hraAmount : sameDay.hraAmount,
-        allowanceAmount: extra.allowanceAmount !== undefined ? extra.allowanceAmount : sameDay.allowanceAmount,
-        bonusAmount: extra.bonusAmount !== undefined ? extra.bonusAmount : sameDay.bonusAmount,
-      },
-    });
-    await logAuditEvent({
-      actorId: actor.userId,
-      action: 'wageType.updateRate',
-      entity: 'MisWageType',
-      entityId: updated.id,
-      before: auditSafe(sameDay),
-      after: auditSafe(updated),
-    });
-    return toRow(updated);
-  }
+  const sameDayRow = await db.misWageType.findFirst({ where: { code, effectiveFrom } });
+  const sameDay = sameDayRow && sameDayRow.effectiveFrom.toISOString().slice(0, 10) === effectiveFrom.toISOString().slice(0, 10) ? sameDayRow : null;
+  const base = sameDay ?? existing;
+  const fields = {
+    amount,
+    otRatePerHour: extra.otRatePerHour !== undefined ? extra.otRatePerHour : base.otRatePerHour,
+    multiplierBasis: extra.multiplierBasis ?? base.multiplierBasis,
+    hraAmount: extra.hraAmount !== undefined ? extra.hraAmount : base.hraAmount,
+    allowanceAmount: extra.allowanceAmount !== undefined ? extra.allowanceAmount : base.allowanceAmount,
+    bonusAmount: extra.bonusAmount !== undefined ? extra.bonusAmount : base.bonusAmount,
+  };
 
-  const created = await db.misWageType.create({
-    data: {
-      code,
-      name: existing.name,
-      nameHi: existing.nameHi,
-      amount,
-      unit: existing.unit,
-      effectiveFrom,
-      isActive: existing.isActive,
-      otRatePerHour: extra.otRatePerHour !== undefined ? extra.otRatePerHour : existing.otRatePerHour,
-      multiplierBasis: extra.multiplierBasis ?? existing.multiplierBasis,
-      hraAmount: extra.hraAmount !== undefined ? extra.hraAmount : existing.hraAmount,
-      allowanceAmount: extra.allowanceAmount !== undefined ? extra.allowanceAmount : existing.allowanceAmount,
-      bonusAmount: extra.bonusAmount !== undefined ? extra.bonusAmount : existing.bonusAmount,
-    },
-  });
+  const created = sameDay
+    ? await db.misWageType.update({ where: { id: sameDay.id }, data: fields })
+    : await db.misWageType.create({
+        data: { code, name: existing.name, nameHi: existing.nameHi, unit: existing.unit, effectiveFrom, isActive: existing.isActive, ...fields },
+      });
 
   await logAuditEvent({
     actorId: actor.userId,
-    action: 'wageType.addRate',
+    action: sameDay ? 'wageType.updateRate' : 'wageType.addRate',
     entity: 'MisWageType',
     entityId: created.id,
-    before: auditSafe(existing),
+    before: auditSafe(sameDay ?? existing),
     after: auditSafe(created),
   });
 

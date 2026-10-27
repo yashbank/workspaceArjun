@@ -3,13 +3,21 @@
 import { revalidatePath } from 'next/cache';
 
 import { asResult } from '@/lib/mis/action-result';
-import { closePayrollPeriod, recordPayrollExport } from '@/server/mis/payroll-period';
+import { closePayrollPeriod, recordPayrollExport, reopenPayrollPeriod } from '@/server/mis/payroll-period';
 import { releasePayslips, withdrawPayslipRelease } from '@/server/mis/payslips';
 
 /** W9's "Close this month" — Owner only (the server function gates it); irreversible in effect. */
 export async function closePayrollPeriodAction(year: number, month: number, overrideReason?: string) {
   return asResult(async () => {
     await closePayrollPeriod(year, month, overrideReason ? { reason: overrideReason } : undefined);
+    revalidatePath('/mis/payroll');
+  }, { entity: 'Payroll period' });
+}
+
+/** R2-175: the Owner unfreezes a closed month, with a reason (server-gated and audited). */
+export async function reopenPayrollPeriodAction(year: number, month: number, reason: string) {
+  return asResult(async () => {
+    await reopenPayrollPeriod(year, month, reason);
     revalidatePath('/mis/payroll');
   }, { entity: 'Payroll period' });
 }
