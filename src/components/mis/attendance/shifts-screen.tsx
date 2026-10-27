@@ -5,7 +5,7 @@ import { useState, useTransition } from 'react';
 import { Button } from '@/components/mis/kit/button';
 import { Input, TimeInput } from '@/components/mis/kit/input';
 import { SlideOver } from '@/components/mis/kit/slide-over';
-import { saveShiftAction, setShiftActiveAction } from '@/app/(mis)/mis/attendance/actions';
+import { saveShiftAction, setShiftActiveAction, deleteShiftAction } from '@/app/(mis)/mis/attendance/actions';
 import { useToast } from '@/components/ui/toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 
@@ -53,6 +53,20 @@ export function ShiftsScreen({ shifts, canWrite }: Props) {
     });
   };
 
+  const remove = async (shift: Shift) => {
+    const ok = await confirm({
+      title: 'Delete shift?',
+      message: `${shift.name} will be removed for good. This only works for a shift with no attendance records or employees; otherwise deactivate it.`,
+      confirmLabel: 'Delete',
+      destructive: true,
+    });
+    if (!ok) return;
+    startTransition(async () => {
+      const res = await deleteShiftAction(shift.id);
+      if (!res.ok) toast('error', res.detail);
+    });
+  };
+
   return (
     <div className="max-w-3xl mx-auto space-y-5 py-6">
       <div className="flex items-center justify-between">
@@ -84,6 +98,7 @@ export function ShiftsScreen({ shifts, canWrite }: Props) {
                 <div className="flex gap-2">
                   <Button variant="ghost" onClick={() => openEdit(shift)}>Edit</Button>
                   <Button variant="ghost" onClick={() => toggleActive(shift)} disabled={isPending}>{shift.isActive ? 'Deactivate' : 'Activate'}</Button>
+                  <Button variant="ghost" onClick={() => remove(shift)} disabled={isPending}>Delete</Button>
                 </div>
               )}
             </div>

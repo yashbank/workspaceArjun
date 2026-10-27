@@ -10,6 +10,8 @@ export default async function LeavePage({ searchParams }: { searchParams: { empl
   const user = await requireMisAccess();
   const role = await getMisRole(user.id);
   const canApprove = can(role, 'attendance.write');
+  const canDecideHalfDay = can(role, 'approvals.read');
+  const canRevoke = role === 'OWNER';
 
   const [leaves, employees] = await Promise.all([
     listLeaveRequests(),
@@ -34,6 +36,8 @@ export default async function LeavePage({ searchParams }: { searchParams: { empl
         }))}
         employees={employees.filter(e => e.isActive).map(e => ({ id: e.id, name: e.name, employeeCode: e.employeeCode }))}
         canApprove={canApprove}
+        canDecideHalfDay={canDecideHalfDay}
+        canRevoke={canRevoke}
         initialEmployeeId={initialEmployeeId}
       />
     </>

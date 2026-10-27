@@ -912,6 +912,7 @@ enum MisLeaveType {
   EL
   LWP
   OTHER
+  HALF_DAY
   @@map("mis_leave_type")
 }
 
