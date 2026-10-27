@@ -130,6 +130,7 @@ const TABLE: Entry[] = [
   { module: 'leave-pay.ts', name: 'getLeavePaySettings', requires: 'wages.read', call: () => leavePay.getLeavePaySettings() },
   { module: 'leave-pay.ts', name: 'setLeavePay', requires: 'wages.read', call: () => leavePay.setLeavePay({ leaveType: 'CL', paid: false }) },
   { module: 'leave-pay.ts', name: 'getLeavePayForMonth', requires: 'wages.read', call: () => leavePay.getLeavePayForMonth(2026, 1) },
+  { module: 'leave-pay.ts', name: 'getLeavePayRulesForMonth', requires: 'wages.read', call: () => leavePay.getLeavePayRulesForMonth(2026, 1) },
 
   // Phase 25 (D27's missing half) — the period-close/snapshot flow. Every door is wages.read.
   { module: 'payroll-period.ts', name: 'getPayrollPeriod', requires: 'wages.read', call: () => payrollPeriod.getPayrollPeriod(2026, 1) },

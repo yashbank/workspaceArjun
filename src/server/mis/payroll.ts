@@ -7,8 +7,8 @@ import { getWageRuleHistory } from '@/server/mis/business-rules';
 import { DEFAULT_DAILY_WAGE_CODE, getWageTypeRowsForCodes } from '@/server/mis/wage-type';
 import { getPayComponentsForEmployees, type PayComponentMap } from '@/server/mis/pay-components';
 import { listApprovedExtraPayDaysForMonth, type ExtraPayDayRow } from '@/server/mis/extra-pay-days';
-import { isPaidLeaveDay } from '@/lib/mis/leave-pay';
-import { getLeavePayForMonth } from '@/server/mis/leave-pay';
+import { hasApprovedHalfDayLeave, isPaidLeaveDay } from '@/lib/mis/leave-pay';
+import { getLeavePayRulesForMonth } from '@/server/mis/leave-pay';
 
 /** Attendance statuses that earn a day's basic wage, and what fraction of it. */
 const DAY_FRACTION: Record<string, number> = { PRESENT: 1, HALF_DAY: 0.5 };
@@ -135,6 +135,8 @@ function computeEmployeeMonth(
   workingDays: number,
   /** R2-102: true when this LEAVE day is covered by an approved leave of a type the Owner marked PAID. */
   paidLeaveOn: (date: Date) => boolean = () => false,
+  /** R2-167: true when this HALF_DAY row is an approved half-day leave and the Owner marked half-day leave PAID (its leave half is paid too). */
+  paidHalfDayOn: (date: Date) => boolean = () => false,
 ): PayrollRow {
   const payType: 'MONTHLY' | 'DAILY' = emp.payType === 'MONTHLY' ? 'MONTHLY' : 'DAILY';
   const monthEnd = new Date(Date.UTC(year, month, 0));
@@ -157,7 +159,8 @@ function computeEmployeeMonth(
     // same wage code as of that day); an UNPAID one (LWP, Other, or a LEAVE mark with no approved
     // request behind it) earns nothing, as before.
     const paidLeave = !synthetic && status === 'LEAVE' && paidLeaveOn(date);
-    const fraction = monthlySunday || paidLeave ? 1 : (DAY_FRACTION[status] ?? 0);
+    const paidHalfDay = !synthetic && status === 'HALF_DAY' && paidHalfDayOn(date);
+    const fraction = monthlySunday || paidLeave || paidHalfDay ? 1 : (DAY_FRACTION[status] ?? 0);
     const dayRate = dayRateOn(date);
     const row = rowOn(date);
 
@@ -331,11 +334,12 @@ async function computePayroll(year: number, month: number, client: Prisma.Transa
 
   // R2-102: which LEAVE days are paid. Read only when the month has a LEAVE row in scope, so a month
   // without leave costs no extra query.
-  const leaveEmployeeIds = [...new Set(attendance.filter((a) => a.status === 'LEAVE' && a.employee).map((a) => a.employee!.id))];
+  const leaveEmployeeIds = [...new Set(attendance.filter((a) => (a.status === 'LEAVE' || a.status === 'HALF_DAY') && a.employee).map((a) => a.employee!.id))];
   let paidLeaveOn: (employeeId: string, date: Date) => boolean = () => false;
+  let paidHalfDayOn: (employeeId: string, date: Date) => boolean = () => false;
   if (leaveEmployeeIds.length > 0) {
-    const [leavePay, approvedLeaves] = await Promise.all([
-      getLeavePayForMonth(year, month, client),
+    const [{ pay: leavePay, halfDayPaid }, approvedLeaves] = await Promise.all([
+      getLeavePayRulesForMonth(year, month, client),
       client.misLeaveRequest.findMany({
         where: {
           status: 'APPROVED',
@@ -347,6 +351,7 @@ async function computePayroll(year: number, month: number, client: Prisma.Transa
       }),
     ]);
     paidLeaveOn = (employeeId, date) => isPaidLeaveDay(approvedLeaves, employeeId, date, leavePay);
+    paidHalfDayOn = (employeeId, date) => halfDayPaid && hasApprovedHalfDayLeave(approvedLeaves, employeeId, date);
   }
 
   const byEmployee: Record<string, AttendanceRow[]> = {};
@@ -396,6 +401,7 @@ async function computePayroll(year: number, month: number, client: Prisma.Transa
       extraPayDays,
       workingDays,
       (date) => paidLeaveOn(emp.id, date),
+      (date) => paidHalfDayOn(emp.id, date),
     );
   });
 }

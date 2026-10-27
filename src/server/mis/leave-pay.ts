@@ -15,6 +15,7 @@ import type { Prisma } from '@/generated/prisma/client';
 import { dateKeyToDbDate, factoryDateKey } from '@/lib/mis/factory-time';
 import {
   buildLeavePayView,
+  halfDayPaidAsOf,
   leavePayAsOf,
   monthEndKey,
   validateLeavePayChange,
@@ -22,7 +23,7 @@ import {
   type LeavePayRuleRow,
   type LeavePayView,
 } from '@/lib/mis/leave-pay';
-import { LEAVE_TYPE_LABEL, type LeaveType } from '@/lib/mis/leave';
+import { HALF_DAY_LEAVE, LEAVE_TYPE_LABEL, leaveTypeLabel, type LeaveType } from '@/lib/mis/leave';
 import { db } from '@/server/db';
 import { requirePermission } from '@/server/mis/auth';
 import { logAuditEvent } from '@/server/mis/audit';
@@ -68,15 +69,16 @@ export async function setLeavePay(input: { leaveType: unknown; paid: unknown; re
   const actor = await requirePermission('wages.read');
   const invalid = validateLeavePayChange(input);
   if (invalid) throw new Error(invalid);
-  const leaveType = input.leaveType as LeaveType;
+  const leaveType = input.leaveType as LeaveType | typeof HALF_DAY_LEAVE;
+  const label = leaveType === HALF_DAY_LEAVE ? leaveTypeLabel(HALF_DAY_LEAVE) : LEAVE_TYPE_LABEL[leaveType];
   const paid = input.paid as boolean;
   const reason = typeof input.reason === 'string' && input.reason.trim() ? input.reason.trim() : null;
   const todayKey = factoryDateKey(now, await getFactoryTimezone());
 
   const { rows, missing } = await readRules(db, { leaveType });
   if (missing) throw new Error(SETUP_PENDING);
-  const before = leavePayAsOf(rows, todayKey)[leaveType];
-  if (before === paid) throw new Error(`${LEAVE_TYPE_LABEL[leaveType]} is already ${paid ? 'paid' : 'unpaid'}`);
+  const before = leaveType === HALF_DAY_LEAVE ? halfDayPaidAsOf(rows, todayKey) : leavePayAsOf(rows, todayKey)[leaveType];
+  if (before === paid) throw new Error(`${label} is already ${paid ? 'paid' : 'unpaid'}`);
 
   let rec;
   try {
@@ -103,8 +105,17 @@ export async function setLeavePay(input: { leaveType: unknown; paid: unknown; re
  * default. Runs on the caller's client (payroll's). A missing table reads as "defaults".
  */
 export async function getLeavePayForMonth(year: number, month: number, client: Prisma.TransactionClient = db): Promise<LeavePayMap> {
+  return (await getLeavePayRulesForMonth(year, month, client)).pay;
+}
+
+/** The five-type map plus, R2-167, whether an approved half-day leave's leave half is paid. */
+export async function getLeavePayRulesForMonth(
+  year: number,
+  month: number,
+  client: Prisma.TransactionClient = db,
+): Promise<{ pay: LeavePayMap; halfDayPaid: boolean }> {
   await requirePermission('wages.read');
   const endKey = monthEndKey(year, month);
   const { rows } = await readRules(client, { effectiveFrom: { lte: dateKeyToDbDate(endKey) } });
-  return leavePayAsOf(rows, endKey);
+  return { pay: leavePayAsOf(rows, endKey), halfDayPaid: halfDayPaidAsOf(rows, endKey) };
 }
