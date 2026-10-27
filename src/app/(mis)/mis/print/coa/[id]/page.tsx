@@ -1,9 +1,10 @@
 import { isUuid } from '@/lib/mis/ids';
 import { requireMisAccess } from '@/server/mis/guard';
+import { unreadableSnapshotView } from '@/components/mis/print/snapshot-unreadable';
 import { PrintButton } from '@/components/mis/print/print-button';
 import { DocumentVersionBar } from '@/components/mis/print/document-version-bar';
 import { docFileName } from '@/lib/mis/document-version';
-import { coaSnapshotFrom, docDataSource, parseVersionParam, type CoaSnapshot, type QcInput } from '@/lib/mis/document-snapshot';
+import { coaSnapshotFrom, docDataSource, parseVersionParam, SnapshotUnreadableError, type CoaSnapshot, type QcInput } from '@/lib/mis/document-snapshot';
 import { getDocumentVersionSnapshot, getDocumentVersionView } from '@/server/mis/document-versions';
 import { getOrder } from '@/server/mis/orders';
 import { getQcForOrder } from '@/server/mis/qc';
@@ -32,13 +33,23 @@ export default async function CoaPrintPage({
   // list here would print as a clean "No quality checks recorded".
   const liveQc = (await getQcForOrder(id)) as unknown as QcInput[];
   const timeZone = await getFactoryTimezone();
-  // R2-46: no catch — a version that cannot be read must not print as an uncontrolled-looking copy silently.
+  // R2-46: a version list that cannot be loaded throws to error.tsx. (An unreadable frozen copy is the one handled case, R2-160.)
   const docVersions = await getDocumentVersionView('COA', id);
   // R2-46 follow-up: `?v=N` picks a version (default the newest). An APPROVED one prints its frozen
   // snapshot; a PREPARED one, an unissued doc and a legacy approved row with no snapshot print live.
   const selected = (requestedVersion != null ? docVersions.versions.find((v) => v.version === requestedVersion) : undefined) ?? docVersions.latest;
   const dataSource = docDataSource(selected);
-  const frozen = dataSource === 'SNAPSHOT' && selected ? ((await getDocumentVersionSnapshot('COA', id, selected.id)) as CoaSnapshot | null) : null;
+  let frozen: CoaSnapshot | null = null;
+  if (dataSource === 'SNAPSHOT' && selected) {
+    try {
+      frozen = (await getDocumentVersionSnapshot('COA', id, selected.id)) as CoaSnapshot | null;
+    } catch (error) {
+      // R2-160: a corrupt frozen copy shows an inline non-printable alert (and is never printed). Anything else still throws.
+      if (!(error instanceof SnapshotUnreadableError)) throw error;
+      const fileName = docFileName('COA', order.orderNumber, new Date(selected.preparedAt), selected.version, timeZone);
+      return unreadableSnapshotView({ orderId: id, bar: { view: docVersions, selected, dataSource, fileName } });
+    }
+  }
   const doc: CoaSnapshot = frozen ?? coaSnapshotFrom(order, liveQc, new Date());
   const qcLogs = doc.qcLogs;
 

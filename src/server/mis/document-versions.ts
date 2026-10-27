@@ -6,7 +6,7 @@ import {
   type DocVersionType,
 } from '@/lib/mis/document-version';
 import { latestVerdict, type VerdictCheck } from '@/lib/mis/qc-verdict';
-import { parseSnapshot, sameSnapshotContent, type DocSnapshot } from '@/lib/mis/document-snapshot';
+import { parseSnapshot, SnapshotUnreadableError, sameSnapshotContent, type DocSnapshot } from '@/lib/mis/document-snapshot';
 import type { Prisma } from '@/generated/prisma/client';
 import { can, type MisAction } from '@/lib/mis/permissions';
 import { db } from '@/server/db';
@@ -126,8 +126,8 @@ async function newestLiveVersion(docType: DocVersionType, refId: string) {
 }
 
 /**
- * The frozen copy of one version, or null when it has none. Throws when a stored snapshot cannot be
- * read: a corrupt frozen copy must not print as if it were the approved document.
+ * The frozen copy of one version, or null when it has none. Throws SnapshotUnreadableError when a stored
+ * snapshot cannot be read (the print pages show an inline alert, R2-160): a corrupt frozen copy must not print as if it were the approved document.
  */
 export async function getDocumentVersionSnapshot(docType: DocVersionType, refId: string, versionId: string): Promise<DocSnapshot | null> {
   await requirePermission('orders.read');
@@ -136,7 +136,7 @@ export async function getDocumentVersionSnapshot(docType: DocVersionType, refId:
   if (!row || row.docType !== docType || row.refId !== refId) throw new Error('That document version no longer exists.');
   if (row.snapshot == null) return null;
   const snap = parseSnapshot(row.snapshot, docType);
-  if (!snap) throw new Error('The stored copy of this version cannot be read. Do not print it.');
+  if (!snap) throw new SnapshotUnreadableError();
   return snap;
 }
 

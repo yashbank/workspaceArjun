@@ -6,7 +6,7 @@
 import { isValidElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { coaSnapshotFrom, jobCardSnapshotFrom } from '@/lib/mis/document-snapshot';
+import { coaSnapshotFrom, jobCardSnapshotFrom, SnapshotUnreadableError } from '@/lib/mis/document-snapshot';
 
 const getOrder = vi.fn();
 const getQcForOrder = vi.fn();
@@ -115,10 +115,23 @@ describe('COA print — approved version', () => {
     expect(findBar(await CoaPage({ params: Promise.resolve({ id: ID }), searchParams: Promise.resolve({ v: '99' }) }))).toMatchObject({ fileName: 'COA_ORD-7_201026_V2' });
   });
 
-  it('a snapshot that cannot be read reaches error.tsx (not printed live)', async () => {
+  // R2-160 (replaces "reaches error.tsx"): the corrupt copy is never printed, but the page no longer crashes.
+  it('R2-160: a snapshot that cannot be read shows an inline non-printable alert with a live-data link, and no document body', async () => {
     getView.mockResolvedValue(view([row({})]));
-    getSnapshot.mockRejectedValue(new Error('The stored copy of this version cannot be read. Do not print it.'));
-    await expect(CoaPage({ params: Promise.resolve({ id: ID }) })).rejects.toThrow(/cannot be read/);
+    getSnapshot.mockRejectedValue(new SnapshotUnreadableError());
+    const tree = await CoaPage({ params: Promise.resolve({ id: ID }) });
+    const t = text(tree);
+    expect(t).toContain("This version's saved copy can't be loaded");
+    expect(t).toContain('View live data');
+    expect(t).not.toContain('Certificate of Analysis');
+    expect(t).not.toContain('Frozen spec');
+    expect(JSON.stringify(tree)).toContain('no-print');
+    expect(JSON.stringify(tree)).toContain(`/mis/orders/${ID}`);
+  });
+  it('R2-160: any other failure still reaches error.tsx', async () => {
+    getView.mockResolvedValue(view([row({})]));
+    getSnapshot.mockRejectedValue(new Error('db down'));
+    await expect(CoaPage({ params: Promise.resolve({ id: ID }) })).rejects.toThrow('db down');
   });
 });
 
@@ -144,5 +157,14 @@ describe('job-card print — approved version', () => {
     expect(t).toContain('Frozen spec');
     expect(t).not.toContain('999');
     expect(findBar(tree)).toMatchObject({ dataSource: 'SNAPSHOT', fileName: 'JobCard_ORD-7_191026_V3' });
+  });
+
+  it('R2-160: an unreadable snapshot shows the inline alert instead of crashing the job card', async () => {
+    getSnapshot.mockRejectedValue(new SnapshotUnreadableError());
+    getView.mockResolvedValue({ ...view([row({ id: 'v3', version: 3 })]), docType: 'JOB_CARD' });
+    const t = text(await JobCardPage({ params: Promise.resolve({ id: ID }) }));
+    expect(t).toContain("This version's saved copy can't be loaded");
+    expect(t).toContain('View live data');
+    expect(t).not.toContain('Total Produced');
   });
 });
