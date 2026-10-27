@@ -96,6 +96,7 @@ export function Combobox({ label, value, options, onChange, placeholder = 'Type 
             >
               {o.label}
               {o.hint && <span className="ml-2 text-sm text-slate-500">{o.hint}</span>}
+              {o.value === value && <span aria-hidden="true" className="float-right text-indigo-700">✓</span>}
             </li>
           ))}
           {visible.length === 0 && <li className="px-3 py-3 text-base text-slate-500">No matches</li>}
