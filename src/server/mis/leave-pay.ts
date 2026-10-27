@@ -105,6 +105,7 @@ export async function setLeavePay(input: { leaveType: unknown; paid: unknown; re
  * default. Runs on the caller's client (payroll's). A missing table reads as "defaults".
  */
 export async function getLeavePayForMonth(year: number, month: number, client: Prisma.TransactionClient = db): Promise<LeavePayMap> {
+  await requirePermission('wages.read');
   return (await getLeavePayRulesForMonth(year, month, client)).pay;
 }
 
