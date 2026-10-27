@@ -31,6 +31,17 @@ export default async function MisMePage() {
         <CardRow label="Hindi name" value={employee?.nameHi ?? '—'} />
       </Card>
 
+      {/* R2-172: my own attendance - days worked, punches, late and overtime. */}
+      {employee && (
+        <Link
+          href="/mis/me/attendance"
+          className="flex min-h-11 items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 hover:bg-slate-50"
+        >
+          My attendance
+          <span aria-hidden="true" className="text-slate-400">→</span>
+        </Link>
+      )}
+
       {/* R2-111: the payslips the Owner has sent this person (previous months only). */}
       {employee && (
         <Link
