@@ -191,6 +191,31 @@ export async function addWageRate(
   });
   if (!existing) throw new Error(`Wage type ${code} not found`);
 
+  // R2-161 — a rate already starting on this day is corrected in place (audited), never a P2002.
+  const sameDay = await db.misWageType.findFirst({ where: { code, effectiveFrom } });
+  if (sameDay && sameDay.effectiveFrom.toISOString().slice(0, 10) === effectiveFrom.toISOString().slice(0, 10)) {
+    const updated = await db.misWageType.update({
+      where: { id: sameDay.id },
+      data: {
+        amount,
+        otRatePerHour: extra.otRatePerHour !== undefined ? extra.otRatePerHour : sameDay.otRatePerHour,
+        multiplierBasis: extra.multiplierBasis ?? sameDay.multiplierBasis,
+        hraAmount: extra.hraAmount !== undefined ? extra.hraAmount : sameDay.hraAmount,
+        allowanceAmount: extra.allowanceAmount !== undefined ? extra.allowanceAmount : sameDay.allowanceAmount,
+        bonusAmount: extra.bonusAmount !== undefined ? extra.bonusAmount : sameDay.bonusAmount,
+      },
+    });
+    await logAuditEvent({
+      actorId: actor.userId,
+      action: 'wageType.updateRate',
+      entity: 'MisWageType',
+      entityId: updated.id,
+      before: auditSafe(sameDay),
+      after: auditSafe(updated),
+    });
+    return toRow(updated);
+  }
+
   const created = await db.misWageType.create({
     data: {
       code,

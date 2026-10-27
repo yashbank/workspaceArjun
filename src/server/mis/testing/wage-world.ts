@@ -73,6 +73,7 @@ const match = (row: Row, where: Row = {}): boolean =>
       if ('not' in cond && value === cond.not) return false;
       return true;
     }
+    if (cond instanceof Date && value instanceof Date) return value.getTime() === cond.getTime();
     return value === cond;
   });
 
