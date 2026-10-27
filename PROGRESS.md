@@ -33,6 +33,7 @@ Details per ticket: `docs/qa/R2_ROUND5_TRIAGE.md` (plan) · `HANDOFF.md` (contex
 - All 5 failed files are import-time `ENOSPC: no space left on device` (vitest temp dir; disk at 177 MB free), not assertion failures — their tests never ran:
   `src/server/mis/r3-stk-grn.test.ts`, `src/server/mis/r3-stk-store.test.ts`, `src/server/mis/r3-wrk-engine.test.ts`, `src/server/mis/traceability-view.test.ts`, `src/components/mis/desktop/attendance-month-desktop.test.tsx`.
 - The 4 Mac-1 timeout files passed this run. Rerun those 5 after freeing disk to get a clean baseline.
+- **Rerun 2026-10-28 (pravin, 13 GB free):** those 5 files → Test Files 5 passed (5) · Tests 164 passed (164). Baseline: 378/379 files pass (1 skipped), 0 real failures.
 
 ## Log (newest first, one line each: date · account · what · sha)
 - 2026-10-28 · pravin · 0b baseline: 373/379 files, 6437 tests pass; 5 files ENOSPC (disk full), rerun needed · 88d7749
