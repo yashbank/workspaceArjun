@@ -11,8 +11,8 @@ Details per ticket: `docs/qa/R2_ROUND5_TRIAGE.md` (plan) · `HANDOFF.md` (contex
 |---|---|---|
 | 0 | Phase 0 triage → `docs/qa/R2_ROUND5_TRIAGE.md` | DONE (commit on Mac-1, local only until pushed) |
 | 0a | Push `fix/r2-round5` from Mac-1 (`git push -u origin fix/r2-round5`) | DONE 1a87908 (already on origin) |
-| 0b | Full test suite baseline run, results recorded below (no code changes) | TODO |
-| 0c | Commit `HANDOFF.md` + `PROGRESS.md` + CLAUDE.md pointer, push | TODO |
+| 0b | Full test suite baseline run, results recorded below (no code changes) | IN_PROGRESS pravin 2026-10-28 |
+| 0c | Commit `HANDOFF.md` + `PROGRESS.md` + CLAUDE.md pointer, push | DONE 1a87908 |
 | 1A | Batch A attendance/payroll: 161, 163, 165, 166, 168, 169, 170, 171, 172, 184 | TODO |
 | 1B | Batch B BOM list + search UX: 124–126, 138–142, 146, 147, 151 (clamp), 152 | TODO |
 | 1C | Batch C documents: 155 (owner: self-approve allowed), 156–160 (158 = write VOID migration, do NOT apply; 160 = inline alert, never print corrupt copy) | TODO |
