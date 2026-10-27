@@ -44,7 +44,7 @@ export function LeavePayScreen({ view }: { view: LeavePayView }) {
       </p>
       <p className="text-sm text-slate-500">
         Until you change one, <strong>every type is Unpaid</strong> — the way payroll has always priced a leave day. Turn
-        CL, SL and EL to <strong>Paid</strong> below if they should earn a day's wage. For a <strong>half-day leave</strong>, the worked half is always paid; <strong>Paid</strong> also pays the leave half (a full day), <strong>Unpaid</strong> deducts it (0.5 day).
+        CL, SL and EL to <strong>Paid</strong> below if they should earn a day&apos;s wage. For a <strong>half-day leave</strong>, the worked half is always paid; <strong>Paid</strong> also pays the leave half (a full day), <strong>Unpaid</strong> deducts it (0.5 day).
       </p>
 
       {view.setupPending && (
