@@ -107,10 +107,11 @@ describe('snapshot capture', () => {
   it('approval re-captures what the approver saw and records whether the data moved since issue', async () => {
     as('QC', 'qc1');
     const v1 = await prepareDocumentVersion('COA', 'o1');
-    live.qc[0].result = 'FAIL';
+    // R2-159: a COA can no longer be approved over a FAIL, so the moved data here is a QC note, not a result.
+    live.qc[0].notes = 'rechecked after issue';
     as('OWNER', 'own');
     await approveDocumentVersion(v1.id);
-    expect(rows[0].snapshot.qcLogs[0].result).toBe('FAIL');
+    expect(rows[0].snapshot.qcLogs[0].notes).toBe('rechecked after issue');
     expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: 'DOC_VERSION_APPROVE', after: expect.objectContaining({ changedSinceIssued: true }) }));
   });
 });

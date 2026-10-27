@@ -10,7 +10,11 @@ vi.mock('@/server/mis/roles', () => ({ getMisRole: (...a: unknown[]) => getMisRo
 const audit = vi.fn();
 vi.mock('@/server/mis/audit', () => ({ logAuditEvent: (...a: unknown[]) => audit(...a) }));
 // R2-46 follow-up: issue/approve now capture the document's data (covered in r2-doc-version-snapshot.test.ts).
-vi.mock('@/server/mis/document-snapshots', () => ({ captureDocumentSnapshot: async () => ({ kind: 'COA', schema: 1, capturedAt: new Date().toISOString(), order: {}, qcLogs: [] }) }));
+// R2-159: the approval guard reads the order status and QC checks from this fresh capture; `captured` is what a test sets.
+const captured: { status: string; qcLogs: Row[] } = { status: 'COMPLETED', qcLogs: [] };
+vi.mock('@/server/mis/document-snapshots', () => ({
+  captureDocumentSnapshot: async (docType: string) => ({ kind: docType, schema: 1, capturedAt: new Date().toISOString(), order: { status: captured.status }, qcLogs: captured.qcLogs }),
+}));
 
 const rows: Row[] = [];
 vi.mock('@/server/db', () => ({
@@ -45,6 +49,8 @@ const as = (role: string, id: string) => {
 
 beforeEach(() => {
   rows.length = 0;
+  captured.status = 'COMPLETED';
+  captured.qcLogs = [];
   audit.mockClear();
 });
 
@@ -137,6 +143,44 @@ describe('R2-156 / R2-157 — one pending version, newest only', () => {
     await expect(approveDocumentVersion('a')).rejects.toThrow(/Only the newest version \(V2\) can be approved/);
     expect(rows[0].status).toBe('PREPARED');
     await approveDocumentVersion('b');
+  });
+});
+
+describe('R2-159 — a COA is not approved for an unfinished order or an unresolved QC failure', () => {
+  const chk = (result: string, checkTime: string) => ({ bomStageId: null, parameterName: 'Shade', result, checkTime });
+  it.each(['CONFIRMED', 'IN_PRODUCTION'])('refuses a COA for an order that is %s, in words, and leaves it PREPARED', async (status) => {
+    as('QC', 'qc1');
+    const v1 = await prepareDocumentVersion('COA', 'o1');
+    captured.status = status;
+    as('ADMIN', 'adm');
+    await expect(approveDocumentVersion(v1.id)).rejects.toThrow(/order is not finished/i);
+    expect(rows[0].status).toBe('PREPARED');
+  });
+  it('refuses a COA when a QC check still has result FAIL', async () => {
+    as('QC', 'qc1');
+    const v1 = await prepareDocumentVersion('COA', 'o1');
+    captured.qcLogs = [chk('PASS', '2026-10-19T04:00:00Z'), { ...chk('FAIL', '2026-10-19T05:00:00Z'), parameterName: 'Tear' }];
+    as('ADMIN', 'adm');
+    await expect(approveDocumentVersion(v1.id)).rejects.toThrow(/failed quality check/i);
+    expect(rows[0].status).toBe('PREPARED');
+  });
+  it('allows a COA when the failure was re-inspected and passed, for a DELIVERED order', async () => {
+    as('QC', 'qc1');
+    const v1 = await prepareDocumentVersion('COA', 'o1');
+    captured.status = 'DELIVERED';
+    captured.qcLogs = [chk('FAIL', '2026-10-19T04:00:00Z'), chk('PASS', '2026-10-19T05:00:00Z')];
+    as('ADMIN', 'adm');
+    await approveDocumentVersion(v1.id);
+    expect(rows[0].status).toBe('APPROVED');
+  });
+  it('does not apply to a job card', async () => {
+    as('SUPERVISOR', 'sup');
+    const v1 = await prepareDocumentVersion('JOB_CARD', 'o1');
+    captured.status = 'IN_PRODUCTION';
+    captured.qcLogs = [chk('FAIL', '2026-10-19T04:00:00Z')];
+    as('ADMIN', 'adm');
+    await approveDocumentVersion(v1.id);
+    expect(rows[0].status).toBe('APPROVED');
   });
 });
 
