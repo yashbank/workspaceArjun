@@ -13,7 +13,7 @@ Details per ticket: `docs/qa/R2_ROUND5_TRIAGE.md` (plan) · `HANDOFF.md` (contex
 | 0a | Push `fix/r2-round5` from Mac-1 (`git push -u origin fix/r2-round5`) | DONE 1a87908 (already on origin) |
 | 0b | Full test suite baseline run, results recorded below (no code changes) | DONE 88d7749 |
 | 0c | Commit `HANDOFF.md` + `PROGRESS.md` + CLAUDE.md pointer, push | DONE 1a87908 |
-| 1A | Batch A attendance/payroll: 161, 163, 165, 166, 167 (half-day leave), 168, 169, 170, 171, 172, 175 (reopen, conditional), 184 | IN_PROGRESS mac1 2026-10-28 |
+| 1A | Batch A attendance/payroll: 161, 163, 165, 166, 167 (half-day leave), 168, 169, 170, 171, 172, 175 (reopen, conditional), 184 | DONE bb8593d |
 | 1B | Batch B BOM list + search UX: 124–126, 138–142, 146, 147, 151 (clamp), 152 | TODO |
 | 1C | Batch C documents: 155 (owner: self-approve allowed), 156–160 (158 = write VOID migration, do NOT apply; 160 = inline alert, never print corrupt copy) | TODO |
 | 1D | Batch D store/orders integrity 185–196: mostly ALREADY_FIXED → characterization tests only | TODO |
@@ -44,6 +44,7 @@ Details per ticket: `docs/qa/R2_ROUND5_TRIAGE.md` (plan) · `HANDOFF.md` (contex
 - **Rerun 2026-10-28 (pravin, 13 GB free):** those 5 files → Test Files 5 passed (5) · Tests 164 passed (164). Baseline: 378/379 files pass (1 skipped), 0 real failures.
 
 ## Log (newest first, one line each: date · account · what · sha)
+- 2026-10-28 · mac1 · 1A done: 161,163,165-172,175,184 (all 12). Full suite 387 files green after 2 test-contract fixes (rule-history it.fails flipped for 161; server-gates reviewed entry for getMyAttendanceMonth). MIGRATION TO RUN: prisma/migrations-pending/20261028000000_r2_half_day_leave (pnpm db:deploy). Half-day pay flat 0.5, ignores paid/unpaid leave setting · bb8593d
 - 2026-10-28 · pravin · 0b baseline: 373/379 files, 6437 tests pass; 5 files ENOSPC (disk full), rerun needed · 88d7749
 - 2026-10-28 · pravin · 0a verified: origin/fix/r2-round5 = 1a87908, nothing to push · 1a87908
 - 2026-10-27 · Mac-1 · Phase 0 triage done, HANDOFF.md written, session limit hit before commit/push · (unpushed)
