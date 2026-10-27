@@ -105,3 +105,14 @@ A path without a `mis` segment is wrong — ask.
 ## Order
 Yash: 26 → 29 → 30 → 31 → 32 → 35 → 38 → 39 → 53 → 55
 Sanket: 80 → 77 → 33 → 36 → 54
+
+
+---
+
+# Session protocol (every account, every session — R2 Round 5)
+
+1. Read `PROGRESS.md` first. Do only `TODO` rows, in order. Never redo a `DONE` row, never re-triage: `docs/qa/R2_ROUND5_TRIAGE.md` is final.
+2. Claim a row (`IN_PROGRESS <account> <date>`), commit + push `PROGRESS.md` before touching code. Finish → `DONE <sha>`, add one Log line, push at once. One row at a time.
+3. Branch `fix/r2-round5` only. Pull `--rebase` before starting; push after every batch. Never `main` directly.
+4. Reply terse: no preamble, no recap, no praise; bullets; ≤15 lines; name files and SHAs. Ask only if `PROGRESS.md` says `BLOCKED`.
+5. Never apply migrations, never reset data, never edit a test to make it pass, never mark Pass in the tester sheet.
