@@ -9,7 +9,7 @@ import { zonedParts } from './factory-time';
 
 export const DOC_VERSION_TYPES = ['COA', 'JOB_CARD'] as const;
 export type DocVersionType = (typeof DOC_VERSION_TYPES)[number];
-export type DocVersionStatus = 'PREPARED' | 'APPROVED';
+export type DocVersionStatus = 'PREPARED' | 'APPROVED' | 'VOID';
 
 export function isDocVersionType(v: unknown): v is DocVersionType {
   return typeof v === 'string' && (DOC_VERSION_TYPES as readonly string[]).includes(v);
@@ -31,8 +31,9 @@ export function docFileName(type: DocVersionType, orderNumber: string, at: Date,
 }
 
 /**
- * Second level of the sign-off: an Admin or the Owner, never the person who prepared it, and only
- * a version still PREPARED. Returns the refusal sentence, or null when allowed.
+ * Second level of the sign-off: an Admin or the Owner, and only a version still PREPARED. An Admin
+ * never approves a version they prepared themselves; the Owner may (R2-155, owner decision: the
+ * single-owner factory has no second person, so the Owner's self-approval is allowed and audited). Returns the refusal sentence, or null when allowed.
  */
 export function approvalRefusal(i: {
   role: string | null | undefined;
@@ -42,12 +43,14 @@ export function approvalRefusal(i: {
 }): string | null {
   if (i.role !== 'ADMIN' && i.role !== 'OWNER') return 'Only an Admin or the Owner can approve a document.';
   if (i.status === 'APPROVED') return 'This version is already approved.';
-  if (i.preparedById && i.preparedById === i.actorId) return 'A second person must approve: you prepared this version.';
+  if (i.status === 'VOID') return 'This version was discarded and cannot be approved.';
+  if (i.role !== 'OWNER' && i.preparedById && i.preparedById === i.actorId) return 'A second person must approve: you prepared this version.';
   return null;
 }
 
 /** "V2 · Approved" / "V1 · Prepared — awaiting approval" / "Not issued — uncontrolled copy". */
 export function versionLabel(v: { version: number; status: DocVersionStatus } | null): string {
   if (!v) return 'Not issued — uncontrolled copy';
+  if (v.status === 'VOID') return `V${v.version} · Discarded`;
   return v.status === 'APPROVED' ? `V${v.version} · Approved` : `V${v.version} · Prepared — awaiting approval`;
 }

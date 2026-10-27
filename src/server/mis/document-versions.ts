@@ -20,7 +20,7 @@ import { captureDocumentSnapshot } from '@/server/mis/document-snapshots';
  *
  *  - read:    `orders.read` — anyone who can open the print page sees its version and status.
  *  - prepare: `qc.write` for a COA, `production.write` for a job card — the person issuing it.
- *  - approve: `approvals.read` (Admin and Owner only), and never the person who prepared it.
+ *  - approve: `approvals.read` (Admin and Owner only), and never the Admin who prepared it (the Owner may approve their own, R2-155).
  *  - update to latest: `approvals.read` (Admin and Owner only), on the newest APPROVED version.
  *
  * Snapshot (R2-46 follow-up): issuing a version captures the document's rendered data; approving
@@ -193,6 +193,8 @@ export async function approveDocumentVersion(versionId: string) {
       status: 'APPROVED',
       snapshotCapturedAt: snapshot.capturedAt,
       // Did the order / QC / production data move between issue and approval?
+      // R2-155: the Owner approved a version they prepared themselves.
+      selfApproved: row.preparedById != null && row.preparedById === actor.userId,
       changedSinceIssued: issued ? !sameSnapshotContent(issued, snapshot) : null,
     },
   });

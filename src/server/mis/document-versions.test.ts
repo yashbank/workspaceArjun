@@ -82,11 +82,18 @@ describe('approve (second level)', () => {
     expect(view.latest).toMatchObject({ version: 1, status: 'APPROVED', approvedByName: 'Name adm', preparedByName: 'Name qc1', canApprove: false });
     expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: 'DOC_VERSION_APPROVE', entityId: v1.id }));
   });
-  it('the preparer cannot approve their own version, even as Owner', async () => {
+  it('R2-155: the Owner MAY approve a version they prepared themselves (audited as self-approved)', async () => {
     as('OWNER', 'own');
     const v1 = await prepareDocumentVersion('COA', 'o1');
+    expect((await getDocumentVersionView('COA', 'o1')).latest?.canApprove).toBe(true);
+    await approveDocumentVersion(v1.id);
+    expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: 'DOC_VERSION_APPROVE', entityId: v1.id, after: expect.objectContaining({ selfApproved: true }) }));
+  });
+  it('R2-155: an Admin still cannot approve their own version', async () => {
+    as('ADMIN', 'adm');
+    const v1 = await prepareDocumentVersion('JOB_CARD', 'o1');
     await expect(approveDocumentVersion(v1.id)).rejects.toThrow('A second person must approve: you prepared this version.');
-    expect((await getDocumentVersionView('COA', 'o1')).latest?.canApprove).toBe(false);
+    expect((await getDocumentVersionView('JOB_CARD', 'o1')).latest?.canApprove).toBe(false);
   });
   it('twice is refused', async () => {
     as('QC', 'qc1');
