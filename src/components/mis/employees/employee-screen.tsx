@@ -11,7 +11,7 @@ import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { WagePicker } from '@/components/mis/payroll/wage-picker';
 import type { WageTypeCode } from '@/server/mis/wage-type';
 import { isMisRole } from '@/lib/mis/roles';
-import { saveEmployeeAction, deleteEmployeeAction, restoreEmployeeAction, uploadEmployeePhotoAction, importEmployeesCsvAction } from '@/app/(mis)/mis/employees/actions';
+import { saveEmployeeAction, deleteEmployeeAction, restoreEmployeeAction, setEmployeeActiveAction, uploadEmployeePhotoAction, importEmployeesCsvAction } from '@/app/(mis)/mis/employees/actions';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { PhotoPicker } from './photo-picker';
 import { unwrap } from '@/lib/mis/action-result';
@@ -35,6 +35,7 @@ type Employee = {
   deletedAt: Date | null; managerId: string | null; userProfile: { email: string } | null;
   department?: { name: string } | null;
   departmentId?: string | null;
+  defaultShiftId?: string | null;
   // Phase 25 (25.2/25.3, D28) — none of the three is money; wageTypeCode is a CODE, never an amount (D33).
   wageTypeCode: string | null; payType: 'MONTHLY' | 'DAILY'; sundayPaid: boolean;
   photoUrl?: string | null;
@@ -55,6 +56,8 @@ type Props = {
   wageCodes: WageTypeCode[];
   /** Active departments for the Department picker (R2-86). */
   departments?: { id: string; name: string }[];
+  /** R2-163: active shifts for the Default shift picker. */
+  shifts?: { id: string; name: string; startTime: string; endTime: string }[];
   /** R2-83: `employees` is now one page; the manager picker and the manager-name lookup still need the whole (D4-scoped) roll. */
   allPeople?: Employee[];
   /** R2-83: the server-side page — total matching rows, the page number, and the URL params kept in the page links. */
@@ -113,7 +116,7 @@ function parseCsv(text: string): string[][] {
   return rows.filter((r) => r.some((c) => c.trim() !== ''));
 }
 
-export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes, departments = [], initialEditId, allPeople, paging }: Props) {
+export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes, departments = [], shifts = [], initialEditId, allPeople, paging }: Props) {
   const everyone = allPeople ?? employees;
   const { confirm, confirmDialog } = useConfirm();
   const [open, setOpen] = useState(false);
@@ -125,6 +128,7 @@ export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes
   const [role, setRole] = useState('WORKER');
   const [managerId, setManagerId] = useState<string | null>(null);
   const [departmentId, setDepartmentId] = useState<string | null>(null);
+  const [defaultShiftId, setDefaultShiftId] = useState<string | null>(null);
   const [wageTypeCode, setWageTypeCode] = useState<string | null>(null);
   const [payType, setPayType] = useState<'MONTHLY' | 'DAILY'>('DAILY');
   const [sundayPaid, setSundayPaid] = useState(false);
@@ -136,8 +140,8 @@ export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes
   const [photo, setPhoto] = useState<File | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  const openAdd = () => { setEditing(null); setCode(''); setName(''); setNameHi(''); setPhone(''); setRole('WORKER'); setManagerId(null); setDepartmentId(null); setWageTypeCode(null); setPayType('DAILY'); setSundayPaid(false); setBankName(''); setBankAccountNo(''); setIfsc(''); setSaveError(null); setPhoto(null); setOpen(true); };
-  const openEdit = (emp: Employee) => { setEditing(emp); setCode(emp.employeeCode); setName(emp.name); setNameHi(emp.nameHi ?? ''); setPhone(emp.phone ?? ''); setRole(emp.role); setManagerId(emp.managerId); setDepartmentId(emp.departmentId ?? null); setWageTypeCode(emp.wageTypeCode); setPayType(emp.payType); setSundayPaid(emp.sundayPaid); setBankName(emp.bankName ?? ''); setBankAccountNo(emp.bankAccountNo ?? ''); setIfsc(emp.ifsc ?? ''); setSaveError(null); setPhoto(null); setOpen(true); };
+  const openAdd = () => { setEditing(null); setCode(''); setName(''); setNameHi(''); setPhone(''); setRole('WORKER'); setManagerId(null); setDepartmentId(null); setDefaultShiftId(null); setWageTypeCode(null); setPayType('DAILY'); setSundayPaid(false); setBankName(''); setBankAccountNo(''); setIfsc(''); setSaveError(null); setPhoto(null); setOpen(true); };
+  const openEdit = (emp: Employee) => { setEditing(emp); setCode(emp.employeeCode); setName(emp.name); setNameHi(emp.nameHi ?? ''); setPhone(emp.phone ?? ''); setRole(emp.role); setManagerId(emp.managerId); setDepartmentId(emp.departmentId ?? null); setDefaultShiftId(emp.defaultShiftId ?? null); setWageTypeCode(emp.wageTypeCode); setPayType(emp.payType); setSundayPaid(emp.sundayPaid); setBankName(emp.bankName ?? ''); setBankAccountNo(emp.bankAccountNo ?? ''); setIfsc(emp.ifsc ?? ''); setSaveError(null); setPhoto(null); setOpen(true); };
 
   // R2-88: open the edit form once for the person named in ?edit=, never again after it is closed.
   const [autoOpened, setAutoOpened] = useState(false);
@@ -172,6 +176,7 @@ export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes
           role: isMisRole(role) ? role : undefined,
           managerId,
           departmentId,
+          defaultShiftId,
           // Only an Owner's form ever holds these — an Admin's form never renders the section
           // that sets them, so they stay `undefined` (unchanged) on an Admin's save.
           ...(isOwner ? { wageTypeCode, payType, sundayPaid } : {}),
@@ -274,7 +279,12 @@ export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes
         <Link href={`/mis/print/badge/${r.id}`} target="_blank" className={actionLinkClass}>Badge</Link>
         {!r.deletedAt && canWrite && <Button variant="ghost" onClick={() => openEdit(r)}>Edit</Button>}
         {!r.deletedAt && canWrite && <Button variant="ghost" onClick={async () => {
-          if (!(await confirm({ title: 'Deactivate employee', message: `Are you sure you want to deactivate ${r.name}? They will no longer be able to log in or punch at the gate.`, confirmLabel: 'Deactivate', destructive: true }))) return;
+          const next = !r.isActive;
+          if (!(await confirm({ title: next ? 'Activate employee' : 'Make employee inactive', message: next ? `${r.name} will be back on the roll and can punch again.` : `${r.name} stays on record with all history, but will not be offered for punches or attendance until made active again.`, confirmLabel: next ? 'Activate' : 'Make inactive', destructive: !next }))) return;
+          startTransition(async () => { setRowError(null); const res = await setEmployeeActiveAction(r.id, next); if (!res.ok) setRowError(res.detail); });
+        }}>{r.isActive ? 'Deactivate' : 'Activate'}</Button>}
+        {!r.deletedAt && canWrite && <Button variant="ghost" onClick={async () => {
+          if (!(await confirm({ title: 'Delete employee', message: `Are you sure you want to delete ${r.name}? They are removed from the roll (it can be undone with Restore) and will no longer be able to log in or punch at the gate. To pause someone temporarily, use Deactivate instead.`, confirmLabel: 'Delete', destructive: true }))) return;
           startTransition(async () => { setRowError(null); const res = await deleteEmployeeAction(r.id); if (!res.ok) setRowError(res.detail); });
         }}>Delete</Button>}
         {r.deletedAt && canWrite && <Button variant="ghost" onClick={() => startTransition(async () => { setRowError(null); const res = await restoreEmployeeAction(r.id); if (!res.ok) setRowError(res.detail); })}>Restore</Button>}
@@ -364,6 +374,12 @@ export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes
             value={departmentId ?? ''}
             options={[{ value: '', label: 'No department' }, ...departments.map((d) => ({ value: d.id, label: d.name }))]}
             onChange={(v) => setDepartmentId(v || null)}
+          />
+          <Select
+            label="Default shift"
+            value={defaultShiftId ?? ''}
+            options={[{ value: '', label: 'No default shift' }, ...shifts.map((sh) => ({ value: sh.id, label: `${sh.name} (${sh.startTime}–${sh.endTime})` }))]}
+            onChange={(v) => setDefaultShiftId(v || null)}
           />
           <p className="text-sm text-slate-500">
             Sets who can see this person&apos;s records — their manager, and everyone above.

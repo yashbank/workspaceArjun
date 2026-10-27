@@ -1,6 +1,6 @@
 'use server';
 import { revalidatePath } from 'next/cache';
-import { createEmployee, updateEmployee, deleteEmployee, restoreEmployee, importEmployeesCsv, type EmployeeInput, type EmployeeCsvRow } from '@/server/mis/employee';
+import { createEmployee, updateEmployee, deleteEmployee, restoreEmployee, setEmployeeActive, importEmployeesCsv, type EmployeeInput, type EmployeeCsvRow } from '@/server/mis/employee';
 import { setEmployeePhoto } from '@/server/mis/employee-photo';
 import { asResult } from '@/lib/mis/action-result';
 
@@ -35,4 +35,7 @@ export async function deleteEmployeeAction(id: string) {
 }
 export async function restoreEmployeeAction(id: string) {
   return asResult(async () => { await restoreEmployee(id); revalidatePath('/mis/employees'); }, { entity: 'Employee' });
+}
+export async function setEmployeeActiveAction(id: string, isActive: boolean) {
+  return asResult(async () => { await setEmployeeActive(id, isActive); revalidatePath('/mis/employees'); }, { entity: 'Employee' });
 }
