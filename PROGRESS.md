@@ -20,7 +20,7 @@ Details per ticket: `docs/qa/R2_ROUND5_TRIAGE.md` (plan) · `HANDOFF.md` (contex
 | 1E | Batch E employees/kiosk/APK 177–182 (177 unsigned release build; 181 accept pull-based revoke; 182 no photo capture, no code) | PARTIAL — 177 BLOCKED: no JDK/Android SDK on pravin Mac, build APK on Mac-1; 178 covered (r2-bank-details.test.ts:45); 180-182 no code per owner decisions |
 | 1F | Batch F test health 197–209: `.gitattributes` `* text=auto eol=lf`, wage-rule-keys timeout, store-tap-targets `\r?\n`. Do not weaken assertions | DONE 3f5c245 |
 | 1G | R2-173 shift/overtime/auto clock-out/busy carry-over (after 1A) | DONE ae55c34 |
-| 1H | R2-179 paid lunch break punches, duration in Owner settings (after 1F) | IN_PROGRESS pravin 2026-10-28 |
+| 1H | R2-179 paid lunch break punches, duration in Owner settings (after 1F) | PARTIAL 699add4 — half A done (setting + maths). BLOCKED half B (break punch server fn, kiosk/register buttons, wire punchMinutesNet) until owner applies prisma/migrations-pending/20261028000001_r2_179_lunch_break |
 | 2 | P2 gates: unit → full suite+typecheck+lint+build → browser pass per role → independent verifier on sheet Steps | TODO |
 | 3 | P3: PR + merge, confirm Vercel Ready for SHA, update tracker xlsx + `docs/qa/R2_ROUND5_RESULTS.md`, tester message (sheet rows → "Fixed - Ready to Retest" + notes + release + SHA), ≤15-line report | TODO |
 
@@ -44,6 +44,7 @@ Details per ticket: `docs/qa/R2_ROUND5_TRIAGE.md` (plan) · `HANDOFF.md` (contex
 - **Rerun 2026-10-28 (pravin, 13 GB free):** those 5 files → Test Files 5 passed (5) · Tests 164 passed (164). Baseline: 378/379 files pass (1 skipped), 0 real failures.
 
 ## Log (newest first, one line each: date · account · what · sha)
+- 2026-10-28 · pravin · 1H half A: lunch setting ATTENDANCE_LUNCH_BREAK_MINUTES (30, owner-only), break-minutes.ts maths, schema breakOutAt/breakInAt + pending migration NOT APPLIED. WARNING: schema now ahead of DB — do not deploy/merge before migration is applied. Suite 396 green, lint+typecheck+build green · 699add4
 - 2026-10-28 · pravin · 1G done: R2-173 clock-out shift dropdown, OT past shift end (derived at punch, no cron), busy carry-over today only. Suite 395 green, lint+typecheck+build green. No migration · ae55c34
 - 2026-10-28 · pravin · 1F done: .gitattributes, wage-rule-keys 30s timeout, CRLF normalise in store-tap-targets/bottom-nav/mis-shell-light. 1E: 177 BLOCKED (no JDK here), rest no-code. Suite 394 green, lint+typecheck green · 3f5c245
 - 2026-10-28 · pravin · 1D follow-up: lint now 0 errors (attendance-screen purity, list-pager reset-on-key, file-browser mount read, 6 test-mock any). Suite 394 green, typecheck green · 44f1ea1
