@@ -17,8 +17,8 @@ Details per ticket: `docs/qa/R2_ROUND5_TRIAGE.md` (plan) · `HANDOFF.md` (contex
 | 1B | Batch B BOM list + search UX: 124–126, 138–142, 146, 147, 151 (clamp), 152 | DONE 02579f9 |
 | 1C | Batch C documents: 155 (owner: self-approve allowed), 156–160 (158 = write VOID migration, do NOT apply; 160 = inline alert, never print corrupt copy) | DONE 9f64373 |
 | 1D | Batch D store/orders integrity 185–196: mostly ALREADY_FIXED → characterization tests only | DONE 862030a |
-| 1E | Batch E employees/kiosk/APK 177–182 (177 unsigned release build; 181 accept pull-based revoke; 182 no photo capture, no code) | IN_PROGRESS pravin 2026-10-28 |
-| 1F | Batch F test health 197–209: `.gitattributes` `* text=auto eol=lf`, wage-rule-keys timeout, store-tap-targets `\r?\n`. Do not weaken assertions | IN_PROGRESS pravin 2026-10-28 |
+| 1E | Batch E employees/kiosk/APK 177–182 (177 unsigned release build; 181 accept pull-based revoke; 182 no photo capture, no code) | PARTIAL — 177 BLOCKED: no JDK/Android SDK on pravin Mac, build APK on Mac-1; 178 covered (r2-bank-details.test.ts:45); 180-182 no code per owner decisions |
+| 1F | Batch F test health 197–209: `.gitattributes` `* text=auto eol=lf`, wage-rule-keys timeout, store-tap-targets `\r?\n`. Do not weaken assertions | DONE 3f5c245 |
 | 1G | R2-173 shift/overtime/auto clock-out/busy carry-over (after 1A) | TODO |
 | 1H | R2-179 paid lunch break punches, duration in Owner settings (after 1F) | TODO |
 | 2 | P2 gates: unit → full suite+typecheck+lint+build → browser pass per role → independent verifier on sheet Steps | TODO |
@@ -44,6 +44,7 @@ Details per ticket: `docs/qa/R2_ROUND5_TRIAGE.md` (plan) · `HANDOFF.md` (contex
 - **Rerun 2026-10-28 (pravin, 13 GB free):** those 5 files → Test Files 5 passed (5) · Tests 164 passed (164). Baseline: 378/379 files pass (1 skipped), 0 real failures.
 
 ## Log (newest first, one line each: date · account · what · sha)
+- 2026-10-28 · pravin · 1F done: .gitattributes, wage-rule-keys 30s timeout, CRLF normalise in store-tap-targets/bottom-nav/mis-shell-light. 1E: 177 BLOCKED (no JDK here), rest no-code. Suite 394 green, lint+typecheck green · 3f5c245
 - 2026-10-28 · pravin · 1D follow-up: lint now 0 errors (attendance-screen purity, list-pager reset-on-key, file-browser mount read, 6 test-mock any). Suite 394 green, typecheck green · 44f1ea1
 - 2026-10-28 · pravin · 1D done: new tests 185,186; 187-189,191-196 already covered (existing tests); 190 BY_DESIGN. Full suite 394 files green. Stale Prisma client regenerated (db:generate) to fix typecheck. Lint red on pre-existing files (file-browser, attendance-screen, list-pager, inventory import route.test) — not 1D. No migration · 862030a
 - 2026-10-28 · mac1 · 1C done: 155-160. Full suite 393 files green. Migration 20261028000000_r2_doc_version_void APPLIED + promoted. · 9f64373
