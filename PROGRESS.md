@@ -22,7 +22,7 @@ Details per ticket: `docs/qa/R2_ROUND5_TRIAGE.md` (plan) · `HANDOFF.md` (contex
 | 1G | R2-173 shift/overtime/auto clock-out/busy carry-over (after 1A) | DONE ae55c34 |
 | 1H | R2-179 paid lunch break punches, duration in Owner settings (after 1F) | DONE ed00208 (Android kiosk break button not built; register only) |
 | 2 | P2 gates: unit → full suite+typecheck+lint+build → browser pass per role → independent verifier on sheet Steps | DONE 1de9464 (e2e on preview: 723 pass; 22 fail identically on production = pre-existing, not this branch; 2 phone-overflow regressions fixed) |
-| 3 | P3: PR + merge, confirm Vercel Ready for SHA, update tracker xlsx + `docs/qa/R2_ROUND5_RESULTS.md`, tester message (sheet rows → "Fixed - Ready to Retest" + notes + release + SHA), ≤15-line report | TODO |
+| 3 | P3: PR + merge, confirm Vercel Ready for SHA, update tracker xlsx + `docs/qa/R2_ROUND5_RESULTS.md`, tester message (sheet rows → "Fixed - Ready to Retest" + notes + release + SHA), ≤15-line report | IN_PROGRESS pravin 2026-10-28 |
 
 ## Owner decisions
 - R2-155: Owner MAY approve a version they prepared — no second person required. **DECIDED**
