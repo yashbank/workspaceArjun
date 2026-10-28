@@ -56,7 +56,7 @@ export function BomListScreen({ rows, paging, counts }: { rows: BomOverviewRow[]
     {
       key: 'description',
       header: 'Specification',
-      render: (r) => <span title={r.description ?? undefined} className="block max-w-xs truncate text-slate-700">{r.description || '—'}</span>,
+      render: (r) => <span title={r.description ?? undefined} className="block max-w-[10rem] truncate text-slate-700 md:max-w-xs">{r.description || '—'}</span>,
     },
     { key: 'due', header: 'Due date', render: (r) => <span className="font-mono text-sm text-slate-700 whitespace-nowrap">{r.deliveryDate ?? '—'}</span> },
     { key: 'orderStatus', header: 'Order Status', render: (r) => <StatusBadge tone="neutral">{r.orderStatus.replace(/_/g, ' ')}</StatusBadge> },

@@ -79,8 +79,8 @@ export function ShiftsScreen({ shifts, canWrite }: Props) {
           <div className="py-10 text-center text-gray-400 text-sm">No shifts configured. Add your first shift.</div>
         ) : (
           shifts.map((shift) => (
-            <div key={shift.id} className="flex items-center gap-4 px-5 py-4 hover:bg-gray-50">
-              <div className="flex-1">
+            <div key={shift.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-4 hover:bg-gray-50">
+              <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="font-medium text-gray-900">{shift.name}</span>
                   {shift.isDefault && (
@@ -95,7 +95,7 @@ export function ShiftsScreen({ shifts, canWrite }: Props) {
                 </div>
               </div>
               {canWrite && (
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <Button variant="ghost" onClick={() => openEdit(shift)}>Edit</Button>
                   <Button variant="ghost" onClick={() => toggleActive(shift)} disabled={isPending}>{shift.isActive ? 'Deactivate' : 'Activate'}</Button>
                   <Button variant="ghost" onClick={() => remove(shift)} disabled={isPending}>Delete</Button>
