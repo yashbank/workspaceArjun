@@ -675,6 +675,36 @@ export async function getWorkerAvailability(shiftId: string, dateKey: string): P
   const attendanceBy = new Map((attendanceRows ?? []).map((r) => [r.employeeId, r]));
   const onLeave = new Set((leaves ?? []).map((l) => l.employeeId));
 
+  // R2-173: someone still clocked in past their shift's end who still holds a live task from another
+  // shift is BUSY in this one; with no such task they simply stay in the available pool.
+  const stillIn = (attendanceRows ?? []).filter((r) => r.clockIn && !r.clockOut).map((r) => r.employeeId);
+  if (dateKey === factoryDateKey(now, tz) && stillIn.length > 0) {
+    const carried = await db.misWorkerAllocation.findMany({
+      where: {
+        employeeId: { in: stillIn },
+        allocationDate,
+        shiftId: { not: shiftId },
+        releasedAt: null,
+        deletedAt: null,
+        machineAllocation: { releasedAt: null, endsAt: { gte: now } },
+      },
+      include: allocationInclude,
+    });
+    for (const a of carried ?? []) {
+      const list = byEmployee.get(a.employeeId) ?? [];
+      if (list.some((x) => x.id === a.id)) continue;
+      list.push({
+        id: a.id,
+        machineAllocationId: a.machineAllocationId,
+        machineId: a.machineAllocation.machine.id,
+        machineName: a.machineAllocation.machine.name,
+        orderNumber: a.machineAllocation.order?.orderNumber ?? null,
+        processName: a.jobPhase?.process.name ?? null,
+      });
+      byEmployee.set(a.employeeId, list);
+    }
+  }
+
   return employees.map((e) => {
     const presence = presenceOf({ attendance: attendanceBy.get(e.id) ?? null, onApprovedLeave: onLeave.has(e.id) });
     return {

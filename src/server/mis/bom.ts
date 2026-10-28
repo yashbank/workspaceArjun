@@ -144,6 +144,8 @@ export type BomOverviewRow = {
   orderStatus: string;
   customerName: string | null;
   description: string | null;
+  /** R2-139: promised delivery date, `YYYY-MM-DD`, or null. (MisOrder has no quantity/unit column.) */
+  deliveryDate: string | null;
   /** `NO_BOM` when the order has no BOM row yet — the fourth state the list badge needs beyond MisBom.status. */
   bomStatus: 'NO_BOM' | 'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED';
   stageCount: number;
@@ -158,11 +160,19 @@ export type BomOverviewRow = {
  * order. The cost column reuses `rollUp` (the one place a BOM total is computed, D24) and is blank for
  * anyone without `wages.read`, never a second route to the figure.
  */
-export async function listBomOverviewPage(opts: { q?: string; page?: number | string } = {}) {
+export const BOM_STATUS_FILTERS = ['NO_BOM', 'DRAFT', 'PENDING_APPROVAL', 'APPROVED'] as const;
+export type BomStatusFilter = (typeof BOM_STATUS_FILTERS)[number];
+
+const ACTIVE_ORDER = { status: { notIn: ['CANCELLED', 'DELIVERED'] } };
+const bomStatusWhere = (s: BomStatusFilter) => (s === 'NO_BOM' ? { bom: null } : { bom: { status: s } });
+
+export async function listBomOverviewPage(opts: { q?: string; page?: number | string; status?: string } = {}) {
   const actor = await requirePermission('orders.read');
   const q = (opts.q ?? '').trim().slice(0, 100);
+  const status = (BOM_STATUS_FILTERS as readonly string[]).includes(opts.status ?? '') ? (opts.status as BomStatusFilter) : null;
   const where = {
-    status: { notIn: ['CANCELLED', 'DELIVERED'] },
+    ...ACTIVE_ORDER,
+    ...(status ? bomStatusWhere(status) : {}),
     ...(q
       ? {
           OR: [
@@ -174,7 +184,7 @@ export async function listBomOverviewPage(opts: { q?: string; page?: number | st
       : {}),
   };
   const { skip, take } = pageQuery(opts.page);
-  const [orders, total] = await Promise.all([
+  const [orders, total, cAll, cNo, cDraft, cPending, cApproved] = await Promise.all([
     db.misOrder.findMany({
       where,
       include: {
@@ -186,7 +196,11 @@ export async function listBomOverviewPage(opts: { q?: string; page?: number | st
       take,
     }),
     db.misOrder.count({ where }),
+    // Tab / KPI counts are over every active order (not the current search), so they read as pipeline totals.
+    db.misOrder.count({ where: ACTIVE_ORDER }),
+    ...BOM_STATUS_FILTERS.map((s) => db.misOrder.count({ where: { ...ACTIVE_ORDER, ...bomStatusWhere(s) } })),
   ]);
+  const counts = { ALL: cAll, NO_BOM: cNo, DRAFT: cDraft, PENDING_APPROVAL: cPending, APPROVED: cApproved };
   const canSeeCost = can(actor.role, 'wages.read');
   const rows: BomOverviewRow[] = orders.map((order) => {
     const stages = order.bom?.stages ?? [];
@@ -198,13 +212,14 @@ export async function listBomOverviewPage(opts: { q?: string; page?: number | st
       orderStatus: order.status,
       customerName: order.customer?.name ?? null,
       description: order.description,
+      deliveryDate: order.deliveryDate ? order.deliveryDate.toISOString().slice(0, 10) : null,
       bomStatus: (order.bom?.status as BomOverviewRow['bomStatus']) ?? 'NO_BOM',
       stageCount: stages.length,
       materialCount,
       estimatedCostLabel,
     };
   });
-  return { rows, total };
+  return { rows, total, counts };
 }
 
 /**

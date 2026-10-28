@@ -9,6 +9,8 @@ export type MisSearchResult = {
   id: string;
   title: string;
   subtitle: string | null;
+  /** R2-146: a status pill for the row (order/PO/GRN status, ACTIVE/INACTIVE for machines and employees); null for items. Already visible to anyone who may search that type. */
+  status: string | null;
   href: string;
 };
 
@@ -17,6 +19,11 @@ const PER_TYPE_LIMIT = 5;
 
 /** The query is too short to mean anything and would just return the top N rows of everything. */
 const MIN_QUERY_LENGTH = 2;
+
+/** R2-151: nothing useful is longer than this; a 500-char paste is cut, never sent to the database whole. */
+export const MAX_QUERY_LENGTH = 100;
+
+const activeLabel = (v: boolean | null | undefined) => (v === true ? 'ACTIVE' : v === false ? 'INACTIVE' : null);
 
 /**
  * R2-145. One search across the factory's core entities (Orders, Machines, Items, Purchase
@@ -30,7 +37,7 @@ const MIN_QUERY_LENGTH = 2;
  */
 export async function searchMisEntities(query: string): Promise<MisSearchResult[]> {
   await requireMisAccess();
-  const q = query.trim();
+  const q = query.trim().slice(0, MAX_QUERY_LENGTH);
   if (q.length < MIN_QUERY_LENGTH) return [];
 
   const [canOrders, canMasters, canInventory, canPo, canGrn, canEmployees] = await Promise.all([
@@ -57,21 +64,21 @@ export async function searchMisEntities(query: string): Promise<MisSearchResult[
 async function searchOrders(q: string): Promise<MisSearchResult[]> {
   const rows = await db.misOrder.findMany({
     where: { OR: [{ orderNumber: { contains: q, mode: 'insensitive' } }, { description: { contains: q, mode: 'insensitive' } }, { customer: { name: { contains: q, mode: 'insensitive' } } }] },
-    select: { id: true, orderNumber: true, description: true, customer: { select: { name: true } } },
+    select: { id: true, orderNumber: true, status: true, description: true, customer: { select: { name: true } } },
     take: PER_TYPE_LIMIT,
     orderBy: { createdAt: 'desc' },
   });
-  return rows.map((r) => ({ type: 'order', id: r.id, title: r.orderNumber, subtitle: r.customer?.name ?? r.description ?? null, href: `/mis/orders/${r.id}` }));
+  return rows.map((r) => ({ type: 'order', id: r.id, title: r.orderNumber, subtitle: r.customer?.name ?? r.description ?? null, status: r.status ?? null, href: `/mis/orders/${r.id}` }));
 }
 
 async function searchMachines(q: string): Promise<MisSearchResult[]> {
   const rows = await db.misMachine.findMany({
     where: { deletedAt: null, OR: [{ name: { contains: q, mode: 'insensitive' } }, { code: { contains: q, mode: 'insensitive' } }] },
-    select: { id: true, code: true, name: true },
+    select: { id: true, code: true, name: true, isActive: true },
     take: PER_TYPE_LIMIT,
     orderBy: { name: 'asc' },
   });
-  return rows.map((r) => ({ type: 'machine', id: r.id, title: r.name, subtitle: r.code, href: `/mis/machine-board/${r.id}` }));
+  return rows.map((r) => ({ type: 'machine', id: r.id, title: r.name, subtitle: r.code, status: activeLabel(r.isActive), href: `/mis/machine-board/${r.id}` }));
 }
 
 async function searchItems(q: string): Promise<MisSearchResult[]> {
@@ -81,7 +88,7 @@ async function searchItems(q: string): Promise<MisSearchResult[]> {
     take: PER_TYPE_LIMIT,
     orderBy: { name: 'asc' },
   });
-  return rows.map((r) => ({ type: 'item', id: r.id, title: r.name, subtitle: r.code, href: `/mis/inventory/${r.id}` }));
+  return rows.map((r) => ({ type: 'item', id: r.id, title: r.name, subtitle: r.code, status: null, href: `/mis/inventory/${r.id}` }));
 }
 
 async function searchPOs(q: string): Promise<MisSearchResult[]> {
@@ -91,7 +98,7 @@ async function searchPOs(q: string): Promise<MisSearchResult[]> {
     take: PER_TYPE_LIMIT,
     orderBy: { createdAt: 'desc' },
   });
-  return rows.map((r) => ({ type: 'po', id: r.id, title: r.poNumber, subtitle: r.supplier?.name ?? r.status, href: `/mis/po/${r.id}` }));
+  return rows.map((r) => ({ type: 'po', id: r.id, title: r.poNumber, subtitle: r.supplier?.name ?? r.status, status: r.status ?? null, href: `/mis/po/${r.id}` }));
 }
 
 async function searchGRNs(q: string): Promise<MisSearchResult[]> {
@@ -101,15 +108,15 @@ async function searchGRNs(q: string): Promise<MisSearchResult[]> {
     take: PER_TYPE_LIMIT,
     orderBy: { createdAt: 'desc' },
   });
-  return rows.map((r) => ({ type: 'grn', id: r.id, title: r.grnNumber, subtitle: r.status, href: `/mis/grn/${r.id}` }));
+  return rows.map((r) => ({ type: 'grn', id: r.id, title: r.grnNumber, subtitle: r.status, status: r.status ?? null, href: `/mis/grn/${r.id}` }));
 }
 
 async function searchEmployees(q: string): Promise<MisSearchResult[]> {
   const rows = await db.misEmployee.findMany({
     where: { deletedAt: null, OR: [{ name: { contains: q, mode: 'insensitive' } }, { employeeCode: { contains: q, mode: 'insensitive' } }] },
-    select: { id: true, employeeCode: true, name: true },
+    select: { id: true, employeeCode: true, name: true, isActive: true },
     take: PER_TYPE_LIMIT,
     orderBy: { name: 'asc' },
   });
-  return rows.map((r) => ({ type: 'employee', id: r.id, title: r.name, subtitle: r.employeeCode, href: `/mis/employees/${r.id}` }));
+  return rows.map((r) => ({ type: 'employee', id: r.id, title: r.name, subtitle: r.employeeCode, status: activeLabel(r.isActive), href: `/mis/employees/${r.id}` }));
 }

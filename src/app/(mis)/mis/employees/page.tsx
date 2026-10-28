@@ -5,6 +5,7 @@ import { can } from '@/lib/mis/permissions';
 import { clampPage, parsePage, parseSearch } from '@/lib/mis/pagination';
 import { listEmployees, listEmployeesPage } from '@/server/mis/employee';
 import { listDepts } from '@/server/mis/department';
+import { listShifts } from '@/server/mis/attendance';
 import { listWageCodes } from '@/server/mis/wage-type';
 import { getMisRole } from '@/server/mis/roles';
 import { isPoolScoped } from '@/server/mis/visibility';
@@ -17,7 +18,7 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
   const role = await getMisRole(user.id);
   const isOwner = can(role, 'wages.read');
   const canWriteEmployees = await checkPermission('employees.write');
-  const [paged, everyone, canWrite, scoped, wageCodes, depts] = await Promise.all([
+  const [paged, everyone, canWrite, scoped, wageCodes, depts, shifts] = await Promise.all([
     listEmployeesPage({ q, page }),
     // The manager picker (and ?edit=) need the whole D4-scoped roll, not just this page.
     listEmployees(),
@@ -31,6 +32,8 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
     isOwner ? listWageCodes() : Promise.resolve([]),
     // R2-86: the Department picker; a role that cannot read masters simply gets none (the field is hidden).
     canWriteEmployees ? listDepts().catch(() => []) : Promise.resolve([]),
+    // R2-163: the Default shift picker (active shifts only).
+    canWriteEmployees ? listShifts().catch(() => []) : Promise.resolve([]),
   ]);
-  return <EmployeeScreen employees={paged.rows} allPeople={everyone} paging={{ total: paged.total, page: clampPage(parsePage(page), paged.total), params: { q } }} canWrite={canWrite} scoped={scoped} isOwner={isOwner} wageCodes={wageCodes} departments={depts.map((d) => ({ id: d.id, name: d.name }))} initialEditId={canWriteEmployees && edit && isUuid(edit) ? edit : undefined} />;
+  return <EmployeeScreen employees={paged.rows} allPeople={everyone} paging={{ total: paged.total, page: clampPage(parsePage(page), paged.total), params: { q } }} canWrite={canWrite} scoped={scoped} isOwner={isOwner} wageCodes={wageCodes} departments={depts.map((d) => ({ id: d.id, name: d.name }))} shifts={shifts.map((sh) => ({ id: sh.id, name: sh.name, startTime: sh.startTime, endTime: sh.endTime }))} initialEditId={canWriteEmployees && edit && isUuid(edit) ? edit : undefined} />;
 }

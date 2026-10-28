@@ -35,7 +35,8 @@ describe('R2-10 BOM item picker', () => {
     fireEvent.click(screen.getByText('+ Material'));
     fireEvent.change(screen.getByPlaceholderText('Search by code or name'), { target: { value: 'red' } });
     expect(screen.queryByText(/Kraft Liner/)).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'INK-R · Red ink (LITRE)' }));
+    // R2-125: the picker is now the kit Combobox, whose options are listbox rows picked on mousedown.
+    fireEvent.mouseDown(screen.getByRole('option', { name: /INK-R · Red ink \(LITRE\)/ }));
     expect(screen.getByTestId('picked-item').textContent).toBe('INK-R · Red ink (LITRE)');
     expect((screen.getByLabelText('Description') as HTMLInputElement).value).toBe('Red ink');
     // R2-154: Unit is now a Combobox (Master Units, falling back to the legacy 4 when the

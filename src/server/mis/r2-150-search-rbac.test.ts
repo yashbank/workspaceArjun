@@ -87,7 +87,7 @@ describe('searchMisEntities', () => {
     getMisRole.mockResolvedValue('OWNER');
     const out = await searchMisEntities('ac');
     for (const r of out) {
-      expect(Object.keys(r).sort()).toEqual(['href', 'id', 'subtitle', 'title', 'type']);
+      expect(Object.keys(r).sort()).toEqual(['href', 'id', 'status', 'subtitle', 'title', 'type']); // R2-146: + status, a label never money
     }
   });
 });

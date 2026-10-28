@@ -39,6 +39,8 @@ export type EmployeeInput = {
   bankName?: string | null;
   bankAccountNo?: string | null;
   ifsc?: string | null;
+  /** R2-163. The worker's standard shift; `null` clears it, `undefined` leaves it unchanged. */
+  defaultShiftId?: string | null;
 };
 
 const BANK_KEYS = ['bankName', 'bankAccountNo', 'ifsc'] as const;
@@ -211,6 +213,13 @@ async function assertDepartmentUsable(departmentId: string | null | undefined) {
   if (!dept) throw new Error('Department not found');
 }
 
+/** R2-163: a default shift must name a live (active) shift; `null`/`undefined` mean "none". */
+async function assertShiftUsable(shiftId: string | null | undefined) {
+  if (!shiftId) return;
+  const shift = await db.misShift.findFirst({ where: { id: shiftId, isActive: true }, select: { id: true } });
+  if (!shift) throw new Error('Shift not found or not active');
+}
+
 const hasBankInput = (i: { bankName?: unknown; bankAccountNo?: unknown; ifsc?: unknown }) =>
   i.bankName !== undefined || i.bankAccountNo !== undefined || i.ifsc !== undefined;
 
@@ -219,6 +228,7 @@ export async function createEmployee(input: EmployeeInput) {
   assertMayAssignRole(actor, input.role);
   assertWageFieldsAllowed(actor, input, { wageTypeCode: null, payType: 'DAILY', sundayPaid: false });
   await assertDepartmentUsable(input.departmentId);
+  await assertShiftUsable(input.defaultShiftId);
   const bank = hasBankInput(input) ? normaliseBankDetails({ bankName: input.bankName ?? null, bankAccountNo: input.bankAccountNo ?? null, ifsc: input.ifsc ?? null }) : null;
   const created = await db.misEmployee.create({
     data: {
@@ -229,6 +239,7 @@ export async function createEmployee(input: EmployeeInput) {
       phone: input.phone?.trim() || null,
       role: input.role || 'WORKER',
       departmentId: input.departmentId || null,
+      defaultShiftId: input.defaultShiftId || null,
       wageTypeCode: input.wageTypeCode ?? null,
       ...(input.payType ? { payType: input.payType } : {}),
       ...(input.sundayPaid !== undefined ? { sundayPaid: input.sundayPaid } : {}),
@@ -320,6 +331,7 @@ export async function updateEmployee(id: string, patch: Partial<EmployeeInput>) 
   if (patch.role !== before.role) assertMayAssignRole(actor, patch.role);
 
   if (patch.departmentId !== undefined && patch.departmentId !== before.departmentId) await assertDepartmentUsable(patch.departmentId);
+  if (patch.defaultShiftId !== undefined && patch.defaultShiftId !== before.defaultShiftId) await assertShiftUsable(patch.defaultShiftId);
 
   if (patch.managerId) {
     if (await wouldCreateManagerCycle(id, patch.managerId)) {
@@ -347,11 +359,28 @@ export async function updateEmployee(id: string, patch: Partial<EmployeeInput>) 
     ...(patch.role ? { role: patch.role } : {}),
     ...(patch.managerId !== undefined ? { managerId: patch.managerId } : {}),
     ...(patch.departmentId !== undefined ? { departmentId: patch.departmentId || null } : {}),
+    ...(patch.defaultShiftId !== undefined ? { defaultShiftId: patch.defaultShiftId || null } : {}),
     ...(patch.wageTypeCode !== undefined ? { wageTypeCode: patch.wageTypeCode } : {}),
     ...(patch.payType ? { payType: patch.payType } : {}),
     ...(patch.sundayPaid !== undefined ? { sundayPaid: patch.sundayPaid } : {}),
   }});
   await logAuditEvent({ actorId: actor.userId, action: 'employee.update', entity: 'MisEmployee', entityId: id, before: auditSafeEmployee(before), after: auditSafeEmployee(after) });
+  return after;
+}
+
+/**
+ * R2-171: switch a person Active / Inactive WITHOUT deleting them. Inactive keeps the record, history and payroll
+ * rows; they simply drop off the punch rosters until switched back on. `deletedAt` is never touched here.
+ */
+export async function setEmployeeActive(id: string, isActive: boolean) {
+  const actor = await requirePermission('employees.write');
+  const before = await findVisibleEmployee(actor, id);
+  assertMayTouchTarget(actor, before);
+  if (before.deletedAt) throw new Error('This employee is deleted. Restore them first.');
+  if (!isActive && before.userProfileId && before.userProfileId === actor.userId) throw new Error('You cannot deactivate your own record');
+  if (before.isActive === isActive) return before;
+  const after = await db.misEmployee.update({ where: { id }, data: { isActive } });
+  await logAuditEvent({ actorId: actor.userId, action: isActive ? 'employee.activate' : 'employee.deactivate', entity: 'MisEmployee', entityId: id, before: auditSafeEmployee(before), after: auditSafeEmployee(after) });
   return after;
 }
 

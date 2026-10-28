@@ -25,4 +25,13 @@ describe('R2-70 BOM stage picker', () => {
     fireEvent.click(screen.getByText('+ Stage'));
     expect(screen.getByLabelText('Stage Name')).toBeTruthy();
   });
+  it('R2-126: stage process is a searchable combobox, picking sets the stage name', () => {
+    render(<BomScreen bom={bom} orderId="o1" canWrite isOwner={false} processes={[{ id: 'p1', name: 'Printing' }, { id: 'p2', name: 'Die cutting' }]} />);
+    fireEvent.click(screen.getByText('+ Stage'));
+    const box = screen.getByRole('combobox', { name: 'Stage (process)' });
+    fireEvent.change(box, { target: { value: 'die' } });
+    expect(screen.queryByRole('option', { name: /Printing/ })).toBeNull();
+    fireEvent.mouseDown(screen.getByRole('option', { name: /Die cutting/ }));
+    expect((screen.getByRole('combobox', { name: 'Stage (process)' }) as HTMLInputElement).value).toBe('Die cutting');
+  });
 });

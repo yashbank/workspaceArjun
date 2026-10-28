@@ -58,6 +58,8 @@ export type ExtraPayProposal = {
   reason: string;
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
   proposedByName: string | null;
+  /** R2-169: true when the caller proposed it, so the screen can offer Withdraw (PENDING only). */
+  mine: boolean;
 };
 
 /** user-profile id -> display name. Best effort: a lookup failure leaves names blank, never breaks the list. */
@@ -212,7 +214,7 @@ export async function listExtraPayDays(status?: 'PENDING' | 'APPROVED' | 'REJECT
  * date, who, why, status and the PROPOSER. The rupee value / multiplier is deliberately not selected.
  */
 export async function listExtraPayProposals(): Promise<ExtraPayProposal[]> {
-  await requirePermission('attendance.write');
+  const actor = await requirePermission('attendance.write');
   const rows = await db.misExtraPayDay.findMany({
     select: { id: true, date: true, scope: true, reason: true, status: true, proposedById: true },
     orderBy: { date: 'desc' },
@@ -226,7 +228,23 @@ export async function listExtraPayProposals(): Promise<ExtraPayProposal[]> {
     reason: r.reason,
     status: r.status as ExtraPayProposal['status'],
     proposedByName: names.get(r.proposedById) ?? null,
+    mine: r.proposedById === actor.userId,
   }));
+}
+
+/**
+ * R2-169: the proposer takes back their own PENDING proposal. It never reached payroll (only APPROVED days do), so
+ * it is removed outright (its join rows cascade); the audit row keeps who, which day and why. Once decided it is final.
+ */
+export async function withdrawExtraPayProposal(id: string): Promise<{ id: string }> {
+  const actor = await requirePermission('attendance.write');
+  const before = await db.misExtraPayDay.findUnique({ where: { id } });
+  if (!before) throw new Error('Proposal not found');
+  if (before.proposedById !== actor.userId) throw new Error('Only the person who proposed this can withdraw it');
+  const { count } = await db.misExtraPayDay.deleteMany({ where: { id, status: 'PENDING', proposedById: actor.userId } });
+  if (count === 0) throw new Error('Already decided.');
+  await logAuditEvent({ actorId: actor.userId, action: 'extraPayDay.withdraw', entity: 'MisExtraPayDay', entityId: id, before: auditSafe(before) });
+  return { id };
 }
 
 /** Every APPROVED extra-pay day touching `year`/`month` — what payroll folds in. Owner only. */

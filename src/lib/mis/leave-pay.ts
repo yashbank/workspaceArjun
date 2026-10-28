@@ -11,7 +11,7 @@
  * Settings > Leave pay (from that day's month onwards).
  */
 
-import { LEAVE_TYPES, LEAVE_TYPE_LABEL, isLeaveType, type LeaveType } from './leave';
+import { HALF_DAY_LEAVE, LEAVE_TYPES, LEAVE_TYPE_LABEL, isLeaveType, leaveTypeLabel, type LeaveType } from './leave';
 
 export const DEFAULT_LEAVE_PAY: Readonly<Record<LeaveType, boolean>> = { CL: false, SL: false, EL: false, LWP: false, OTHER: false };
 
@@ -55,6 +55,22 @@ export function monthEndKey(year: number, month: number): string {
   return dayKey(new Date(Date.UTC(year, month, 0)));
 }
 
+/**
+ * R2-167: the PAID flag for a half-day leave in force on `asOfKey`. Default UNPAID (the leave half is
+ * deducted, exactly how a HALF_DAY register row has always priced), so deploying changes no payslip.
+ * Kept apart from `leavePayAsOf` so the five-type map payroll and its callers know stays five keys.
+ */
+export function halfDayPaidAsOf(rows: readonly LeavePayRuleRow[], asOfKey: string): boolean {
+  const newest = rows.filter((r) => r.leaveType === HALF_DAY_LEAVE && dayKey(r.effectiveFrom) <= asOfKey).sort(newestFirst)[0];
+  return newest ? newest.paid : false;
+}
+
+/** Is there an APPROVED half-day leave (the caller filters the status) on exactly this day? */
+export function hasApprovedHalfDayLeave(leaves: readonly ApprovedLeave[], employeeId: string, day: Date): boolean {
+  const key = dayKey(day);
+  return leaves.some((l) => l.employeeId === employeeId && l.leaveType === HALF_DAY_LEAVE && dayKey(l.date) === key);
+}
+
 export type ApprovedLeave = { employeeId: string; date: Date; endDate: Date | null; leaveType: string };
 
 /**
@@ -74,7 +90,7 @@ export function isPaidLeaveDay(leaves: readonly ApprovedLeave[], employeeId: str
 
 /** Why a change cannot be saved, or null. */
 export function validateLeavePayChange(input: { leaveType: unknown; paid: unknown; reason?: unknown }): string | null {
-  if (!isLeaveType(input.leaveType)) return 'Leave type must be CL, SL, EL, LWP or Other';
+  if (!isLeaveType(input.leaveType) && input.leaveType !== HALF_DAY_LEAVE) return 'Leave type must be CL, SL, EL, LWP or Other (or Half-day)';
   if (typeof input.paid !== 'boolean') return 'Choose Paid or Unpaid';
   if (input.reason !== undefined && input.reason !== null && typeof input.reason !== 'string') return 'The reason must be text';
   if (typeof input.reason === 'string' && input.reason.trim().length > MAX_LEAVE_PAY_REASON) return `A reason is at most ${MAX_LEAVE_PAY_REASON} characters`;
@@ -84,7 +100,9 @@ export function validateLeavePayChange(input: { leaveType: unknown; paid: unknow
 export type LeavePayView = {
   todayKey: string;
   types: { leaveType: LeaveType; label: string; paid: boolean; isDefault: boolean; since: string | null }[];
-  history: { id: string; leaveType: LeaveType; label: string; paid: boolean; effectiveFrom: string; changedAt: Date; changedBy: string; reason: string | null }[];
+  /** R2-167: the half-day leave's own PAID / UNPAID row (shown after the five types). */
+  halfDay: { leaveType: typeof HALF_DAY_LEAVE; label: string; paid: boolean; isDefault: boolean; since: string | null };
+  history: { id: string; leaveType: LeaveType | typeof HALF_DAY_LEAVE; label: string; paid: boolean; effectiveFrom: string; changedAt: Date; changedBy: string; reason: string | null }[];
   /** True until the R2 database update (mis_leave_pay_rules) has run: defaults show, saving is refused in words. */
   setupPending: boolean;
 };
@@ -93,7 +111,8 @@ export function buildLeavePayView(
   rows: readonly LeavePayRuleRow[],
   opts: { todayKey: string; names?: ReadonlyMap<string, string>; setupPending?: boolean },
 ): LeavePayView {
-  const valid = rows.filter((r) => isLeaveType(r.leaveType) && dayKey(r.effectiveFrom) <= opts.todayKey);
+  const valid = rows.filter((r) => (isLeaveType(r.leaveType) || r.leaveType === HALF_DAY_LEAVE) && dayKey(r.effectiveFrom) <= opts.todayKey);
+  const latestHalf = valid.filter((r) => r.leaveType === HALF_DAY_LEAVE).sort(newestFirst)[0];
   const current = leavePayAsOf(valid, opts.todayKey);
   const types = LEAVE_TYPES.map((t) => {
     const latest = valid.filter((r) => r.leaveType === t).sort(newestFirst)[0];
@@ -101,13 +120,20 @@ export function buildLeavePayView(
   });
   const history = [...valid].sort(newestFirst).map((r) => ({
     id: r.id,
-    leaveType: r.leaveType as LeaveType,
-    label: LEAVE_TYPE_LABEL[r.leaveType as LeaveType],
+    leaveType: r.leaveType as LeaveType | typeof HALF_DAY_LEAVE,
+    label: r.leaveType === HALF_DAY_LEAVE ? leaveTypeLabel(HALF_DAY_LEAVE) : LEAVE_TYPE_LABEL[r.leaveType as LeaveType],
     paid: r.paid,
     effectiveFrom: dayKey(r.effectiveFrom),
     changedAt: r.createdAt,
     changedBy: (r.changedById && opts.names?.get(r.changedById)) || 'Owner',
     reason: r.reason?.trim() ? r.reason.trim() : null,
   }));
-  return { todayKey: opts.todayKey, types, history, setupPending: !!opts.setupPending };
+  const halfDay = {
+    leaveType: HALF_DAY_LEAVE,
+    label: leaveTypeLabel(HALF_DAY_LEAVE),
+    paid: latestHalf ? latestHalf.paid : false,
+    isDefault: !latestHalf,
+    since: latestHalf ? dayKey(latestHalf.effectiveFrom) : null,
+  };
+  return { todayKey: opts.todayKey, types, halfDay, history, setupPending: !!opts.setupPending };
 }

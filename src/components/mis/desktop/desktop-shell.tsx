@@ -161,7 +161,7 @@ export function DesktopShell({
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-30 flex min-h-[60px] items-center gap-4 border-b border-slate-200 bg-[#faf7f2]/95 px-[18px] backdrop-blur">
           <div className="min-w-0 flex-1 max-w-xl">
-            <GlobalSearch />
+            <GlobalSearch shortcuts />
           </div>
           <div className="ml-auto flex items-center gap-3">{topBarRight}</div>
         </header>

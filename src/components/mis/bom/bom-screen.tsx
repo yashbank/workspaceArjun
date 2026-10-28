@@ -3,7 +3,6 @@ import { useState, useTransition } from 'react';
 import { Button } from '@/components/mis/kit/button';
 import { Input, NumberInput } from '@/components/mis/kit/input';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
-import { Select } from '@/components/mis/kit/select';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import {
   createBomAction,
@@ -189,7 +188,7 @@ export function BomScreen({ bom, orderId, canWrite, isOwner, processes = [], ite
       <SlideOver open={stageOpen} onClose={() => setStageOpen(false)} title="Add Stage">
         <div className="flex flex-col gap-4 p-4">
           {processes.length > 0 ? (
-            <Select label="Stage (process)" value={stageProcessId} placeholder="Select a process"
+            <Combobox label="Stage (process)" value={stageProcessId || null} placeholder="Search process…"
               options={processes.map(p => ({ value: p.id, label: p.name }))}
               onChange={(v) => { setStageProcessId(v); setStageName(processes.find(p => p.id === v)?.name ?? ''); }} />
           ) : (
@@ -205,7 +204,7 @@ export function BomScreen({ bom, orderId, canWrite, isOwner, processes = [], ite
       <SlideOver open={editStageId !== null} onClose={() => setEditStageId(null)} title="Edit Stage">
         <div className="flex flex-col gap-4 p-4">
           {processes.length > 0 ? (
-            <Select label="Stage (process)" value={editStageProcessId} placeholder="Select a process"
+            <Combobox label="Stage (process)" value={editStageProcessId || null} placeholder="Search process…"
               options={processes.map(p => ({ value: p.id, label: p.name }))}
               onChange={(v) => { setEditStageProcessId(v); setEditStageName(processes.find(p => p.id === v)?.name ?? editStageName); }} />
           ) : (

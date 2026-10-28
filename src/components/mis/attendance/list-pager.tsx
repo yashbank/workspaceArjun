@@ -1,13 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import { PAGE_SIZE, clampPage, pageCount, rangeLabel } from '@/lib/mis/pagination';
 
-/** R2-83: page a client-held list 25 at a time. Resets to page 1 when `resetKey` (the filters) changes. */
+/** R2-83: page a client-held list PAGE_SIZE at a time. Resets to page 1 when `resetKey` (the filters) changes. */
 export function usePagedRows<T>(rows: T[], resetKey: string): { pageRows: T[]; page: number; total: number; setPage: (p: number) => void } {
   const [page, setPage] = useState(1);
-  useEffect(() => { setPage(1); }, [resetKey]);
+  const [seenKey, setSeenKey] = useState(resetKey);
+  if (seenKey !== resetKey) { setSeenKey(resetKey); setPage(1); }
   const current = clampPage(page, rows.length);
   return { pageRows: rows.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE), page: current, total: rows.length, setPage };
 }

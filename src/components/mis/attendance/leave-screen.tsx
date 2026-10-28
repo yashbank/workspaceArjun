@@ -9,10 +9,10 @@ import { SlideOver } from '@/components/mis/kit/slide-over';
 import { ListPager, usePagedRows } from './list-pager';
 import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
-import { requestLeaveAction, approveLeaveAction } from '@/app/(mis)/mis/attendance/actions';
+import { requestLeaveAction, approveLeaveAction, cancelLeaveRequestAction } from '@/app/(mis)/mis/attendance/actions';
 import { useToast } from '@/components/ui/toast';
 import { formatFactoryDate } from '@/lib/mis/factory-time';
-import { LEAVE_TYPES, LEAVE_TYPE_LABEL, countLeaveWorkingDays, leaveTypeLabel, validateLeaveRange } from '@/lib/mis/leave';
+import { HALF_DAY_LEAVE, LEAVE_TYPES, LEAVE_TYPE_LABEL, countLeaveWorkingDays, leaveTypeLabel, validateLeaveRange } from '@/lib/mis/leave';
 
 type Employee = { id: string; name: string; employeeCode: string };
 type LeaveRow = {
@@ -31,16 +31,21 @@ const STATUS_TONE: Record<string, 'good' | 'warning' | 'critical' | 'neutral'> =
   APPROVED: 'good',
   PENDING: 'warning',
   REJECTED: 'critical',
+  CANCELLED: 'neutral',
 };
 
 interface Props {
   leaves: LeaveRow[];
   employees: Employee[];
   canApprove: boolean;
+  /** R2-167: Owner or Admin — the only roles that decide a half-day leave. */
+  canDecideHalfDay?: boolean;
+  /** R2-168: Owner — the only role that revokes an approved leave. */
+  canRevoke?: boolean;
   initialEmployeeId?: string;
 }
 
-export function LeaveScreen({ leaves, employees, canApprove, initialEmployeeId }: Props) {
+export function LeaveScreen({ leaves, employees, canApprove, canDecideHalfDay = false, canRevoke = false, initialEmployeeId }: Props) {
   const [open, setOpen] = useState(false);
   const [empId, setEmpId] = useState(initialEmployeeId ?? '');
   // R2-100: ?employeeId= FILTERS the history; it never pops the request form open.
@@ -49,7 +54,9 @@ export function LeaveScreen({ leaves, employees, canApprove, initialEmployeeId }
   const [endDate, setEndDate] = useState('');
   const [leaveType, setLeaveType] = useState('CL');
   const [reason, setReason] = useState('');
-  const [filter, setFilter] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'>('ALL');
+  const [revokeFor, setRevokeFor] = useState<LeaveRow | null>(null);
+  const [revokeReason, setRevokeReason] = useState('');
+  const [filter, setFilter] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED'>('ALL');
   const [empSearch, setEmpSearch] = useState('');
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
@@ -64,12 +71,13 @@ export function LeaveScreen({ leaves, employees, canApprove, initialEmployeeId }
     .filter((l) => !empSearch.trim() || (l.employee?.name ?? '').toLowerCase().includes(empSearch.toLowerCase()) || (l.employee?.employeeCode ?? '').toLowerCase().includes(empSearch.toLowerCase()));
 
   const paged = usePagedRows(filtered, `${filter}|${empSearch}|${historyOf ?? ''}`);
-  const typeOptions: SelectOption[] = LEAVE_TYPES.map((t) => ({ value: t, label: LEAVE_TYPE_LABEL[t] }));
-  const rangeError = date ? validateLeaveRange(date, endDate || null) : null;
+  const typeOptions: SelectOption[] = [...LEAVE_TYPES.map((t) => ({ value: t, label: LEAVE_TYPE_LABEL[t] })), { value: HALF_DAY_LEAVE, label: leaveTypeLabel(HALF_DAY_LEAVE) }];
+  const isHalfDay = leaveType === HALF_DAY_LEAVE;
+  const rangeError = date && !isHalfDay ? validateLeaveRange(date, endDate || null) : null;
   const dayCount = date && !rangeError ? countLeaveWorkingDays(date, endDate || null) : 0;
 
   const handleRequest = () => startTransition(async () => {
-    const res = await requestLeaveAction(empId, date, reason || undefined, { endDate: endDate || null, leaveType });
+    const res = await requestLeaveAction(empId, date, reason || undefined, { endDate: isHalfDay ? null : endDate || null, leaveType });
     if (!res.ok) { toast('error', res.detail); return; }
     setEmpId(''); setDate(''); setEndDate(''); setLeaveType('CL'); setReason(''); setOpen(false);
   });
@@ -78,6 +86,17 @@ export function LeaveScreen({ leaves, employees, canApprove, initialEmployeeId }
     const res = await approveLeaveAction(id, approve);
     if (!res.ok) { toast('error', res.detail); return; }
     if (res.value.skippedDates.length > 0) toast('info', `Register not changed for ${res.value.skippedDates.join(', ')} (already has a punch, an edit, or a closed month)`);
+  });
+
+  const withdraw = (id: string) => startTransition(async () => {
+    const res = await cancelLeaveRequestAction(id);
+    if (!res.ok) toast('error', res.detail);
+  });
+  const revoke = () => startTransition(async () => {
+    if (!revokeFor) return;
+    const res = await cancelLeaveRequestAction(revokeFor.id, revokeReason);
+    if (!res.ok) { toast('error', res.detail); return; }
+    setRevokeFor(null); setRevokeReason('');
   });
 
   const columns: Column<LeaveRow>[] = [
@@ -118,17 +137,25 @@ export function LeaveScreen({ leaves, employees, canApprove, initialEmployeeId }
     {
       key: 'actions',
       header: '',
-      render: (r) =>
-        canApprove && r.status === 'PENDING' ? (
+      render: (r) => {
+        const mayDecide = canApprove && (r.leaveType !== HALF_DAY_LEAVE || canDecideHalfDay);
+        return (
           <div className="flex gap-2 justify-end">
-            <Button variant="ghost" onClick={() => handleApprove(r.id, true)} disabled={isPending}>
-              Approve
-            </Button>
-            <Button variant="ghost" onClick={() => handleApprove(r.id, false)} disabled={isPending}>
-              Reject
-            </Button>
+            {r.status === 'PENDING' && mayDecide && (
+              <>
+                <Button variant="ghost" onClick={() => handleApprove(r.id, true)} disabled={isPending}>Approve</Button>
+                <Button variant="ghost" onClick={() => handleApprove(r.id, false)} disabled={isPending}>Reject</Button>
+              </>
+            )}
+            {r.status === 'PENDING' && canApprove && (
+              <Button variant="ghost" onClick={() => withdraw(r.id)} disabled={isPending}>Withdraw</Button>
+            )}
+            {r.status === 'APPROVED' && canRevoke && (
+              <Button variant="ghost" onClick={() => { setRevokeFor(r); setRevokeReason(''); }} disabled={isPending}>Revoke</Button>
+            )}
           </div>
-        ) : null,
+        );
+      },
     },
   ];
 
@@ -148,7 +175,7 @@ export function LeaveScreen({ leaves, employees, canApprove, initialEmployeeId }
 
       {/* Filter tabs */}
       <div className="flex flex-wrap gap-1 bg-gray-100 p-1 rounded-lg w-fit">
-        {(['ALL', 'PENDING', 'APPROVED', 'REJECTED'] as const).map((f) => (
+        {(['ALL', 'PENDING', 'APPROVED', 'REJECTED', 'CANCELLED'] as const).map((f) => (
           <button
             key={f}
             onClick={() => setFilter(f)}
@@ -184,13 +211,25 @@ export function LeaveScreen({ leaves, employees, canApprove, initialEmployeeId }
           <Combobox label="Employee" value={empId} options={empOptions} onChange={setEmpId} />
           <Select label="Leave type" value={leaveType} options={typeOptions} onChange={setLeaveType} />
           <DateInput label="From" value={date} onChange={(e) => setDate(e.target.value)} />
-          <DateInput label="To (leave blank for a single day)" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+          {!isHalfDay && <DateInput label="To (leave blank for a single day)" value={endDate} onChange={(e) => setEndDate(e.target.value)} />}
+          {isHalfDay && <p className="text-sm text-slate-600">Half-day leave is one day: 0.5 day is taken off attendance and pay once an Owner or Admin approves it.</p>}
           {rangeError && <p role="alert" className="text-sm text-red-600">{rangeError}</p>}
           {dayCount > 0 && <p className="text-sm text-slate-600">{dayCount} working {dayCount === 1 ? 'day' : 'days'} (Sundays are not counted in a range)</p>}
           <Input label="Reason (optional)" value={reason} onChange={(e) => setReason(e.target.value)} />
           <div className="flex gap-2 pt-2">
             <Button onClick={handleRequest} disabled={isPending || !empId || !date || !!rangeError}>Submit</Button>
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+          </div>
+        </div>
+      </SlideOver>
+
+      <SlideOver open={!!revokeFor} onClose={() => setRevokeFor(null)} title="Revoke approved leave">
+        <div className="flex flex-col gap-4 p-4">
+          <p className="text-sm text-slate-600">{revokeFor?.employee?.name} · the register rows this leave made are put back. A closed month cannot be revoked.</p>
+          <Input label="Reason (required)" value={revokeReason} onChange={(e) => setRevokeReason(e.target.value)} />
+          <div className="flex gap-2 pt-2">
+            <Button onClick={revoke} disabled={isPending || revokeReason.trim().length < 3}>Revoke leave</Button>
+            <Button variant="ghost" onClick={() => setRevokeFor(null)}>Cancel</Button>
           </div>
         </div>
       </SlideOver>

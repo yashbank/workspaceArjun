@@ -598,6 +598,7 @@ export function FileBrowser({
   // folder to open — once, on mount, the same way a bookmark would. Never re-runs on its own.
   useEffect(() => {
     const folderId = new URLSearchParams(window.location.search).get('folderId');
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- window is only readable after mount
     if (folderId) navigateTo(folderId);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally mount-only
   }, []);

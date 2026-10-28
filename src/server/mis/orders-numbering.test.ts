@@ -14,6 +14,7 @@ vi.mock('@/server/auth', () => ({ getCurrentUser: (...a: unknown[]) => getCurren
 const getMisRole = vi.fn();
 vi.mock('@/server/mis/roles', () => ({ getMisRole: (...a: unknown[]) => getMisRole(...a) }));
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- loose in-memory Prisma mock rows
 type Row = Record<string, any>;
 let seq = 0;
 const created: Row[] = [];

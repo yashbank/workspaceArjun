@@ -201,7 +201,7 @@ describe('F-09 — changing the same rule twice in one day', () => {
     await expect(updateAqlThreshold('AQL_MAJOR_MAX', '3')).resolves.toBeDefined();
   });
 
-  it.fails('the same for a wage rate', async () => {
+  it('the same for a wage rate', async () => {
     await addWageRate('WG-DAILY-01', 900, TODAY);
     await expect(addWageRate('WG-DAILY-01', 950, TODAY)).resolves.toBeDefined();
   });

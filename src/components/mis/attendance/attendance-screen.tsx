@@ -6,7 +6,7 @@ import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import { DateInput, Input, TimeInput } from '@/components/mis/kit/input';
-import { clockInAction, clockOutAction, approveClockOutAction, editAttendanceAction, markAbsentBulkAction, listPunchesForDayAction, addAttendanceNoteAction } from '@/app/(mis)/mis/attendance/actions';
+import { clockInAction, clockOutAction, approveClockOutAction, editAttendanceAction, markAbsentBulkAction, bulkPunchAction, punchBreakAction, listPunchesForDayAction, addAttendanceNoteAction } from '@/app/(mis)/mis/attendance/actions';
 import { useToast } from '@/components/ui/toast';
 import { addDaysToDateKey, formatFactoryTime, zonedParts } from '@/lib/mis/factory-time';
 import type { ActionResult } from '@/lib/mis/action-result';
@@ -50,7 +50,7 @@ function toTimeInput(d: Date | null, timeZone: string) {
 
 function fmtMin(m: number) { return m > 0 ? `${m}m` : '—'; }
 
-export function AttendanceScreen({ records, unrecorded = [], todayKey, summary, shifts: _shifts, canWrite, canNote = false, view, monthKey, date, timeZone }: Props) {
+export function AttendanceScreen({ records, unrecorded = [], todayKey, summary, shifts, canWrite, canNote = false, view, monthKey, date, timeZone }: Props) {
   const { toast } = useToast();
   const router = useRouter();
   /** B63: show a refusal as a toast; true when the action went through. */
@@ -78,11 +78,38 @@ export function AttendanceScreen({ records, unrecorded = [], todayKey, summary, 
     }
     setSelected(new Set());
   });
+  // R2-165/166: one dialog for every manual punch - the toolbar's bulk clock-in/out and a past-day row's Clock In.
+  const [punchOpen, setPunchOpen] = useState(false);
+  const [punchKind, setPunchKind] = useState<'IN' | 'OUT'>('IN');
+  const [punchIds, setPunchIds] = useState<string[]>([]);
+  const [punchTime, setPunchTime] = useState('');
+  const [mountedAt] = useState(() => Date.now()); // fallback date, read once (render must stay pure)
+  const [punchShift, setPunchShift] = useState('');
+  const openPunch = (kind: 'IN' | 'OUT', ids: string[]) => {
+    setPunchKind(kind); setPunchIds(ids); setPunchTime('');
+    // R2-173: clock-out shift is prefilled with the (first) person's clock-in shift.
+    const shiftName = records.find((r) => r.employee && ids.includes(r.employee.id))?.shift?.name;
+    setPunchShift(shifts.find((sh) => sh.name === shiftName)?.id ?? '');
+    setPunchOpen(true);
+  };
+  const submitPunch = () => startTransition(async () => {
+    const res = await bulkPunchAction(punchKind, punchIds, { date, time: punchTime || null, shiftId: punchKind === 'OUT' && punchShift ? punchShift : null });
+    if (!settle(res)) return;
+    if (res.ok && res.value.skipped.length > 0) toast('info', `${res.value.skipped.length} skipped: ${[...new Set(res.value.skipped.map((s) => s.reason))].join(', ')}`);
+    setPunchOpen(false);
+    setSelected(new Set());
+  });
+  const breakSelected = (kind: 'OUT' | 'IN') => startTransition(async () => {
+    const res = await punchBreakAction(kind, [...selected]);
+    if (!settle(res)) return;
+    if (res.ok && res.value.skipped.length > 0) toast('info', `${res.value.skipped.length} skipped: ${[...new Set(res.value.skipped.map((s) => s.reason))].join(', ')}`);
+    setSelected(new Set());
+  });
   // R2-94/95: people with no register row yet (nobody punched them) are shown too, so the operator can clock them in or mark them absent.
   const allRecords: AttendanceRec[] = [
     ...records,
     ...unrecorded.map((e): AttendanceRec => ({
-      id: `new:${e.id}`, date: new Date(date ?? todayKey ?? Date.now()), status: 'NOT_RECORDED', clockIn: null, clockOut: null,
+      id: `new:${e.id}`, date: new Date(date ?? todayKey ?? mountedAt), status: 'NOT_RECORDED', clockIn: null, clockOut: null,
       approvedOut: false, lateMinutes: 0, otMinutes: 0, notes: null, employee: e, shift: null,
     })),
   ];
@@ -145,7 +172,8 @@ export function AttendanceScreen({ records, unrecorded = [], todayKey, summary, 
     { key: 'ot', header: 'OT', render: (r) => <span>{fmtMin(r.otMinutes)}</span> },
     { key: 'actions', header: '', render: (r) => (
       <div className="flex gap-2 justify-end">
-        {canWrite && !r.clockIn && (isToday || !r.id.startsWith('new:')) && <Button variant="ghost" onClick={() => startTransition(async () => { settle(await clockInAction(r.employee!.id)); })}>Clock In</Button>}
+        {canWrite && !r.clockIn && isToday && <Button variant="ghost" onClick={() => startTransition(async () => { settle(await clockInAction(r.employee!.id)); })}>Clock In</Button>}
+        {canWrite && !r.clockIn && !isToday && r.employee && <Button variant="ghost" onClick={() => openPunch('IN', [r.employee!.id])}>Clock In</Button>}
         {canWrite && r.clockIn && !r.clockOut && <Button variant="ghost" onClick={() => startTransition(async () => { settle(await clockOutAction(r.id)); })}>Clock Out</Button>}
         {canWrite && r.clockOut && !r.approvedOut && <Button variant="ghost" onClick={() => startTransition(async () => { settle(await approveClockOutAction(r.id)); })}>Approve Out</Button>}
         {(r.clockIn || r.clockOut) && <Button variant="ghost" onClick={() => openPunches(r)}>Punches</Button>}
@@ -218,6 +246,10 @@ export function AttendanceScreen({ records, unrecorded = [], todayKey, summary, 
               <span className="text-sm text-amber-800">{selected.size} employee{selected.size === 1 ? '' : 's'} selected</span>
               <div className="flex gap-2">
                 <Button variant="ghost" onClick={() => setSelected(new Set())}>Clear</Button>
+                <Button variant="secondary" onClick={() => openPunch('IN', [...selected])} disabled={isPending}>Bulk Clock In</Button>
+                <Button variant="secondary" onClick={() => openPunch('OUT', [...selected])} disabled={isPending}>Bulk Clock Out</Button>
+                {isToday && <Button variant="secondary" onClick={() => breakSelected('OUT')} disabled={isPending}>Break out</Button>}
+                {isToday && <Button variant="secondary" onClick={() => breakSelected('IN')} disabled={isPending}>Break in</Button>}
                 <Button onClick={markSelectedAbsent} disabled={isPending}>{isPending ? 'Marking…' : 'Mark Absent'}</Button>
               </div>
             </div>
@@ -246,6 +278,26 @@ export function AttendanceScreen({ records, unrecorded = [], todayKey, summary, 
           <div className="flex gap-2 pt-2">
             <Button onClick={() => startTransition(async () => { if (editRec) { const override = editReason.trim().length >= 3 ? { reason: editReason.trim() } : undefined; if (settle(await editAttendanceAction(editRec.id, { status: editStatus, notes: editNotes, clockInTime: editIn && editIn !== toTimeInput(editRec.clockIn, timeZone) ? editIn : undefined, clockOutTime: editOut && editOut !== toTimeInput(editRec.clockOut, timeZone) ? editOut : undefined }, override))) setEditOpen(false); } })} disabled={isPending}>Save</Button>
             <Button variant="ghost" onClick={() => setEditOpen(false)}>Cancel</Button>
+          </div>
+        </div>
+      </SlideOver>
+
+      <SlideOver open={punchOpen} onClose={() => setPunchOpen(false)} title={punchKind === 'IN' ? 'Clock In' : 'Clock Out'}>
+        <div className="flex flex-col gap-4 p-4">
+          <p className="text-sm text-slate-600">{punchIds.length} employee{punchIds.length === 1 ? '' : 's'} · {date ?? todayKey}</p>
+          <TimeInput label={isToday ? 'Time (leave blank for now)' : 'Time (required for a past day)'} value={punchTime} onChange={(e) => setPunchTime(e.target.value)} />
+          {punchKind === 'OUT' && (
+            <div>
+              <label className="text-sm font-medium text-slate-700">Shift</label>
+              <select className="mt-1 w-full min-h-12 rounded border border-slate-300 bg-white px-3 text-base text-slate-900" value={punchShift} onChange={(e) => setPunchShift(e.target.value)}>
+                <option value="">Keep the clock-in shift</option>
+                {shifts.map((sh) => <option key={sh.id} value={sh.id}>{sh.name}</option>)}
+              </select>
+            </div>
+          )}
+          <div className="flex gap-2 pt-2">
+            <Button onClick={submitPunch} disabled={isPending || (!isToday && !punchTime)}>{isPending ? 'Saving…' : 'Save'}</Button>
+            <Button variant="ghost" onClick={() => setPunchOpen(false)}>Cancel</Button>
           </div>
         </div>
       </SlideOver>

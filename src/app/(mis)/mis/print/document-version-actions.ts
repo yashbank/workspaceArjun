@@ -3,7 +3,7 @@ import { revalidatePath } from 'next/cache';
 
 import { asResult } from '@/lib/mis/action-result';
 import type { DocVersionType } from '@/lib/mis/document-version';
-import { approveDocumentVersion, prepareDocumentVersion, updateDocumentVersionToLatest } from '@/server/mis/document-versions';
+import { approveDocumentVersion, prepareDocumentVersion, updateDocumentVersionToLatest, voidDocumentVersion } from '@/server/mis/document-versions';
 
 /** R2-46: both return an `ActionResult` so a refusal is shown on the print page; a permission refusal is thrown. */
 const PATH: Record<DocVersionType, string> = { COA: '/mis/print/coa', JOB_CARD: '/mis/print/job-card' };
@@ -28,6 +28,15 @@ export async function approveDocumentVersionAction(versionId: string) {
 export async function updateDocumentVersionToLatestAction(versionId: string) {
   return asResult(async () => {
     const rec = await updateDocumentVersionToLatest(versionId);
+    revalidatePath(`${PATH[rec.docType as DocVersionType] ?? '/mis/print'}/${rec.refId}`);
+    return { id: rec.id, version: rec.version };
+  });
+}
+
+/** R2-158: discard a PREPARED draft (preparer, Admin or Owner), with a reason. */
+export async function voidDocumentVersionAction(versionId: string, reason: string) {
+  return asResult(async () => {
+    const rec = await voidDocumentVersion(versionId, reason);
     revalidatePath(`${PATH[rec.docType as DocVersionType] ?? '/mis/print'}/${rec.refId}`);
     return { id: rec.id, version: rec.version };
   });

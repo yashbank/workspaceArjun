@@ -2,10 +2,11 @@ import { isUuid } from '@/lib/mis/ids';
 import { dateKeyToDbDate, formatFactoryDate, formatFactoryDateTime } from '@/lib/mis/factory-time';
 import { formatQty } from '@/lib/mis/qty-by-unit';
 import { requireMisAccess } from '@/server/mis/guard';
+import { unreadableSnapshotView } from '@/components/mis/print/snapshot-unreadable';
 import { PrintButton } from '@/components/mis/print/print-button';
 import { DocumentVersionBar } from '@/components/mis/print/document-version-bar';
 import { docFileName } from '@/lib/mis/document-version';
-import { docDataSource, jobCardSnapshotFrom, parseVersionParam, type BomInput, type JobCardSnapshot } from '@/lib/mis/document-snapshot';
+import { docDataSource, jobCardSnapshotFrom, parseVersionParam, SnapshotUnreadableError, type BomInput, type JobCardSnapshot } from '@/lib/mis/document-snapshot';
 import { getDocumentVersionSnapshot, getDocumentVersionView } from '@/server/mis/document-versions';
 import { getOrder } from '@/server/mis/orders';
 import { getBom } from '@/server/mis/bom';
@@ -62,7 +63,17 @@ export default async function JobCardPrintPage({
   // snapshot; a PREPARED one, an unissued doc and a legacy approved row with no snapshot print live.
   const selected = (requestedVersion != null ? docVersions.versions.find((v) => v.version === requestedVersion) : undefined) ?? docVersions.latest;
   const dataSource = docDataSource(selected);
-  const frozen = dataSource === 'SNAPSHOT' && selected ? ((await getDocumentVersionSnapshot('JOB_CARD', id, selected.id)) as JobCardSnapshot | null) : null;
+  let frozen: JobCardSnapshot | null = null;
+  if (dataSource === 'SNAPSHOT' && selected) {
+    try {
+      frozen = (await getDocumentVersionSnapshot('JOB_CARD', id, selected.id)) as JobCardSnapshot | null;
+    } catch (error) {
+      // R2-160: a corrupt frozen copy shows an inline non-printable alert (and is never printed). Anything else still throws.
+      if (!(error instanceof SnapshotUnreadableError)) throw error;
+      const fileName = docFileName('JOB_CARD', order.orderNumber, new Date(selected.preparedAt), selected.version, timeZone);
+      return unreadableSnapshotView({ orderId: id, bar: { view: docVersions, selected, dataSource, fileName } });
+    }
+  }
   const doc: JobCardSnapshot =
     frozen ?? jobCardSnapshotFrom({ order, bom: bom as unknown as BomInput, production: prodSummary, phases, crew }, new Date());
   const { phases: docPhases, crew: docCrew } = doc;

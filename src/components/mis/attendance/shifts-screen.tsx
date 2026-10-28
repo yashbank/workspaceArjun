@@ -5,7 +5,7 @@ import { useState, useTransition } from 'react';
 import { Button } from '@/components/mis/kit/button';
 import { Input, TimeInput } from '@/components/mis/kit/input';
 import { SlideOver } from '@/components/mis/kit/slide-over';
-import { saveShiftAction, setShiftActiveAction } from '@/app/(mis)/mis/attendance/actions';
+import { saveShiftAction, setShiftActiveAction, deleteShiftAction } from '@/app/(mis)/mis/attendance/actions';
 import { useToast } from '@/components/ui/toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 
@@ -53,6 +53,20 @@ export function ShiftsScreen({ shifts, canWrite }: Props) {
     });
   };
 
+  const remove = async (shift: Shift) => {
+    const ok = await confirm({
+      title: 'Delete shift?',
+      message: `${shift.name} will be removed for good. This only works for a shift with no attendance records or employees; otherwise deactivate it.`,
+      confirmLabel: 'Delete',
+      destructive: true,
+    });
+    if (!ok) return;
+    startTransition(async () => {
+      const res = await deleteShiftAction(shift.id);
+      if (!res.ok) toast('error', res.detail);
+    });
+  };
+
   return (
     <div className="max-w-3xl mx-auto space-y-5 py-6">
       <div className="flex items-center justify-between">
@@ -65,8 +79,8 @@ export function ShiftsScreen({ shifts, canWrite }: Props) {
           <div className="py-10 text-center text-gray-400 text-sm">No shifts configured. Add your first shift.</div>
         ) : (
           shifts.map((shift) => (
-            <div key={shift.id} className="flex items-center gap-4 px-5 py-4 hover:bg-gray-50">
-              <div className="flex-1">
+            <div key={shift.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-4 hover:bg-gray-50">
+              <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="font-medium text-gray-900">{shift.name}</span>
                   {shift.isDefault && (
@@ -81,9 +95,10 @@ export function ShiftsScreen({ shifts, canWrite }: Props) {
                 </div>
               </div>
               {canWrite && (
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <Button variant="ghost" onClick={() => openEdit(shift)}>Edit</Button>
                   <Button variant="ghost" onClick={() => toggleActive(shift)} disabled={isPending}>{shift.isActive ? 'Deactivate' : 'Activate'}</Button>
+                  <Button variant="ghost" onClick={() => remove(shift)} disabled={isPending}>Delete</Button>
                 </div>
               )}
             </div>

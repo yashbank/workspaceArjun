@@ -9,7 +9,7 @@ import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { DesktopPageHeader } from '@/components/mis/desktop/desktop-shell';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { DEFAULT_FACTORY_TIMEZONE, formatFactoryDate } from '@/lib/mis/factory-time';
-import { closePayrollPeriodAction, recordPayrollExportAction, releasePayslipsAction, withdrawPayslipAction } from '@/app/(mis)/mis/payroll/actions';
+import { closePayrollPeriodAction, reopenPayrollPeriodAction, recordPayrollExportAction, releasePayslipsAction, withdrawPayslipAction } from '@/app/(mis)/mis/payroll/actions';
 import { useToast } from '@/components/ui/toast';
 
 /**
@@ -102,6 +102,8 @@ export function PayrollScreen({ rows: payroll, year, month, period, preflight, r
   const [search, setSearch] = useState('');
   const [closeError, setCloseError] = useState<string | null>(null);
   const [overrideReason, setOverrideReason] = useState('');
+  const [reopenOpen, setReopenOpen] = useState(false);
+  const [reopenReason, setReopenReason] = useState('');
   const { toast } = useToast();
   const released = useMemo(() => new Set(releasedIds), [releasedIds]);
   const isClosed = period.status === 'CLOSED';
@@ -140,6 +142,18 @@ export function PayrollScreen({ rows: payroll, year, month, period, preflight, r
       const result = await closePayrollPeriodAction(year, month, reason);
       if (!result.ok) setCloseError(result.detail);
       else router.refresh();
+    });
+  }
+
+  /** R2-175: Owner only (the server refuses anyone else); sent payslips are taken back and the month computes live again. */
+  function runReopen() {
+    setCloseError(null);
+    startTransition(async () => {
+      const result = await reopenPayrollPeriodAction(year, month, reopenReason);
+      if (!result.ok) { setCloseError(result.detail); return; }
+      setReopenOpen(false);
+      setReopenReason('');
+      router.refresh();
     });
   }
 
@@ -288,6 +302,26 @@ export function PayrollScreen({ rows: payroll, year, month, period, preflight, r
         <p className="text-center text-sm text-slate-500">
           Closed {period.closedAt ? formatFactoryDate(new Date(period.closedAt), DEFAULT_FACTORY_TIMEZONE) : ''}. Figures are frozen.
         </p>
+      )}
+      {isClosed && !reopenOpen && (
+        <Button variant="secondary" onClick={() => setReopenOpen(true)} disabled={isPending} className="w-full min-h-11">
+          Reopen month
+        </Button>
+      )}
+      {isClosed && reopenOpen && (
+        <div className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+          <p className="text-sm text-amber-900">Reopening unfreezes this month and takes back any payslips already sent. Close it again after the fix and send them again.</p>
+          <input
+            className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900"
+            placeholder="Reason for reopening (required)"
+            value={reopenReason}
+            onChange={(e) => setReopenReason(e.target.value)}
+          />
+          <div className="flex gap-2">
+            <Button onClick={runReopen} disabled={isPending || reopenReason.trim().length < 3} className="min-h-11">Reopen {monthLabel}</Button>
+            <Button variant="ghost" onClick={() => setReopenOpen(false)}>Cancel</Button>
+          </div>
+        </div>
       )}
       {closeError && (
         <div role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">

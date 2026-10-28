@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Main app location
 
-The repo root is a **planning workspace** (`docs/`, `brd/`, `PROJECT_STATUS.md`, `cursor/`). All application code lives in **[app/](app/)**, which is its own git repo. **Run every `pnpm` command from `app/`.**
+The repo root is the Next.js app (`src/`, `prisma/`, `package.json`); planning docs live in `docs/`. **Run every `pnpm` command from the repo root.**
 
 Stack: Next.js 16 (App Router) · React 19 · TypeScript · Prisma 7 · Supabase Postgres + Auth · Tailwind v4 · local/S3 storage.
 
@@ -19,21 +19,21 @@ Requests flow **route handler → server-domain module → data layer**. Keep th
 - **API routes are thin.** Parse input, call a server function, map errors to HTTP status. Convention: error message `"Unauthorized"`→401, `"Forbidden"`→403, else 400/500.
 - **All business logic lives in `src/server/<domain>/`.** Every exported function starts with a `requirePermission(...)` / `requireRole(...)` gate, then logs mutations via `logAuditEvent(...)`.
 - Never put logic or auth checks in route handlers or React components.
-- Canonical example: [api/folders/route.ts](app/src/app/api/folders/route.ts) + [server/folders/index.ts](app/src/server/folders/index.ts).
+- Canonical example: [api/folders/route.ts](src/app/api/folders/route.ts) + [server/folders/index.ts](src/server/folders/index.ts).
 
-Auth/RBAC: [proxy.ts](app/src/proxy.ts) refreshes the session and guards routes; [server/auth/](app/src/server/auth/) handles `getCurrentUser`/`requireUser` (first user ever → `owner`); [server/rbac/permissions.ts](app/src/server/rbac/permissions.ts) holds the `role → permissions` matrix (`owner`/`admin`/`member`/`viewer`).
+Auth/RBAC: [proxy.ts](src/proxy.ts) refreshes the session and guards routes; [server/auth/](src/server/auth/) handles `getCurrentUser`/`requireUser` (first user ever → `owner`); [server/rbac/permissions.ts](src/server/rbac/permissions.ts) holds the `role → permissions` matrix (`owner`/`admin`/`member`/`viewer`).
 
 ## Where things live
 
 | Concern | Location |
 |---|---|
-| Backend logic (gated + audited) | `app/src/server/<domain>/` |
-| API routes (thin handlers) | `app/src/app/api/.../route.ts` |
-| UI components | `app/src/components/` (file UI in `components/files/`) |
-| Pages | `app/src/app/(auth)/`, `app/src/app/(dashboard)/` |
-| Client/shared helpers | `app/src/lib/` |
+| Backend logic (gated + audited) | `src/server/<domain>/` |
+| API routes (thin handlers) | `src/app/api/.../route.ts` |
+| UI components | `src/components/` (file UI in `components/files/`) |
+| Pages | `src/app/(auth)/`, `src/app/(dashboard)/` |
+| Client/shared helpers | `src/lib/` |
 
-## Commands (from `app/`)
+## Commands (from the repo root)
 
 ```bash
 pnpm dev            # dev server (Turbopack) → localhost:3000
@@ -52,8 +52,8 @@ Tests are colocated as `*.test.ts` next to the module.
 
 ## Prisma / schema rules
 
-- Single schema: [app/prisma/schema.prisma](app/prisma/schema.prisma). After any change, run `pnpm db:migrate` then `pnpm db:generate`.
-- `app/src/generated/prisma/` is **generated — never edit by hand.**
+- Single schema: [prisma/schema.prisma](prisma/schema.prisma). After any change, run `pnpm db:migrate` then `pnpm db:generate`.
+- `src/generated/prisma/` is **generated — never edit by hand.**
 - **Soft deletes** use `deletedAt`; list queries must filter `deletedAt: null`.
 
 ## Coding rules
@@ -105,3 +105,14 @@ A path without a `mis` segment is wrong — ask.
 ## Order
 Yash: 26 → 29 → 30 → 31 → 32 → 35 → 38 → 39 → 53 → 55
 Sanket: 80 → 77 → 33 → 36 → 54
+
+
+---
+
+# Session protocol (every account, every session — R2 Round 5)
+
+1. Read `PROGRESS.md` first. Do only `TODO` rows, in order. Never redo a `DONE` row, never re-triage: `docs/qa/R2_ROUND5_TRIAGE.md` is final.
+2. Claim a row (`IN_PROGRESS <account> <date>`), commit + push `PROGRESS.md` before touching code. Finish → `DONE <sha>`, add one Log line, push at once. One row at a time.
+3. Branch `fix/r2-round5` only. Pull `--rebase` before starting; push after every batch. Never `main` directly.
+4. Reply terse: no preamble, no recap, no praise; bullets; ≤15 lines; name files and SHAs. Ask only if `PROGRESS.md` says `BLOCKED`.
+5. Never apply migrations, never reset data, never edit a test to make it pass, never mark Pass in the tester sheet.

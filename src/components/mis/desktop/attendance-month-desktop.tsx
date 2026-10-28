@@ -155,7 +155,10 @@ export function AttendanceMonthDesktop({ view }: { view: AttendanceMonthView | n
           {view.rows.length === 0 ? (
             <p className="rounded-lg border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500">{t('d8.noPeople')}</p>
           ) : (
-            <div className="overflow-x-auto">
+            <>
+            {/* R2-184: the grid is wider than the column on a laptop, so say so and let the keyboard scroll it. */}
+            <p className="mb-2 text-xs font-medium text-indigo-700">{t('d8.scrollHint')}</p>
+            <div className="overflow-x-auto" tabIndex={0} role="region" aria-label={t('d8.gridTitle')} data-testid="month-grid-scroll">
               <table className="border-collapse text-xs" aria-label={t('d8.gridTitle')}>
                 <thead>
                   <tr>
@@ -227,6 +230,7 @@ export function AttendanceMonthDesktop({ view }: { view: AttendanceMonthView | n
                 </tfoot>
               </table>
             </div>
+            </>
           )}
 
           <ul className="mt-4 flex flex-wrap gap-x-5 gap-y-1.5 border-t border-slate-200 pt-3 text-xs text-slate-600" aria-label={t('d8.legendLabel')}>

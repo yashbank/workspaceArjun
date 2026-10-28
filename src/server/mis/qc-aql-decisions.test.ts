@@ -8,6 +8,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- loose in-memory Prisma mock rows
 type Row = Record<string, any>;
 
 const state: { rules: Row[]; defectTypes: Row[]; checks: Row[] } = { rules: [], defectTypes: [], checks: [] };
