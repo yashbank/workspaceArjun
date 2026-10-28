@@ -9,7 +9,6 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { asResult } from '@/lib/mis/action-result';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- loose rows for an in-memory fake, like the other store tests
 type Row = Record<string, any>;
@@ -140,8 +139,7 @@ vi.mock('@/server/auth', () => ({ getCurrentUser: (...a: unknown[]) => getCurren
 const getMisRole = vi.fn();
 vi.mock('@/server/mis/roles', () => ({ getMisRole: (...a: unknown[]) => getMisRole(...a) }));
 
-const { addGRNItem, confirmGRN, createGRN, nextGrnNumber, updateGRNHeader } = await import('./grn');
-const { commitReceipt } = await import('./store');
+const { confirmGRN } = await import('./grn');
 
 const grnRow = (id: string, over: Row = {}): Row => ({ id, grnNumber: id.toUpperCase(), poId: 'po1', status: 'DRAFT', dcNumber: 'DC-1', supplierInvoiceNo: null, invoiceDate: null, supplierInvoiceAmount: null, ...over });
 const line = (grnId: string, poItemId: string, receivedQty: number, over: Row = {}): Row => ({ id: `${grnId}-${poItemId}-${state.grnItems.length}`, grnId, poItemId, receivedQty, damageQuantity: 0, dcQuantity: null, type: 'GENERAL', forOrderRef: null, ...over });

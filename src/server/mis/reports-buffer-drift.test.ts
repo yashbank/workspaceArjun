@@ -6,6 +6,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- loose in-memory Prisma mock rows
 type Row = Record<string, any>;
 /** A minimal Prisma-Decimal stand-in for every `.toNumber()` call site in the report. */
 const D = (n: number) => ({ toNumber: () => n, valueOf: () => n });

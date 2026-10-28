@@ -83,6 +83,7 @@ export function AttendanceScreen({ records, unrecorded = [], todayKey, summary, 
   const [punchKind, setPunchKind] = useState<'IN' | 'OUT'>('IN');
   const [punchIds, setPunchIds] = useState<string[]>([]);
   const [punchTime, setPunchTime] = useState('');
+  const [mountedAt] = useState(() => Date.now()); // fallback date, read once (render must stay pure)
   const openPunch = (kind: 'IN' | 'OUT', ids: string[]) => { setPunchKind(kind); setPunchIds(ids); setPunchTime(''); setPunchOpen(true); };
   const submitPunch = () => startTransition(async () => {
     const res = await bulkPunchAction(punchKind, punchIds, { date, time: punchTime || null });
@@ -95,7 +96,7 @@ export function AttendanceScreen({ records, unrecorded = [], todayKey, summary, 
   const allRecords: AttendanceRec[] = [
     ...records,
     ...unrecorded.map((e): AttendanceRec => ({
-      id: `new:${e.id}`, date: new Date(date ?? todayKey ?? Date.now()), status: 'NOT_RECORDED', clockIn: null, clockOut: null,
+      id: `new:${e.id}`, date: new Date(date ?? todayKey ?? mountedAt), status: 'NOT_RECORDED', clockIn: null, clockOut: null,
       approvedOut: false, lateMinutes: 0, otMinutes: 0, notes: null, employee: e, shift: null,
     })),
   ];
