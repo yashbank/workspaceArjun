@@ -44,6 +44,7 @@ Details per ticket: `docs/qa/R2_ROUND5_TRIAGE.md` (plan) · `HANDOFF.md` (contex
 - **Rerun 2026-10-28 (pravin, 13 GB free):** those 5 files → Test Files 5 passed (5) · Tests 164 passed (164). Baseline: 378/379 files pass (1 skipped), 0 real failures.
 
 ## Log (newest first, one line each: date · account · what · sha)
+- 2026-10-28 · pravin · 1D follow-up: lint now 0 errors (attendance-screen purity, list-pager reset-on-key, file-browser mount read, 6 test-mock any). Suite 394 green, typecheck green · 44f1ea1
 - 2026-10-28 · pravin · 1D done: new tests 185,186; 187-189,191-196 already covered (existing tests); 190 BY_DESIGN. Full suite 394 files green. Stale Prisma client regenerated (db:generate) to fix typecheck. Lint red on pre-existing files (file-browser, attendance-screen, list-pager, inventory import route.test) — not 1D. No migration · 862030a
 - 2026-10-28 · mac1 · 1C done: 155-160. Full suite 393 files green. Migration 20261028000000_r2_doc_version_void APPLIED + promoted. · 9f64373
 - 2026-10-28 · mac1 · 1B done: 124-126,138,140-142,146,147,151,152,(153 test); 139 PARTIAL (due date added; qty/unit DEFERRED: MisOrder has no such columns, needs schema change). Half-day leave now follows Leave-pay setting (default Unpaid; Paid = 1.0 day, Unpaid = 0.5). Full suite 392 files green after 2 fixes. No migration · 02579f9
