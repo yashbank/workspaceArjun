@@ -17,8 +17,8 @@ Details per ticket: `docs/qa/R2_ROUND5_TRIAGE.md` (plan) · `HANDOFF.md` (contex
 | 1B | Batch B BOM list + search UX: 124–126, 138–142, 146, 147, 151 (clamp), 152 | DONE 02579f9 |
 | 1C | Batch C documents: 155 (owner: self-approve allowed), 156–160 (158 = write VOID migration, do NOT apply; 160 = inline alert, never print corrupt copy) | DONE 9f64373 |
 | 1D | Batch D store/orders integrity 185–196: mostly ALREADY_FIXED → characterization tests only | DONE 862030a |
-| 1E | Batch E employees/kiosk/APK 177–182 (177 unsigned release build; 181 accept pull-based revoke; 182 no photo capture, no code) | TODO |
-| 1F | Batch F test health 197–209: `.gitattributes` `* text=auto eol=lf`, wage-rule-keys timeout, store-tap-targets `\r?\n`. Do not weaken assertions | TODO |
+| 1E | Batch E employees/kiosk/APK 177–182 (177 unsigned release build; 181 accept pull-based revoke; 182 no photo capture, no code) | IN_PROGRESS pravin 2026-10-28 |
+| 1F | Batch F test health 197–209: `.gitattributes` `* text=auto eol=lf`, wage-rule-keys timeout, store-tap-targets `\r?\n`. Do not weaken assertions | IN_PROGRESS pravin 2026-10-28 |
 | 1G | R2-173 shift/overtime/auto clock-out/busy carry-over (after 1A) | TODO |
 | 1H | R2-179 paid lunch break punches, duration in Owner settings (after 1F) | TODO |
 | 2 | P2 gates: unit → full suite+typecheck+lint+build → browser pass per role → independent verifier on sheet Steps | TODO |
