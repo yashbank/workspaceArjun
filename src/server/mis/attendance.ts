@@ -1,11 +1,12 @@
 import { db } from '@/server/db';
 import { requirePermission, type MisActor } from '@/server/mis/auth';
 import { logAuditEvent } from '@/server/mis/audit';
-import { getCorrectionWindowDays, getFactoryTimezone } from '@/server/mis/business-rules';
+import { getCorrectionWindowDays, getFactoryTimezone, getLunchBreakMinutes } from '@/server/mis/business-rules';
 import { deriveDays, isWithinCorrectionWindow } from '@/lib/mis/attendance-day';
 import { addDaysToDateKey, dateKeyToDbDate, factoryDateKey, zonedParts } from '@/lib/mis/factory-time';
 import { resolveShiftAt } from '@/lib/mis/shift-window';
-import { LATENESS_WAIVED_NOTE, punchMinutes } from '@/lib/mis/punch-minutes';
+import { LATENESS_WAIVED_NOTE } from '@/lib/mis/punch-minutes';
+import { punchMinutesNet } from '@/lib/mis/break-minutes';
 import { HALF_DAY_LEAVE, isRequestableLeaveType, leaveCoversDayWhere, leaveRangesOverlap, leaveWorkingDays, validateLeaveRange, type RequestableLeaveType } from '@/lib/mis/leave';
 
 /** The factory's today (D22) — never the server's, which is a different day for 2.5 hours a night. */
@@ -442,6 +443,7 @@ export async function bulkPunch(kind: 'IN' | 'OUT', employeeIds: string[], opts:
     return shiftCache.get(sid) ?? null;
   };
   if (kind === 'OUT' && opts.shiftId && !(await shiftOf(opts.shiftId))?.isActive) throw new Error('That shift is not an active shift');
+  const paidLunch = kind === 'OUT' ? await getLunchBreakMinutes() : 0;
   const stamp = time ? { editedAt: new Date(), editedById: actor.userId } : {};
   const records = await db.$transaction(async (tx) => {
     const out = [];
@@ -458,7 +460,8 @@ export async function bulkPunch(kind: 'IN' | 'OUT', employeeIds: string[], opts:
         const row = byEmp.get(employeeId)!;
         const shiftId = opts.shiftId ?? row.shiftId ?? null;
         // Derived at punch time (no cron): the shift closes at its end, the rest is OT. punchMinutes is the one OT rule.
-        const mins = punchMinutes({ workDate: key, clockIn: row.clockIn, clockOut: at }, await shiftOf(shiftId), timeZone);
+        // R2-179: lunch is paid up to the Owner allowance; only the excess pulls the effective clock-out earlier.
+        const mins = punchMinutesNet({ workDate: key, clockIn: row.clockIn, clockOut: at, breakOut: row.breakOutAt, breakIn: row.breakInAt }, await shiftOf(shiftId), timeZone, paidLunch);
         out.push(await tx.misAttendance.update({
           where: { id: row.id },
           data: { clockOut: at, ...(shiftId ? { shiftId } : {}), ...(mins.otMinutes !== null ? { otMinutes: mins.otMinutes } : {}), ...stamp },
@@ -475,6 +478,49 @@ export async function bulkPunch(kind: 'IN' | 'OUT', employeeIds: string[], opts:
     after: { date: key, time, count: toWrite.length, employeeIds: toWrite, ...(kind === 'OUT' && opts.shiftId ? { shiftId: opts.shiftId } : {}) },
   });
   return { records, skipped };
+}
+
+/**
+ * R2-179: record a lunch break-out / break-in on today's row for several people. Only breakOutAt / breakInAt are
+ * written - the morning punch is never touched. Anyone it cannot record is skipped with a reason.
+ */
+export async function punchBreak(kind: 'OUT' | 'IN', employeeIds: string[], opts: { time?: string | null } = {}) {
+  const actor = await requirePermission('attendance.write');
+  const [key, timeZone] = await Promise.all([today(), getFactoryTimezone()]);
+  const time = opts.time?.trim() || null;
+  if (time !== null && !TIME_OF_DAY.test(time)) throw new Error('Time must look like 12:30');
+  const ids = [...new Set(employeeIds)];
+  if (ids.length === 0) throw new Error('Select at least one employee');
+  const at = time ? factoryTimeToInstant(key, time, timeZone) : new Date();
+  if (at.getTime() > Date.now() + 60_000) throw new Error('That time is in the future');
+  const rows = await db.misAttendance.findMany({ where: { date: dateKeyToDbDate(key), employeeId: { in: ids } } });
+  const byEmp = new Map(rows.map((r) => [r.employeeId, r]));
+  const skipped: SkippedPunch[] = [];
+  const toWrite: string[] = [];
+  for (const id of ids) {
+    const row = byEmp.get(id);
+    if (!row?.clockIn) skipped.push({ employeeId: id, reason: 'Not clocked in' });
+    else if (row.clockOut) skipped.push({ employeeId: id, reason: 'Already clocked out' });
+    else if (at.getTime() <= row.clockIn.getTime()) skipped.push({ employeeId: id, reason: 'Before the clock-in' });
+    else if (kind === 'OUT' && row.breakOutAt) skipped.push({ employeeId: id, reason: 'Break already started' });
+    else if (kind === 'IN' && !row.breakOutAt) skipped.push({ employeeId: id, reason: 'Break not started' });
+    else if (kind === 'IN' && row.breakInAt) skipped.push({ employeeId: id, reason: 'Break already ended' });
+    else if (kind === 'IN' && at.getTime() <= row.breakOutAt!.getTime()) skipped.push({ employeeId: id, reason: 'Before the break-out' });
+    else toWrite.push(id);
+  }
+  if (toWrite.length > 0) {
+    await db.$transaction(
+      toWrite.map((id) => db.misAttendance.update({ where: { id: byEmp.get(id)!.id }, data: kind === 'OUT' ? { breakOutAt: at } : { breakInAt: at } })),
+    );
+  }
+  await logAuditEvent({
+    actorId: actor.userId,
+    action: kind === 'OUT' ? 'BREAK_OUT' : 'BREAK_IN',
+    entity: 'MisAttendance',
+    entityId: 'bulk',
+    after: { date: key, time, count: toWrite.length, employeeIds: toWrite },
+  });
+  return { skipped };
 }
 
 export async function listShifts() {

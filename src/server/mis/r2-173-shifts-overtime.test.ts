@@ -25,7 +25,7 @@ vi.mock('@/server/auth', () => ({ getCurrentUser: async () => ({ id: 'u1' }) }))
 vi.mock('@/server/mis/roles', () => ({ getMisRole: async () => 'OWNER' }));
 vi.mock('@/server/mis/audit', () => ({ logAuditEvent: vi.fn() }));
 vi.mock('@/server/mis/visibility', () => ({ resolveVisibleEmployeeWhere: async () => ({}) }));
-vi.mock('@/server/mis/business-rules', () => ({ getFactoryTimezone: async () => 'Asia/Kolkata', getCorrectionWindowDays: async () => 30 }));
+vi.mock('@/server/mis/business-rules', () => ({ getFactoryTimezone: async () => 'Asia/Kolkata', getCorrectionWindowDays: async () => 30, getLunchBreakMinutes: async () => 30 }));
 
 const att = await import('./attendance');
 const alloc = await import('./worker-allocation');

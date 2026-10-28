@@ -6,7 +6,7 @@ import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import { DateInput, Input, TimeInput } from '@/components/mis/kit/input';
-import { clockInAction, clockOutAction, approveClockOutAction, editAttendanceAction, markAbsentBulkAction, bulkPunchAction, listPunchesForDayAction, addAttendanceNoteAction } from '@/app/(mis)/mis/attendance/actions';
+import { clockInAction, clockOutAction, approveClockOutAction, editAttendanceAction, markAbsentBulkAction, bulkPunchAction, punchBreakAction, listPunchesForDayAction, addAttendanceNoteAction } from '@/app/(mis)/mis/attendance/actions';
 import { useToast } from '@/components/ui/toast';
 import { addDaysToDateKey, formatFactoryTime, zonedParts } from '@/lib/mis/factory-time';
 import type { ActionResult } from '@/lib/mis/action-result';
@@ -97,6 +97,12 @@ export function AttendanceScreen({ records, unrecorded = [], todayKey, summary, 
     if (!settle(res)) return;
     if (res.ok && res.value.skipped.length > 0) toast('info', `${res.value.skipped.length} skipped: ${[...new Set(res.value.skipped.map((s) => s.reason))].join(', ')}`);
     setPunchOpen(false);
+    setSelected(new Set());
+  });
+  const breakSelected = (kind: 'OUT' | 'IN') => startTransition(async () => {
+    const res = await punchBreakAction(kind, [...selected]);
+    if (!settle(res)) return;
+    if (res.ok && res.value.skipped.length > 0) toast('info', `${res.value.skipped.length} skipped: ${[...new Set(res.value.skipped.map((s) => s.reason))].join(', ')}`);
     setSelected(new Set());
   });
   // R2-94/95: people with no register row yet (nobody punched them) are shown too, so the operator can clock them in or mark them absent.
@@ -242,6 +248,8 @@ export function AttendanceScreen({ records, unrecorded = [], todayKey, summary, 
                 <Button variant="ghost" onClick={() => setSelected(new Set())}>Clear</Button>
                 <Button variant="secondary" onClick={() => openPunch('IN', [...selected])} disabled={isPending}>Bulk Clock In</Button>
                 <Button variant="secondary" onClick={() => openPunch('OUT', [...selected])} disabled={isPending}>Bulk Clock Out</Button>
+                {isToday && <Button variant="secondary" onClick={() => breakSelected('OUT')} disabled={isPending}>Break out</Button>}
+                {isToday && <Button variant="secondary" onClick={() => breakSelected('IN')} disabled={isPending}>Break in</Button>}
                 <Button onClick={markSelectedAbsent} disabled={isPending}>{isPending ? 'Marking…' : 'Mark Absent'}</Button>
               </div>
             </div>

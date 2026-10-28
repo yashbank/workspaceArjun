@@ -9,6 +9,7 @@ import {
 } from '@/lib/mis/attendance-day';
 import { dateKeyToDbDate, formatFactoryTime } from '@/lib/mis/factory-time';
 import { isLatenessWaived, punchMinutes } from '@/lib/mis/punch-minutes';
+import { punchMinutesNet } from '@/lib/mis/break-minutes';
 import {
   isIdempotencyKey,
   isUuid,
@@ -21,7 +22,7 @@ import {
 import { getCurrentUser } from '@/server/auth';
 import { logAuditEvent } from '@/server/mis/audit';
 import { requirePermission } from '@/server/mis/auth';
-import { getCorrectionWindowDays, getFactoryTimezone } from '@/server/mis/business-rules';
+import { getCorrectionWindowDays, getFactoryTimezone, getLunchBreakMinutes } from '@/server/mis/business-rules';
 import { runIdempotent, type IdempotentResult, type MisTx, type RunOptions } from '@/server/mis/idempotency';
 import {
   authenticateDevice,
@@ -145,7 +146,7 @@ async function applyPunch(
   const recordedAt = new Date(envelope.clientRecordedAt);
   if (Number.isNaN(recordedAt.getTime())) throw rejectable('MALFORMED', 'The recorded time is not a valid date.');
 
-  const [timeZone, windowDays] = await Promise.all([getFactoryTimezone(), getCorrectionWindowDays()]);
+  const [timeZone, windowDays, paidLunch] = await Promise.all([getFactoryTimezone(), getCorrectionWindowDays(), getLunchBreakMinutes()]);
 
   // Who was scanned? The employee code is unique; a soft-deleted or inactive
   // person is a different problem from an unknown one, so look without filtering.
@@ -320,7 +321,7 @@ async function applyPunch(
       const clockOut = day.clockOut ?? row.clockOut;
       const shiftId = day.shiftId ?? row.shiftId;
       // R2-106: minutes follow the merged clock times; an unknown side keeps the stored figure.
-      const mins = punchMinutes({ workDate: day.workDate, clockIn, clockOut }, shifts.find((s) => s.id === shiftId), timeZone);
+      const mins = punchMinutesNet({ workDate: day.workDate, clockIn, clockOut, breakOut: row.breakOutAt, breakIn: row.breakInAt }, shifts.find((s) => s.id === shiftId), timeZone, paidLunch);
       await tx.misAttendance.update({
         where: { id: row.id },
         data: {

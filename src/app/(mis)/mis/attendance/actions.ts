@@ -12,6 +12,7 @@ import {
   listPunchesForDay,
   waiveLateness,
   bulkPunch,
+  punchBreak,
   deleteShift,
   cancelLeaveRequest,
 } from '@/server/mis/attendance';
@@ -105,6 +106,13 @@ export async function waiveLatenessAction(reason: string, date?: string) {
 export async function bulkPunchAction(kind: 'IN' | 'OUT', employeeIds: string[], opts?: { date?: string; time?: string | null; shiftId?: string | null }) {
   return asResult(async () => {
     const out = await bulkPunch(kind, employeeIds, opts);
+    revalidatePath('/mis/attendance');
+    return { skipped: out.skipped };
+  });
+}
+export async function punchBreakAction(kind: 'OUT' | 'IN', employeeIds: string[]) {
+  return asResult(async () => {
+    const out = await punchBreak(kind, employeeIds);
     revalidatePath('/mis/attendance');
     return { skipped: out.skipped };
   });

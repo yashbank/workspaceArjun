@@ -90,6 +90,7 @@ vi.mock('@/server/mis/audit', () => ({ logAuditEvent: (...a: unknown[]) => audit
 vi.mock('@/server/mis/business-rules', () => ({
   getFactoryTimezone: async () => 'Asia/Kolkata',
   getCorrectionWindowDays: async () => 30,
+  getLunchBreakMinutes: async () => 30,
 }));
 
 const att = await import('./attendance');
