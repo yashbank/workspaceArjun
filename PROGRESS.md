@@ -22,7 +22,7 @@ Details per ticket: `docs/qa/R2_ROUND5_TRIAGE.md` (plan) · `HANDOFF.md` (contex
 | 1G | R2-173 shift/overtime/auto clock-out/busy carry-over (after 1A) | DONE ae55c34 |
 | 1H | R2-179 paid lunch break punches, duration in Owner settings (after 1F) | DONE ed00208 (Android kiosk break button not built; register only) |
 | 2 | P2 gates: unit → full suite+typecheck+lint+build → browser pass per role → independent verifier on sheet Steps | DONE 1de9464 (e2e on preview: 723 pass; 22 fail identically on production = pre-existing, not this branch; 2 phone-overflow regressions fixed) |
-| 3 | P3: PR + merge, confirm Vercel Ready for SHA, update tracker xlsx + `docs/qa/R2_ROUND5_RESULTS.md`, tester message (sheet rows → "Fixed - Ready to Retest" + notes + release + SHA), ≤15-line report | IN_PROGRESS pravin 2026-10-28 |
+| 3 | P3: PR + merge, confirm Vercel Ready for SHA, update tracker xlsx + `docs/qa/R2_ROUND5_RESULTS.md`, tester message (sheet rows → "Fixed - Ready to Retest" + notes + release + SHA), ≤15-line report | PARTIAL — PR #98 merged 477c535, Vercel Ready, prod smoke OK, APK built, results doc done. PENDING: tester Google Sheet rows (needs Sheets connector) |
 
 ## Owner decisions
 - R2-155: Owner MAY approve a version they prepared — no second person required. **DECIDED**
@@ -44,6 +44,7 @@ Details per ticket: `docs/qa/R2_ROUND5_TRIAGE.md` (plan) · `HANDOFF.md` (contex
 - **Rerun 2026-10-28 (pravin, 13 GB free):** those 5 files → Test Files 5 passed (5) · Tests 164 passed (164). Baseline: 378/379 files pass (1 skipped), 0 real failures.
 
 ## Log (newest first, one line each: date · account · what · sha)
+- 2026-10-28 · pravin · 3: PR #98 merged (477c535), Vercel Ready, prod phone smoke 16/16, APK at mis-kiosk-android/app/build/outputs/apk/release/app-release-unsigned.apk. Local xlsx has no R2-124+ rows (unchanged); Google Sheet update pending · 477c535
 - 2026-10-28 · pravin · 2 done: unit 397 files green, lint/typecheck/build green; permission check PASS (WARN voidDocumentVersion gated orders.read); Playwright on preview 723 pass, 22 pre-existing fails (same on prod), BOM/Shifts phone overflow fixed + rechecked 20/20 · 1de9464
 - 2026-10-28 · pravin · 1H done: migration applied+promoted (2289403); punchBreak + paid-break OT in bulk/kiosk punch-out + register Break buttons. Suite 397 green, lint+typecheck+build green · ed00208
 - 2026-10-28 · pravin · 1H half A: lunch setting ATTENDANCE_LUNCH_BREAK_MINUTES (30, owner-only), break-minutes.ts maths, schema breakOutAt/breakInAt + pending migration NOT APPLIED. WARNING: schema now ahead of DB — do not deploy/merge before migration is applied. Suite 396 green, lint+typecheck+build green · 699add4
