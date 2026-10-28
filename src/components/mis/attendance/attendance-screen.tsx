@@ -50,7 +50,7 @@ function toTimeInput(d: Date | null, timeZone: string) {
 
 function fmtMin(m: number) { return m > 0 ? `${m}m` : '—'; }
 
-export function AttendanceScreen({ records, unrecorded = [], todayKey, summary, shifts: _shifts, canWrite, canNote = false, view, monthKey, date, timeZone }: Props) {
+export function AttendanceScreen({ records, unrecorded = [], todayKey, summary, shifts, canWrite, canNote = false, view, monthKey, date, timeZone }: Props) {
   const { toast } = useToast();
   const router = useRouter();
   /** B63: show a refusal as a toast; true when the action went through. */
@@ -84,9 +84,16 @@ export function AttendanceScreen({ records, unrecorded = [], todayKey, summary, 
   const [punchIds, setPunchIds] = useState<string[]>([]);
   const [punchTime, setPunchTime] = useState('');
   const [mountedAt] = useState(() => Date.now()); // fallback date, read once (render must stay pure)
-  const openPunch = (kind: 'IN' | 'OUT', ids: string[]) => { setPunchKind(kind); setPunchIds(ids); setPunchTime(''); setPunchOpen(true); };
+  const [punchShift, setPunchShift] = useState('');
+  const openPunch = (kind: 'IN' | 'OUT', ids: string[]) => {
+    setPunchKind(kind); setPunchIds(ids); setPunchTime('');
+    // R2-173: clock-out shift is prefilled with the (first) person's clock-in shift.
+    const shiftName = records.find((r) => r.employee && ids.includes(r.employee.id))?.shift?.name;
+    setPunchShift(shifts.find((sh) => sh.name === shiftName)?.id ?? '');
+    setPunchOpen(true);
+  };
   const submitPunch = () => startTransition(async () => {
-    const res = await bulkPunchAction(punchKind, punchIds, { date, time: punchTime || null });
+    const res = await bulkPunchAction(punchKind, punchIds, { date, time: punchTime || null, shiftId: punchKind === 'OUT' && punchShift ? punchShift : null });
     if (!settle(res)) return;
     if (res.ok && res.value.skipped.length > 0) toast('info', `${res.value.skipped.length} skipped: ${[...new Set(res.value.skipped.map((s) => s.reason))].join(', ')}`);
     setPunchOpen(false);
@@ -271,6 +278,15 @@ export function AttendanceScreen({ records, unrecorded = [], todayKey, summary, 
         <div className="flex flex-col gap-4 p-4">
           <p className="text-sm text-slate-600">{punchIds.length} employee{punchIds.length === 1 ? '' : 's'} · {date ?? todayKey}</p>
           <TimeInput label={isToday ? 'Time (leave blank for now)' : 'Time (required for a past day)'} value={punchTime} onChange={(e) => setPunchTime(e.target.value)} />
+          {punchKind === 'OUT' && (
+            <div>
+              <label className="text-sm font-medium text-slate-700">Shift</label>
+              <select className="mt-1 w-full min-h-12 rounded border border-slate-300 bg-white px-3 text-base text-slate-900" value={punchShift} onChange={(e) => setPunchShift(e.target.value)}>
+                <option value="">Keep the clock-in shift</option>
+                {shifts.map((sh) => <option key={sh.id} value={sh.id}>{sh.name}</option>)}
+              </select>
+            </div>
+          )}
           <div className="flex gap-2 pt-2">
             <Button onClick={submitPunch} disabled={isPending || (!isToday && !punchTime)}>{isPending ? 'Saving…' : 'Save'}</Button>
             <Button variant="ghost" onClick={() => setPunchOpen(false)}>Cancel</Button>

@@ -5,7 +5,7 @@ import { getCorrectionWindowDays, getFactoryTimezone } from '@/server/mis/busine
 import { deriveDays, isWithinCorrectionWindow } from '@/lib/mis/attendance-day';
 import { addDaysToDateKey, dateKeyToDbDate, factoryDateKey, zonedParts } from '@/lib/mis/factory-time';
 import { resolveShiftAt } from '@/lib/mis/shift-window';
-import { LATENESS_WAIVED_NOTE } from '@/lib/mis/punch-minutes';
+import { LATENESS_WAIVED_NOTE, punchMinutes } from '@/lib/mis/punch-minutes';
 import { HALF_DAY_LEAVE, isRequestableLeaveType, leaveCoversDayWhere, leaveRangesOverlap, leaveWorkingDays, validateLeaveRange, type RequestableLeaveType } from '@/lib/mis/leave';
 
 /** The factory's today (D22) — never the server's, which is a different day for 2.5 hours a night. */
@@ -401,7 +401,7 @@ export type SkippedPunch = { employeeId: string; reason: string };
  * for today (blank = now) and required for a past day inside the correction window. An explicit time is a hand
  * entry, so it stamps `editedAt` like any other register edit. Anyone it cannot punch is skipped with a reason.
  */
-export async function bulkPunch(kind: 'IN' | 'OUT', employeeIds: string[], opts: { date?: string; time?: string | null } = {}) {
+export async function bulkPunch(kind: 'IN' | 'OUT', employeeIds: string[], opts: { date?: string; time?: string | null; shiftId?: string | null } = {}) {
   const actor = await requirePermission('attendance.write');
   const [todayKey, timeZone] = await Promise.all([today(), getFactoryTimezone()]);
   const key = opts.date ?? todayKey;
@@ -434,6 +434,14 @@ export async function bulkPunch(kind: 'IN' | 'OUT', employeeIds: string[], opts:
     else if (at.getTime() <= row.clockIn.getTime()) skipped.push({ employeeId: id, reason: 'Before the clock-in' });
     else toWrite.push(id);
   }
+  // R2-173: clock-out may name the shift (prefilled with the clock-in shift). Minutes past that shift's end are OT.
+  const shiftCache = new Map<string, Awaited<ReturnType<typeof db.misShift.findUnique>>>();
+  const shiftOf = async (sid: string | null | undefined) => {
+    if (!sid) return null;
+    if (!shiftCache.has(sid)) shiftCache.set(sid, await db.misShift.findUnique({ where: { id: sid } }));
+    return shiftCache.get(sid) ?? null;
+  };
+  if (kind === 'OUT' && opts.shiftId && !(await shiftOf(opts.shiftId))?.isActive) throw new Error('That shift is not an active shift');
   const stamp = time ? { editedAt: new Date(), editedById: actor.userId } : {};
   const records = await db.$transaction(async (tx) => {
     const out = [];
@@ -447,7 +455,14 @@ export async function bulkPunch(kind: 'IN' | 'OUT', employeeIds: string[], opts:
           }),
         );
       } else {
-        out.push(await tx.misAttendance.update({ where: { id: byEmp.get(employeeId)!.id }, data: { clockOut: at, ...stamp } }));
+        const row = byEmp.get(employeeId)!;
+        const shiftId = opts.shiftId ?? row.shiftId ?? null;
+        // Derived at punch time (no cron): the shift closes at its end, the rest is OT. punchMinutes is the one OT rule.
+        const mins = punchMinutes({ workDate: key, clockIn: row.clockIn, clockOut: at }, await shiftOf(shiftId), timeZone);
+        out.push(await tx.misAttendance.update({
+          where: { id: row.id },
+          data: { clockOut: at, ...(shiftId ? { shiftId } : {}), ...(mins.otMinutes !== null ? { otMinutes: mins.otMinutes } : {}), ...stamp },
+        }));
       }
     }
     return out;
@@ -457,7 +472,7 @@ export async function bulkPunch(kind: 'IN' | 'OUT', employeeIds: string[], opts:
     action: kind === 'IN' ? 'BULK_CLOCK_IN' : 'BULK_CLOCK_OUT',
     entity: 'MisAttendance',
     entityId: 'bulk',
-    after: { date: key, time, count: toWrite.length, employeeIds: toWrite },
+    after: { date: key, time, count: toWrite.length, employeeIds: toWrite, ...(kind === 'OUT' && opts.shiftId ? { shiftId: opts.shiftId } : {}) },
   });
   return { records, skipped };
 }

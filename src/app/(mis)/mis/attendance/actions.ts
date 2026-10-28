@@ -102,7 +102,7 @@ export async function waiveLatenessAction(reason: string, date?: string) {
     return { count: out.count };
   });
 }
-export async function bulkPunchAction(kind: 'IN' | 'OUT', employeeIds: string[], opts?: { date?: string; time?: string | null }) {
+export async function bulkPunchAction(kind: 'IN' | 'OUT', employeeIds: string[], opts?: { date?: string; time?: string | null; shiftId?: string | null }) {
   return asResult(async () => {
     const out = await bulkPunch(kind, employeeIds, opts);
     revalidatePath('/mis/attendance');
