@@ -187,7 +187,7 @@ const NOT_A_DOOR: Record<string, string[]> = {
   'employee.ts': [],
   'users.ts': [],
   'wage-type.ts': [],
-  'business-rules.ts': ['getOfflineRules', 'getFactoryTimezone', 'getCorrectionWindowDays', 'getRuleValue', 'getLineClearanceRule', 'getAqlThresholds', 'getPoApprovalThreshold'],
+  'business-rules.ts': ['getOfflineRules', 'getFactoryTimezone', 'getCorrectionWindowDays', 'getLunchBreakMinutes', 'getRuleValue', 'getLineClearanceRule', 'getAqlThresholds', 'getPoApprovalThreshold'],
   'payroll.ts': [],
   'reports.ts': [],
   'pay-components.ts': [],

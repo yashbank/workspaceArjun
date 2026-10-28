@@ -889,6 +889,8 @@ model MisAttendance {
   status       String      @default("PRESENT")
   clockIn      DateTime?   @map("clock_in")
   clockOut     DateTime?   @map("clock_out")
+  breakOutAt   DateTime?   @map("break_out_at")
+  breakInAt    DateTime?   @map("break_in_at")
   approvedOut  Boolean     @default(false) @map("approved_out")
   approvedById String?     @map("approved_by_id") @db.Uuid
   otMinutes    Int         @default(0) @map("ot_minutes")

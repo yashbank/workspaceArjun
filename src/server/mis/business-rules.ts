@@ -221,11 +221,19 @@ export async function getCorrectionWindowDays(): Promise<number> {
 
 /** R3 B37: keys that move money or the attendance register are Owner-level (`wages.read`) even though Admin holds `settings.write`. */
 const ATTENDANCE_CORRECTION_KEY = 'ATTENDANCE_CORRECTION_DAYS';
-const OWNER_ONLY_RULE_KEYS: readonly string[] = [PO_APPROVAL_THRESHOLD_KEY, ATTENDANCE_CORRECTION_KEY];
-const INTEGER_RULE_KEYS: readonly string[] = [ATTENDANCE_CORRECTION_KEY, OFFLINE_SKEW_KEY, OFFLINE_MAX_AGE_KEY, LINE_CLEARANCE_MAX_MINUTES_KEY];
+
+/** R2-179: the paid lunch allowance in minutes (Owner setting, row seeded by the migration). Ungated read; 30 when unset. */
+export async function getLunchBreakMinutes(): Promise<number> {
+  const parsed = Number.parseInt((await getRuleValue(LUNCH_BREAK_KEY)) ?? '', 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 30;
+}
+export const LUNCH_BREAK_KEY = 'ATTENDANCE_LUNCH_BREAK_MINUTES';
+const OWNER_ONLY_RULE_KEYS: readonly string[] = [PO_APPROVAL_THRESHOLD_KEY, ATTENDANCE_CORRECTION_KEY, LUNCH_BREAK_KEY];
+const INTEGER_RULE_KEYS: readonly string[] = [ATTENDANCE_CORRECTION_KEY, LUNCH_BREAK_KEY, OFFLINE_SKEW_KEY, OFFLINE_MAX_AGE_KEY, LINE_CLEARANCE_MAX_MINUTES_KEY];
 const RULE_RANGES: Record<string, [number, number]> = {
   [PO_APPROVAL_THRESHOLD_KEY]: [0, 10_000_000],
   [ATTENDANCE_CORRECTION_KEY]: [0, 60],
+  [LUNCH_BREAK_KEY]: [0, 180],
 };
 
 /** R3 B37: a number rule must be a finite number (an integer for the integer keys) inside its range. */
