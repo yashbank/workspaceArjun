@@ -68,7 +68,7 @@ describe('WAGE_RULE_KEYS', () => {
       .filter((f) => !/\.test\.tsx?$/.test(f) && !f.includes('/testing/') && !f.includes('/generated/'))
       .filter((f) => /getWageRuleHistory\(/.test(readSource(f)) && !f.endsWith('business-rules.ts'));
     expect(historyCallers).toEqual(['src/server/mis/payroll.ts']);
-  });
+  }, 30_000);
 
   it('the settings list, the editor and the audit writer all consult the classifier', () => {
     const src = readSource('src/server/mis/business-rules.ts');

@@ -105,7 +105,7 @@ describe('every tab opens for the role that is shown it', () => {
 });
 
 describe('badges', () => {
-  const nav = readFileSync(path.join(process.cwd(), 'src/server/mis/navigation.ts'), 'utf8');
+  const nav = readFileSync(path.join(process.cwd(), 'src/server/mis/navigation.ts'), 'utf8').replace(/\r\n/g, '\n');
   const start = nav.indexOf('export async function getNavBadges');
   const body = nav.slice(start);
 
