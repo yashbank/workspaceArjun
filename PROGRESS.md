@@ -20,7 +20,7 @@ Details per ticket: `docs/qa/R2_ROUND5_TRIAGE.md` (plan) · `HANDOFF.md` (contex
 | 1E | Batch E employees/kiosk/APK 177–182 (177 unsigned release build; 181 accept pull-based revoke; 182 no photo capture, no code) | PARTIAL — 177 BLOCKED: no JDK/Android SDK on pravin Mac, build APK on Mac-1; 178 covered (r2-bank-details.test.ts:45); 180-182 no code per owner decisions |
 | 1F | Batch F test health 197–209: `.gitattributes` `* text=auto eol=lf`, wage-rule-keys timeout, store-tap-targets `\r?\n`. Do not weaken assertions | DONE 3f5c245 |
 | 1G | R2-173 shift/overtime/auto clock-out/busy carry-over (after 1A) | DONE ae55c34 |
-| 1H | R2-179 paid lunch break punches, duration in Owner settings (after 1F) | TODO |
+| 1H | R2-179 paid lunch break punches, duration in Owner settings (after 1F) | IN_PROGRESS pravin 2026-10-28 |
 | 2 | P2 gates: unit → full suite+typecheck+lint+build → browser pass per role → independent verifier on sheet Steps | TODO |
 | 3 | P3: PR + merge, confirm Vercel Ready for SHA, update tracker xlsx + `docs/qa/R2_ROUND5_RESULTS.md`, tester message (sheet rows → "Fixed - Ready to Retest" + notes + release + SHA), ≤15-line report | TODO |
 
