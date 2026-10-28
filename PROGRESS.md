@@ -16,7 +16,7 @@ Details per ticket: `docs/qa/R2_ROUND5_TRIAGE.md` (plan) · `HANDOFF.md` (contex
 | 1A | Batch A attendance/payroll: 161, 163, 165, 166, 167 (half-day leave), 168, 169, 170, 171, 172, 175 (reopen, conditional), 184 | DONE bb8593d |
 | 1B | Batch B BOM list + search UX: 124–126, 138–142, 146, 147, 151 (clamp), 152 | DONE 02579f9 |
 | 1C | Batch C documents: 155 (owner: self-approve allowed), 156–160 (158 = write VOID migration, do NOT apply; 160 = inline alert, never print corrupt copy) | DONE 9f64373 |
-| 1D | Batch D store/orders integrity 185–196: mostly ALREADY_FIXED → characterization tests only | IN_PROGRESS pravin 2026-10-28 |
+| 1D | Batch D store/orders integrity 185–196: mostly ALREADY_FIXED → characterization tests only | DONE 862030a |
 | 1E | Batch E employees/kiosk/APK 177–182 (177 unsigned release build; 181 accept pull-based revoke; 182 no photo capture, no code) | TODO |
 | 1F | Batch F test health 197–209: `.gitattributes` `* text=auto eol=lf`, wage-rule-keys timeout, store-tap-targets `\r?\n`. Do not weaken assertions | TODO |
 | 1G | R2-173 shift/overtime/auto clock-out/busy carry-over (after 1A) | TODO |
@@ -44,6 +44,7 @@ Details per ticket: `docs/qa/R2_ROUND5_TRIAGE.md` (plan) · `HANDOFF.md` (contex
 - **Rerun 2026-10-28 (pravin, 13 GB free):** those 5 files → Test Files 5 passed (5) · Tests 164 passed (164). Baseline: 378/379 files pass (1 skipped), 0 real failures.
 
 ## Log (newest first, one line each: date · account · what · sha)
+- 2026-10-28 · pravin · 1D done: new tests 185,186; 187-189,191-196 already covered (existing tests); 190 BY_DESIGN. Full suite 394 files green. Stale Prisma client regenerated (db:generate) to fix typecheck. Lint red on pre-existing files (file-browser, attendance-screen, list-pager, inventory import route.test) — not 1D. No migration · 862030a
 - 2026-10-28 · mac1 · 1C done: 155-160. Full suite 393 files green. Migration 20261028000000_r2_doc_version_void APPLIED + promoted. · 9f64373
 - 2026-10-28 · mac1 · 1B done: 124-126,138,140-142,146,147,151,152,(153 test); 139 PARTIAL (due date added; qty/unit DEFERRED: MisOrder has no such columns, needs schema change). Half-day leave now follows Leave-pay setting (default Unpaid; Paid = 1.0 day, Unpaid = 0.5). Full suite 392 files green after 2 fixes. No migration · 02579f9
 - 2026-10-28 · mac1 · 1A done: 161,163,165-172,175,184 (all 12). Full suite 387 files green after 2 test-contract fixes (rule-history it.fails flipped for 161; server-gates reviewed entry for getMyAttendanceMonth). Migration 20261028000000_r2_half_day_leave APPLIED and promoted to prisma/migrations. Half-day pay flat 0.5, ignores paid/unpaid leave setting · bb8593d
