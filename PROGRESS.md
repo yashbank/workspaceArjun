@@ -44,7 +44,7 @@ Details per ticket: `docs/qa/R2_ROUND5_TRIAGE.md` (plan) · `HANDOFF.md` (contex
 - **Rerun 2026-10-28 (pravin, 13 GB free):** those 5 files → Test Files 5 passed (5) · Tests 164 passed (164). Baseline: 378/379 files pass (1 skipped), 0 real failures.
 
 ## Log (newest first, one line each: date · account · what · sha)
-- 2026-10-28 · mac1 · 1C done: 155-160. Full suite 393 files green. MIGRATION TO RUN: prisma/migrations-pending/20261028000000_r2_doc_version_void (ALTER TYPE mis_doc_version_status ADD VALUE IF NOT EXISTS 'VOID') · 9f64373
+- 2026-10-28 · mac1 · 1C done: 155-160. Full suite 393 files green. Migration 20261028000000_r2_doc_version_void APPLIED + promoted. · 9f64373
 - 2026-10-28 · mac1 · 1B done: 124-126,138,140-142,146,147,151,152,(153 test); 139 PARTIAL (due date added; qty/unit DEFERRED: MisOrder has no such columns, needs schema change). Half-day leave now follows Leave-pay setting (default Unpaid; Paid = 1.0 day, Unpaid = 0.5). Full suite 392 files green after 2 fixes. No migration · 02579f9
 - 2026-10-28 · mac1 · 1A done: 161,163,165-172,175,184 (all 12). Full suite 387 files green after 2 test-contract fixes (rule-history it.fails flipped for 161; server-gates reviewed entry for getMyAttendanceMonth). Migration 20261028000000_r2_half_day_leave APPLIED and promoted to prisma/migrations. Half-day pay flat 0.5, ignores paid/unpaid leave setting · bb8593d
 - 2026-10-28 · pravin · 0b baseline: 373/379 files, 6437 tests pass; 5 files ENOSPC (disk full), rerun needed · 88d7749
