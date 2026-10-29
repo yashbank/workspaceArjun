@@ -17,6 +17,7 @@ import {
   cancelLeaveRequest,
 } from '@/server/mis/attendance';
 import { addAttendanceNote } from '@/server/mis/attendance-month';
+import { assignRoster, removeRoster } from '@/server/mis/shift-roster';
 import { asResult } from '@/lib/mis/action-result';
 import { revalidatePath } from 'next/cache';
 
@@ -130,5 +131,18 @@ export async function cancelLeaveRequestAction(leaveId: string, reason?: string)
     revalidatePath('/mis/attendance');
     revalidatePath('/mis/attendance/leave');
     revalidatePath('/mis/approvals');
+  });
+}
+export async function assignRosterAction(input: { employeeIds: string[]; shiftId: string; startDate: string; endDate: string }) {
+  return asResult(async () => {
+    const out = await assignRoster(input);
+    revalidatePath('/mis/attendance/shifts');
+    return out;
+  });
+}
+export async function removeRosterAction(id: string) {
+  return asResult(async () => {
+    await removeRoster(id);
+    revalidatePath('/mis/attendance/shifts');
   });
 }

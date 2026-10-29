@@ -1,11 +1,11 @@
-import { evaluateAql, type AqlResult } from '@/lib/mis/aql';
+import { evaluateAql, resolveAqlPlan, thresholdsFromPlan, type AqlResult } from '@/lib/mis/aql';
 import { correctionVerdict, requireCorrectionReason } from '@/lib/mis/entry-correction';
 import { addDaysToDateKey, dateKeyToDbDate, factoryDateKey, factoryMinuteOfDay } from '@/lib/mis/factory-time';
 import { isOrderClosed } from '@/lib/mis/order-status';
 import { db } from '@/server/db';
 import { requirePermission } from '@/server/mis/auth';
 import { logAuditEvent } from '@/server/mis/audit';
-import { getAqlThresholds, getFactoryTimezone } from '@/server/mis/business-rules';
+import { getAqlThresholds, getFactoryTimezone, getRuleValue } from '@/server/mis/business-rules';
 import { notifySupervisorsOfQcDefect } from '@/server/notifications';
 
 /** checkById has no formal FK (it can point at any Supabase auth user, not
@@ -209,6 +209,8 @@ export async function recordAqlSample(input: {
   orderId: string;
   bomStageId?: string;
   sampleSize: number;
+  /** R2-233: with `qc.aql_level` set, the lot size picks the Z1.4 sample size and Ac/Re. Without it, the stored thresholds apply. */
+  lotSize?: number;
   defects: AqlDefectLine[];
   notes?: string;
 }): Promise<{ check: Awaited<ReturnType<typeof db.misQcCheck.create>>; result: AqlResult }> {
@@ -219,7 +221,9 @@ export async function recordAqlSample(input: {
   for (const line of input.defects) {
     if (!Number.isFinite(line.qty) || line.qty < 0) throw new Error('Defect quantity must be 0 or more');
   }
-  const thresholds = await getAqlThresholds();
+  if (input.lotSize != null && (!Number.isInteger(input.lotSize) || input.lotSize < 1)) throw new Error('Lot size must be a whole number of at least 1');
+  const plan = input.lotSize != null ? await resolveAqlPlan((key) => getRuleValue(key), input.lotSize) : null;
+  const thresholds = plan ? thresholdsFromPlan(plan) : await getAqlThresholds();
   if (input.sampleSize < thresholds.sampleSize) throw new Error(`Sample too small: inspect at least ${thresholds.sampleSize}`);
 
   const defectTypeIds = input.defects.map((d) => d.defectTypeId);

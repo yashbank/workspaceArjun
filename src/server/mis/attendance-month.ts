@@ -31,7 +31,27 @@ import { db } from '@/server/db';
 import { requirePermission } from '@/server/mis/auth';
 import { logAuditEvent } from '@/server/mis/audit';
 import { resolveVisibleEmployeeWhere } from '@/server/mis/visibility';
-import { getFactoryTimezone } from '@/server/mis/business-rules';
+import { getFactoryTimezone, getLunchBreakMinutes } from '@/server/mis/business-rules';
+import { toBreakShapes, unpaidTotalBreakMinutes, type BreakRow } from '@/lib/mis/attendance-breaks';
+import { canSeeComplianceFlags, COMPLIANCE_DAILY_LABEL, exceedsDailyLimit, payableWorkedMinutes } from '@/server/mis/attendance-payroll-rules';
+import { getComplianceFlags } from '@/server/mis/attendance-compliance';
+
+/** R2-211: the punches stay raw, but time before the shift starts is not worked time (and is never implied overtime). */
+function withPayableMinutes(
+  base: DayDetail,
+  rec: { clockIn: Date | null; clockOut: Date | null; shift: { startTime: string; endTime: string } | null; breakOutAt?: Date | null; breakInAt?: Date | null; breaks?: BreakRow[] },
+  workDate: string,
+  timeZone: string,
+  paidLunch = 0,
+): DayDetail {
+  // R2-216: all break rows count (legacy pair only when there are none); lunch stays paid up to the allowance.
+  const unpaid = unpaidTotalBreakMinutes(rec.breaks, { breakOut: rec.breakOutAt ?? null, breakIn: rec.breakInAt ?? null }, paidLunch);
+  base = { ...base, breaks: toBreakShapes(rec.breaks) };
+  const payable = payableWorkedMinutes({ workDate, clockIn: rec.clockIn, clockOut: rec.clockOut }, rec.shift, timeZone, unpaid);
+  if (payable === null || base.workedMinutes === null || base.shiftMinutes === null) return base;
+  const impliedOtMinutes = Math.max(0, payable - base.shiftMinutes);
+  return { ...base, workedMinutes: payable, impliedOtMinutes, otAgrees: impliedOtMinutes === base.recordedOtMinutes };
+}
 
 const asString = (v: unknown): string | null => (typeof v === 'string' && v !== '' ? v : null);
 
@@ -41,7 +61,7 @@ export async function getAttendanceMonthView(
 ): Promise<AttendanceMonthView> {
   const actor = await requirePermission('attendance.read');
 
-  const timeZone = await getFactoryTimezone();
+  const [timeZone, paidLunch] = await Promise.all([getFactoryTimezone(), getLunchBreakMinutes()]);
   const todayKey = factoryDateKey(now, timeZone);
   const { key: monthKey, running } = resolveMonth(input.month, todayKey);
   const currentKey = todayKey.slice(0, 7);
@@ -79,6 +99,7 @@ export async function getAttendanceMonthView(
             where: { employeeId: { in: ids }, date: range },
             select: {
               employeeId: true, date: true, status: true, clockIn: true, clockOut: true, otMinutes: true, lateMinutes: true,
+              breakOutAt: true, breakInAt: true, breaks: { select: { kind: true, outAt: true, inAt: true } },
               shift: { select: { name: true, startTime: true, endTime: true } },
             },
           }),
@@ -96,6 +117,9 @@ export async function getAttendanceMonthView(
     monthKey,
   );
 
+  // R2-217: warn-only compliance flags, for the roles allowed to see them.
+  const flagsById = canSeeComplianceFlags(actor.role) ? await getComplianceFlags(monthKey, ids) : {};
+
   // The person and day the side panels show.
   const wanted = asString(input.employeeId);
   const row = matrix.rows.find((r) => r.employee.id === wanted) ?? matrix.rows[0] ?? null;
@@ -110,9 +134,10 @@ export async function getAttendanceMonthView(
     if (dayIndex >= 0) {
       dayState = row.cells[dayIndex];
       const rec = keyed.find((r) => r.employeeId === row.employee.id && r.dateKey === matrix.days[dayIndex].key);
-      day = rec ? dayDetail({ status: rec.status, clockIn: rec.clockIn, clockOut: rec.clockOut, otMinutes: rec.otMinutes, lateMinutes: rec.lateMinutes, shift: rec.shift }, timeZone) : null;
+      day = rec ? withPayableMinutes(dayDetail({ status: rec.status, clockIn: rec.clockIn, clockOut: rec.clockOut, otMinutes: rec.otMinutes, lateMinutes: rec.lateMinutes, shift: rec.shift }, timeZone), rec, matrix.days[dayIndex].key, timeZone, paidLunch) : null;
     }
-    selected = { id: row.employee.id, name: row.employee.name, code: row.employee.code, month, dayKey: dayIndex >= 0 ? matrix.days[dayIndex].key : null, day, dayState };
+    const dayFlags = canSeeComplianceFlags(actor.role) && day?.workedMinutes != null && exceedsDailyLimit(day.workedMinutes) ? [COMPLIANCE_DAILY_LABEL] : [];
+    selected = { id: row.employee.id, name: row.employee.name, code: row.employee.code, month, dayKey: dayIndex >= 0 ? matrix.days[dayIndex].key : null, day, dayState, dayFlags };
   }
 
   const next = shiftMonth(monthKey, 1);
@@ -126,7 +151,7 @@ export async function getAttendanceMonthView(
     departments,
     departmentId: department?.id ?? null,
     departmentName: department?.name ?? null,
-    rows: matrix.rows.map((r) => ({ id: r.employee.id, name: r.employee.name, code: r.employee.code, department: r.employee.department, cells: r.cells, counts: r.counts })),
+    rows: matrix.rows.map((r) => ({ id: r.employee.id, name: r.employee.name, code: r.employee.code, department: r.employee.department, cells: r.cells, counts: r.counts, flags: flagsById[r.employee.id] ?? [] })),
     totals: matrix.totals,
     identityHolds: matrix.identityHolds,
     selected,

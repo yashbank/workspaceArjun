@@ -1,12 +1,17 @@
 import { db } from '@/server/db';
-import { requirePermission, type MisActor } from '@/server/mis/auth';
+import { MisForbiddenError, requirePermission, type MisActor } from '@/server/mis/auth';
+import { can } from '@/lib/mis/permissions';
 import { logAuditEvent } from '@/server/mis/audit';
 import { getCorrectionWindowDays, getFactoryTimezone, getLunchBreakMinutes } from '@/server/mis/business-rules';
 import { deriveDays, isWithinCorrectionWindow } from '@/lib/mis/attendance-day';
 import { addDaysToDateKey, dateKeyToDbDate, factoryDateKey, zonedParts } from '@/lib/mis/factory-time';
 import { resolveShiftAt } from '@/lib/mis/shift-window';
 import { LATENESS_WAIVED_NOTE } from '@/lib/mis/punch-minutes';
+import { notifyLongOvertime } from '@/server/mis/attendance-compliance';
 import { punchMinutesNet } from '@/lib/mis/break-minutes';
+import { checkClockInWindow, earlyDepartureMinutes } from '@/server/mis/attendance-payroll-rules';
+import { resolveEmployeeShiftId } from '@/server/mis/shift-roster';
+import { guessBreakKind, planBreakPunch, type BreakKind, type BreakPunchPlan } from '@/lib/mis/attendance-breaks';
 import { HALF_DAY_LEAVE, isRequestableLeaveType, leaveCoversDayWhere, leaveRangesOverlap, leaveWorkingDays, validateLeaveRange, type RequestableLeaveType } from '@/lib/mis/leave';
 
 /** The factory's today (D22) — never the server's, which is a different day for 2.5 hours a night. */
@@ -29,11 +34,16 @@ async function today(): Promise<string> {
 export async function listAttendance(date?: string) {
   await requirePermission('attendance.read');
   const d = date ?? (await today());
-  return db.misAttendance.findMany({
-    where: { date: new Date(d) },
-    include: { employee: { select: { id: true, name: true, employeeCode: true, role: true } }, shift: true },
-    orderBy: { employee: { name: 'asc' } },
-  });
+  const [rows, timeZone] = await Promise.all([
+    db.misAttendance.findMany({
+      where: { date: new Date(d) },
+      include: { employee: { select: { id: true, name: true, employeeCode: true, role: true } }, shift: true },
+      orderBy: { employee: { name: 'asc' } },
+    }),
+    getFactoryTimezone(),
+  ]);
+  // R2-215: minutes the clock-out came before the shift's end, derived at read time (no column).
+  return rows.map((r) => ({ ...r, earlyDepartureMinutes: earlyDepartureMinutes({ workDate: d, clockIn: r.clockIn, clockOut: r.clockOut }, r.shift, timeZone) }));
 }
 
 /**
@@ -164,6 +174,16 @@ async function actorEmployeeId(userId: string): Promise<string | null> {
   return row?.id ?? null;
 }
 
+/** R2-225: the sentence shown when an operator tries to decide a half-day leave. */
+export const HALF_DAY_APPROVAL_MESSAGE = 'Half-day leave needs Admin/Owner approval because it changes pay. Ask an Admin or the Owner to decide it.';
+
+/** Still a MisForbiddenError (the boundary renders it calmly), but the message says what to do. */
+function halfDayEscalationError(): MisForbiddenError {
+  const error = new MisForbiddenError('approvals.read', 'half-day leave');
+  error.message = `${error.message}. ${HALF_DAY_APPROVAL_MESSAGE}`;
+  return error;
+}
+
 export type CloseOverride = { reason: string };
 
 /**
@@ -209,9 +229,19 @@ async function loadRow(attendanceId: string) {
   return row;
 }
 
+/** R2-210: reject a clock-in outside [shift start - 30 min, shift end]. The named shift if there is one, else any active shift. */
+async function assertClockInWindow(at: Date, shiftId?: string) {
+  const shifts = await db.misShift.findMany({
+    where: { isActive: true, ...(shiftId ? { id: shiftId } : {}) },
+    select: { name: true, startTime: true, endTime: true },
+  });
+  const verdict = checkClockInWindow(at, shifts, await getFactoryTimezone());
+  if (!verdict.allowed) throw new Error(verdict.message);
+}
+
 export async function clockIn(employeeId: string, shiftId?: string) {
   const actor = await requirePermission('attendance.write');
-  const employee = await db.misEmployee.findFirst({ where: { id: employeeId }, select: { id: true, isActive: true, deletedAt: true } });
+  const employee = await db.misEmployee.findFirst({ where: { id: employeeId }, select: { id: true, isActive: true, deletedAt: true, defaultShiftId: true } });
   if (!employee) throw new Error('Employee not found');
   if (!employee.isActive || employee.deletedAt) throw new Error('This employee is not active');
   const todayKey = await today();
@@ -219,10 +249,14 @@ export async function clockIn(employeeId: string, shiftId?: string) {
   const existing = await db.misAttendance.findUnique({ where: { employeeId_date: { employeeId, date: d } } });
   if (existing?.clockIn) throw new Error('Already clocked in today');
   await guardRegisterDate(actor, todayKey, existing?.id ?? `${employeeId}:${todayKey}`);
+  const now = new Date();
+  // R2-214: no shift named -> the roster entry for today, else the employee's default shift.
+  shiftId = shiftId ?? (await resolveEmployeeShiftId(employeeId, todayKey, db, employee.defaultShiftId ?? null)) ?? undefined;
+  await assertClockInWindow(now, shiftId);
   const rec = await db.misAttendance.upsert({
     where: { employeeId_date: { employeeId, date: d } },
-    create: { employeeId, date: d, shiftId: shiftId ?? null, clockIn: new Date(), status: 'PRESENT' },
-    update: { clockIn: new Date(), status: 'PRESENT', shiftId: shiftId ?? null },
+    create: { employeeId, date: d, shiftId: shiftId ?? null, clockIn: now, status: 'PRESENT' },
+    update: { clockIn: now, status: 'PRESENT', shiftId: shiftId ?? null },
   });
   await logAuditEvent({ actorId: actor.userId, action: 'CLOCK_IN', entity: 'MisAttendance', entityId: rec.id, after: rec });
   return rec;
@@ -420,7 +454,7 @@ export async function bulkPunch(kind: 'IN' | 'OUT', employeeIds: string[], opts:
   const people = await db.misEmployee.findMany({ where: { id: { in: ids }, isActive: true, deletedAt: null }, select: { id: true } });
   if (people.length !== ids.length) throw new Error('One or more employees were not found or are not active');
   const d = dateKeyToDbDate(key);
-  const existing = await db.misAttendance.findMany({ where: { date: d, employeeId: { in: ids } } });
+  const existing = await db.misAttendance.findMany({ where: { date: d, employeeId: { in: ids } }, include: { breaks: true } });
   const byEmp = new Map(existing.map((r) => [r.employeeId, r]));
   const skipped: SkippedPunch[] = [];
   const toWrite: string[] = [];
@@ -461,7 +495,7 @@ export async function bulkPunch(kind: 'IN' | 'OUT', employeeIds: string[], opts:
         const shiftId = opts.shiftId ?? row.shiftId ?? null;
         // Derived at punch time (no cron): the shift closes at its end, the rest is OT. punchMinutes is the one OT rule.
         // R2-179: lunch is paid up to the Owner allowance; only the excess pulls the effective clock-out earlier.
-        const mins = punchMinutesNet({ workDate: key, clockIn: row.clockIn, clockOut: at, breakOut: row.breakOutAt, breakIn: row.breakInAt }, await shiftOf(shiftId), timeZone, paidLunch);
+        const mins = punchMinutesNet({ workDate: key, clockIn: row.clockIn, clockOut: at, breakOut: row.breakOutAt, breakIn: row.breakInAt, breaks: row.breaks }, await shiftOf(shiftId), timeZone, paidLunch);
         out.push(await tx.misAttendance.update({
           where: { id: row.id },
           data: { clockOut: at, ...(shiftId ? { shiftId } : {}), ...(mins.otMinutes !== null ? { otMinutes: mins.otMinutes } : {}), ...stamp },
@@ -477,7 +511,31 @@ export async function bulkPunch(kind: 'IN' | 'OUT', employeeIds: string[], opts:
     entityId: 'bulk',
     after: { date: key, time, count: toWrite.length, employeeIds: toWrite, ...(kind === 'OUT' && opts.shiftId ? { shiftId: opts.shiftId } : {}) },
   });
+  // R2-212: no approval gate; the Supervisor is told about long overtime. Best-effort, after commit.
+  if (kind === 'OUT') await notifyLongOvertime(records.map((r) => ({ employeeId: r.employeeId, workDate: key, otMinutes: r.otMinutes })));
   return { records, skipped };
+}
+
+/** R2-216 - turns a break plan into rows. Not exported: only the gated, audited `punchBreak` calls it, inside its transaction. */
+type Writer = Pick<typeof db, 'misAttendanceBreak' | 'misAttendance'>;
+
+async function writeBreakPunch(client: Writer, attendanceId: string, kind: 'OUT' | 'IN', plan: Exclude<BreakPunchPlan, { skip: string }>, at: Date, explicitKind?: BreakKind) {
+  const timeZone = await getFactoryTimezone();
+  if (plan.backfillLegacy) {
+    await client.misAttendanceBreak.create({
+      data: { attendanceId, outAt: plan.backfillLegacy.outAt, inAt: plan.backfillLegacy.inAt, kind: guessBreakKind(plan.backfillLegacy.outAt, timeZone) },
+    });
+  }
+  if (kind === 'OUT') {
+    await client.misAttendanceBreak.create({ data: { attendanceId, outAt: at, inAt: null, kind: explicitKind ?? guessBreakKind(at, timeZone) } });
+  } else if (plan.closeId) {
+    await client.misAttendanceBreak.update({ where: { id: plan.closeId }, data: { inAt: at } });
+  } else {
+    await client.misAttendanceBreak.create({ data: { attendanceId, outAt: plan.outAt, inAt: at, kind: guessBreakKind(plan.outAt, timeZone) } });
+  }
+  if (plan.legacy.breakOutAt || plan.legacy.breakInAt) {
+    await client.misAttendance.update({ where: { id: attendanceId }, data: plan.legacy });
+  }
 }
 
 /**
@@ -493,25 +551,23 @@ export async function punchBreak(kind: 'OUT' | 'IN', employeeIds: string[], opts
   if (ids.length === 0) throw new Error('Select at least one employee');
   const at = time ? factoryTimeToInstant(key, time, timeZone) : new Date();
   if (at.getTime() > Date.now() + 60_000) throw new Error('That time is in the future');
-  const rows = await db.misAttendance.findMany({ where: { date: dateKeyToDbDate(key), employeeId: { in: ids } } });
+  // R2-216: every break is its own row, so a second break no longer overwrites the first.
+  const rows = await db.misAttendance.findMany({ where: { date: dateKeyToDbDate(key), employeeId: { in: ids } }, include: { breaks: true } });
   const byEmp = new Map(rows.map((r) => [r.employeeId, r]));
   const skipped: SkippedPunch[] = [];
   const toWrite: string[] = [];
+  const plans = new Map<string, Exclude<ReturnType<typeof planBreakPunch>, { skip: string }>>();
   for (const id of ids) {
     const row = byEmp.get(id);
-    if (!row?.clockIn) skipped.push({ employeeId: id, reason: 'Not clocked in' });
-    else if (row.clockOut) skipped.push({ employeeId: id, reason: 'Already clocked out' });
-    else if (at.getTime() <= row.clockIn.getTime()) skipped.push({ employeeId: id, reason: 'Before the clock-in' });
-    else if (kind === 'OUT' && row.breakOutAt) skipped.push({ employeeId: id, reason: 'Break already started' });
-    else if (kind === 'IN' && !row.breakOutAt) skipped.push({ employeeId: id, reason: 'Break not started' });
-    else if (kind === 'IN' && row.breakInAt) skipped.push({ employeeId: id, reason: 'Break already ended' });
-    else if (kind === 'IN' && at.getTime() <= row.breakOutAt!.getTime()) skipped.push({ employeeId: id, reason: 'Before the break-out' });
-    else toWrite.push(id);
+    if (!row) { skipped.push({ employeeId: id, reason: 'Not clocked in' }); continue; }
+    const plan = planBreakPunch(kind, row, at);
+    if ('skip' in plan) skipped.push({ employeeId: id, reason: plan.skip });
+    else { toWrite.push(id); plans.set(id, plan); }
   }
   if (toWrite.length > 0) {
-    await db.$transaction(
-      toWrite.map((id) => db.misAttendance.update({ where: { id: byEmp.get(id)!.id }, data: kind === 'OUT' ? { breakOutAt: at } : { breakInAt: at } })),
-    );
+    await db.$transaction(async (tx) => {
+      for (const id of toWrite) await writeBreakPunch(tx, byEmp.get(id)!.id, kind, plans.get(id)!, at);
+    });
   }
   await logAuditEvent({
     actorId: actor.userId,
@@ -631,7 +687,8 @@ export async function requestLeave(
   reason?: string,
   opts: { endDate?: string | null; leaveType?: string } = {},
 ) {
-  const actor = await requirePermission('attendance.write');
+  // R2-220: attendance.write, OR the person raising it for their OWN employee record.
+  const actor = await requirePermission('attendance.write', undefined, { ownEmployeeId: employeeId });
   if (!isValidDateKey(date)) throw new Error('Date must look like 2026-10-13');
   // R2-101: an optional last day (inclusive). Blank or equal to the first day is a single-day leave.
   const endKey = opts.endDate ? opts.endDate : null;
@@ -675,7 +732,7 @@ export async function approveLeave(leaveId: string, approve: boolean) {
   const decided = 'This leave was already decided';
   if (leave.status !== 'PENDING') throw new Error(decided);
   // R2-167: a half-day leave moves pay, so only the Owner or an Admin decides it (the operator who raised it cannot).
-  if (leave.leaveType === HALF_DAY_LEAVE) await requirePermission('approvals.read');
+  if (leave.leaveType === HALF_DAY_LEAVE && !can(actor.role, 'approvals.read')) throw halfDayEscalationError();
   if ((await actorEmployeeId(actor.userId)) === leave.employeeId) throw new Error('You cannot decide your own leave request');
 
   const beforeStatus = leave.status;
@@ -747,7 +804,8 @@ export async function approveLeave(leaveId: string, approve: boolean) {
  * with no punch is removed, a HALF_DAY row with a punch becomes PRESENT. Both are audited.
  */
 export async function cancelLeaveRequest(leaveId: string, reason?: string) {
-  const actor = await requirePermission('attendance.write');
+  // R2-220: attendance.write, OR the person whose own leave this is.
+  const actor = await requirePermission('attendance.write', undefined, { ownLeaveId: leaveId });
   const leave = await db.misLeaveRequest.findUnique({ where: { id: leaveId } });
   if (!leave) throw new Error('Leave request not found');
   const why = reason?.trim() ?? '';
@@ -790,11 +848,17 @@ export async function cancelLeaveRequest(leaveId: string, reason?: string) {
 }
 
 export async function listLeaveRequests(status?: string) {
-  await requirePermission('attendance.read');
-  return db.misLeaveRequest.findMany({
+  const actor = await requirePermission('attendance.read');
+  const rows = await db.misLeaveRequest.findMany({
     where: status ? { status } : undefined,
     include: { employee: { select: { id: true, name: true, employeeCode: true } } },
     orderBy: { date: 'desc' },
+  });
+  // R2-225: a half-day leave moves pay, so only a role with approvals.read may decide it. The UI disables the button on this.
+  const mayDecideHalfDay = can(actor.role, 'approvals.read');
+  return rows.map((r) => {
+    const requiresEscalation = r.leaveType === HALF_DAY_LEAVE && !mayDecideHalfDay;
+    return { ...r, canApprove: can(actor.role, 'attendance.write') && !requiresEscalation, requiresEscalation };
   });
 }
 
@@ -957,4 +1021,25 @@ export async function getCurrentShiftName(): Promise<string | null> {
   await requirePermission('production.read');
   const shifts = await db.misShift.findMany({ where: { isActive: true }, orderBy: { startTime: 'asc' } });
   return resolveShiftAt(shifts, new Date(), await getFactoryTimezone())?.name ?? null;
+}
+
+/**
+ * R2-220: the signed-in person's OWN leave requests, newest first. No attendance.read needed — it is keyed to the
+ * caller's own employee record and returns nothing for anyone else. Plain shapes (dates as day keys).
+ */
+export async function listMyLeaves() {
+  const actor = await requirePermission('attendance.read', undefined, { self: true });
+  const me = await db.misEmployee.findFirst({ where: { userProfileId: actor.userId }, select: { id: true } });
+  if (!me) return [];
+  const rows = await db.misLeaveRequest.findMany({ where: { employeeId: me.id }, orderBy: { date: 'desc' } });
+  return rows.map((r) => ({
+    id: r.id,
+    employeeId: r.employeeId,
+    date: keyOfDbDate(r.date),
+    endDate: r.endDate ? keyOfDbDate(r.endDate) : null,
+    leaveType: String(r.leaveType),
+    reason: r.reason ?? null,
+    status: r.status,
+    createdAt: r.createdAt.toISOString(),
+  }));
 }

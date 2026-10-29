@@ -36,6 +36,8 @@ type PayrollRow = {
   totalOTMinutes: number;
   allowanceDays: number;
   needsPayCode?: boolean;
+  /** R2-217: Factories Act warnings, e.g. 'Exceeds 9h/day (2 days)'. Warn only. */
+  complianceFlags?: string[];
 };
 
 type PayrollPeriod = {
@@ -378,6 +380,7 @@ export function PayrollScreen({ rows: payroll, year, month, period, preflight, r
                   <td className="px-4 py-3">
                     <div className="font-medium text-slate-900">{row.employeeName}</div>
                     <div className="font-mono text-xs text-slate-400">{row.employeeCode}</div>
+                    {row.complianceFlags?.length ? <div className="mt-0.5 text-xs font-medium text-amber-700">⚠ {row.complianceFlags.join(' · ')}</div> : null}
                   </td>
                   <td className="px-4 py-3 text-center font-medium text-green-700">{row.present}</td>
                   <td className="px-4 py-3 text-center text-red-600">{row.absent}</td>

@@ -378,6 +378,8 @@ model MisEmployee {
   ifsc          String?
 
   userProfile   UserProfile?      @relation(fields: [userProfileId], references: [id], onDelete: SetNull)
+  shiftRoster   MisShiftRoster[]
+  punchRegularizations MisPunchRegularization[]
   defaultShift  MisShift?         @relation("MisEmployeeDefaultShift", fields: [defaultShiftId], references: [id], onDelete: SetNull)
   releasedSlips MisPayslipRelease[]
   manager       MisEmployee?      @relation("MisReports", fields: [managerId], references: [id], onDelete: SetNull)
@@ -878,6 +880,7 @@ model MisShift {
   lineClearances MisLineClearance[]
   workerAllocations MisWorkerAllocation[]
   defaultForEmployees MisEmployee[] @relation("MisEmployeeDefaultShift")
+  rosterEntries MisShiftRoster[]
   @@map("mis_shifts")
 }
 
@@ -902,6 +905,8 @@ model MisAttendance {
   updatedAt    DateTime    @updatedAt @map("updated_at")
   employee     MisEmployee @relation(fields: [employeeId], references: [id])
   shift        MisShift?   @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+  breaks       MisAttendanceBreak[]
+  regularizations MisPunchRegularization[]
   @@unique([employeeId, date])
   @@index([date])
   @@map("mis_attendance")
@@ -2028,4 +2033,73 @@ model MisQcTemplate {
   updatedAt   DateTime     @updatedAt @map("updated_at")
   checks      MisQcCheck[]
   @@map("mis_qc_templates")
+}
+
+/// R2-214 (parked migration 20261029000000). Dated shift roster; inclusive range. MisEmployee.defaultShiftId stays the fallback.
+model MisShiftRoster {
+  id         String      @id @default(uuid()) @db.Uuid
+  employeeId String      @map("employee_id") @db.Uuid
+  shiftId    String      @map("shift_id") @db.Uuid
+  startDate  DateTime    @map("start_date") @db.Date
+  endDate    DateTime    @map("end_date") @db.Date
+  /// Plain scalar auth user id.
+  createdBy  String?     @map("created_by") @db.Uuid
+  createdAt  DateTime    @default(now()) @map("created_at")
+  updatedAt  DateTime    @updatedAt @map("updated_at")
+  employee   MisEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  shift      MisShift    @relation(fields: [shiftId], references: [id])
+  @@index([employeeId, startDate])
+  @@index([shiftId])
+  @@map("mis_shift_roster")
+}
+
+/// R2-216. Break kind for the multi-break ledger.
+enum MisBreakKind {
+  MEAL
+  TEA
+  OTHER
+}
+
+/// R2-216. One row per break; inAt NULL while the break is open. breakOutAt/breakInAt on MisAttendance are kept.
+model MisAttendanceBreak {
+  id           String        @id @default(uuid()) @db.Uuid
+  attendanceId String        @map("attendance_id") @db.Uuid
+  outAt        DateTime      @map("out_at")
+  inAt         DateTime?     @map("in_at")
+  kind         MisBreakKind  @default(OTHER)
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+  attendance   MisAttendance @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+  @@index([attendanceId])
+  @@map("mis_attendance_breaks")
+}
+
+/// R2-222. Missed-punch regularization request.
+enum MisPunchRegularizationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model MisPunchRegularization {
+  id                     String                       @id @default(uuid()) @db.Uuid
+  employeeId             String                       @map("employee_id") @db.Uuid
+  workDate               DateTime                     @map("work_date") @db.Date
+  requestedIn            DateTime?                    @map("requested_in")
+  requestedOut           DateTime?                    @map("requested_out")
+  reason                 String
+  status                 MisPunchRegularizationStatus @default(PENDING)
+  /// Plain scalar auth user ids.
+  requestedBy            String?                      @map("requested_by") @db.Uuid
+  decidedBy              String?                      @map("decided_by") @db.Uuid
+  decidedAt              DateTime?                    @map("decided_at")
+  decisionNote           String?                      @map("decision_note")
+  resultingAttendanceId  String?                      @map("resulting_attendance_id") @db.Uuid
+  createdAt              DateTime                     @default(now()) @map("created_at")
+  updatedAt              DateTime                     @updatedAt @map("updated_at")
+  employee               MisEmployee                  @relation(fields: [employeeId], references: [id])
+  resultingAttendance    MisAttendance?               @relation(fields: [resultingAttendanceId], references: [id], onDelete: SetNull)
+  @@index([employeeId, workDate])
+  @@index([status])
+  @@map("mis_punch_regularizations")
 }

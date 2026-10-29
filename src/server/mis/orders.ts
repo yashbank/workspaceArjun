@@ -7,7 +7,8 @@ import type { Prisma } from '@/generated/prisma/client';
 import { pageQuery, parseSearch, type Paged } from '@/lib/mis/pagination';
 import { db } from '@/server/db';
 import { flushReleaseAudit, releaseMachineAllocations, type ReleaseAuditEvent } from '@/server/mis/allocation-release';
-import { getFactoryTimezone } from '@/server/mis/business-rules';
+import { formatOrderNumber, resolveOrderPrefix } from '@/lib/mis/order-number';
+import { getFactoryTimezone, getRuleValue } from '@/server/mis/business-rules';
 import { requirePermission } from './auth';
 import { logAuditEvent } from './audit';
 
@@ -27,12 +28,10 @@ export type OrderInput = {
  * the first try and offsets the number on every retry below, so a collision does not need the
  * clock to tick before the next attempt succeeds.
  */
-function nextOrderNumber(attempt = 0): string {
+function nextOrderNumber(attempt = 0, prefix?: string | null): string {
   const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, '0');
   const ms = String(Date.now() + attempt * 7919 + Math.floor(Math.random() * 97)).slice(-5);
-  return `ORD-${y}${m}-${ms}`;
+  return formatOrderNumber(prefix, now.getFullYear(), now.getMonth() + 1, ms);
 }
 
 export function isUniqueConstraintError(err: unknown): boolean {
@@ -106,12 +105,13 @@ export async function createOrder(input: OrderInput) {
   const actor = await requirePermission('orders.write');
 
   let created;
+  const prefix = await resolveOrderPrefix((key) => getRuleValue(key)); // R2-229
   const MAX_ATTEMPTS = 6;
   for (let attempt = 0; ; attempt++) {
     try {
       created = await db.misOrder.create({
         data: {
-          orderNumber: nextOrderNumber(attempt),
+          orderNumber: nextOrderNumber(attempt, prefix),
           customerId: input.customerId || null,
           description: input.description?.trim() || null,
           deliveryDate: input.deliveryDate ? new Date(input.deliveryDate) : null,

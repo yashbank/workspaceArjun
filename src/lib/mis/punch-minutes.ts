@@ -2,7 +2,7 @@
  * R2-106 — late and overtime minutes, derived from a punch-built day against its shift window.
  * Pure: no Prisma, no clock. The zone is required, never defaulted (D22).
  *
- *  - late = minutes the first clock-in is after the shift's start (0 when on time or early).
+ *  - late = minutes the first clock-in is after the shift's start (0 when on time, early or within the grace).
  *  - OT   = minutes the last clock-out is after the shift's end (0 when on time or early).
  *
  * Both are measured on the FACTORY's wall clock relative to the day the shift started
@@ -10,6 +10,7 @@
  * OT, not a negative number. A side that has not arrived yet (no clock-in / no clock-out) is
  * `null`, meaning "unknown — leave whatever is stored alone", never 0.
  */
+import { applyLateGrace } from './late-rule';
 import { factoryDateKey, factoryMinuteOfDay } from './factory-time';
 import { shiftDurationMinutes, timeToMinutes, type ShiftWindow } from './shift-window';
 
@@ -33,11 +34,13 @@ export function punchMinutes(
   day: { workDate: string; clockIn: Date | null; clockOut: Date | null },
   shift: ShiftWindow | null | undefined,
   timeZone: string,
+  /** R2-230: grace minutes (0 = none); `null` = the late rule does not apply to this person. See `late-rule.ts`. */
+  lateGrace: number | null = 0,
 ): PunchMinutes {
   if (!shift) return { lateMinutes: null, otMinutes: null };
   const start = timeToMinutes(shift.startTime);
   const end = start + shiftDurationMinutes(shift);
-  const lateMinutes = day.clockIn ? Math.max(0, minutesFromWorkDateStart(day.clockIn, day.workDate, timeZone) - start) : null;
+  const lateMinutes = day.clockIn ? applyLateGrace(Math.max(0, minutesFromWorkDateStart(day.clockIn, day.workDate, timeZone) - start), lateGrace) : null;
   const otMinutes = day.clockOut ? Math.max(0, minutesFromWorkDateStart(day.clockOut, day.workDate, timeZone) - end) : null;
   return { lateMinutes, otMinutes };
 }

@@ -214,7 +214,13 @@ export function createFakeDb() {
       const row = get().employees.find((e) => e.employeeCode === where.employeeCode);
       return row ? { ...row } : null;
     },
+    // R2-214: shift resolution reads the employee's default shift; the fake has none.
+    findUnique: async ({ where }: { where: { id: string } }) => {
+      const row = get().employees.find((e) => e.id === where.id) as { defaultShiftId?: string | null } | undefined;
+      return { defaultShiftId: row?.defaultShiftId ?? null };
+    },
   });
+  const rosterApi = { findMany: async () => [] as unknown[] };
 
   const db = {
     misQueuedWrite: queuedApi(() => state, hooks),
@@ -223,6 +229,7 @@ export function createFakeDb() {
     misEmployee: employeesApi(() => state),
     misProductionLog: logsApi(() => state),
     misShiftHandover: handoversApi(() => state),
+    misShiftRoster: rosterApi,
 
     misOrder: {
       findUnique: async ({ where }: { where: { id: string } }) => {
@@ -285,6 +292,7 @@ export function createFakeDb() {
         misAttendance: attendanceApi(get),
         misEmployee: employeesApi(get),
         misShiftHandover: handoversApi(get),
+        misShiftRoster: rosterApi,
         misShift: db.misShift,
         misMachineAllocation: db.misMachineAllocation,
       };

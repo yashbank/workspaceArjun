@@ -52,7 +52,7 @@ const getCurrentUser = vi.fn();
 vi.mock('@/server/auth', () => ({ getCurrentUser: (...a: unknown[]) => getCurrentUser(...a) }));
 const getMisRole = vi.fn();
 vi.mock('@/server/mis/roles', () => ({ getMisRole: (...a: unknown[]) => getMisRole(...a) }));
-vi.mock('@/server/mis/business-rules', () => ({ getFactoryTimezone: async () => world.zone }));
+vi.mock('@/server/mis/business-rules', () => ({ getFactoryTimezone: async () => world.zone, getLunchBreakMinutes: async () => 0 }));
 
 const { getAttendanceMonthView } = await import('./attendance-month');
 

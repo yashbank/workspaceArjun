@@ -89,6 +89,7 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes, 
 
   const [aqlOpen, setAqlOpen] = useState(false);
   const [aqlSampleSize, setAqlSampleSize] = useState('32');
+  const [aqlLotSize, setAqlLotSize] = useState('');
   const [aqlLines, setAqlLines] = useState<AqlLine[]>([{ defectTypeId: '', qty: '1' }]);
   const [aqlResult, setAqlResult] = useState<AqlResult | null>(null);
   const [aqlPending, startAqlTransition] = useTransition();
@@ -147,6 +148,7 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes, 
     const outcome = await recordAqlSampleAction({
       orderId: order.id,
       sampleSize: Number(aqlSampleSize),
+      ...(aqlLotSize.trim() !== '' ? { lotSize: Number(aqlLotSize) } : {}),
       defects,
     });
     if (!outcome.ok) { setAqlError(outcome.detail); return; }
@@ -192,6 +194,7 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes, 
     setAqlError(null);
     setAqlOpen(false);
     setAqlSampleSize('32');
+    setAqlLotSize('');
     setAqlLines([{ defectTypeId: '', qty: '1' }]);
   };
 
@@ -394,6 +397,8 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes, 
           <div className="text-sm text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
             Order: <span className="font-medium text-gray-800">{order.orderNumber}</span>
           </div>
+          <NumberInput label="Lot size (optional)" value={aqlLotSize} onChange={(e) => setAqlLotSize(e.target.value)} />
+          <p className="text-xs text-gray-500 -mt-2">When the AQL level is set in Settings, the lot size decides the required sample size and the accept limit.</p>
           <NumberInput label="Sample Size" value={aqlSampleSize} onChange={(e) => setAqlSampleSize(e.target.value)} />
           {aqlError && <p role="alert" className="text-sm text-red-700">{aqlError}</p>}
 
