@@ -28,8 +28,8 @@ import { notifyRoles } from '@/server/mis/notifications';
 export const REVIEW_ACTION = 'clearance.write' as const;
 
 /** The register-date guard: not in a closed payroll month, and inside the correction window. */
-async function assertDayOpen(dateKey: string) {
-  const [timeZone, windowDays] = await Promise.all([getFactoryTimezone(), getCorrectionWindowDays()]);
+async function assertDayOpen(dateKey: string, role: string) {
+  const [timeZone, windowDays] = await Promise.all([getFactoryTimezone(), getCorrectionWindowDays(role)]);
   const period = await db.misPayrollPeriod.findUnique({ where: { year_month: { year: Number(dateKey.slice(0, 4)), month: Number(dateKey.slice(5, 7)) } } });
   if (period?.status === 'CLOSED') throw new Error(`${dateKey.slice(0, 7)} payroll is closed, so this day cannot be changed here`);
   if (!isWithinCorrectionWindow(dateKey, new Date(), windowDays, timeZone)) throw new Error(`Outside the correction window (${windowDays} days)`);
@@ -177,7 +177,7 @@ export async function decidePunchRegularization(id: string, approve: boolean, no
   let attendanceId: string | null = null;
 
   if (approve) {
-    await assertDayOpen(workDate);
+    await assertDayOpen(workDate, actor.role);
     const [timeZone, paidLunch] = await Promise.all([getFactoryTimezone(), getLunchBreakMinutes()]);
     const dbDay = req.workDate;
     const lateGrace = await resolveLateGrace((key) => getRuleValue(key), (await db.misEmployee.findFirst({ where: { id: req.employeeId }, select: { payType: true } }))?.payType);

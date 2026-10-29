@@ -192,7 +192,7 @@ export type CloseOverride = { reason: string };
  * that writes `EDIT_ATTENDANCE_AFTER_CLOSE` and bumps the period's `correctionsAfterClose`.
  */
 async function guardRegisterDate(actor: MisActor, dateKey: string, entityId: string, override?: CloseOverride) {
-  const [timeZone, windowDays] = await Promise.all([getFactoryTimezone(), getCorrectionWindowDays()]);
+  const [timeZone, windowDays] = await Promise.all([getFactoryTimezone(), getCorrectionWindowDays(actor.role)]);
   const year = Number(dateKey.slice(0, 4));
   const monthNo = Number(dateKey.slice(5, 7));
   const period = await db.misPayrollPeriod.findUnique({ where: { year_month: { year, month: monthNo } } });
@@ -1000,8 +1000,8 @@ export async function listPendingClockOutApprovals(limit = 5) {
  * setting, not a constant compiled into a card. Three days when unset.
  */
 export async function getAttendanceCorrectionWindow() {
-  await requirePermission('attendance.write');
-  const days = await getCorrectionWindowDays();
+  const actor = await requirePermission('attendance.write');
+  const days = await getCorrectionWindowDays(actor.role);
   // The window is counted in the factory's days (D22), the same days punch ingestion parks against.
   const toKey = await today();
   const to = dateKeyToDbDate(toKey);

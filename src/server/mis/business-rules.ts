@@ -210,14 +210,24 @@ export async function getFactoryTimezone(): Promise<string> {
 
 /**
  * How many days back the register may still be corrected, today included — the
- * `ATTENDANCE_CORRECTION_DAYS` rule, three when unset. Ungated: the gate that
+ * `ATTENDANCE_CORRECTION_DAYS` rule, three when unset (Admin/Owner: `attendance.edit_window_days_admin` first). Ungated: the gate that
  * matters is on changing it. Read by punch ingestion (D21) and by the Super
  * Attendance Operator's "corrections open" card, so the two can never disagree.
  */
-export async function getCorrectionWindowDays(): Promise<number> {
-  const parsed = Number.parseInt((await getRuleValue('ATTENDANCE_CORRECTION_DAYS')) ?? '', 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 3;
+export async function getCorrectionWindowDays(role?: string): Promise<number> {
+  // R2-227: Admin and Owner follow their own, longer window (the Settings key `attendance.edit_window_days_admin`).
+  if (role === 'ADMIN' || role === 'OWNER') {
+    const adminDays = positiveInt(await getRuleValue(ADMIN_EDIT_WINDOW_KEY));
+    if (adminDays) return adminDays;
+  }
+  return positiveInt(await getRuleValue('ATTENDANCE_CORRECTION_DAYS')) ?? 3;
 }
+
+const ADMIN_EDIT_WINDOW_KEY = 'attendance.edit_window_days_admin';
+const positiveInt = (raw: string | null): number | null => {
+  const n = Number.parseInt(raw ?? '', 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
 
 /** R3 B37: keys that move money or the attendance register are Owner-level (`wages.read`) even though Admin holds `settings.write`. */
 const ATTENDANCE_CORRECTION_KEY = 'ATTENDANCE_CORRECTION_DAYS';
