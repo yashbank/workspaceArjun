@@ -1,6 +1,6 @@
 import type { AqlThresholds } from '@/lib/mis/aql';
 import { can } from '@/lib/mis/permissions';
-import { isWageRuleKey, type WageRuleKey } from '@/lib/mis/rule-keys';
+import { isWageRuleKey, isPayrollPolicyRuleKey, type WageRuleKey } from '@/lib/mis/rule-keys';
 import { dbDateKey } from '@/lib/mis/attendance-month';
 import { DEFAULT_FACTORY_TIMEZONE, dateKeyToDbDate, factoryDateKey, isValidTimeZone, resolveFactoryTimezone } from '@/lib/mis/factory-time';
 import { validateSchedule } from '@/lib/mis/rules-ledger';
@@ -287,8 +287,8 @@ async function createRuleRevision(
     // A wage rule's value is a wage: the audit row names WHICH rule changed and who changed it,
     // never the figure (D24, MIS_UI_SPEC §3). redact() matches property names and `ruleValue` is
     // not one, so the omission has to happen here (F-04).
-    before: isWageRuleKey(ruleKey) ? { ruleKey } : { ruleKey, ruleValue: replaced.ruleValue },
-    after: isWageRuleKey(ruleKey) ? { ruleKey, ...scheduled } : { ruleKey, ruleValue, ...scheduled },
+    before: isWageRuleKey(ruleKey) || isPayrollPolicyRuleKey(ruleKey) ? { ruleKey } : { ruleKey, ruleValue: replaced.ruleValue },
+    after: isWageRuleKey(ruleKey) || isPayrollPolicyRuleKey(ruleKey) ? { ruleKey, ...scheduled } : { ruleKey, ruleValue, ...scheduled },
   });
   return rec;
 }
@@ -308,7 +308,7 @@ export async function getBusinessRules() {
   const seen = new Set<string>();
   return rows
     .filter((r) => !isAqlRuleKey(r.ruleKey))
-    .filter((r) => mayReadWages || !isWageRuleKey(r.ruleKey))
+    .filter((r) => mayReadWages || !(isWageRuleKey(r.ruleKey) || isPayrollPolicyRuleKey(r.ruleKey)))
     .filter(r => { if (seen.has(r.ruleKey)) return false; seen.add(r.ruleKey); return true; });
 }
 
@@ -319,7 +319,7 @@ export async function updateBusinessRule(ruleKey: string, ruleValue: string) {
   // this an Admin could rewrite the rates and thresholds that the dedicated Owner-only screens
   // exist to protect (F-03).
   if (isAqlRuleKey(ruleKey)) await requirePermission('aql.read', ruleKey);
-  else if (isWageRuleKey(ruleKey) || OWNER_ONLY_RULE_KEYS.includes(ruleKey)) await requirePermission('wages.read', ruleKey);
+  else if (isWageRuleKey(ruleKey) || isPayrollPolicyRuleKey(ruleKey) || OWNER_ONLY_RULE_KEYS.includes(ruleKey)) await requirePermission('wages.read', ruleKey);
   // A timezone that is not a real IANA name would silently mis-file every punch from
   // now on, so it is refused here rather than discovered in a payroll dispute (D22).
   if (ruleKey === FACTORY_TIMEZONE_KEY && !isValidTimeZone(ruleValue)) {

@@ -21,3 +21,28 @@ export type WageRuleKey = (typeof WAGE_RULE_KEYS)[number];
 export function isWageRuleKey(ruleKey: string): ruleKey is WageRuleKey {
   return (WAGE_RULE_KEYS as readonly string[]).includes(ruleKey);
 }
+
+/**
+ * R2-228/231/232: the payroll-policy rules payroll reads beside the three rates. They move every
+ * payslip too (the OT multiplier, which weekly off is paid, who keeps HRA), so they get the same
+ * treatment as a wage rule — Owner only, kept out of Admin's list and out of audit values. A separate
+ * list because `WAGE_RULE_KEYS` is pinned to the three rates by `wage-rule-keys.test.ts`.
+ */
+export const PAYROLL_POLICY_RULE_KEYS = [
+  'attendance.ot_rate',
+  'attendance.weekly_off',
+  'sunday.paid_if_adjacent',
+  'salary.rent_min_days',
+  'salary.rent_count_holidays',
+] as const;
+
+export type PayrollPolicyRuleKey = (typeof PAYROLL_POLICY_RULE_KEYS)[number];
+
+export function isPayrollPolicyRuleKey(ruleKey: string): ruleKey is PayrollPolicyRuleKey {
+  return (PAYROLL_POLICY_RULE_KEYS as readonly string[]).includes(ruleKey);
+}
+
+/** Any rule only a wages.read holder may see or change. */
+export function isOwnerOnlyPayrollRuleKey(ruleKey: string): boolean {
+  return isWageRuleKey(ruleKey) || isPayrollPolicyRuleKey(ruleKey);
+}

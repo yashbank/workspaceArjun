@@ -6,6 +6,7 @@ import { calculateMonthlyPayroll } from '@/server/mis/payroll';
 import { getPayrollPeriod, getPayrollPreflight } from '@/server/mis/payroll-period';
 import { listBankDetailGaps } from '@/server/mis/payroll-ledger';
 import { listPayslipReleases } from '@/server/mis/payslips';
+import { getComplianceFlags } from '@/server/mis/attendance-compliance';
 import { PayrollScreen } from '@/components/mis/payroll/payroll-screen';
 import { DEFAULT_FACTORY_TIMEZONE, zonedParts } from '@/lib/mis/factory-time';
 
@@ -36,6 +37,8 @@ export default async function PayrollPage({ searchParams }: Props) {
   // browser at all (the same rule `withoutMoneyFields` enforces for material prices, D24), so
   // the money fields are stripped HERE, server-side, never merely left unrendered by the client
   // component. The payslip (`/mis/print/payslip/[id]`) is the Owner's money surface instead.
+  // R2-217: Factories Act warnings (labels only, warn-only).
+  const flagsById = await getComplianceFlags(`${year}-${String(month).padStart(2, '0')}`, payroll.map((r) => r.employeeId));
   const counts = payroll.map((r) => ({
     employeeId: r.employeeId,
     employeeName: r.employeeName,
@@ -50,6 +53,7 @@ export default async function PayrollPage({ searchParams }: Props) {
     totalOTMinutes: r.totalOTMinutes,
     allowanceDays: r.allowanceDays,
     needsPayCode: r.needsPayCode,
+    complianceFlags: flagsById[r.employeeId] ?? [],
   }));
 
   // R2-111: who has been sent this month's payslip (only a CLOSED month can be sent).

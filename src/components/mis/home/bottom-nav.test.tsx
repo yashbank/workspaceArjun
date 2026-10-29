@@ -28,7 +28,7 @@ const SPEC: Record<MisRoleName, string[]> = {
   ATTENDANCE_OPERATOR: ['Home', 'Register', 'Leave', 'Kiosk', 'Me'],
   SUPER_ATTENDANCE_OPERATOR: ['Home', 'Register', 'Leave', 'Kiosk', 'Me'],
   STORE_GUY: ['Home', 'Stock', 'Receive', 'Issue', 'Me'],
-  WORKER: ['Home'],
+  WORKER: ['Home', 'Me'],
 };
 
 /** What each destination needs before it will show data — read from the page and its server functions. */

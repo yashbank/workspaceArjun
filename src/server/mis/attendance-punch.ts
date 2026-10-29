@@ -1,13 +1,22 @@
 import { randomUUID } from 'node:crypto';
 
 import {
-  deriveDays,
   isWithinCorrectionWindow,
   planDayUpdates,
   workDateFor,
   type PunchFact,
 } from '@/lib/mis/attendance-day';
-import { dateKeyToDbDate, formatFactoryTime } from '@/lib/mis/factory-time';
+import { dateKeyToDbDate, factoryDateKey, formatFactoryTime } from '@/lib/mis/factory-time';
+import {
+  checkClockInWindow,
+  deriveDaysSplittingStale,
+  hasMissingOutNote,
+  isStaleOpenIn,
+  missingOutNote,
+  openInBefore,
+} from '@/server/mis/attendance-payroll-rules';
+import { notifyLongOvertime } from '@/server/mis/attendance-compliance';
+import { resolveLateGrace } from '@/lib/mis/late-rule';
 import { isLatenessWaived, punchMinutes } from '@/lib/mis/punch-minutes';
 import { punchMinutesNet } from '@/lib/mis/break-minutes';
 import {
@@ -22,7 +31,8 @@ import {
 import { getCurrentUser } from '@/server/auth';
 import { logAuditEvent } from '@/server/mis/audit';
 import { requirePermission } from '@/server/mis/auth';
-import { getCorrectionWindowDays, getFactoryTimezone, getLunchBreakMinutes } from '@/server/mis/business-rules';
+import { resolveEmployeeShiftId } from '@/server/mis/shift-roster';
+import { getCorrectionWindowDays, getFactoryTimezone, getLunchBreakMinutes, getRuleValue } from '@/server/mis/business-rules';
 import { runIdempotent, type IdempotentResult, type MisTx, type RunOptions } from '@/server/mis/idempotency';
 import {
   authenticateDevice,
@@ -91,6 +101,10 @@ export type PunchResult = {
   dayHeld: 'EDITED_BY_HAND' | null;
   /** R3 B58: additive. ALREADY_IN = an IN was absorbed by an open stretch; NO_OPEN_IN = an OUT with no IN to pair with. */
   note?: 'ALREADY_IN' | 'NO_OPEN_IN';
+  /** R2-213: the work day of an earlier clock-in that never got a clock-out and was closed by this scan (MISSING_OUT). */
+  staleClosedWorkDate?: string;
+  /** R2-212: the OT minutes this clock-out wrote on its day; the Supervisor is told when they are long. */
+  otMinutes?: number;
 };
 
 /** Who may confirm a face at the gate (R3 B57). */
@@ -120,6 +134,23 @@ function parsePayload(payload: unknown): { badgeCode: string; operatorId?: strin
   return { badgeCode: badge, operatorId, shiftId, correctsKey };
 }
 
+/** R2-213: flag the day of a clock-in that never got its clock-out. Returns its work date, or undefined if there is no such day. */
+async function markMissingOut(
+  tx: MisTx,
+  employeeId: string,
+  staleIn: PunchFact,
+  shifts: Array<{ id: string; startTime: string; endTime: string }>,
+  timeZone: string,
+  closedAt: Date,
+): Promise<string | undefined> {
+  const workDate = workDateFor(staleIn.punchedAt, shifts, timeZone, staleIn.shiftId).workDate;
+  const row = await tx.misAttendance.findUnique({ where: { employeeId_date: { employeeId, date: dateKeyToDbDate(workDate) } } });
+  if (!row || row.clockOut || hasMissingOutNote(row.notes)) return workDate;
+  const notes = [row.notes, missingOutNote(workDate, formatFactoryTime(closedAt, timeZone))].filter(Boolean).join(' | ');
+  await tx.misAttendance.update({ where: { id: row.id }, data: { notes } });
+  return workDate;
+}
+
 /**
  * The business write for one punch, run inside the idempotency transaction.
  *
@@ -140,7 +171,7 @@ async function applyPunch(
    */
   overrideFlags?: { skipEmployeeChecks?: boolean },
 ): Promise<{ entityType: string; entityId: string; result: PunchResult }> {
-  const direction = envelope.kind === 'attendance.punch_in' ? 'IN' : 'OUT';
+  const requestedDirection = envelope.kind === 'attendance.punch_in' ? 'IN' : 'OUT';
   const payload = parsePayload(envelope.payload);
 
   const recordedAt = new Date(envelope.clientRecordedAt);
@@ -152,7 +183,7 @@ async function applyPunch(
   // person is a different problem from an unknown one, so look without filtering.
   const employee = await tx.misEmployee.findFirst({
     where: { employeeCode: payload.badgeCode },
-    select: { id: true, name: true, isActive: true, deletedAt: true },
+    select: { id: true, name: true, isActive: true, deletedAt: true, payType: true },
   });
   const scanned = `${formatFactoryTime(recordedAt, timeZone)} · code ${payload.badgeCode}`;
   if (!employee) throw parkable('BADGE_UNKNOWN', `Badge not recognised. Scanned ${scanned}.`);
@@ -160,6 +191,7 @@ async function applyPunch(
     throw parkable('EMPLOYEE_INACTIVE', `${employee.name} is no longer on the active roll. Scanned ${scanned}.`);
   }
 
+  const lateGrace = await resolveLateGrace((key) => getRuleValue(key), employee.payType); // R2-230
   const shifts = await tx.misShift.findMany({
     where: { isActive: true },
     select: { id: true, name: true, startTime: true, endTime: true },
@@ -178,7 +210,9 @@ async function applyPunch(
   if (payload.shiftId && !shifts.some((s) => s.id === payload.shiftId)) {
     throw rejectable('BAD_SHIFT' as ParkReason, 'The shift on this punch is not an active shift.');
   }
-  const hintShiftId = payload.shiftId ?? null;
+  // R2-214: no shift hint from the tablet -> the roster entry for the day, else the employee's default (only if still active).
+  const rosterShiftId = payload.shiftId ? null : await resolveEmployeeShiftId(employee.id, factoryDateKey(recordedAt, timeZone), tx);
+  const hintShiftId = payload.shiftId ?? (rosterShiftId && shifts.some((s) => s.id === rosterShiftId) ? rosterShiftId : null);
 
   // Minimal shift handover (tracker rows 161-176 follow-up): if this device's immediately
   // preceding punch was processed by a DIFFERENT named operator, this punch is the first one
@@ -216,10 +250,23 @@ async function applyPunch(
     shiftId: r.shiftId,
   }));
 
+  // R2-213: a scan that finds a forgotten clock-in from an earlier day does not close it (nor read "already in");
+  // that clock-in is left without a clock-out (MISSING_OUT) and this scan starts today's stretch.
+  const openIn = openInBefore(existing, recordedAt);
+  const stale = openIn && isStaleOpenIn(openIn, recordedAt, hintShiftId, shifts, timeZone) ? openIn : null;
+  const direction = stale ? 'IN' : requestedDirection;
+
+  // R2-210: a clock-in is only accepted from 30 minutes before the shift starts until it ends.
+  if (direction === 'IN' && !overrideFlags?.skipEmployeeChecks) {
+    const allowed = hintShiftId ? shifts.filter((s) => s.id === hintShiftId) : shifts;
+    const verdict = checkClockInWindow(recordedAt, allowed, timeZone);
+    if (!verdict.allowed) throw rejectable('OUTSIDE_SHIFT_WINDOW' as ParkReason, `${employee.name}: ${verdict.message}`);
+  }
+
   const punchId = randomUUID();
   const incoming: PunchFact = { id: punchId, direction, punchedAt: recordedAt, shiftId: hintShiftId };
-  const before = deriveDays(existing, shifts, timeZone);
-  const after = deriveDays([...existing, incoming], shifts, timeZone);
+  const before = deriveDaysSplittingStale(existing, shifts, timeZone);
+  const after = deriveDaysSplittingStale([...existing, incoming], shifts, timeZone);
 
   // Which day is this punch for? Normally the day it landed in; a repeated clock-in
   // inside a stretch is absorbed by it, so fall back to where it would have gone.
@@ -285,14 +332,17 @@ async function applyPunch(
     });
   }
 
+  const staleClosedWorkDate = stale ? await markMissingOut(tx, employee.id, stale, shifts, timeZone, recordedAt) : undefined;
+
   // Bring the register in line with what the punches now say.
   const plan = planDayUpdates(before, after);
   let dayRebuilt = false;
+  let dayOtMinutes: number | undefined;
   let dayHeld: PunchResult['dayHeld'] = null;
 
   for (const day of plan.upsert) {
     const date = dateKeyToDbDate(day.workDate);
-    const row = await tx.misAttendance.findUnique({ where: { employeeId_date: { employeeId: employee.id, date } } });
+    const row = await tx.misAttendance.findUnique({ where: { employeeId_date: { employeeId: employee.id, date } }, include: { breaks: true } });
     const isThisPunchsDay = day.workDate === workDate;
 
     if (row?.editedAt) {
@@ -302,7 +352,7 @@ async function applyPunch(
     }
     if (!row) {
       // R2-106: late/OT minutes are derived from the punches against the day's shift window.
-      const mins = punchMinutes(day, shifts.find((s) => s.id === day.shiftId), timeZone);
+      const mins = punchMinutes(day, shifts.find((s) => s.id === day.shiftId), timeZone, lateGrace);
       await tx.misAttendance.create({
         data: {
           employeeId: employee.id,
@@ -321,7 +371,7 @@ async function applyPunch(
       const clockOut = day.clockOut ?? row.clockOut;
       const shiftId = day.shiftId ?? row.shiftId;
       // R2-106: minutes follow the merged clock times; an unknown side keeps the stored figure.
-      const mins = punchMinutesNet({ workDate: day.workDate, clockIn, clockOut, breakOut: row.breakOutAt, breakIn: row.breakInAt }, shifts.find((s) => s.id === shiftId), timeZone, paidLunch);
+      const mins = punchMinutesNet({ workDate: day.workDate, clockIn, clockOut, breakOut: row.breakOutAt, breakIn: row.breakInAt, breaks: row.breaks }, shifts.find((s) => s.id === shiftId), timeZone, paidLunch, lateGrace);
       await tx.misAttendance.update({
         where: { id: row.id },
         data: {
@@ -336,7 +386,10 @@ async function applyPunch(
         },
       });
     }
-    if (isThisPunchsDay) dayRebuilt = true;
+    if (isThisPunchsDay) {
+      dayRebuilt = true;
+      if (direction === 'OUT') dayOtMinutes = (await tx.misAttendance.findUnique({ where: { employeeId_date: { employeeId: employee.id, date } }, select: { otMinutes: true } }))?.otMinutes;
+    }
   }
 
   // A day the earlier punches had filed and the new one pairs away — e.g. the lone
@@ -353,7 +406,7 @@ async function applyPunch(
     if (!isExactlyWhatPunchesMade) continue; // someone else wrote here; leave it
 
     // R2-106: minutes the punches themselves derived are not a person's edit.
-    const derivedMins = punchMinutes(derived, shifts.find((s) => s.id === (derived.shiftId ?? row.shiftId)), timeZone);
+    const derivedMins = punchMinutes(derived, shifts.find((s) => s.id === (derived.shiftId ?? row.shiftId)), timeZone, lateGrace);
     const lateFromPunches = row.lateMinutes === (derivedMins.lateMinutes ?? 0);
     const otFromPunches = row.otMinutes === (derivedMins.otMinutes ?? 0);
     const untouched =
@@ -383,7 +436,9 @@ async function applyPunch(
       workDate,
       dayRebuilt,
       dayHeld,
+      ...(dayOtMinutes !== undefined ? { otMinutes: dayOtMinutes } : {}),
       ...(note ? { note } : {}),
+      ...(staleClosedWorkDate ? { staleClosedWorkDate } : {}),
     },
   };
 }
@@ -402,9 +457,13 @@ async function auditApplied(out: IdempotentResult<PunchResult>, actorId: string 
       direction: out.result.direction,
       punchedAt: out.result.punchedAt,
       workDate: out.result.workDate,
+      ...(out.result.staleClosedWorkDate ? { missingOutWorkDate: out.result.staleClosedWorkDate } : {}),
       deviceId,
     },
   });
+  // R2-212: no approval gate; the Supervisor is simply told about long overtime. Best-effort, after commit.
+  const r = out.result;
+  if (r.direction === 'OUT' && r.workDate) await notifyLongOvertime([{ employeeId: r.employeeId, workDate: r.workDate, otMinutes: r.otMinutes }]);
 }
 
 /** Read an untrusted body into an envelope, or say precisely why it cannot be one. */

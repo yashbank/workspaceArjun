@@ -31,7 +31,8 @@ const EXPECTED: Record<MisRoleName, string[]> = {
   SUPER_ATTENDANCE_OPERATOR: ['attendance', 'reports', 'employees', 'queue', 'kiosk'],
   // R3 B64: STORE_GUY gains orders.read, so the read-only Orders entry appears.
   STORE_GUY: ['orders', 'po', 'grn', 'supplier-invoices', 'inventory', 'customers', 'suppliers', 'documents', 'bom', 'traceability', 'store'], // orders.read also opens customers, documents, bom and traceability
-  WORKER: [],
+  // R2-218: a worker's only screen is Me; without it the desktop sidebar was blank.
+  WORKER: ['me'],
 };
 
 beforeEach(() => vi.clearAllMocks());

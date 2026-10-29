@@ -21,6 +21,11 @@ export const NOTIFICATION_TYPES = {
   requestDecided: 'mis.material_request.decided',
   // R2-80/62/Q11 — an issue / request raised as General / factory use (no order): Owner + Admin are told.
   generalUse: 'mis.general_use',
+  // R2-212 — a clock-out recorded long overtime; the Supervisor is told (minutes only, no wage figure).
+  longOvertime: 'mis.long_overtime',
+  // R2-222 - a worker asked for a missed punch to be fixed / a supervisor decided it. No wage data in either payload.
+  regularizationRaised: 'mis.punch_regularization.raised',
+  regularizationDecided: 'mis.punch_regularization.decided',
 } as const;
 
 export type NotificationView = { title: string; detail: string; href: string; tone: 'info' | 'risk' | 'ok' };
@@ -71,6 +76,31 @@ export function notificationView(type: string, payload: unknown): NotificationVi
         href: str(p, 'requestId') ? `/mis/store/requests/${str(p, 'requestId')}` : '/mis/store/transactions',
         tone: 'info',
       };
+    case NOTIFICATION_TYPES.regularizationRaised:
+      return {
+        title: `${str(p, 'employeeName') || 'A worker'}${str(p, 'employeeCode') ? ` (${str(p, 'employeeCode')})` : ''} · missed punch`,
+        detail: `Asked to fix the punch for ${str(p, 'workDate')} · waiting for review`,
+        href: '/mis/attendance/regularization',
+        tone: 'info',
+      };
+    case NOTIFICATION_TYPES.regularizationDecided: {
+      const approved = str(p, 'decision') === 'APPROVED';
+      return {
+        title: `Missed punch for ${str(p, 'workDate')} · ${approved ? 'approved' : 'rejected'}`,
+        detail: str(p, 'note') || (approved ? 'Your attendance was corrected' : 'Your request was rejected'),
+        href: '/mis/me/regularization',
+        tone: approved ? 'ok' : 'risk',
+      };
+    }
+    case NOTIFICATION_TYPES.longOvertime: {
+      const mins = num(p, 'otMinutes');
+      return {
+        title: `${str(p, 'employeeName') || 'A worker'}${str(p, 'employeeCode') ? ` (${str(p, 'employeeCode')})` : ''} · overtime`,
+        detail: `${Math.floor(mins / 60)}h ${mins % 60}m overtime on ${str(p, 'workDate')} · counted in payroll`,
+        href: `/mis/attendance?date=${str(p, 'workDate')}`,
+        tone: 'risk',
+      };
+    }
     case NOTIFICATION_TYPES.bomRejected:
       return {
         title: `BOM sent back · ${str(p, 'orderNumber')}`,

@@ -18,7 +18,7 @@
  * Pure: no Prisma, no React.
  */
 import { can } from './permissions';
-import { isWageRuleKey } from './rule-keys';
+import { isOwnerOnlyPayrollRuleKey } from './rule-keys';
 import type { MisRoleName } from './roles';
 
 export const REDACTED = '[redacted]';
@@ -81,7 +81,7 @@ export function redactAuditForRole<T>(role: MisRoleName | null | undefined, payl
 function dropUnclassifiedRuleValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(dropUnclassifiedRuleValue);
   if (!isPlain(value)) return value;
-  const classified = typeof value.ruleKey === 'string' && !isWageRuleKey(value.ruleKey);
+  const classified = typeof value.ruleKey === 'string' && !isOwnerOnlyPayrollRuleKey(value.ruleKey);
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(value)) {
     if (k === 'ruleValue' && !classified) continue;

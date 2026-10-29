@@ -33,6 +33,8 @@ export default async function LeavePage({ searchParams }: { searchParams: { empl
           status: l.status,
           reason: l.reason,
           employee: l.employee,
+          // R2-225: the server's per-row verdict, once it supplies one.
+          canDecide: l.canApprove,
         }))}
         employees={employees.filter(e => e.isActive).map(e => ({ id: e.id, name: e.name, employeeCode: e.employeeCode }))}
         canApprove={canApprove}

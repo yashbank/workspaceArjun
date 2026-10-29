@@ -27,6 +27,7 @@ export async function recordAqlSampleAction(data: {
   orderId: string;
   bomStageId?: string;
   sampleSize: number;
+  lotSize?: number;
   defects: AqlDefectLine[];
   notes?: string;
 }) {

@@ -1,4 +1,5 @@
 import { format, formatDistanceToNow } from 'date-fns';
+import { redirect } from 'next/navigation';
 
 import { AdminHome } from '@/components/mis/home/admin-home';
 import { AttendanceHome } from '@/components/mis/home/attendance-home';
@@ -69,6 +70,8 @@ export default async function MisHomePage() {
       return <AttendanceScreen role={role} header={{ title: 'Attendance', meta }} yesterday={yesterday} ago={ago} />;
     case 'STORE_GUY':
       return <StoreScreen header={{ title: 'Store', meta }} ago={ago} />;
+    case 'WORKER':
+      redirect('/mis/me');
     default:
       return <NoRoleScreen person={person} />;
   }

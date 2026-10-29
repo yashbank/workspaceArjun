@@ -188,6 +188,7 @@ export function AttendanceMonthDesktop({ view }: { view: AttendanceMonthView | n
                         >
                           <span className={cn('text-sm font-semibold text-slate-900', row.id === view.selected?.id && 'underline decoration-indigo-600 decoration-2 underline-offset-4')}>{row.name}</span>
                           <span className="font-mono text-[10px] text-slate-500">{row.code}{row.department ? ` · ${row.department}` : ''}</span>
+                          {row.flags.length > 0 ? <span className="text-[10px] font-medium text-amber-700" title={row.flags.join(' · ')}>⚠ {row.flags.join(' · ')}</span> : null}
                         </Link>
                       </th>
                       {row.cells.map((state, i) => {
@@ -263,6 +264,9 @@ export function AttendanceMonthDesktop({ view }: { view: AttendanceMonthView | n
                   <h2 className="text-base font-semibold text-slate-900">{view.selected.name}</h2>
                   <span className="font-mono text-xs text-slate-500">{view.selected.code}</span>
                 </header>
+                {view.selected.dayFlags.length > 0 ? (
+                  <p className="mb-2 rounded-lg bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-800">⚠ {view.selected.dayFlags.join(' · ')}</p>
+                ) : null}
                 {view.selected.dayKey ? (
                   <DayPanel
                     heading={dayHeading(view.selected.dayKey)}
@@ -316,6 +320,18 @@ function DayPanel({ heading, state, day }: { heading: string; state: CellState |
             <Row label={t('d8.recordedOt')} value={durationLabel(day.recordedOtMinutes)} mono accent />
             {day.lateMinutes > 0 ? <Row label={t('d8.late')} value={durationLabel(day.lateMinutes)} mono /> : null}
           </dl>
+          {day.breaks && day.breaks.length > 0 ? (
+            <div className="mt-3">
+              <p className="mb-1 font-mono text-[10px] font-bold uppercase tracking-wider text-slate-700">{t('d8.breaks')}</p>
+              <ul className="flex flex-col gap-0.5 font-mono text-sm text-slate-800">
+                {day.breaks.map((b) => (
+                  <li key={b.outAt}>
+                    {b.kind} {breakClock(b.outAt)} – {b.inAt ? breakClock(b.inAt) : t('d8.breakOpen')}{b.inAt ? ` (${durationLabel(b.minutes)})` : ''}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           <div className="mt-4 rounded-xl border border-[#e7dfd0] bg-[#f1ebdf] px-4 py-3">
             <p className="mb-1 font-mono text-[10px] font-bold uppercase tracking-wider text-slate-700">{t('d8.working')}</p>
             <Working day={day} />
@@ -324,6 +340,10 @@ function DayPanel({ heading, state, day }: { heading: string; state: CellState |
       )}
     </div>
   );
+}
+
+function breakClock(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
 function Working({ day }: { day: DayDetail }) {

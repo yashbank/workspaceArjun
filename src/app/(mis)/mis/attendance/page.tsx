@@ -18,6 +18,7 @@ export default async function AttendancePage({
   const role = await getMisRole(user.id);
   const canWrite = can(role, 'attendance.write');
   const canNote = can(role, 'attendance.note');
+  const canRegularize = can(role, 'clearance.write'); // R2-222: Supervisor, Admin, Owner (see REVIEW_ACTION in punch-regularization.ts)
   const sp = await searchParams;
   // D8 is the reading view at `/mis/attendance` with no `view`. ANY explicit `view` — `classic`, or the register's
   // own `daily` / `monthly` tabs — is the register (clock-in, mark absent, edit) at every width, so its tabs
@@ -34,7 +35,7 @@ export default async function AttendancePage({
     view === 'monthly' ? getMonthSummary(q.month) : [],
     listShifts(),
   ]);
-  const phone = <AttendanceScreen records={records} unrecorded={unrecorded} todayKey={todayKey} summary={summary} shifts={shifts} canWrite={canWrite} canNote={canNote} view={view} monthKey={q.month} date={date} timeZone={timeZone} />;
+  const phone = <AttendanceScreen records={records} unrecorded={unrecorded} todayKey={todayKey} summary={summary} shifts={shifts} canWrite={canWrite} canNote={canNote} canRegularize={canRegularize} view={view} monthKey={q.month} date={date} timeZone={timeZone} />;
 
   if (sp.view) return phone;
 

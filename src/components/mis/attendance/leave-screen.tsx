@@ -25,6 +25,8 @@ type LeaveRow = {
   status: string;
   reason: string | null;
   employee: Employee | null;
+  /** R2-225: server's verdict on whether THIS viewer may decide this row; absent falls back to the role props. */
+  canDecide?: boolean;
 };
 
 const STATUS_TONE: Record<string, 'good' | 'warning' | 'critical' | 'neutral'> = {
@@ -138,7 +140,7 @@ export function LeaveScreen({ leaves, employees, canApprove, canDecideHalfDay = 
       key: 'actions',
       header: '',
       render: (r) => {
-        const mayDecide = canApprove && (r.leaveType !== HALF_DAY_LEAVE || canDecideHalfDay);
+        const mayDecide = canApprove && (r.canDecide ?? (r.leaveType !== HALF_DAY_LEAVE || canDecideHalfDay));
         return (
           <div className="flex gap-2 justify-end">
             {r.status === 'PENDING' && mayDecide && (
@@ -146,6 +148,9 @@ export function LeaveScreen({ leaves, employees, canApprove, canDecideHalfDay = 
                 <Button variant="ghost" onClick={() => handleApprove(r.id, true)} disabled={isPending}>Approve</Button>
                 <Button variant="ghost" onClick={() => handleApprove(r.id, false)} disabled={isPending}>Reject</Button>
               </>
+            )}
+            {r.status === 'PENDING' && canApprove && !mayDecide && (
+              <span className="self-center text-xs text-amber-700">Needs Admin/Owner approval</span>
             )}
             {r.status === 'PENDING' && canApprove && (
               <Button variant="ghost" onClick={() => withdraw(r.id)} disabled={isPending}>Withdraw</Button>

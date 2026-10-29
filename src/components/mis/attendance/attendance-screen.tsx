@@ -15,7 +15,7 @@ import { useRouter } from 'next/navigation';
 
 type AttendanceRec = {
   id: string; date: Date; status: string; clockIn: Date | null; clockOut: Date | null;
-  approvedOut: boolean; lateMinutes: number; otMinutes: number; notes: string | null;
+  approvedOut: boolean; lateMinutes: number; /** R2-215 */ earlyDepartureMinutes?: number; otMinutes: number; notes: string | null;
   employee: { id: string; name: string; employeeCode: string; role: string } | null;
   shift: { name: string; startTime: string; endTime: string } | null;
 };
@@ -29,7 +29,7 @@ type Unrecorded = { id: string; name: string; employeeCode: string; role: string
 
 type Props = {
   records: AttendanceRec[]; unrecorded?: Unrecorded[]; todayKey?: string; summary: SummaryRec[]; shifts: { id: string; name: string }[];
-  canWrite: boolean; canNote?: boolean; view: string; monthKey: string; date?: string; timeZone: string;
+  canWrite: boolean; canNote?: boolean; canRegularize?: boolean; view: string; monthKey: string; date?: string; timeZone: string;
 };
 
 const STATUS_TONE: Record<string, 'good' | 'warning' | 'critical' | 'neutral'> = {
@@ -50,7 +50,7 @@ function toTimeInput(d: Date | null, timeZone: string) {
 
 function fmtMin(m: number) { return m > 0 ? `${m}m` : '—'; }
 
-export function AttendanceScreen({ records, unrecorded = [], todayKey, summary, shifts, canWrite, canNote = false, view, monthKey, date, timeZone }: Props) {
+export function AttendanceScreen({ records, unrecorded = [], todayKey, summary, shifts, canWrite, canNote = false, canRegularize = false, view, monthKey, date, timeZone }: Props) {
   const { toast } = useToast();
   const router = useRouter();
   /** B63: show a refusal as a toast; true when the action went through. */
@@ -166,7 +166,7 @@ export function AttendanceScreen({ records, unrecorded = [], todayKey, summary, 
     { key: 'emp', header: 'Employee', render: (r) => <div><div className="font-medium">{r.employee?.name ?? '—'}</div><div className="text-xs text-slate-500">{r.employee?.employeeCode}</div></div> },
     { key: 'shift', header: 'Shift', render: (r) => <span>{r.shift ? `${r.shift.name} (${r.shift.startTime}–${r.shift.endTime})` : '—'}</span> },
     { key: 'in', header: 'Clock In', render: (r) => <span>{fmtTime(r.clockIn, timeZone)}</span> },
-    { key: 'out', header: 'Clock Out', render: (r) => <span>{fmtTime(r.clockOut, timeZone)}{r.approvedOut ? <span className="ml-1 text-xs text-green-600">✓</span> : null}</span> },
+    { key: 'out', header: 'Clock Out', render: (r) => <span>{fmtTime(r.clockOut, timeZone)}{r.approvedOut ? <span className="ml-1 text-xs text-green-600">✓</span> : null}{(r.earlyDepartureMinutes ?? 0) > 0 && <span className="ml-1"><StatusBadge tone="warning">Early departure {fmtMin(r.earlyDepartureMinutes ?? 0)}</StatusBadge></span>}</span> },
     { key: 'status', header: 'Status', render: (r) => <StatusBadge tone={STATUS_TONE[r.status] ?? 'neutral'}>{r.status.replace(/_/g, ' ')}</StatusBadge> },
     { key: 'late', header: 'Late', render: (r) => <span>{fmtMin(r.lateMinutes)}</span> },
     { key: 'ot', header: 'OT', render: (r) => <span>{fmtMin(r.otMinutes)}</span> },
@@ -199,7 +199,9 @@ export function AttendanceScreen({ records, unrecorded = [], todayKey, summary, 
           <Link href="/mis/attendance?view=daily" className={`inline-flex min-h-11 items-center rounded-lg px-3 text-base font-medium ${view === 'daily' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Daily</Link>
           <Link href="/mis/attendance?view=monthly" className={`inline-flex min-h-11 items-center rounded-lg px-3 text-base font-medium ${view === 'monthly' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Monthly ({monthKey})</Link>
           <Link href="/mis/attendance/leave" className="inline-flex min-h-11 items-center rounded-lg bg-slate-100 px-3 text-base font-medium text-slate-700 hover:bg-slate-200">Leave requests</Link>
-          {canWrite && <Link href="/mis/attendance/shifts" className="inline-flex min-h-11 items-center rounded-lg bg-slate-100 px-3 text-base font-medium text-slate-700 hover:bg-slate-200">Shifts</Link>}
+          {/* R2-222: missed-punch requests, for Supervisor / Admin / Owner. */}
+          {canRegularize && <Link href="/mis/attendance/regularization" className="inline-flex min-h-11 items-center rounded-lg bg-slate-100 px-3 text-base font-medium text-slate-700 hover:bg-slate-200">Regularization</Link>}
+          <Link href="/mis/attendance/shifts" className="inline-flex min-h-11 items-center rounded-lg bg-slate-100 px-3 text-base font-medium text-slate-700 hover:bg-slate-200">Shifts</Link>
           {/* D28 — the same door (attendance.write) that already gates clock-in/out edits on this screen. */}
           {canWrite && (
             <Link href="/mis/attendance/extra-pay" className="inline-flex min-h-11 items-center rounded-lg bg-indigo-50 px-3 text-base font-medium text-indigo-700 hover:bg-indigo-100">
