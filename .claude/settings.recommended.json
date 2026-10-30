@@ -1,0 +1,21 @@
+{
+  "_comment": "Agents may not edit .claude/settings.json (self-modification). A human copies this file over it: cp .claude/settings.recommended.json .claude/settings.json",
+  "enabledPlugins": {
+    "context7@anthropic-plugin-directory": true,
+    "pr-review-toolkit@anthropic-plugin-directory": true
+  },
+  "permissions": {
+    "allow": [
+      "Bash(pnpm typecheck)", "Bash(pnpm lint)", "Bash(pnpm test)", "Bash(pnpm build)", "Bash(pnpm db:generate)",
+      "Bash(pnpm vitest run:*)", "Bash(pnpm exec tsc:*)", "Bash(pnpm exec eslint:*)", "Bash(pnpm exec playwright:*)", "Bash(pnpm test:e2e:*)",
+      "Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)", "Bash(git branch:*)", "Bash(git fetch:*)",
+      "Bash(git pull:*)", "Bash(git add:*)", "Bash(git commit:*)", "Bash(git push:*)", "Bash(git checkout:*)", "Bash(git stash:*)", "Bash(git rebase origin/*)",
+      "Bash(grep:*)", "Bash(sed -n:*)", "Bash(cat:*)", "Bash(ls:*)", "Bash(find:*)", "Bash(wc:*)", "Bash(head:*)", "Bash(tail:*)", "Bash(df:*)", "Bash(du:*)",
+      "Bash(./gradlew:*)", "Bash(npx -y @playwright/mcp:*)"
+    ],
+    "deny": [
+      "Bash(pnpm mis:reset-attendance:*)", "Bash(pnpm db:deploy:*)", "Bash(pnpm db:migrate:*)", "Bash(pnpm exec prisma migrate:*)",
+      "Bash(git push --force:*)", "Bash(git push -f:*)", "Bash(git reset --hard:*)", "Bash(git worktree add:*)"
+    ]
+  }
+}

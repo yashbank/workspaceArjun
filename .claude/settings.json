@@ -1,0 +1,6 @@
+{
+  "enabledPlugins": {
+    "context7@anthropic-plugin-directory": true,
+    "pr-review-toolkit@anthropic-plugin-directory": true
+  }
+}
