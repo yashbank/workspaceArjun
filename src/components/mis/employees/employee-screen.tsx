@@ -384,6 +384,10 @@ export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes
           <p className="text-sm text-slate-500">
             Sets who can see this person&apos;s records — their manager, and everyone above.
           </p>
+          {/* R2-250 (D2): an Admin never sets pay type or wage code (rule 13.9) — say so instead of leaving a gap. */}
+          {!isOwner && canWrite && (
+            <p role="note" className="text-sm text-slate-500">Pay type, wage code and Sunday pay are set by the Owner after you save.</p>
+          )}
           {isOwner && (
             <div className="flex flex-col gap-4 rounded-xl border border-indigo-100 bg-indigo-50/50 p-3">
               <p className="text-[11px] font-semibold uppercase tracking-wider text-indigo-700">Pay setup · visible to you only</p>
