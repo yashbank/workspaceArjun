@@ -25,6 +25,11 @@ export default async function MisMePage() {
           {employee?.employeeCode ?? 'No employee code'}
         </p>
       </section>
+      {!employee && (
+        <div role="status" className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 md:col-span-2">
+          Your account is not linked to an employee record yet, so attendance, payslips and leave are not available here. Ask your admin to link it from Settings → Users.
+        </div>
+      )}
 
       <Card>
         <CardRow label="Signed in as" value={user.email} />

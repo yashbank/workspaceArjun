@@ -22,10 +22,10 @@ import { notifyRoles } from '@/server/mis/notifications';
  */
 
 /**
- * Who reviews: exactly Supervisor, Admin and Owner. No dedicated action exists (the permission matrix is pinned by a
- * hand-written test), and `clearance.write` is held by those three roles and no other ("SUPERVISOR and above only").
+ * Who reviews: whoever may write the register (`attendance.write`: both attendance operators, Admin, Owner) — approving
+ * a missed punch IS a register write (R2-252). No dedicated action exists (the permission matrix is pinned by a test).
  */
-export const REVIEW_ACTION = 'clearance.write' as const;
+export const REVIEW_ACTION = 'attendance.write' as const;
 
 /** The register-date guard: not in a closed payroll month, and inside the correction window. */
 async function assertDayOpen(dateKey: string, role: string) {

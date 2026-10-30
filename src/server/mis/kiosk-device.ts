@@ -13,6 +13,7 @@ import { db } from '@/server/db';
 import { logAuditEvent } from './audit';
 import { requirePermission } from './auth';
 import { getFactoryTimezone } from './business-rules';
+import { resolveEmployeeShiftId } from './shift-roster';
 
 /**
  * Gate-tablet enrolment, identity and the employee pull (Phase 12, MIS-243).
@@ -632,12 +633,12 @@ export const PULL_EMPLOYEE_KEYS = ['id', 'name', 'badgeCode', 'shift', 'photoUrl
 export const PULL_SHIFT_KEYS = ['id', 'name', 'startTime', 'endTime'] as const;
 
 export type PullShift = { id: string; name: string; startTime: string; endTime: string };
-/** Who may run the gate tablet. Exactly these two strings or null — the Android app matches them case-sensitively. */
+/** Who may run the gate tablet (ADMIN/OWNER are SUPER_OPERATOR). Exactly these two strings or null — the Android app matches them case-sensitively. */
 export type PullOperatorRole = 'OPERATOR' | 'SUPER_OPERATOR';
 
 export function operatorRoleOf(role: string | null | undefined): PullOperatorRole | null {
   if (role === 'ATTENDANCE_OPERATOR') return 'OPERATOR';
-  if (role === 'SUPER_ATTENDANCE_OPERATOR') return 'SUPER_OPERATOR';
+  if (role === 'SUPER_ATTENDANCE_OPERATOR' || role === 'ADMIN' || role === 'OWNER') return 'SUPER_OPERATOR';
   return null;
 }
 
@@ -690,12 +691,13 @@ async function buildPullPayload(device: AuthenticatedDevice, now: Date): Promise
   // "Today" is the factory's today (D22), as a UTC-midnight `@db.Date` value. The server's
   // own midnight is 2.5 hours off the plant's, and on a UTC+8 host it names yesterday.
   const factoryTimezone = await getFactoryTimezone();
-  const today = dateKeyToDbDate(factoryDateKey(now, factoryTimezone));
+  const todayKey = factoryDateKey(now, factoryTimezone);
+  const today = dateKeyToDbDate(todayKey);
 
   const [employees, shifts, allocations, attendance] = await Promise.all([
     db.misEmployee.findMany({
       where: { isActive: true, deletedAt: null },
-      select: { id: true, employeeCode: true, name: true, photoUrl: true, role: true },
+      select: { id: true, employeeCode: true, name: true, photoUrl: true, role: true, defaultShiftId: true },
       orderBy: { name: 'asc' },
     }),
     db.misShift.findMany({
@@ -716,6 +718,15 @@ async function buildPullPayload(device: AuthenticatedDevice, now: Date): Promise
   const shiftOf = new Map<string, string>();
   for (const a of attendance) if (a.shiftId) shiftOf.set(a.employeeId, a.shiftId);
   for (const a of allocations) if (a.shiftId) shiftOf.set(a.employeeId, a.shiftId);
+  // R2-234: no allocation/attendance yet -> the shift roster, then the employee's default shift.
+  await Promise.all(
+    employees
+      .filter((e) => !shiftOf.has(e.id))
+      .map(async (e) => {
+        const sid = await resolveEmployeeShiftId(e.id, todayKey, db, e.defaultShiftId ?? null);
+        if (sid) shiftOf.set(e.id, sid);
+      }),
+  );
   const shiftById = new Map(shifts.map((s) => [s.id, s]));
 
   return {

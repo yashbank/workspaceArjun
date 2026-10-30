@@ -61,6 +61,20 @@ describe('R2-231 — weekly off and the sandwich rule', () => {
     expect(row.basicWage).toBe(5000);
   });
 
+  it('R2-236: a DAILY worker with sundayPaid gets the Sundays too (4 Sundays + 1 worked day at the daily wage)', async () => {
+    state.attendance = [rec('1', '2026-01-05', 'PRESENT', 0, { ...EMP, payType: 'DAILY', sundayPaid: true })];
+    const [row] = await calculateMonthlyPayroll(2026, 1);
+    expect(row.allowanceDays).toBe(4);
+    expect(row.basicWage).toBe(Math.round(DAILY_WAGE * 5));
+  });
+
+  it('R2-236: a DAILY worker without sundayPaid is unchanged (1 worked day only)', async () => {
+    state.attendance = [rec('1', '2026-01-05', 'PRESENT', 0, { ...EMP, payType: 'DAILY', sundayPaid: false })];
+    const [row] = await calculateMonthlyPayroll(2026, 1);
+    expect(row.allowanceDays).toBe(0);
+    expect(row.basicWage).toBe(Math.round(DAILY_WAGE));
+  });
+
   it('sandwich on: a Sunday is paid only when Saturday and Monday were both worked', async () => {
     setRule('sunday.paid_if_adjacent', 'true');
     // Sun 11 Jan: Sat 10 + Mon 12 worked -> paid. Sun 18: Sat 17 worked, Mon 19 not -> unpaid. Others: no neighbours.

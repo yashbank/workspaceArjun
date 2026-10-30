@@ -80,4 +80,22 @@ class WorkDateTest {
         // start == end == 0 -> treated as wrapping the whole day; must simply not crash.
         assertEquals("2026-09-20", wd(20, 6, 4, list = broken).workDate)
     }
+
+    private val night2 = ShiftWindow("n2", "19:00", "07:00")
+
+    @Test // R2-235: overtime OUT after the shift end stays on the shift's start day
+    fun nightShiftOvertimeOutStaysOnStartDay() {
+        assertEquals(WorkDateResult("2026-09-20", "n2"), wd(21, 7, 15, list = listOf(night2), hint = "n2"))
+    }
+
+    @Test // R2-52 kept: next evening's 19:00 scan is today, not yesterday
+    fun nightShiftNextEveningScanIsToday() {
+        assertEquals(WorkDateResult("2026-09-21", "n2"), wd(21, 19, 0, list = listOf(night2), hint = "n2"))
+    }
+
+    @Test // 16 h cutoff for 22:00-06:00: 13:59 is still yesterday's shift, 14:00 is today
+    fun nightShiftSixteenHourCutoff() {
+        assertEquals("2026-09-20", wd(21, 13, 59, hint = "n").workDate)
+        assertEquals("2026-09-21", wd(21, 14, 0, hint = "n").workDate)
+    }
 }

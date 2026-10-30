@@ -79,7 +79,10 @@ export function workDateFor(
   const shift = hinted ?? shifts.find((s) => isMinuteInShiftWindow(minute, s));
   if (!shift) return { workDate: calendar, shiftId: null };
 
-  const belongsToPreviousDay = shiftWrapsMidnight(shift) && minute < timeToMinutes(shift.endTime);
+  // R2-235: overtime past a night shift's end still belongs to the night it started, up to the
+  // longest stretch of work (MAX_SHIFT_SPAN_HOURS) after the shift start. Mirrored in the tablet's WorkDate.kt.
+  const previousDayUntil = Math.max(timeToMinutes(shift.endTime), timeToMinutes(shift.startTime) + MAX_SHIFT_SPAN_HOURS * 60 - 1440);
+  const belongsToPreviousDay = shiftWrapsMidnight(shift) && minute < previousDayUntil;
   return { workDate: belongsToPreviousDay ? previousDateKey(calendar) : calendar, shiftId: shift.id };
 }
 

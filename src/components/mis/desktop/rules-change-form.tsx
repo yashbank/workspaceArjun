@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useActionState } from 'react';
 
 import { scheduleRuleAction, type ScheduleState } from '@/app/(mis)/mis/settings/rules/actions';
+import { LATE_RULE_WORKERS } from '@/lib/mis/late-rule';
 import type { RuleView } from '@/lib/mis/rules-ledger';
 
 import { useT } from '../shell/locale-provider';
@@ -35,7 +36,14 @@ export function RulesChangeForm({ rule, todayKey, cancelHref }: { rule: RuleView
 
         <div>
           <label htmlFor="d12-value" className="mb-1 block text-sm font-semibold text-slate-800">{t('d12.newValue')}</label>
-          <input id="d12-value" name="ruleValue" required defaultValue={state.values?.ruleValue ?? ''} inputMode={rule.valueType === 'number' ? 'decimal' : 'text'} autoComplete="off" className={`${field} font-mono`} />
+          {rule.ruleKey === 'attendance.late_rule_workers' ? (
+            <select id="d12-value" name="ruleValue" required defaultValue={state.values?.ruleValue ?? ''} className={field}>
+              <option value="" disabled>—</option>
+              {LATE_RULE_WORKERS.map((w) => <option key={w} value={w}>{w}</option>)}
+            </select>
+          ) : (
+            <input id="d12-value" name="ruleValue" required defaultValue={state.values?.ruleValue ?? ''} inputMode={rule.valueType === 'number' ? 'decimal' : 'text'} autoComplete="off" className={`${field} font-mono`} />
+          )}
         </div>
 
         <div>

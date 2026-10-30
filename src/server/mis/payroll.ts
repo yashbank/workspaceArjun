@@ -164,8 +164,10 @@ function computeEmployeeMonth(
     const status = statusByDay.get(date.toISOString().slice(0, 10));
     return status === 'PRESENT' || status === 'HALF_DAY' || (status === 'LEAVE' && paidLeaveOn(date));
   };
+  // R2-236: a MONTHLY employee always gets the weekly off paid; a DAILY one only when `sundayPaid` is on.
+  const weeklyOffPaid = payType === 'MONTHLY' || emp.sundayPaid === true;
   const weeklyOffPaidOn = (date: Date): boolean => {
-    if (payType !== 'MONTHLY' || !isWeekday(date, policy.weeklyOffOn(date))) return false;
+    if (!weeklyOffPaid || !isWeekday(date, policy.weeklyOffOn(date))) return false;
     const before = new Date(date.getTime() - 86_400_000);
     const after = new Date(date.getTime() + 86_400_000);
     return weeklyOffIsPaid(policy.sandwichOn(date), workedOn(before), workedOn(after));
@@ -210,7 +212,7 @@ function computeEmployeeMonth(
   // (the normal case — nobody clocks in on a day off). A Sunday that DOES have a row was already
   // priced as a paid Sunday above (`monthlySunday` overrides its own status); this only fills the
   // gap for Sundays no row exists for.
-  if (payType === 'MONTHLY') {
+  if (weeklyOffPaid) {
     for (let d = 1; d <= workingDays; d++) {
       const date = new Date(Date.UTC(year, month - 1, d));
       if (!seenDates.has(date.toISOString().slice(0, 10)) && weeklyOffPaidOn(date)) {

@@ -42,7 +42,7 @@ interface Props {
   canApprove: boolean;
   /** R2-167: Owner or Admin — the only roles that decide a half-day leave. */
   canDecideHalfDay?: boolean;
-  /** R2-168: Owner — the only role that revokes an approved leave. */
+  /** R2-168/240: Owner revokes any approved leave; anyone else who could cancel it pending may, until its start date. */
   canRevoke?: boolean;
   initialEmployeeId?: string;
 }
@@ -62,6 +62,8 @@ export function LeaveScreen({ leaves, employees, canApprove, canDecideHalfDay = 
   const [empSearch, setEmpSearch] = useState('');
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
+  // shortcut: browser date, not the factory zone; the server re-checks
+  const todayKey = new Date().toISOString().slice(0, 10);
 
   const empOptions: SelectOption[] = [
     ...employees.map((e) => ({ value: e.id, label: `${e.name} (${e.employeeCode})` })),
@@ -155,7 +157,7 @@ export function LeaveScreen({ leaves, employees, canApprove, canDecideHalfDay = 
             {r.status === 'PENDING' && canApprove && (
               <Button variant="ghost" onClick={() => withdraw(r.id)} disabled={isPending}>Withdraw</Button>
             )}
-            {r.status === 'APPROVED' && canRevoke && (
+            {r.status === 'APPROVED' && (canRevoke || new Date(r.date).toISOString().slice(0, 10) > todayKey) && (
               <Button variant="ghost" onClick={() => { setRevokeFor(r); setRevokeReason(''); }} disabled={isPending}>Revoke</Button>
             )}
           </div>

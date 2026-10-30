@@ -180,6 +180,19 @@ describe('the punch overrides — need attendance.write on top of queue.review',
     expect(fake.state.queued.get(key)!.resolvedById).toBe('resolver-1');
   });
 
+  it('R2-248: applies a TOO_OLD punch from weeks ago — past the correction window as well as the timing check', async () => {
+    fake.state.employees[0].isActive = true;
+    const key = seedQueued({
+      kind: 'attendance.punch_in',
+      parkReason: 'TOO_OLD',
+      payload: { badgeCode: 'W1' },
+      clientRecordedAt: new Date(Date.now() - 40 * 24 * 60 * 60 * 1000),
+    });
+    const result = await resolveParkedWrite(key, 'tablet was offline for a month, punch confirmed on paper');
+    expect(result.outcome).toBe('APPLIED');
+    expect(fake.state.punches).toHaveLength(1);
+  });
+
   it('applies a CLOCK_SKEW punch by skipping checkTiming entirely — a plain retry could never clear it', async () => {
     fake.state.employees[0].isActive = true;
     const key = seedQueued({

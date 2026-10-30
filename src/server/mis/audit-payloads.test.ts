@@ -45,6 +45,8 @@ describe('audit call sites', () => {
         // same call site is listed under that text. Same conditional, same guarantee: wage-leak.test.ts and
         // business-rules-schedule.test.ts prove at runtime that a wage rule's figure never reaches the row.
         "server/mis/business-rules.ts · opts.action ?? 'UPDATE_RULE' · ruleValue",
+        // R2-259: a second edit on the same day replaces today's row — same wage conditional, same guarantee.
+        'server/mis/business-rules.ts · UPDATE_RULE · ruleValue',
         // R3-MST B23: the import records an OWNER price change as { from, to }; the audit READ path strips
         // `pricePerUnit` for every role without wages.read, and only an OWNER's price column is honoured.
         'app/api/mis/inventory/import/route.ts · item.import_create · pricePerUnit',

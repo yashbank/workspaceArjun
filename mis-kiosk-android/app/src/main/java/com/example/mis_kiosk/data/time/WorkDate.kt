@@ -19,6 +19,9 @@ data class WorkDateResult(val workDate: String, val shiftId: String?)
  * shift whose window contains the instant. No shift at all -> the calendar day.
  */
 object WorkDate {
+    /** mirrors MAX_SHIFT_SPAN_HOURS in src/lib/mis/attendance-day.ts (R2-235) */
+    const val MAX_SHIFT_SPAN_MINUTES = 16 * 60
+
     fun workDateFor(
         at: Instant,
         shifts: List<ShiftWindow>,
@@ -32,7 +35,8 @@ object WorkDate {
         val shift = hinted ?: shifts.firstOrNull { isMinuteInShiftWindow(minute, it) }
             ?: return WorkDateResult(calendar.toString(), null)
 
-        val belongsToPreviousDay = shiftWrapsMidnight(shift) && minute < timeToMinutes(shift.endTime)
+        val belongsToPreviousDay = shiftWrapsMidnight(shift) &&
+            minute < maxOf(timeToMinutes(shift.endTime), timeToMinutes(shift.startTime) + MAX_SHIFT_SPAN_MINUTES - 1440)
         val day = if (belongsToPreviousDay) calendar.minusDays(1) else calendar
         return WorkDateResult(day.toString(), shift.id)
     }

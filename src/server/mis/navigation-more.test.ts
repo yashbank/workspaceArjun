@@ -145,8 +145,8 @@ describe('phone and desktop read one table, so they cannot disagree', () => {
   it('the phone-only screens never leak into the desktop sidebar', async () => {
     getMisRole.mockResolvedValue('OWNER');
     const ids = (await getNavigationFor('u')).map((e) => e.id);
-    // R3 B101: 'crew' is now a desktop sidebar entry as well, so it is no longer phone-only.
-    for (const id of ['leave', 'settings-users', 'settings-rules', 'me']) expect(ids).not.toContain(id);
+    // R3 B101: 'crew' is now a desktop sidebar entry as well, so it is no longer phone-only. R2-239: so is 'me'.
+    for (const id of ['leave', 'settings-users', 'settings-rules']) expect(ids).not.toContain(id);
   });
 
   it('entries carry labels and links only — never the required permission', () => {

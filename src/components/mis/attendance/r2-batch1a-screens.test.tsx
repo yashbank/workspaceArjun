@@ -59,11 +59,23 @@ describe('LeaveScreen', () => {
   });
 
   it('Revoke on an approved leave is for the Owner only (R2-168)', () => {
-    const { unmount } = render(<LeaveScreen {...base} leaves={[leave('APPROVED')]} />);
+    // R2-240 (D1): the leave below has already started, so a non-owner still cannot revoke it
+    const { unmount } = render(<LeaveScreen {...base} leaves={[{ ...leave('APPROVED'), date: '2020-01-01' }]} />);
     expect(screen.queryAllByRole('button', { name: 'Revoke' })).toHaveLength(0);
     unmount();
     render(<LeaveScreen {...base} leaves={[leave('APPROVED')]} canRevoke />);
     expect(screen.getAllByRole('button', { name: 'Revoke' }).length).toBeGreaterThan(0);
+  });
+});
+
+describe('LeaveScreen — R2-240 (D1)', () => {
+  const row = (date: string) => ({ id: 'l1', date, status: 'APPROVED', leaveType: 'CL', reason: null, employee: EMP });
+  it('a non-owner sees Revoke on an approved leave that starts after today, not on one that started', () => {
+    const { unmount } = render(<LeaveScreen leaves={[row('2099-01-01')]} employees={[EMP]} canApprove />);
+    expect(screen.getAllByRole('button', { name: 'Revoke' }).length).toBeGreaterThan(0);
+    unmount();
+    render(<LeaveScreen leaves={[row('2020-01-01')]} employees={[EMP]} canApprove />);
+    expect(screen.queryAllByRole('button', { name: 'Revoke' })).toHaveLength(0);
   });
 });
 

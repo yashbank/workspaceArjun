@@ -90,11 +90,11 @@ describe('B37 updateBusinessRule', () => {
     await expect(rules.updateBusinessRule('po_approval_threshold', '5000')).resolves.toMatchObject({ ruleValue: '5000' });
   });
 
-  it('a second same-day revision gets the friendly message, not the constraint name', async () => {
+  // R2-259: a second same-day revision replaces today's row (the later edit wins) — never a raw constraint error.
+  it('a second same-day revision replaces today\u2019s value, not a constraint error', async () => {
     await rules.updateBusinessRule('po_approval_threshold', '6000');
-    await expect(rules.updateBusinessRule('po_approval_threshold', '7000')).rejects.toThrow(
-      'A change for this rule is already scheduled for today; edit that one.',
-    );
+    await expect(rules.updateBusinessRule('po_approval_threshold', '7000')).resolves.toMatchObject({ ruleValue: '7000' });
+    expect(await rules.getRuleValue('po_approval_threshold')).toBe('7000');
   });
 });
 

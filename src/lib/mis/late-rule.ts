@@ -38,6 +38,7 @@ export function applyLateGrace(rawLateMinutes: number, grace: number | null): nu
   return rawLateMinutes > grace ? rawLateMinutes : 0;
 }
 
+export const LATE_RULE_WORKERS = ['ALL', 'DAILY', 'MONTHLY'] as const;
 export const LATE_RULE_KEYS = ['attendance.late_threshold_minutes', 'attendance.late_rule_workers'] as const;
 
 /**

@@ -199,7 +199,8 @@ async function guardRegisterDate(actor: MisActor, dateKey: string, entityId: str
   if (period?.status === 'CLOSED') {
     const reason = override?.reason?.trim() ?? '';
     if (actor.role !== 'OWNER' || reason.length < 3) {
-      throw new Error(`${year}-${String(monthNo).padStart(2, '0')} payroll is closed. Only the Owner can correct it, with a reason.`);
+      // R2-256 (D3): the closed payroll does not follow a later correction; the month must be reopened first.
+      throw new Error(`${year}-${String(monthNo).padStart(2, '0')} payroll is closed. Ask the Owner to reopen the month from Payroll before correcting attendance.`);
     }
     await db.misPayrollPeriod.update({ where: { id: period.id }, data: { correctionsAfterClose: period.correctionsAfterClose + 1 } });
     await logAuditEvent({
@@ -451,7 +452,7 @@ export async function bulkPunch(kind: 'IN' | 'OUT', employeeIds: string[], opts:
   const at = time ? factoryTimeToInstant(key, time, timeZone) : new Date();
   if (at.getTime() > Date.now() + 60_000) throw new Error('That time is in the future');
 
-  const people = await db.misEmployee.findMany({ where: { id: { in: ids }, isActive: true, deletedAt: null }, select: { id: true } });
+  const people = await db.misEmployee.findMany({ where: { id: { in: ids }, isActive: true, deletedAt: null }, select: { id: true, defaultShiftId: true } });
   if (people.length !== ids.length) throw new Error('One or more employees were not found or are not active');
   const d = dateKeyToDbDate(key);
   const existing = await db.misAttendance.findMany({ where: { date: d, employeeId: { in: ids } }, include: { breaks: true } });
@@ -479,15 +480,21 @@ export async function bulkPunch(kind: 'IN' | 'OUT', employeeIds: string[], opts:
   if (kind === 'OUT' && opts.shiftId && !(await shiftOf(opts.shiftId))?.isActive) throw new Error('That shift is not an active shift');
   const paidLunch = kind === 'OUT' ? await getLunchBreakMinutes() : 0;
   const stamp = time ? { editedAt: new Date(), editedById: actor.userId } : {};
+  // R2-251: clock-in stores the shift like clockIn() does: named, else roster, else the employee's default.
+  const inShift = new Map<string, string | null>();
+  if (kind === 'IN') {
+    for (const p of people) if (toWrite.includes(p.id)) inShift.set(p.id, opts.shiftId ?? (await resolveEmployeeShiftId(p.id, key, db, p.defaultShiftId ?? null)));
+  }
   const records = await db.$transaction(async (tx) => {
     const out = [];
     for (const employeeId of toWrite) {
       if (kind === 'IN') {
+        const sid = inShift.get(employeeId) ?? null;
         out.push(
           await tx.misAttendance.upsert({
             where: { employeeId_date: { employeeId, date: d } },
-            create: { employeeId, date: d, clockIn: at, status: 'PRESENT', ...stamp },
-            update: { clockIn: at, status: byEmp.get(employeeId)?.status === 'HALF_DAY' ? 'HALF_DAY' : 'PRESENT', ...stamp },
+            create: { employeeId, date: d, shiftId: sid, clockIn: at, status: 'PRESENT', ...stamp },
+            update: { clockIn: at, status: byEmp.get(employeeId)?.status === 'HALF_DAY' ? 'HALF_DAY' : 'PRESENT', ...(sid ? { shiftId: sid } : {}), ...stamp },
           }),
         );
       } else {
@@ -821,7 +828,8 @@ export async function cancelLeaveRequest(leaveId: string, reason?: string) {
   }
 
   if (leave.status !== 'APPROVED') throw new Error('Only a pending or approved leave can be cancelled');
-  if (actor.role !== 'OWNER') throw new Error('Only the Owner can revoke an approved leave');
+  // R2-240 (D1): until the leave starts, whoever may cancel it pending may revoke it too; from its first day, the Owner only.
+  if (actor.role !== 'OWNER' && keyOfDbDate(leave.date) <= (await today())) throw new Error('Only the Owner can revoke an approved leave once it has started');
   if (why.length < 3) throw new Error('A reason is required to revoke an approved leave');
   const days = leaveWorkingDays(keyOfDbDate(leave.date), leave.endDate ? keyOfDbDate(leave.endDate) : null);
   for (const k of days) {

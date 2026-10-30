@@ -34,6 +34,8 @@ const EXPECTED: Record<MisRoleName, string[]> = {
   // R2-218: a worker's only screen is Me; without it the desktop sidebar was blank.
   WORKER: ['me'],
 };
+// R2-239: Me is in the desktop sidebar for every signed-in role, last.
+for (const role of Object.keys(EXPECTED) as MisRoleName[]) if (!EXPECTED[role].includes('me')) EXPECTED[role] = [...EXPECTED[role], 'me'];
 
 beforeEach(() => vi.clearAllMocks());
 

@@ -493,7 +493,7 @@ describe('THE PULL PAYLOAD — id, name, badge code, shift, and nothing else (D1
   it('operatorRole maps only the two attendance roles; every other role (and the raw role) stays server-side', () => {
     expect(kiosk.operatorRoleOf('ATTENDANCE_OPERATOR')).toBe('OPERATOR');
     expect(kiosk.operatorRoleOf('SUPER_ATTENDANCE_OPERATOR')).toBe('SUPER_OPERATOR');
-    for (const r of ['OWNER', 'ADMIN', 'SUPERVISOR', 'QC', 'STORE_GUY', 'WORKER', '', null, undefined]) expect(kiosk.operatorRoleOf(r)).toBeNull();
+    for (const r of ['SUPERVISOR', 'QC', 'STORE_GUY', 'WORKER', '', null, undefined]) expect(kiosk.operatorRoleOf(r)).toBeNull();
     const op = kiosk.toPullEmployee({ id: 'e', name: 'A', employeeCode: 'C', role: 'SUPER_ATTENDANCE_OPERATOR' }, null);
     expect(op.operatorRole).toBe('SUPER_OPERATOR');
     expect(JSON.stringify(op)).not.toContain('ATTENDANCE');
@@ -532,14 +532,14 @@ describe('THE PULL PAYLOAD — id, name, badge code, shift, and nothing else (D1
   it('asks the database for exactly id, code and name — no other employee column is even loaded', async () => {
     const t = await pairTablet();
     await kiosk.pullForDevice(t.header, {});
-    expect(state.lastEmployeeSelect).toEqual({ id: true, employeeCode: true, name: true, photoUrl: true, role: true });
+    expect(state.lastEmployeeSelect).toEqual({ id: true, employeeCode: true, name: true, photoUrl: true, role: true, defaultShiftId: true });
   });
 
   it('the mapper cannot leak even if a wider row is handed to it', () => {
-    const wide = { id: 'e1', name: 'A', employeeCode: 'C', dailyWage: 900, salary: 1, phone: '9', role: 'OWNER' };
+    const wide = { id: 'e1', name: 'A', employeeCode: 'C', dailyWage: 900, salary: 1, phone: '9', role: 'SUPERVISOR' };
     const out = kiosk.toPullEmployee(wide, { id: 's', name: 'S', startTime: '06:00', endTime: '14:00', isDefault: true, hourlyRate: 5 } as never);
     expect(Object.keys(out).sort()).toEqual(['badgeCode', 'id', 'name', 'operatorRole', 'photoUrl', 'shift']);
-    expect(out.operatorRole).toBeNull(); // OWNER is not an attendance operator: the raw role never leaves the server
+    expect(out.operatorRole).toBeNull(); // SUPERVISOR is not an attendance operator: the raw role never leaves the server
     expect(Object.keys(out.shift as object).sort()).toEqual(['endTime', 'id', 'name', 'startTime']);
     expect(JSON.stringify(out)).not.toMatch(/900|hourlyRate|dailyWage|phone|OWNER/);
   });
@@ -563,6 +563,17 @@ describe('THE PULL PAYLOAD — id, name, badge code, shift, and nothing else (D1
     const byId = Object.fromEntries((await kiosk.pullForDevice(t.header, {})).employees.map((e) => [e.id, e.shift?.id ?? null]));
 
     expect(byId).toEqual({ e1: 's1', e2: null });
+  });
+
+  it('R2-234: with no allocation or attendance, shift falls back to defaultShiftId; an allocation still wins', async () => {
+    state.employees[0].defaultShiftId = 's2';
+    state.employees[1].defaultShiftId = 's2';
+    state.allocations = [{ id: 'a1', employeeId: 'e1', shiftId: 's1', allocationDate: factoryToday(), releasedAt: null, deletedAt: null }];
+    const t = await pairTablet();
+
+    const byId = Object.fromEntries((await kiosk.pullForDevice(t.header, {})).employees.map((e) => [e.id, e.shift?.id ?? null]));
+
+    expect(byId).toEqual({ e1: 's1', e2: 's2' });
   });
 
   it('D22: “today” for a shift is the FACTORY’s date — at 00:30 IST on the 21st it is the 21st, whatever the server’s clock says', async () => {

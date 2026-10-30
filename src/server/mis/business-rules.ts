@@ -2,6 +2,7 @@ import type { AqlThresholds } from '@/lib/mis/aql';
 import { can } from '@/lib/mis/permissions';
 import { isWageRuleKey, isPayrollPolicyRuleKey, type WageRuleKey } from '@/lib/mis/rule-keys';
 import { dbDateKey } from '@/lib/mis/attendance-month';
+import { LATE_RULE_KEYS, LATE_RULE_WORKERS } from '@/lib/mis/late-rule';
 import { DEFAULT_FACTORY_TIMEZONE, dateKeyToDbDate, factoryDateKey, isValidTimeZone, resolveFactoryTimezone } from '@/lib/mis/factory-time';
 import { validateSchedule } from '@/lib/mis/rules-ledger';
 import { db } from '@/server/db';
@@ -239,6 +240,8 @@ export async function getLunchBreakMinutes(): Promise<number> {
 }
 export const LUNCH_BREAK_KEY = 'ATTENDANCE_LUNCH_BREAK_MINUTES';
 const OWNER_ONLY_RULE_KEYS: readonly string[] = [PO_APPROVAL_THRESHOLD_KEY, ATTENDANCE_CORRECTION_KEY, LUNCH_BREAK_KEY];
+/** R2-241: keys nothing reads any more (shifts carry their own times). Rows stay in the table; the screen hides them. */
+const ORPHAN_RULE_KEYS: readonly string[] = ['shift.start_time', 'shift.end_time'];
 const INTEGER_RULE_KEYS: readonly string[] = [ATTENDANCE_CORRECTION_KEY, LUNCH_BREAK_KEY, OFFLINE_SKEW_KEY, OFFLINE_MAX_AGE_KEY, LINE_CLEARANCE_MAX_MINUTES_KEY];
 const RULE_RANGES: Record<string, [number, number]> = {
   [PO_APPROVAL_THRESHOLD_KEY]: [0, 10_000_000],
@@ -248,6 +251,10 @@ const RULE_RANGES: Record<string, [number, number]> = {
 
 /** R3 B37: a number rule must be a finite number (an integer for the integer keys) inside its range. */
 function assertRuleValueValid(ruleKey: string, ruleValue: string, valueType: string) {
+  // R2-242: the late rule's audience is one of three words, not free text.
+  if (ruleKey === LATE_RULE_KEYS[1] && !(LATE_RULE_WORKERS as readonly string[]).includes(ruleValue.trim())) {
+    throw new Error(`This rule must be one of ${LATE_RULE_WORKERS.join(', ')}.`);
+  }
   if (valueType !== 'number') return;
   const text = String(ruleValue).trim();
   const n = text === '' ? Number.NaN : Number(text);
@@ -317,7 +324,7 @@ export async function getBusinessRules() {
   // those are edited from the Owner-only /mis/settings/aql screen instead.
   const seen = new Set<string>();
   return rows
-    .filter((r) => !isAqlRuleKey(r.ruleKey))
+    .filter((r) => !isAqlRuleKey(r.ruleKey) && !ORPHAN_RULE_KEYS.includes(r.ruleKey))
     .filter((r) => mayReadWages || !(isWageRuleKey(r.ruleKey) || isPayrollPolicyRuleKey(r.ruleKey)))
     .filter(r => { if (seen.has(r.ruleKey)) return false; seen.add(r.ruleKey); return true; });
 }
@@ -338,9 +345,20 @@ export async function updateBusinessRule(ruleKey: string, ruleValue: string) {
   try {
     return await createRuleRevision(ruleKey, ruleValue, actor.userId);
   } catch (error) {
-    // R3 B37: a second revision on the same day hits (ruleKey, effectiveFrom) - say it in words.
-    if ((error as { code?: unknown } | null)?.code === 'P2002') throw new Error('A change for this rule is already scheduled for today; edit that one.');
-    throw error;
+    if ((error as { code?: unknown } | null)?.code !== 'P2002') throw error;
+    // R2-259: a second edit on the same day replaces today's row (the later edit wins), as addWageRate does.
+    const todays = await db.misBusinessRule.findFirst({ where: { ruleKey, effectiveFrom: { lte: new Date() } }, orderBy: { effectiveFrom: 'desc' } });
+    if (!todays) throw error;
+    const rec = await db.misBusinessRule.update({ where: { id: todays.id }, data: { ruleValue, updatedById: actor.userId } });
+    await logAuditEvent({
+      actorId: actor.userId,
+      action: 'UPDATE_RULE',
+      entity: 'MisBusinessRule',
+      entityId: rec.id,
+      before: isWageRuleKey(ruleKey) || isPayrollPolicyRuleKey(ruleKey) ? { ruleKey } : { ruleKey, ruleValue: todays.ruleValue },
+      after: isWageRuleKey(ruleKey) || isPayrollPolicyRuleKey(ruleKey) ? { ruleKey } : { ruleKey, ruleValue },
+    });
+    return rec;
   }
 }
 

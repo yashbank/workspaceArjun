@@ -36,6 +36,8 @@ export function MyLeaveScreen({ employeeId, leaves }: { employeeId: string; leav
   const [date, setDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [reason, setReason] = useState('');
+  const [cancelFor, setCancelFor] = useState<MyLeaveRow | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
   const router = useRouter();
@@ -59,6 +61,18 @@ export function MyLeaveScreen({ employeeId, leaves }: { employeeId: string; leav
       const res = await cancelLeaveRequestAction(id);
       if (!res.ok) toast('error', res.detail);
       else router.refresh();
+    });
+
+  // shortcut: browser date, not the factory zone; the server re-checks
+  const todayKey = new Date().toISOString().slice(0, 10);
+
+  const cancelApproved = () =>
+    startTransition(async () => {
+      if (!cancelFor) return;
+      const res = await cancelLeaveRequestAction(cancelFor.id, cancelReason);
+      if (!res.ok) { toast('error', res.detail); return; }
+      setCancelFor(null); setCancelReason('');
+      router.refresh();
     });
 
   return (
@@ -85,11 +99,24 @@ export function MyLeaveScreen({ employeeId, leaves }: { employeeId: string; leav
                 {l.status === 'PENDING' && (
                   <Button variant="ghost" onClick={() => withdraw(l.id)} disabled={isPending}>Withdraw</Button>
                 )}
+                {l.status === 'APPROVED' && l.date.slice(0, 10) > todayKey && (
+                  <Button variant="ghost" onClick={() => { setCancelFor(l); setCancelReason(''); }} disabled={isPending}>Cancel leave</Button>
+                )}
               </div>
             </li>
           ))}
         </ul>
       )}
+
+      <SlideOver open={!!cancelFor} onClose={() => setCancelFor(null)} title="Cancel leave">
+        <div className="flex flex-col gap-4 p-4">
+          <Input label="Reason (required)" value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} />
+          <div className="flex gap-2 pt-2">
+            <Button onClick={cancelApproved} disabled={isPending || cancelReason.trim().length < 3}>Cancel leave</Button>
+            <Button variant="ghost" onClick={() => setCancelFor(null)}>Keep leave</Button>
+          </div>
+        </div>
+      </SlideOver>
 
       <SlideOver open={open} onClose={() => setOpen(false)} title="Apply for leave">
         <div className="flex flex-col gap-4 p-4">

@@ -223,12 +223,28 @@ describe('R2-168 cancel leave', () => {
     expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: 'WITHDRAW_LEAVE' }));
   });
 
-  it('an APPROVED leave: only the Owner, with a reason; the LEAVE row it made is removed; audited', async () => {
+  // R2-240 (D1): a leave that has started is the Owner's to revoke; one still in the future may be revoked by whoever may cancel it.
+  it('an APPROVED leave that has started: only the Owner, with a reason; a future one: Admin too, with a reason', async () => {
+    const started = leave({ date: day('2026-10-13') });
+    as('ADMIN');
+    await att.approveLeave(started.id, true);
+    await expect(att.cancelLeaveRequest(started.id, 'wrong person')).rejects.toThrow('Only the Owner');
+    store.attendance = [];
+    const l = leave();
+    await att.approveLeave(l.id, true);
+    expect(store.attendance).toHaveLength(1);
+    await expect(att.cancelLeaveRequest(l.id)).rejects.toThrow('A reason is required');
+    await att.cancelLeaveRequest(l.id, 'wrong person');
+    expect(l.status).toBe('CANCELLED');
+    expect(store.attendance).toHaveLength(0);
+    expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: 'REVOKE_LEAVE', after: expect.objectContaining({ reason: 'wrong person' }) }));
+  });
+
+  it('an APPROVED leave: the Owner, with a reason; the LEAVE row it made is removed; audited', async () => {
     const l = leave();
     as('ADMIN');
     await att.approveLeave(l.id, true);
     expect(store.attendance).toHaveLength(1);
-    await expect(att.cancelLeaveRequest(l.id, 'wrong person')).rejects.toThrow('Only the Owner');
     as('OWNER');
     await expect(att.cancelLeaveRequest(l.id)).rejects.toThrow('A reason is required');
     await att.cancelLeaveRequest(l.id, 'entered in error');

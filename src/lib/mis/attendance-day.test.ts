@@ -125,6 +125,24 @@ describe('deriveDays — one day from its punches', () => {
   });
 });
 
+describe('R2-235: overtime past the night shift end stays on the night it started', () => {
+  const N2: ShiftDef = { id: 'n2', name: 'Night 19-07', startTime: '19:00', endTime: '07:00' };
+  it('a 07:15 clock-out for a 19:00-07:00 shift is the PREVIOUS day', () => {
+    expect(workDateFor(at(21, 7, 15), [S1, N2], TZ, 'n2')).toEqual({ workDate: '2026-09-20', shiftId: 'n2' });
+  });
+  it('the next evening\u2019s 19:00 scan is today again (R2-52: a stale IN defaults to IN)', () => {
+    expect(workDateFor(at(21, 19, 0), [S1, N2], TZ, 'n2').workDate).toBe('2026-09-21');
+  });
+  it('the grace ends 16 h after the shift start: 13:59 is last night, 14:00 is today (22:00 shift)', () => {
+    expect(workDateFor(at(21, 13, 59), SHIFTS, TZ, 'n').workDate).toBe('2026-09-20');
+    expect(workDateFor(at(21, 14, 0), SHIFTS, TZ, 'n').workDate).toBe('2026-09-21');
+  });
+  it('a stale 19:00 IN closed by a 07:15 OUT with the night hint is ONE day with an OT tail', () => {
+    const days = deriveDays([punch('IN', at(20, 19, 0), { shiftId: 'n2' }), punch('OUT', at(21, 7, 15), { shiftId: 'n2' })], [S1, N2], TZ);
+    expect([...days.values()].map((d) => [d.workDate, key(d.clockIn), key(d.clockOut)])).toEqual([['2026-09-20', '2026-09-20 19:00', '2026-09-21 07:15']]);
+  });
+});
+
 describe('deriveDays — the night shift crosses midnight (D20)', () => {
   it('one night shift is ONE day, filed under the evening it started', () => {
     const days = deriveDays([punch('IN', at(20, 22, 5)), punch('OUT', at(21, 6, 20))], SHIFTS, TZ);

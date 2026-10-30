@@ -93,8 +93,8 @@ export function navigationForRole(
   if (surface === 'phone' && !hasMoreTab(role)) return [];
   const permitted = new Set<MisAction>(allowedActions(role));
   return NAV.filter((entry) => {
-    // R2-218: Me is phone-only for everyone but a WORKER, whose only screen it is - without it the sidebar is empty.
-    if (surface === 'desktop' && entry.phoneOnly && !(entry.id === 'me' && role === 'WORKER')) return false;
+    // R2-218 / R2-239: Me is in the desktop sidebar for every signed-in role (staff read their own attendance there too).
+    if (surface === 'desktop' && entry.phoneOnly && entry.id !== 'me') return false;
     return entry.requires === null ? role !== null : permitted.has(entry.requires);
   }).map(({ requires: _requires, phoneOnly: _phoneOnly, ...entry }) => entry);
 }

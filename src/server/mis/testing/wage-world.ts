@@ -136,6 +136,13 @@ export const fakeDb = {
       state.rules.push(row);
       return row;
     },
+    update: async ({ where, data }: Row) => {
+      const row = state.rules.find((r) => r.id === where.id);
+      if (!row) throw new Error('rule not found');
+      Object.assign(row, data);
+      state.writes.push('misBusinessRule.update');
+      return row;
+    },
   },
   // Honours the date range, as the real query does — a fake that returned every row would let a
   // payroll bug about WHICH month hide behind the fixture.

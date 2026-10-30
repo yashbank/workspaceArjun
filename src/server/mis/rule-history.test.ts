@@ -189,9 +189,11 @@ describe('F-09 — changing the same rule twice in one day', () => {
   // The schema keys a rule revision on (ruleKey, effectiveFrom) and effectiveFrom is a DATE, so
   // a second edit on the same day collides. The right behaviour is a deliberate one — the
   // later edit wins, or a clear refusal — not a raw constraint error.
-  it.fails('a second edit on the same day does not surface a raw database constraint error', async () => {
+  // R2-259: decided — the later edit wins (today's row is replaced).
+  it('a second edit on the same day does not surface a raw database constraint error', async () => {
     await updateBusinessRule('OT_MULTIPLIER', '3');
     await expect(updateBusinessRule('OT_MULTIPLIER', '4')).resolves.toBeDefined();
+    expect(await getRuleValue('OT_MULTIPLIER')).toBe('4');
   });
 
   it.fails('the same on the very first AQL edit: the defaults are created today, so editing one today collides', async () => {

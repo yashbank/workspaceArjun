@@ -3,6 +3,7 @@ import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/mis/kit/button';
 import { Input } from '@/components/mis/kit/input';
+import { LATE_RULE_WORKERS } from '@/lib/mis/late-rule';
 import { updateRuleAction } from '@/app/(mis)/mis/settings/actions';
 
 export type Rule = { id: string; ruleKey: string; ruleValue: string; valueType: string; label: string; description: string | null; effectiveFrom: Date };
@@ -34,7 +35,13 @@ export function RuleRow({ rule, canWrite, onSave }: { rule: Rule; canWrite: bool
       <div className="flex items-center gap-2">
         {editing ? (
           <>
-            <Input label="" value={val} onChange={e => setVal(e.target.value)} />
+            {rule.ruleKey === 'attendance.late_rule_workers' ? (
+              <select aria-label={rule.label} value={val} onChange={e => setVal(e.target.value)} className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900">
+                {LATE_RULE_WORKERS.map(w => <option key={w} value={w}>{w}</option>)}
+              </select>
+            ) : (
+              <Input label="" value={val} onChange={e => setVal(e.target.value)} />
+            )}
             <Button onClick={save} disabled={isPending}>Save</Button>
             <Button variant="ghost" onClick={() => { setVal(rule.ruleValue); setEditing(false); }}>Cancel</Button>
           </>

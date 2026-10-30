@@ -120,3 +120,6 @@ public/assets/bpp/references/bpp-ambient-motion-reference.gif
 
 .claude/settings.local.json
 .claude/worktrees/
+
+# Built kiosk APK: copied here per round for handoff, never committed
+release/*.apk
