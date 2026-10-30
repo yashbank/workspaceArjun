@@ -198,10 +198,10 @@ async function guardRegisterDate(actor: MisActor, dateKey: string, entityId: str
   const period = await db.misPayrollPeriod.findUnique({ where: { year_month: { year, month: monthNo } } });
   if (period?.status === 'CLOSED') {
     const reason = override?.reason?.trim() ?? '';
-    if (actor.role !== 'OWNER' || reason.length < 3) {
-      // R2-256 (D3): the closed payroll does not follow a later correction; the month must be reopened first.
-      throw new Error(`${year}-${String(monthNo).padStart(2, '0')} payroll is closed. Ask the Owner to reopen the month from Payroll before correcting attendance.`);
-    }
+    const ym = `${year}-${String(monthNo).padStart(2, '0')}`;
+    // R2-256 (D3): the closed payroll does not follow a later correction; the month must be reopened first.
+    if (actor.role !== 'OWNER') throw new Error(`${ym} payroll is closed. Ask the Owner to reopen the month from Payroll before correcting attendance.`);
+    if (reason.length < 3) throw new Error(`${ym} payroll is closed. Give a reason to correct it anyway, or reopen the month from Payroll first.`);
     await db.misPayrollPeriod.update({ where: { id: period.id }, data: { correctionsAfterClose: period.correctionsAfterClose + 1 } });
     await logAuditEvent({
       actorId: actor.userId,

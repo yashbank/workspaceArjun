@@ -157,7 +157,7 @@ export function LeaveScreen({ leaves, employees, canApprove, canDecideHalfDay = 
             {r.status === 'PENDING' && canApprove && (
               <Button variant="ghost" onClick={() => withdraw(r.id)} disabled={isPending}>Withdraw</Button>
             )}
-            {r.status === 'APPROVED' && (canRevoke || new Date(r.date).toISOString().slice(0, 10) > todayKey) && (
+            {r.status === 'APPROVED' && (canRevoke || (canApprove && new Date(r.date).toISOString().slice(0, 10) > todayKey)) && (
               <Button variant="ghost" onClick={() => { setRevokeFor(r); setRevokeReason(''); }} disabled={isPending}>Revoke</Button>
             )}
           </div>
