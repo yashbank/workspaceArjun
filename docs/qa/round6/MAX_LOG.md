@@ -42,3 +42,10 @@ R2-261,262,263 | BY_DESIGN | — | 261 deferred, 262 pass, 263 (D4) deferred
 Files outside mis folders: .gitignore (+release/*.apk), prisma/migrations (data migration above), src/server/mis/testing/wage-world.ts (+misBusinessRule.update test double)
 APK: release/app-release-unsigned.apk (35 MB, from 08ac369 sources, gitignored — not pushed; build on PRO with JAVA_HOME=<jdk17> ./gradlew assembleRelease if needed)
 Migrations for Yash (pnpm db:deploy): 20261031000000_r2_242_late_rule_description (UPDATE only, no schema change)
+## 2026-10-31 Verifier pass (independent, read-only) + follow-ups
+ALL F1-F16, D1 | VERIFIED | 1fea13d | 16 touched test files 423 pass; F4/F8 UNVERIFIED (no render/Compose test) — PRO: payroll at 1920+390px, tablet Queue Dismiss
+R2-250 (D2) | GATE_PASSED | 0084326 | employee-screen.tsx: Admin's form says "Pay type, wage code and Sunday pay are set by the Owner after you save"
+R2-240 (D1) follow-up | GATE_PASSED | 1fea13d | leave-screen Revoke on a future approved leave only for attendance.write holders (was: anyone on the page)
+R2-256 (F14) follow-up | GATE_PASSED | 1fea13d | Owner without a reason now told "give a reason or reopen the month"; non-Owner told to ask the Owner
+KNOWN, not changed: F10 TOO_OLD resolve also skips the inactive-employee check (same as CORRECTION_WINDOW_CLOSED, needs attendance.write + note) · F1 pull does one roster query per employee without allocation (fine at 15-100 staff; batch later) · D1 UI uses browser date, server re-checks factory date · F3 "sundayPaid" pays the configured weekly off (Friday if weekly_off=FRIDAY), mirroring MONTHLY
+Gate after follow-ups: typecheck ✓ lint ✓ touched tests ✓ (full suite + build passed at 08ac369; follow-ups are 2 one-line changes)
