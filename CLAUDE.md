@@ -75,7 +75,7 @@ Tests are colocated as `*.test.ts` next to the module.
 
 # MIS module — standing rules
 
-Applies to every MIS ticket. Read `MIS_CODE_STRUCTURE.md` once per session.
+Applies to every MIS ticket. Read `MIS_CODE_STRUCTURE.md` and `docs/AGENT_GOTCHAS.md` once per session. Skills: `investigate-first` → `surgical-patch` / `lean-build` → `verify-and-stop`; a whole QA round = `mis-round-fix`.
 
 ## Where code goes
 `src/app/(mis)/` pages · `src/components/mis/` React · `src/lib/mis/` pure (no Prisma/React) · `src/server/mis/` DB, permissions, money · `prisma/schema.prisma` `Mis*` models.
