@@ -11,7 +11,7 @@ import { Input } from '@/components/mis/kit/input';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { useRouter } from 'next/navigation';
-import { addGrnItemAction, confirmGrnAction, discardGrnAction, removeGrnItemAction, updateGrnHeaderAction, updateGrnItemAction } from '@/app/(mis)/mis/grn/actions';
+import { addGrnItemAction, confirmGrnAction, discardGrnAction, removeGrnItemAction, returnQuarantineAction, reverseGrnAction, updateGrnHeaderAction, updateGrnItemAction } from '@/app/(mis)/mis/grn/actions';
 import { unwrap } from '@/lib/mis/action-result';
 
 type GrnItem = {
@@ -46,10 +46,14 @@ type Grn = {
   vehicleNumber?: string | null;
   transporterName?: string | null;
   dcNumber?: string | null;
+  /** R2-277 */
+  reverseReason?: string | null;
   po: { id: string; poNumber: string; supplier: { id: string; name: string } | null; items: PoItem[] } | null;
   items: GrnItem[];
 };
-type Props = { grn: Grn; canWrite: boolean; /** R2-71: confirmed / in-production orders a line can be earmarked for. */ orders?: { id: string; orderNumber: string; customerName: string | null }[]; /** ADMIN/OWNER: may take more than the order + 2% with a reason (R3-STK B03). */ canOverride?: boolean; canSeeMoney?: boolean; /** Server-formatted (Owner only); null otherwise. */ invoiceAmountFormatted?: string | null };
+/** R2-278: a damaged lot held apart from stock (quantities only, never money). */
+export type QuarantineRow = { id: string; itemName: string; unit: string; quantity: number; status: string; returnedAt: Date | string | null; returnNote: string | null };
+type Props = { grn: Grn; canWrite: boolean; /** R2-71: confirmed / in-production orders a line can be earmarked for. */ orders?: { id: string; orderNumber: string; customerName: string | null }[]; /** ADMIN/OWNER: may take more than the order + 2% with a reason (R3-STK B03). */ canOverride?: boolean; canSeeMoney?: boolean; /** Server-formatted (Owner only); null otherwise. */ invoiceAmountFormatted?: string | null; /** R2-277/R2-278: the Owner may reverse a confirmed GRN and return quarantined goods. */ canReverse?: boolean; quarantine?: QuarantineRow[] };
 
 const isoDate = (d: Date | string | null | undefined) => (d ? new Date(d).toISOString().slice(0, 10) : '');
 
@@ -64,7 +68,7 @@ function parseAmount(raw: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-export function GrnDetailScreen({ grn, canWrite, orders = [], canOverride = false, canSeeMoney = false, invoiceAmountFormatted = null }: Props) {
+export function GrnDetailScreen({ grn, canWrite, orders = [], canOverride = false, canSeeMoney = false, invoiceAmountFormatted = null, canReverse = false, quarantine = [] }: Props) {
   const [isPending, startTransition] = useTransition();
   const [selectedPoItemId, setSelectedPoItemId] = useState('');
   const [qty, setQty] = useState('');
@@ -84,10 +88,28 @@ export function GrnDetailScreen({ grn, canWrite, orders = [], canOverride = fals
   const [warnings, setWarnings] = useState<string[]>([]);
   // R3-STK B03: an Admin/Owner's reason for going past the 2% tolerance. Once given it rides on every later call of this screen.
   const [overReason, setOverReason] = useState('');
+  // R2-277 / R2-278
+  const [reverseOpen, setReverseOpen] = useState(false);
+  const [reverseReason, setReverseReason] = useState('');
+  const [reverseError, setReverseError] = useState<string | null>(null);
+  const [returnNote, setReturnNote] = useState<Record<string, string>>({});
+  const runReverse = () => startTransition(async () => {
+    setReverseError(null);
+    try {
+      unwrap(await reverseGrnAction(grn.id, reverseReason));
+      setReverseOpen(false);
+    } catch (e) {
+      setReverseError(e instanceof Error ? e.message : 'That did not save.');
+    }
+  });
+  const runReturn = (id: string) => startTransition(async () => {
+    try { unwrap(await returnQuarantineAction(id, grn.id, returnNote[id] || null)); } catch (e) { setConfirmError(e instanceof Error ? e.message : 'That did not save.'); }
+  });
   const [overOpen, setOverOpen] = useState(false);
   const [overDraft, setOverDraft] = useState('');
   const retryWithReason = useRef<((reason: string) => void) | null>(null);
-  const isOverRefusal = (message: string) => canOverride && /more than 2%/.test(message);
+  // R2-279: past the 5% ceiling only the Owner (canReverse marks the Owner here) is offered the reason box.
+  const isOverRefusal = (message: string) => (/more than 5%/.test(message) ? canReverse : canOverride && /more than 2%/.test(message));
   const offerOverride = (retry: (reason: string) => void) => { retryWithReason.current = retry; };
   const [headerSaved, setHeaderSaved] = useState(false);
   const [headerError, setHeaderError] = useState<string | null>(null);
@@ -297,8 +319,9 @@ export function GrnDetailScreen({ grn, canWrite, orders = [], canOverride = fals
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-xl font-semibold text-slate-900">{grn.grnNumber}</h1>
-            <StatusBadge tone={grn.status === 'CONFIRMED' ? 'good' : 'neutral'}>{grn.status}</StatusBadge>
+            <StatusBadge tone={grn.status === 'CONFIRMED' ? 'good' : grn.status === 'REVERSED' ? 'critical' : 'neutral'}>{grn.status}</StatusBadge>
           </div>
+          {grn.status === 'REVERSED' && grn.reverseReason && <p className="mt-1 text-sm text-red-700">Reversed: {grn.reverseReason}</p>}
           <PageBack href="/mis/grn" label="Goods received" />
           <a href={`/mis/print/grn/${grn.id}`} target="_blank" className="text-sm text-blue-600 hover:underline ml-4">🖨 Print GRN</a>
         </div>
@@ -308,7 +331,45 @@ export function GrnDetailScreen({ grn, canWrite, orders = [], canOverride = fals
             {grn.items.length > 0 && <Button onClick={handleConfirm} disabled={isPending}>Confirm GRN</Button>}
           </div>
         )}
+        {grn.status === 'CONFIRMED' && canReverse && (
+          <Button variant="ghost" onClick={() => { setReverseReason(''); setReverseError(null); setReverseOpen(true); }} disabled={isPending}>Reverse GRN</Button>
+        )}
       </div>
+      {/* R2-277: the Owner's reasoned reversal; stock is credited back out and the PO reopens. */}
+      <SlideOver open={reverseOpen} onClose={() => setReverseOpen(false)} title="Reverse this GRN">
+        <div className="flex flex-col gap-4 p-4">
+          <p className="text-sm text-slate-600">{grn.grnNumber} · every quantity it booked is credited back out of stock, the PO reopens, and the supplier invoice is re-matched. The GRN stays on file as reversed.</p>
+          <Input label="Reason (required)" value={reverseReason} onChange={(e) => setReverseReason(e.target.value)} />
+          {reverseError && <p role="alert" className="text-sm text-red-600">{reverseError}</p>}
+          <div className="flex gap-2 pt-2">
+            <Button variant="danger" onClick={runReverse} disabled={isPending || reverseReason.trim().length < 3}>Reverse GRN</Button>
+            <Button variant="ghost" onClick={() => setReverseOpen(false)}>Cancel</Button>
+          </div>
+        </div>
+      </SlideOver>
+      {/* R2-278: damaged goods are held here, not in stock, until the Owner returns them to the supplier. */}
+      {quarantine.length > 0 && (
+        <div className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 p-4">
+          <h2 className="font-semibold text-amber-900">Quarantine · damaged goods</h2>
+          <ul className="divide-y divide-amber-100">
+            {quarantine.map((q) => (
+              <li key={q.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
+                <span className="text-slate-900">{q.itemName} · <span className="font-mono">{q.quantity} {q.unit}</span></span>
+                {q.status === 'RETURNED' ? (
+                  <span className="text-slate-700">Returned to supplier{q.returnedAt ? ` · ${new Date(q.returnedAt).toLocaleDateString('en-IN')}` : ''}{q.returnNote ? ` · ${q.returnNote}` : ''}</span>
+                ) : canReverse ? (
+                  <span className="flex items-center gap-2">
+                    <Input label="" placeholder="Note (optional)" value={returnNote[q.id] ?? ''} onChange={(e) => setReturnNote({ ...returnNote, [q.id]: e.target.value })} />
+                    <Button variant="secondary" onClick={() => runReturn(q.id)} disabled={isPending}>Return to supplier</Button>
+                  </span>
+                ) : (
+                  <span className="text-amber-900">Held · the Owner returns it to the supplier</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {confirmDialog}
       {confirmError && (
         <div className="flex flex-wrap items-center gap-3">

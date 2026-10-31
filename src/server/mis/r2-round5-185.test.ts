@@ -108,6 +108,7 @@ const db: Row = {
   },
   misOrder: { findFirst: async () => null },
   misOrderStockAllocation: { create: async () => null },
+  misQuarantineStock: { create: async ({ data }: Row) => ({ id: 'q1', ...data }) }, // R2-278: damaged quantity is quarantined on confirm (fixture delegate)
   $transaction: async (cb: (tx: Row) => Promise<unknown>) => {
     const snapshot = clone({ pos: state.pos, poItems: state.poItems, grns: state.grns, grnItems: state.grnItems, ledger: state.ledger, txns: state.txns, invoices: state.invoices });
     const tx: Row = { ...db, $queryRaw: async (_s: TemplateStringsArray, key: string) => { state.lockCalls.at(-1)?.push(key); return [{ locked: 1 }]; } };

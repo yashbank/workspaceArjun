@@ -216,13 +216,13 @@ Batch B7
 - [x] R2-273 Admin PO rates (needs Q, money rule)
 - [x] R2-272 PO delivery date + terms (SCHEMA, needs Q)
 Batch B8
-- [ ] R2-279 over-receipt ceiling (needs Q)
-- [ ] R2-280 invoice variance sign-off (needs Q, maybe SCHEMA)
-- [ ] R2-278 damaged qty quarantine (needs Q, likely SCHEMA)
-- [ ] R2-277 reverse GRN (SCHEMA, needs Q)
+- [x] R2-279 over-receipt ceiling (needs Q)
+- [x] R2-280 invoice variance sign-off (needs Q, maybe SCHEMA)
+- [x] R2-278 damaged qty quarantine (needs Q, likely SCHEMA)
+- [x] R2-277 reverse GRN (SCHEMA, needs Q)
 Batch B9
-- [ ] R2-281 store commit idempotency (verify)
-- [ ] R2-283 count reconcile (needs Q)
+- [x] R2-281 store commit idempotency (verify)
+- [x] R2-283 count reconcile (needs Q)
 
 ## Final step (after B9)
 - [ ] FINAL: ask owner to apply pending migrations (see Schema protocol, step 4), wait, re-verify, report ready to deploy

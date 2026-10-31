@@ -24,7 +24,7 @@ vi.mock('@/server/mis/roles', () => ({ getMisRole: async () => 'OWNER' }));
 vi.mock('@/server/mis/auth', () => ({ checkPermission: async () => true }));
 
 const grn = { id: 'g1', grnNumber: 'GRN-1', receivedAt: new Date('2026-09-01'), items: [{ id: 'gi', receivedQty: d(5), poItem: { id: 'p', quantity: d(9), item: { id: 'i', name: 'Ink' } } }], po: { id: 'po', items: [{ id: 'p', quantity: d(9), receivedQuantity: d(1), ratePerUnit: d(3) }] } };
-vi.mock('@/server/mis/grn', () => ({ getGRN: async () => grn }));
+vi.mock('@/server/mis/grn', () => ({ getGRN: async () => grn, listQuarantineForGrn: async () => [] })); // R2-278: the page also loads the quarantine rows
 
 const po = { id: 'po1', poNumber: 'PO-1', items: [{ id: 'p', description: 'x', quantity: d(9), receivedQuantity: d(1), ratePerUnit: d(3), item: { id: 'i', name: 'Ink' } }] };
 vi.mock('@/server/mis/po', () => ({ getPO: async () => po, computePoTotal: async () => 27, formatMoney: (v: unknown) => `₹${v}` }));

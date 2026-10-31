@@ -511,7 +511,37 @@ enum MisPoStatus {
 enum MisGrnStatus {
   DRAFT
   CONFIRMED
+  /// R2-277 (parked migration 20261031000002). A confirmed receipt the Owner reversed: stock credited back out, PO reopened.
+  REVERSED
   @@map("mis_grn_status")
+}
+
+/// R2-278 (parked migration 20261031000002). Damaged quantity on a confirmed GRN line, held apart from stock until the Owner
+/// returns it to the supplier. Never in the inventory ledger: it is not usable stock.
+enum MisQuarantineStatus {
+  HELD
+  RETURNED
+  @@map("mis_quarantine_status")
+}
+
+model MisQuarantineStock {
+  id           String              @id @default(uuid()) @db.Uuid
+  grnId        String              @map("grn_id") @db.Uuid
+  grnItemId    String?             @map("grn_item_id") @db.Uuid
+  itemId       String              @map("item_id") @db.Uuid
+  supplierId   String?             @map("supplier_id") @db.Uuid
+  quantity     Decimal             @db.Decimal(12, 2)
+  status       MisQuarantineStatus @default(HELD)
+  /// Plain scalar auth user ids.
+  returnedById String?             @map("returned_by_id") @db.Uuid
+  returnedAt   DateTime?           @map("returned_at")
+  returnNote   String?             @map("return_note")
+  createdAt    DateTime            @default(now()) @map("created_at")
+  grn          MisGrn              @relation(fields: [grnId], references: [id])
+  item         MisItem             @relation(fields: [itemId], references: [id])
+  @@index([grnId])
+  @@index([status])
+  @@map("mis_quarantine_stock")
 }
 
 enum MisGrnItemType {
@@ -654,6 +684,7 @@ model MisItem {
   pickListLines  MisPickListLine[]
   storeReturns   MisStoreReturn[]
   @@map("mis_items")
+  quarantine     MisQuarantineStock[]
 }
 
 model MisProcess {
@@ -753,6 +784,11 @@ model MisGrn {
   receivedAt   DateTime?        @map("received_at")
   receivedById String?          @map("received_by_id") @db.Uuid
   notes        String?
+  /// R2-277 (same parked migration): who reversed this confirmed receipt, when and why. Null unless REVERSED.
+  reversedById  String?   @map("reversed_by_id") @db.Uuid
+  reversedAt    DateTime? @map("reversed_at")
+  reverseReason String?   @map("reverse_reason")
+  quarantine    MisQuarantineStock[]
   /// V2 Epic 1 (Focus ERP parity) — the delivery's paperwork. `supplierInvoiceAmount` is money:
   /// Owner-only, stripped for every other reader (`grn.ts`), never audited.
   supplierInvoiceNo     String?   @map("supplier_invoice_no")
@@ -2015,6 +2051,10 @@ model MisSupplierInvoice {
   notes         String?
   /// 3-way match result (`lib/mis/invoice-match.ts`). Set when a GRN confirms the invoice; recomputed by `reconcileSupplierInvoice`.
   status        MisSupplierInvoiceStatus @default(PENDING_REVIEW)
+  /// R2-280 (parked migration 20261031000002). The Owner's sign-off on a DISCREPANCY_* invoice. Cleared when the match status changes.
+  varianceSignedOffById String?   @map("variance_signed_off_by_id") @db.Uuid
+  varianceSignedOffAt   DateTime? @map("variance_signed_off_at")
+  varianceSignOffNote   String?   @map("variance_sign_off_note")
   createdAt     DateTime         @default(now()) @map("created_at")
   updatedAt     DateTime         @updatedAt @map("updated_at")
   po            MisPurchaseOrder @relation(fields: [poId], references: [id])

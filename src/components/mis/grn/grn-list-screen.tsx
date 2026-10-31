@@ -56,7 +56,7 @@ export function GrnListScreen({ grns, approvedPos, canWrite, paging }: Props) {
     { key: 'grnNumber', header: 'GRN #', render: (r) => <span className="font-mono text-sm">{r.grnNumber}</span> },
     { key: 'po', header: 'PO #', render: (r) => r.po ? <Link href={`/mis/po/${r.po.id}`} className="text-blue-600 hover:underline text-sm">{r.po.poNumber}</Link> : '—' },
     { key: 'supplier', header: 'Supplier', render: (r) => r.po?.supplier?.name ?? '—' },
-    { key: 'status', header: 'Status', render: (r) => <StatusBadge tone={r.status === 'CONFIRMED' ? 'good' : 'neutral'}>{r.status}</StatusBadge> },
+    { key: 'status', header: 'Status', render: (r) => <StatusBadge tone={r.status === 'CONFIRMED' ? 'good' : r.status === 'REVERSED' ? 'critical' : 'neutral'}>{r.status}</StatusBadge> }, // R2-277
     { key: 'createdAt', header: 'Date', render: (r) => new Date(r.createdAt).toLocaleDateString('en-IN') },
     { key: 'actions', header: '', render: (r) => <Link href={`/mis/grn/${r.id}`} className="text-sm text-blue-600 hover:underline">View</Link> },
   ];

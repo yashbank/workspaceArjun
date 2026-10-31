@@ -12,7 +12,8 @@ import {
   poStatusAfterReceipt,
   receiptVerdict,
   type ReceiptVerdict,
-} from '@/lib/mis/receipt-rules';
+  overCeilingMessage,
+  } from '@/lib/mis/receipt-rules';
 import type { MisRoleName } from '@/lib/mis/roles';
 import { can } from '@/lib/mis/permissions';
 import { withoutMoneyFields } from '@/lib/mis/money-fields';
@@ -151,6 +152,8 @@ export function enforceReceiptCap(
     overReceiptReason,
   });
   if (verdict.kind === 'REFUSED') {
+    // R2-279: past the 5% ceiling the sentence changes — an Admin's reason is not enough.
+    if (verdict.beyondCeiling) throw new GrnStateError(overCeilingMessage(lineLabel(poLine), verdict.ceiling ?? verdict.max, poLine.item?.unit ?? '', role === 'OWNER'));
     throw new GrnStateError(overReceiptMessage(lineLabel(poLine), verdict.max, poLine.item?.unit ?? '', mayOverrideReceipt(role)));
   }
   return verdict;
@@ -620,6 +623,13 @@ export async function confirmGRN(grnId: string, opts: { overReceiptReason?: stri
     const { prefix, next } = await nextTxnSeq(tx, zone);
     let seq = next;
     for (const grnItem of fresh.items) {
+      // R2-278: damaged goods are on the dock, not in stock — held in quarantine, by GRN line, until the Owner returns them.
+      const damaged = num(grnItem.damageQuantity);
+      if (damaged > 0 && grnItem.poItem.itemId) {
+        await tx.misQuarantineStock.create({
+          data: { grnId, grnItemId: grnItem.id, itemId: grnItem.poItem.itemId, supplierId: fresh.po.supplierId, quantity: damaged },
+        });
+      }
       if (grnItem.receivedQty.toNumber() <= 0) continue; // damage-only line: nothing good arrived
       if (!grnItem.poItem.itemId) continue; // unreachable: refused above (D4)
       const itemId = grnItem.poItem.itemId;
@@ -714,4 +724,124 @@ export async function listOpenGRNs(limit = 5) {
       createdAt: g.createdAt,
     })),
   };
+}
+
+// ---------------------------------------------------------------------------------------------
+// R2-277 — reverse a confirmed GRN (Owner only). R2-278 — quarantine of damaged goods.
+// ---------------------------------------------------------------------------------------------
+
+function requireOwner(actor: { role: MisRoleName }, what: string) {
+  if (actor.role !== 'OWNER') throw new MisForbiddenError('grn.write', what);
+}
+
+/**
+ * R2-277: a confirmed receipt entered wrongly is reversed, never edited. Stock is credited back out in both books
+ * (negative ledger row, OUT transaction), the PO line counters and the order earmarks made by this GRN are taken back,
+ * the PO reopens (APPROVED / PARTIAL from what remains), and the supplier invoice this GRN named is re-matched.
+ * Owner only, with a reason on the record. The GRN row stays, as REVERSED, so the paperwork trail is intact.
+ */
+export async function reverseGRN(grnId: string, reason: string) {
+  const actor = await requirePermission('grn.write');
+  requireOwner(actor, 'reverse a confirmed GRN');
+  const why = reason?.trim() ?? '';
+  if (why.length < 3) throw new GrnStateError('Give a reason (at least 3 characters) to reverse this GRN.');
+  const grn = await db.misGrn.findUnique({ where: { id: grnId }, include: { items: { include: { poItem: { select: { id: true, itemId: true } } } } } });
+  if (!grn) throw new Error(`GRN ${grnId} not found`);
+  if (grn.status !== 'CONFIRMED') throw new GrnStateError('Only a confirmed GRN can be reversed.');
+  const zone = await storeFactoryZone();
+  const itemIds = [...new Set(grn.items.flatMap((i) => (i.poItem.itemId ? [i.poItem.itemId] : [])))];
+  const reversed: { itemId: string; qty: number }[] = [];
+  let poStatus: string | null = null;
+  const at = new Date();
+
+  await db.$transaction(async (tx) => {
+    await lockStockKeys(tx, [...itemIds.map(itemLockKey), ...grn.items.map((i) => poItemLockKey(i.poItemId)), STXN_SEQ_KEY]);
+    // Serialise on the PO row (any status: a COMPLETE PO is exactly the one being reopened here).
+    await tx.misPurchaseOrder.updateMany({ where: { id: grn.poId }, data: { updatedAt: at } });
+    const claimed = await tx.misGrn.updateMany({
+      where: { id: grnId, status: 'CONFIRMED' },
+      data: { status: 'REVERSED', reversedById: actor.userId, reversedAt: at, reverseReason: why },
+    });
+    if (claimed.count !== 1) throw new GrnStateError('This GRN is no longer confirmed.');
+
+    const { prefix, next } = await nextTxnSeq(tx, zone);
+    let seq = next;
+    for (const line of grn.items) {
+      const qty = line.receivedQty.toNumber();
+      const itemId = line.poItem.itemId;
+      if (qty <= 0 || !itemId) continue;
+      const ledgerBalance = await lastLedgerBalance(tx, itemId);
+      await tx.misInventoryLedger.create({
+        data: { itemId, changeQty: -qty, balanceQty: round2(ledgerBalance - qty), source: 'GRN_REVERSAL', sourceId: grnId, notes: `Reversed ${grn.grnNumber} · ${why}` },
+      });
+      const txnBalance = await lastTxnBalance(tx, itemId);
+      await tx.misStoreTransaction.create({
+        data: {
+          txnNumber: txnNumberOf(prefix, seq), itemId, type: 'OUT', quantity: qty, balanceQty: round2(txnBalance - qty),
+          referenceNo: grn.grnNumber, reason: `GRN reversed · ${why}`, isOverIssue: false, createdById: actor.userId,
+        },
+      });
+      seq += 1;
+      await tx.misPoItem.update({ where: { id: line.poItemId }, data: { receivedQuantity: { decrement: qty } } });
+      // The order earmarks this receipt created go with it.
+      await tx.misOrderStockAllocation.deleteMany({ where: { source: 'GRN', sourceId: grnId, itemId } });
+      reversed.push({ itemId, qty });
+    }
+
+    // The PO reopens: COMPLETE/PARTIAL/RECEIVING recomputed from what is still received; nothing left -> APPROVED.
+    const lines = await tx.misPoItem.findMany({ where: { poId: grn.poId }, select: { quantity: true, receivedQuantity: true } });
+    poStatus = poStatusAfterReceipt(lines) ?? 'APPROVED';
+    await tx.misPurchaseOrder.update({ where: { id: grn.poId }, data: { status: poStatus as 'APPROVED' | 'PARTIAL' | 'COMPLETE' } });
+
+    // The invoice this GRN carried is re-matched against the receipts that remain.
+    if (grn.supplierInvoiceNo) {
+      const remaining = await tx.misGrn.findMany({
+        where: { poId: grn.poId, status: 'CONFIRMED', supplierInvoiceNo: grn.supplierInvoiceNo },
+        select: { items: { select: { receivedQty: true, dcQuantity: true, poItem: { select: { ratePerUnit: true } } } } },
+      });
+      const invoice = await tx.misSupplierInvoice.findUnique({ where: { poId_invoiceNo: { poId: grn.poId, invoiceNo: grn.supplierInvoiceNo } } });
+      if (invoice) {
+        const { status } = matchSupplierInvoice(
+          remaining.flatMap((g) => g.items).map((i) => ({ receivedQty: i.receivedQty.toNumber(), ratePerUnit: i.poItem.ratePerUnit.toNumber(), dcQuantity: i.dcQuantity?.toNumber() ?? null })),
+          invoice.invoiceAmount?.toNumber() ?? null,
+        );
+        await tx.misSupplierInvoice.update({
+          where: { id: invoice.id },
+          data: { status, ...(status !== invoice.status ? { varianceSignedOffById: null, varianceSignedOffAt: null, varianceSignOffNote: null } : {}) },
+        });
+      }
+    }
+  });
+
+  await logAuditEvent({
+    actorId: actor.userId, action: 'grn.reverse', entity: 'MisGrn', entityId: grnId,
+    before: { status: 'CONFIRMED' }, after: { status: 'REVERSED', reason: why, lines: reversed, poStatus },
+  });
+  return { id: grnId, status: 'REVERSED' as const, poStatus, reversed };
+}
+
+/** R2-278: the Owner sends damaged goods back to the supplier; the quarantine row is closed, never deleted. */
+export async function returnQuarantineToSupplier(id: string, note?: string | null) {
+  const actor = await requirePermission('grn.write');
+  requireOwner(actor, 'return damaged goods to the supplier');
+  const row = await db.misQuarantineStock.findUnique({ where: { id } });
+  if (!row) throw new Error('Quarantine entry not found');
+  if (row.status !== 'HELD') throw new GrnStateError('This damaged lot was already returned.');
+  const changed = await db.misQuarantineStock.updateMany({
+    where: { id, status: 'HELD' },
+    data: { status: 'RETURNED', returnedById: actor.userId, returnedAt: new Date(), returnNote: note?.trim() || null },
+  });
+  if (changed.count !== 1) throw new GrnStateError('This damaged lot was already returned.');
+  await logAuditEvent({
+    actorId: actor.userId, action: 'quarantine.return_to_supplier', entity: 'MisQuarantineStock', entityId: id,
+    before: { status: 'HELD' }, after: { status: 'RETURNED', grnId: row.grnId, itemId: row.itemId, quantity: String(row.quantity), note: note?.trim() || null },
+  });
+  return { id, status: 'RETURNED' as const };
+}
+
+/** R2-278: what is held in quarantine for one GRN (any `grn.view` holder: it is quantity, never money). */
+export async function listQuarantineForGrn(grnId: string) {
+  await requirePermission('grn.view');
+  const rows = await db.misQuarantineStock.findMany({ where: { grnId }, orderBy: { createdAt: 'asc' }, include: { item: { select: { name: true, unit: true } } } });
+  return rows.map((r) => ({ id: r.id, itemName: r.item.name, unit: r.item.unit, quantity: r.quantity.toNumber(), status: r.status, returnedAt: r.returnedAt, returnNote: r.returnNote }));
 }
