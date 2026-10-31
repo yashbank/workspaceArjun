@@ -280,4 +280,4 @@ Batch C9
 - [x] R2-345 dispatch — DEFERRED_BY_OWNER (not built)
 
 ## Final step (after C9)
-- [ ] FINAL: ask the owner to apply pending migrations (Schema protocol, step 4) and WAIT for "migrations applied" (the owner applies them from another clone, so the builder cannot do or verify it; it must still stop here), then re-run typecheck + lint + full vitest, push, report "ready to deploy".
+- [x] FINAL: ask the owner to apply pending migrations (Schema protocol, step 4) and WAIT for "migrations applied" (the owner applies them from another clone, so the builder cannot do or verify it; it must still stop here), then re-run typecheck + lint + full vitest, push, report "ready to deploy".
