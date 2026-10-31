@@ -196,6 +196,8 @@ describe('money and access functions are gated on the RIGHT action, not merely o
     ['payroll.ts#getMonthWageBill', 'wages.read'],
     // D6 — AQL thresholds are Owner-only.
     ['business-rules.ts#getAqlThresholdRules', 'aql.read'],
+    ['business-rules.ts#getAqlLimitRules', 'aql.read'], // R2-314
+    ['production.ts#getLastProductionAt', 'production.read'], // R2-316
     ['business-rules.ts#updateAqlThreshold', 'aql.read'],
     ['users.ts#inviteMisUser', 'users.invite'],
     ['users.ts#listPendingMisGrants', 'users.invite'],

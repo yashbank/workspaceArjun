@@ -44,6 +44,8 @@ export type CoaSnapshot = {
   capturedAt: string;
   order: SnapshotOrder;
   qcLogs: CoaQcRow[];
+  /** R2-316: when production finished (last production entry); optional so older frozen copies still parse. */
+  mfgDate?: string | null;
 };
 
 export type JobCardSnapshot = {
@@ -149,12 +151,13 @@ function snapshotOrder(o: OrderInput): SnapshotOrder {
   };
 }
 
-export function coaSnapshotFrom(order: OrderInput, qcLogs: readonly QcInput[], at: Date): CoaSnapshot {
+export function coaSnapshotFrom(order: OrderInput, qcLogs: readonly QcInput[], at: Date, extras: { mfgDate?: Date | string | null } = {}): CoaSnapshot {
   return {
     kind: 'COA',
     schema: SNAPSHOT_SCHEMA,
     capturedAt: at.toISOString(),
     order: snapshotOrder(order),
+    mfgDate: iso(extras.mfgDate),
     qcLogs: qcLogs.map((q) => ({
       id: q.id,
       bomStageId: q.bomStageId ?? null,

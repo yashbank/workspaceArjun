@@ -96,3 +96,14 @@ describe('B84 Edit action', () => {
     await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('can no longer be edited'));
   });
 });
+
+describe('R2-320 the AQL sample names its process stage', () => {
+  it('a stage picked in the dialog is sent as bomStageId', async () => {
+    recordAqlSampleAction.mockResolvedValue({ ok: true, value: { decision: 'ACCEPT', counts: { critical: 0, major: 0, minor: 0 }, thresholds: { sampleSize: 32, criticalMax: 0, majorMax: 2, minorMax: 5 } } });
+    render(<QcDetailScreen {...props({ stages: [{ value: 's1', label: 'Printing' }, { value: 's2', label: 'Lamination' }] })} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Run AQL Sample' }));
+    fireEvent.change(screen.getByLabelText('Process / BOM stage (optional)'), { target: { value: 's2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Evaluate' }));
+    await waitFor(() => expect(recordAqlSampleAction).toHaveBeenCalledWith(expect.objectContaining({ orderId: 'o1', bomStageId: 's2', sampleSize: 32 })));
+  });
+});

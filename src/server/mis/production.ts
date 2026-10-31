@@ -597,6 +597,13 @@ export async function getProductionForOrder(orderId: string) {
 
 export type ProductionUnitTotal = { unit: string; produced: number; waste: number; wastePercent: number | null };
 
+/** R2-316: when production finished for the CoA — the latest (unvoided) production entry, or null. */
+export async function getLastProductionAt(orderId: string): Promise<Date | null> {
+  await requirePermission('production.read');
+  const last = await db.misProductionLog.findFirst({ where: { orderId, voidedAt: null }, orderBy: { loggedAt: 'desc' }, select: { loggedAt: true } });
+  return last?.loggedAt ?? null;
+}
+
 export async function getProductionSummary(orderId: string) {
   await requirePermission('production.read');
   const logs = await db.misProductionLog.findMany({ where: { orderId, voidedAt: null } });

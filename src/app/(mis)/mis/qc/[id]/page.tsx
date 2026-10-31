@@ -7,6 +7,8 @@ import { listDefectTypes } from '@/server/mis/defect-type';
 import { listQcTemplates } from '@/server/mis/qc-template';
 import { db } from '@/server/db';
 import { factoryDateKey } from '@/lib/mis/factory-time';
+import { resolveShiftAt } from '@/lib/mis/shift-window';
+import { shiftDateKeyFor } from '@/lib/mis/crew-hours';
 import { getFactoryTimezone } from '@/server/mis/business-rules';
 import { stageOptions } from '@/lib/mis/production-form';
 import { isOrderClosed } from '@/lib/mis/order-status';
@@ -28,11 +30,11 @@ export default async function QcDetailPage({ params }: { params: Promise<{ id: s
   });
   if (!order) notFound();
 
-  const [checks, summary, defectTypes, templates, timeZone, stages] = await Promise.all([
+  const [checks, summary, defectTypes, allTemplates, timeZone, stages, shifts] = await Promise.all([
     getQcForOrder(id),
     getQcSummary(id),
     listDefectTypes(),
-    listQcTemplates(),
+    listQcTemplates(true),
     getFactoryTimezone(),
     // #33 — stages of this order's BOM, for the Add Check form (qc.read already passed above).
     db.misBomStage.findMany({
@@ -40,10 +42,17 @@ export default async function QcDetailPage({ params }: { params: Promise<{ id: s
       select: { id: true, stageName: true, seq: true },
       orderBy: { seq: 'asc' },
     }),
+    db.misShift.findMany({ where: { isActive: true }, select: { id: true, startTime: true, endTime: true }, orderBy: { startTime: 'asc' } }),
   ]);
+  // R2-323: an archived (inactive) template stays readable for the checks already recorded on it for this order.
+  const usedTemplateIds = new Set(checks.map((c) => c.templateId).filter(Boolean));
+  const templates = allTemplates.filter((t) => t.isActive || usedTemplateIds.has(t.id));
+  // R2-312: the checklist sheet is one SHIFT day, so a night shift's post-midnight taps stay on the sheet it started on.
+  const now = new Date();
+  const currentShift = resolveShiftAt(shifts, now, timeZone) ?? null;
+  const sheetDateKey = currentShift ? shiftDateKeyFor(currentShift, now, timeZone) : factoryDateKey(now, timeZone);
 
   // R2-34: the same rule `editQcCheck` / `voidQcCheck` enforce (the real gate); this only decides which buttons to draw.
-  const now = new Date();
   const mayCorrect = (c: (typeof checks)[number], action: 'EDIT' | 'DELETE') =>
     canWrite &&
     !isOrderClosed(order.status) &&
@@ -68,7 +77,7 @@ export default async function QcDetailPage({ params }: { params: Promise<{ id: s
       canAcknowledge={can(role, 'qc.acknowledge')}
       defectTypes={defectTypes.map((dt) => ({ id: dt.id, code: dt.code, name: dt.name, severity: dt.severity }))}
       templates={templates}
-      checklistDay={{ dateKey: factoryDateKey(new Date(), timeZone), timeZone }}
+      checklistDay={{ dateKey: sheetDateKey, timeZone, shift: currentShift ? { startTime: currentShift.startTime, endTime: currentShift.endTime } : null }}
     />
   );
 }

@@ -222,16 +222,16 @@ Batch C3
 - [x] R2-339 machine board concurrent bookings
 - [x] R2-337 roster range splitting (needs Q)
 Batch C4
-- [ ] R2-284 job card qty + PO
-- [ ] R2-294 CoA defaults to approved snapshot
-- [ ] R2-338 CoA approval before completion (needs Q)
-- [ ] R2-315 CoA fail counts (needs Q)
-- [ ] R2-316 CoA batch/lot/mfg date (needs Q)
-- [ ] R2-312 night-shift checklist
-- [ ] R2-317 QC grid unbooked orders
-- [ ] R2-320 AQL stage selector (Enhancement)
-- [ ] R2-323 archived checklist template
-- [ ] R2-314 Major/Minor AQL (needs Q, Enhancement)
+- [x] R2-284 job card qty + PO
+- [x] R2-294 CoA defaults to approved snapshot
+- [x] R2-338 CoA approval before completion (needs Q)
+- [x] R2-315 CoA fail counts (needs Q)
+- [x] R2-316 CoA batch/lot/mfg date (needs Q)
+- [x] R2-312 night-shift checklist
+- [x] R2-317 QC grid unbooked orders
+- [x] R2-320 AQL stage selector (Enhancement)
+- [x] R2-323 archived checklist template
+- [x] R2-314 Major/Minor AQL (needs Q, Enhancement)
 Batch C5
 - [ ] R2-285 returns restore allocation
 - [ ] R2-326 duplicate cart lines (verify)

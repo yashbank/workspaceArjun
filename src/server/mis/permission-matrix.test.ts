@@ -96,6 +96,7 @@ const TABLE: Entry[] = [
   { module: 'business-rules.ts', name: 'updateBusinessRule', requires: 'settings.write', call: () => rules.updateBusinessRule('k', 'v') },
   { module: 'business-rules.ts', name: 'getWageRuleHistory', requires: 'wages.read', call: () => rules.getWageRuleHistory('DAILY_WAGE_DEFAULT') },
   { module: 'business-rules.ts', name: 'getAqlThresholdRules', requires: 'aql.read', call: () => rules.getAqlThresholdRules() },
+  { module: 'business-rules.ts', name: 'getAqlLimitRules', requires: 'aql.read', call: () => rules.getAqlLimitRules() }, // R2-314
   { module: 'business-rules.ts', name: 'updateAqlThreshold', requires: 'aql.read', call: () => rules.updateAqlThreshold('AQL_MAJOR_MAX', '1') },
   // D12: scheduling a change to ANY rule is the Owner's (wages.read is the Owner marker, D24/D25).
   { module: 'business-rules.ts', name: 'scheduleBusinessRule', requires: 'wages.read', call: () => rules.scheduleBusinessRule({ ruleKey: 'k', ruleValue: '1', effectiveFrom: '2099-01-01', reason: 'For the test' }) },

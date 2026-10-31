@@ -24,7 +24,13 @@ vi.mock('@/server/mis/orders', () => ({ getOrder: () => getOrder() }));
 vi.mock('@/server/mis/qc', () => ({ getQcForOrder: () => getQcForOrder() }));
 vi.mock('@/components/mis/print/print-button', () => ({ PrintButton: () => null }));
 // R2-46: the page reads its document version and draws the version strip.
-vi.mock('@/server/mis/document-versions', () => ({ getDocumentVersionView: async () => ({ docType: 'COA', refId: 'x', versions: [], latest: null, canPrepare: false }) }));
+// R2-294 plumbing: the version list and the frozen copy are configurable per test.
+const versionView = vi.fn(async () => ({ docType: 'COA', refId: 'x', versions: [] as unknown[], latest: null as unknown, canPrepare: false }));
+const versionSnapshot = vi.fn(async () => null as unknown);
+vi.mock('@/server/mis/document-versions', () => ({ getDocumentVersionView: () => versionView(), getDocumentVersionSnapshot: () => versionSnapshot() }));
+// R2-316 plumbing: the manufacturing date is the last production entry.
+const lastProductionAt = vi.fn(async () => null as Date | null);
+vi.mock('@/server/mis/production', () => ({ getLastProductionAt: () => lastProductionAt() }));
 vi.mock('@/components/mis/print/document-version-bar', () => ({ DocumentVersionBar: () => null }));
 // R3-QCR B81: the page formats dates in the factory's zone, so it now reads the timezone rule.
 vi.mock('@/server/mis/business-rules', () => ({ getFactoryTimezone: async () => 'Asia/Kolkata' }));
@@ -102,12 +108,51 @@ describe('/mis/print/coa/[id]', () => {
     const text = textContent(tree);
     expect(text).toContain('FAIL'); // overall result, since at least one check failed
     expect(text).toMatch(/Pass:\s*1/);
-    expect(text).toMatch(/Fail:\s*1/);
+    expect(text).toMatch(/Unresolved failures:\s*1/); // R2-315: the summary counts unresolved failures, not every historic FAIL
   });
 
   it('no QC checks recorded says so, not a blank table', async () => {
     getQcForOrder.mockResolvedValue([]);
     const tree = await page(ORDER_ID);
     expect(textContent(tree)).toContain('No quality checks recorded.');
+  });
+});
+
+describe('R2-294 / R2-315 / R2-316 — the certificate prints the approved copy, unresolved failures and lot data', () => {
+  const live = (id: string, result: string, hhmm: string, parameterName = 'Shade') =>
+    ({ id, parameterName, result, defectType: null, notes: null, checkTime: new Date(`2026-09-05T${hhmm}:00+05:30`), checkBy: null });
+
+  it('without ?v= the newest APPROVED version prints its frozen copy, not the newer PREPARED one or live checks', async () => {
+    const approved = { id: 'v1', version: 1, status: 'APPROVED', hasSnapshot: true, preparedAt: new Date('2026-09-01T00:00:00Z') };
+    const prepared = { id: 'v2', version: 2, status: 'PREPARED', preparedAt: new Date('2026-09-06T00:00:00Z') };
+    versionView.mockResolvedValue({ docType: 'COA', refId: 'x', versions: [prepared, approved], latest: prepared, canPrepare: false });
+    versionSnapshot.mockResolvedValue({
+      kind: 'COA', schema: 1, capturedAt: '2026-09-01T00:00:00.000Z',
+      order: { orderNumber: 'ORD-118', status: 'COMPLETED', customerName: 'Acme Co', description: 'Duplex', deliveryDate: null, notes: null },
+      qcLogs: [{ id: 'f1', bomStageId: null, parameterName: 'FrozenShade', result: 'PASS', defectType: null, notes: null, checkTime: '2026-09-01T04:00:00.000Z', checkByName: null }],
+    });
+    getQcForOrder.mockResolvedValue([live('l1', 'FAIL', '10:00', 'LiveUnverified')]);
+    const text = textContent(await page(ORDER_ID));
+    expect(text).toContain('FrozenShade');
+    expect(text).not.toContain('LiveUnverified');
+    expect(versionSnapshot).toHaveBeenCalled();
+  });
+
+  it('a FAIL re-passed later on the same parameter is not an unresolved failure', async () => {
+    getQcForOrder.mockResolvedValue([live('c1', 'FAIL', '09:00'), live('c2', 'PASS', '10:00')]);
+    const text = textContent(await page(ORDER_ID));
+    expect(text).toMatch(/Unresolved failures:\s*0/);
+    expect(text).not.toMatch(/Fail:\s*1/);
+  });
+
+  it('prints Batch / Lot No. (the order number), the manufacturing date (last production entry) and the quantity', async () => {
+    versionView.mockResolvedValue({ docType: 'COA', refId: 'x', versions: [], latest: null, canPrepare: false }); // live data again
+    getOrder.mockResolvedValue({ id: ORDER_ID, orderNumber: 'ORD-118', description: 'Duplex carton', deliveryDate: null, customer: { name: 'Acme Co' }, quantity: 25000, unit: 'PIECE' });
+    lastProductionAt.mockResolvedValue(new Date('2026-09-05T10:00:00+05:30'));
+    const text = textContent(await page(ORDER_ID));
+    expect(text).toContain('Batch / Lot No.');
+    expect(text).toContain('Manufacturing Date');
+    expect(text).toMatch(/Manufacturing Date\s+05\/09\/2026|Manufacturing Date\s+5 Sep 2026|Manufacturing Date\s+\S*2026/);
+    expect(text).toMatch(/Quantity\s+25,000 PIECE|Quantity\s+25000 PIECE|Quantity\s+25,000/);
   });
 });

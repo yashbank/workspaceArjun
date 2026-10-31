@@ -1,4 +1,4 @@
-import { evaluateAql, resolveAqlPlan, thresholdsFromPlan, type AqlResult } from '@/lib/mis/aql';
+import { evaluateAql, resolveAqlPlans, thresholdsFromPlan, type AqlResult } from '@/lib/mis/aql';
 import { correctionVerdict, requireCorrectionReason } from '@/lib/mis/entry-correction';
 import { addDaysToDateKey, dateKeyToDbDate, factoryDateKey, factoryMinuteOfDay } from '@/lib/mis/factory-time';
 import { isOrderClosed } from '@/lib/mis/order-status';
@@ -223,8 +223,9 @@ export async function recordAqlSample(input: {
     if (!Number.isFinite(line.qty) || line.qty < 0) throw new Error('Defect quantity must be 0 or more');
   }
   if (input.lotSize != null && (!Number.isInteger(input.lotSize) || input.lotSize < 1)) throw new Error('Lot size must be a whole number of at least 1');
-  const plan = input.lotSize != null ? await resolveAqlPlan((key) => getRuleValue(key), input.lotSize) : null;
-  const thresholds = plan ? thresholdsFromPlan(plan) : await getAqlThresholds();
+  // R2-314: major and minor defects follow their own acceptable-quality limits.
+  const plans = input.lotSize != null ? await resolveAqlPlans((key) => getRuleValue(key), input.lotSize) : null;
+  const thresholds = plans ? thresholdsFromPlan(plans.major, plans.minor) : await getAqlThresholds();
   if (input.sampleSize < thresholds.sampleSize) throw new Error(`Sample too small: inspect at least ${thresholds.sampleSize}`);
 
   const defectTypeIds = input.defects.map((d) => d.defectTypeId);

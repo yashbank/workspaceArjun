@@ -18,7 +18,7 @@ vi.mock('@/server/mis/guard', () => ({ requireMisAccess: async () => ({ id: 'u1'
 vi.mock('@/server/mis/orders', () => ({ getOrder: () => getOrder() }));
 vi.mock('@/server/mis/qc', () => ({ getQcForOrder: () => getQcForOrder() }));
 vi.mock('@/server/mis/bom', () => ({ getBom: async () => null }));
-vi.mock('@/server/mis/production', () => ({ getProductionSummary: async () => ({ totalProduced: 999, totalWaste: 0, entries: 9, byUnit: [{ unit: 'KG', produced: 999, waste: 0 }] }) }));
+vi.mock('@/server/mis/production', () => ({ getProductionSummary: async () => ({ totalProduced: 999, totalWaste: 0, entries: 9, byUnit: [{ unit: 'KG', produced: 999, waste: 0 }] }), getLastProductionAt: async () => null /* R2-316 plumbing */ }));
 vi.mock('@/server/mis/job-phases', () => ({ getPhasesForOrder: async () => [] }));
 vi.mock('@/server/mis/worker-allocation', () => ({ getCrewForOrder: async () => [] }));
 vi.mock('@/server/mis/business-rules', () => ({ getFactoryTimezone: async () => 'Asia/Kolkata' }));
@@ -107,12 +107,16 @@ describe('COA print — approved version', () => {
     const old = await CoaPage({ params: Promise.resolve({ id: ID }), searchParams: Promise.resolve({ v: '1' }) });
     expect(text(old)).toContain('Frozen spec');
     expect(findBar(old)).toMatchObject({ dataSource: 'SNAPSHOT', fileName: 'COA_ORD-7_191026_V1', selected: expect.objectContaining({ id: 'v1' }) });
-    // Default (newest) = V2 PREPARED: live, not frozen.
+    // R2-294: the default is the newest APPROVED version (V1, frozen), never the pending V2's live data.
     const latest = await CoaPage({ params: Promise.resolve({ id: ID }) });
-    expect(text(latest)).toContain('Live spec CHANGED');
-    expect(findBar(latest)).toMatchObject({ dataSource: 'LIVE', fileName: 'COA_ORD-7_201026_V2' });
-    // A junk or unknown ?v falls back to the newest.
-    expect(findBar(await CoaPage({ params: Promise.resolve({ id: ID }), searchParams: Promise.resolve({ v: '99' }) }))).toMatchObject({ fileName: 'COA_ORD-7_201026_V2' });
+    expect(text(latest)).toContain('Frozen spec');
+    expect(findBar(latest)).toMatchObject({ dataSource: 'SNAPSHOT', fileName: 'COA_ORD-7_191026_V1' });
+    // ?v=2 still shows the pending version live.
+    const pending = await CoaPage({ params: Promise.resolve({ id: ID }), searchParams: Promise.resolve({ v: '2' }) });
+    expect(text(pending)).toContain('Live spec CHANGED');
+    expect(findBar(pending)).toMatchObject({ dataSource: 'LIVE', fileName: 'COA_ORD-7_201026_V2' });
+    // A junk or unknown ?v falls back to the approved one (R2-294).
+    expect(findBar(await CoaPage({ params: Promise.resolve({ id: ID }), searchParams: Promise.resolve({ v: '99' }) }))).toMatchObject({ fileName: 'COA_ORD-7_191026_V1' });
   });
 
   // R2-160 (replaces "reaches error.tsx"): the corrupt copy is never printed, but the page no longer crashes.

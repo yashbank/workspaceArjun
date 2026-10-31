@@ -105,8 +105,10 @@ export async function getQcHourlyGrid(input: { shiftId?: unknown; date?: unknown
     orderNumber: o.orderNumber,
     description: o.description,
     machines: [...(machinesOf.get(o.id) ?? [])].sort(),
-    // Booked, but not in this shift → nothing is due (`[]`). Never booked → unknown run window (undefined): all due.
-    runs: runsOf.get(o.id) ?? (bookedAnywhere.has(o.id) ? [] : undefined),
+    // Booked, but not in this shift → nothing is due (`[]`). R2-317: never booked → also nothing due, flagged
+    // `unbooked` so the screen says "not on a machine" instead of marking every hour overdue.
+    runs: runsOf.get(o.id) ?? [],
+    unbooked: !bookedAnywhere.has(o.id),
   }));
   const grid = buildQcGrid({
     orders: gridOrders,

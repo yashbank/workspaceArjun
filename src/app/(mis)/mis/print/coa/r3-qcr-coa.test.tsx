@@ -19,6 +19,7 @@ vi.mock('@/components/mis/print/print-button', () => ({ PrintButton: () => null 
 // R2-46: the page reads its document version and draws the version strip.
 vi.mock('@/server/mis/document-versions', () => ({ getDocumentVersionView: async () => ({ docType: 'COA', refId: 'x', versions: [], latest: null, canPrepare: false }) }));
 vi.mock('@/components/mis/print/document-version-bar', () => ({ DocumentVersionBar: () => null }));
+vi.mock('@/server/mis/production', () => ({ getLastProductionAt: async () => null })); // R2-316 plumbing
 
 const { default: CoaPrintPage } = await import('./[id]/page');
 const { default: CoaError } = await import('./[id]/error');
@@ -88,12 +89,13 @@ describe('B81 content', () => {
     expect(text).toContain('20/10/2026'); // delivery date
   });
 
-  it.each(['DRAFT', 'CONFIRMED', 'IN_PRODUCTION', 'CANCELLED', 'QC_PENDING'])('status %s shows the red DRAFT banner naming the status', async (status) => {
+  // R2-338: a CoA may be approved from IN_PRODUCTION on, so that status is no longer a draft.
+  it.each(['DRAFT', 'CONFIRMED', 'CANCELLED', 'QC_PENDING'])('status %s shows the red DRAFT banner naming the status', async (status) => {
     getOrder.mockResolvedValue(orderWith(status));
     expect(textContent(await page())).toContain(`DRAFT CERTIFICATE — order is ${status}`);
   });
 
-  it.each(['COMPLETED', 'DELIVERED'])('status %s shows no draft banner', async (status) => {
+  it.each(['IN_PRODUCTION' /* R2-338 */, 'COMPLETED', 'DELIVERED'])('status %s shows no draft banner', async (status) => {
     getOrder.mockResolvedValue(orderWith(status));
     expect(textContent(await page())).not.toContain('DRAFT CERTIFICATE');
   });

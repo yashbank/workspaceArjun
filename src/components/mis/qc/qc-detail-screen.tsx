@@ -54,7 +54,7 @@ interface Props {
   /** V2 Epic 5 — the paper forms; empty until the templates migration is applied. */
   templates?: QcTemplateRow[];
   /** The factory day the checklist shows (server-computed), so another day's taps never fill today's cells. */
-  checklistDay?: { dateKey: string; timeZone: string };
+  checklistDay?: { dateKey: string; timeZone: string; shift?: { startTime: string; endTime: string } | null };
 }
 
 const resultOptions: SelectOption[] = [
@@ -107,6 +107,7 @@ export function QcDetailScreen({ order, checks, summary, canWrite, canAcknowledg
   const [isPending, startTransition] = useTransition();
 
   const [aqlOpen, setAqlOpen] = useState(false);
+  const [aqlStageId, setAqlStageId] = useState<string | null>(null); // R2-320
   const [aqlSampleSize, setAqlSampleSize] = useState('32');
   const [aqlLotSize, setAqlLotSize] = useState('');
   const [aqlLines, setAqlLines] = useState<AqlLine[]>([{ defectTypeId: '', qty: '1' }]);
@@ -166,6 +167,7 @@ export function QcDetailScreen({ order, checks, summary, canWrite, canAcknowledg
       .map((l) => ({ defectTypeId: l.defectTypeId, qty: Number(l.qty) }));
     const outcome = await recordAqlSampleAction({
       orderId: order.id,
+      bomStageId: aqlStageId ?? undefined, // R2-320
       sampleSize: Number(aqlSampleSize),
       ...(aqlLotSize.trim() !== '' ? { lotSize: Number(aqlLotSize) } : {}),
       defects,
@@ -436,6 +438,9 @@ export function QcDetailScreen({ order, checks, summary, canWrite, canAcknowledg
           <div className="text-sm text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
             Order: <span className="font-medium text-gray-800">{order.orderNumber}</span>
           </div>
+          {stages.length > 0 && (
+            <Select label="Process / BOM stage (optional)" value={aqlStageId} options={stages} onChange={setAqlStageId} placeholder="Whole order" />
+          )}
           <NumberInput label="Lot size (optional)" value={aqlLotSize} onChange={(e) => setAqlLotSize(e.target.value)} />
           <p className="text-xs text-gray-500 -mt-2">When the AQL level is set in Settings, the lot size decides the required sample size and the accept limit.</p>
           <NumberInput label="Sample Size" value={aqlSampleSize} onChange={(e) => setAqlSampleSize(e.target.value)} />

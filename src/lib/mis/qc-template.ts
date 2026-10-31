@@ -8,6 +8,7 @@
  * Pure: no Prisma, no React.
  */
 
+import { shiftDateKeyFor } from './crew-hours';
 import { factoryDateKey } from './factory-time';
 
 export const CHECKLIST_STATUSES = ['PASS', 'FAIL', 'MAKE_READY', 'PLATE_ERR'] as const;
@@ -82,8 +83,15 @@ export function moveItem<T>(list: readonly T[], index: number, direction: 'up' |
  * the factory's zone, so a 23:50 and a 00:10 punch on a night shift land on different sheets, and
  * yesterday's 10:00 tap never fills today's 10:00 cell.
  */
-export function filterChecksToFactoryDay<T extends { checkTime: Date }>(checks: readonly T[], dateKey: string, timeZone: string): T[] {
-  return checks.filter((c) => factoryDateKey(c.checkTime, timeZone) === dateKey);
+export function filterChecksToFactoryDay<T extends { checkTime: Date }>(
+  checks: readonly T[],
+  dateKey: string,
+  timeZone: string,
+  /** R2-312: with the running shift given, a night shift's post-midnight checks stay on the day the shift started. */
+  shift?: { startTime: string; endTime: string } | null,
+): T[] {
+  const dayOf = (at: Date) => (shift ? shiftDateKeyFor(shift, at, timeZone) : factoryDateKey(at, timeZone));
+  return checks.filter((c) => dayOf(c.checkTime) === dateKey);
 }
 
 /** `parameters` as stored (JSON) → a clean string list. */
