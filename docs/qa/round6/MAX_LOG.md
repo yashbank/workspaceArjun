@@ -139,3 +139,4 @@ R2-334 | DEV_DONE | - | GRN line batch / lot number (MisGrnItem.batchNo, already
 R2-345 | DEFERRED_BY_OWNER | - | dispatch (partial dispatch, challan, vehicle, e-way bill) out of scope this round; not built
 C4 | FIX | - | r3-qcr-qc-detail R2-320 test resolved a partial AQL result and tripped an unhandled render error in the full run; it now resolves a refusal (payload assertion unchanged)
 GATE | C9 | - | tsc clean (pnpm db:generate run), eslint 0 errors (6 warnings), vitest 438 files / 7170 tests green, exit 0. Pending migrations: 20261101000000_r2_325_invoice_gst, 20261101000001_r2_324_payroll_deductions, 20261101000002_r2_286_request_partially_issued, 20261101000003_r2_288_invoice_payment_states, 20261101000004_r2_318_qc_check_machine
+GATE | BUILD | - | pnpm build green after C9 (d51f056); .next removed to keep disk free. Waiting for the owner to apply the 5 pending migrations before the final re-verify.
