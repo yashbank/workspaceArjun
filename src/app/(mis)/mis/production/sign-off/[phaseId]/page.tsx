@@ -32,6 +32,7 @@ export default async function SignOffPage({ params }: { params: Promise<{ phaseI
       status={summary.status}
       inChargeName={summary.inChargeName}
       canSign={summary.canSign}
+      signsOnBehalf={summary.signsOnBehalf}
       output={summary.output}
       waste={summary.waste}
       wastePercent={summary.wastePercent}

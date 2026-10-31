@@ -69,3 +69,6 @@ export function personMinutes(i: {
   const end = Math.min((i.releasedAt ?? i.now).getTime(), i.shiftEnd.getTime(), i.bookingEnd.getTime());
   return Math.max(0, (end - start) / 60_000);
 }
+
+/** R2-333: how far back an Admin/Owner may book a crew on a past shift, with a reason. */
+export const CREW_BACKDATE_DAYS = 3;

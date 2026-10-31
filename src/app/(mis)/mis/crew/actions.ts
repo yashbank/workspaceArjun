@@ -39,6 +39,8 @@ export async function assignWorkersAction(input: {
   jobPhaseId?: string;
   confirmWarnings?: boolean;
   override?: { reason: string };
+  /** R2-333: ADMIN/OWNER, past shift up to 3 days back. */
+  backdateReason?: string;
 }) {
   return asResult<AssignWorkersActionResult>(async () => {
     const result = await assignWorkers(input);

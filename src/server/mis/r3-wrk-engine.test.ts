@@ -325,3 +325,26 @@ describe('B93 bookings per shift and copyCrew', () => {
     expect(res.skipped).toEqual([{ employeeId: 'e4', name: 'Name e4', reason: 'ON_LEAVE' }]);
   });
 });
+
+describe('R2-333 past-shift crew booking: Admin/Owner, up to 3 days back, with a reason', () => {
+  const past = (date: string) => {
+    state.machineAllocs = [machineAlloc('ma-1', { startsAt: IST(date, '06:00'), endsAt: IST(date, '14:00') })];
+    return { machineAllocationId: 'ma-1', employeeIds: ['e1'], shiftId: 's1', allocationDate: date };
+  };
+  it('a SUPERVISOR is refused even with a reason', async () => {
+    await expect(assignWorkers({ ...past('2026-10-11'), backdateReason: 'weekend reconciliation' })).rejects.toThrow(/today to 7 days/);
+  });
+  it('an ADMIN needs a reason; 3 days back is allowed and audited, 4 days back is refused', async () => {
+    getMisRole.mockResolvedValue('ADMIN');
+    await expect(assignWorkers(past('2026-10-11'))).rejects.toThrow(/needs a reason/);
+    const res = await assignWorkers({ ...past('2026-10-10'), backdateReason: 'weekend reconciliation' });
+    expect(res.created).toHaveLength(1);
+    expect(state.audit.find((a) => a.action === 'ASSIGN_WORKER')!.after).toMatchObject({ backdated: true, backdateReason: 'weekend reconciliation', dateKey: '2026-10-10' });
+    await expect(assignWorkers({ ...past('2026-10-09'), backdateReason: 'too far' })).rejects.toThrow(/3 days back/);
+  });
+  it('a SUPERVISOR employee can be booked as crew (R2-332)', async () => {
+    state.employees[0].role = 'SUPERVISOR';
+    const res = await assignWorkers({ machineAllocationId: 'ma-1', employeeIds: ['e1'], shiftId: 's1', allocationDate: TOMORROW });
+    expect(res.created).toHaveLength(1);
+  });
+});

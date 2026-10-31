@@ -57,7 +57,7 @@ const NAV: NavDefinition[] = [
   { id: 'traceability', labelKey: 'nav.traceability', href: '/mis/traceability', icon: 'chart', primary: false, requires: 'orders.read' },
   { id: 'approvals', labelKey: 'nav.approvals', href: '/mis/approvals', icon: 'check', primary: false, requires: 'approvals.read' },
   // Phase 23 — the parked-writes inbox (Appendix B §B.7). OWNER, ADMIN and
-  // SUPER_ATTENDANCE_OPERATOR only, exactly who holds queue.review.
+  // Exactly who holds queue.review: OWNER, ADMIN, SUPER_ATTENDANCE_OPERATOR and, since R2-342, SUPERVISOR.
   { id: 'queue', labelKey: 'nav.queue', href: '/mis/queue', icon: 'clipboard', primary: false, requires: 'queue.review' },
   { id: 'kiosk', labelKey: 'nav.kiosk', href: '/mis/kiosk', icon: 'users', primary: false, requires: 'attendance.write' },
   { id: 'audit', labelKey: 'nav.audit', href: '/mis/audit', icon: 'clipboard', primary: false, requires: 'settings.read' },

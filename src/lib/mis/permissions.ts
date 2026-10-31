@@ -19,6 +19,8 @@ export const MIS_ACTIONS = [
   'production.write',
   'qc.read',
   'qc.write',
+  // R2-311: acknowledge a failed QC check / record a waiver. Held by the QC role, Supervisor (as in-charge), Admin, Owner.
+  'qc.acknowledge',
   'attendance.read',
   'attendance.write',
   // R3 B64: add a note to a register row; no status/time change.
@@ -61,7 +63,7 @@ export const MIS_ACTIONS = [
   'clearance.read',
   'clearance.write',
   // Job phases and the handover gate (DEVELOPMENT_GUIDE.md Appendix A).
-  // phase.reopen is its own action, Owner-only, because withdrawing a
+  // phase.reopen is its own action (Owner and, since R2-331, Admin), because withdrawing a
   // signature is a different kind of act from moving a phase along.
   // Note: holding phase.write does NOT let you sign off someone else's phase —
   // the in-charge identity check in job-phases.ts sits on top of it (D12).
@@ -105,6 +107,7 @@ const MATRIX: Record<MisRoleName, readonly MisAction[]> = {
     'production.write',
     'qc.read',
     'qc.write',
+    'qc.acknowledge', // R2-311
     'attendance.read',
     'attendance.write',
     'attendance.note',
@@ -129,6 +132,7 @@ const MATRIX: Record<MisRoleName, readonly MisAction[]> = {
     'clearance.write',
     'phase.read',
     'phase.write',
+    'phase.reopen', // R2-331
     'kiosk.manage',
     'queue.review',
     'approvals.read',
@@ -142,6 +146,7 @@ const MATRIX: Record<MisRoleName, readonly MisAction[]> = {
     'production.write',
     'qc.read',
     'qc.write', // R3 B64
+    'qc.acknowledge', // R2-311
     'attendance.read',
     'attendance.note', // R3 B64
     'roster.write', // R2-263: a Supervisor rosters the floor crew, without attendance.write
@@ -154,9 +159,10 @@ const MATRIX: Record<MisRoleName, readonly MisAction[]> = {
     'clearance.write',
     'phase.read',
     'phase.write',
+    'queue.review', // R2-342: resolves parked floor entries (clearance parks need clearance.write, which it holds)
   ],
 
-  QC: ['masters.read', 'orders.read', 'production.read', 'qc.read', 'qc.write', 'reports.read', 'phase.read', 'po.view', 'grn.view' /* R2-37: read-only */],
+  QC: ['masters.read', 'orders.read', 'production.read', 'qc.read', 'qc.write', 'qc.acknowledge' /* R2-311 */, 'reports.read', 'phase.read', 'po.view', 'grn.view' /* R2-37: read-only */],
 
   SUPER_ATTENDANCE_OPERATOR: [
     'employees.read',

@@ -58,6 +58,8 @@ export type WorkerBoardScreenProps = {
   dateKey: string;
   minDate: string;
   maxDate: string;
+  /** R2-333: the factory's today; a date before it is a back-dated booking and needs a reason. */
+  todayKey?: string;
   machines: StaffedMachine[];
   availability: AvailabilityRow[];
   canWrite: boolean;
@@ -112,6 +114,7 @@ export function WorkerBoardScreen({
   currentShiftId,
   dateKey,
   minDate,
+  todayKey,
   maxDate,
   machines,
   availability,
@@ -261,6 +264,7 @@ export function WorkerBoardScreen({
           shiftId={currentShiftId}
           dateKey={dateKey}
           canOverride={canOverride}
+          todayKey={todayKey}
           onClose={() => setOpenMachine(null)}
         />
       )}
@@ -375,6 +379,7 @@ function AssignCrewSlideOver({
   shiftId,
   dateKey,
   canOverride,
+  todayKey,
   onClose,
 }: {
   machine: StaffedMachine;
@@ -382,6 +387,7 @@ function AssignCrewSlideOver({
   shiftId: string | null;
   dateKey: string;
   canOverride: boolean;
+  todayKey?: string;
   onClose: () => void;
 }) {
   const t = useT();
@@ -389,6 +395,9 @@ function AssignCrewSlideOver({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [outcome, setOutcome] = useState<Outcome>({ blocked: [], warnings: [] });
   const [overrideReason, setOverrideReason] = useState('');
+  const [backdateReason, setBackdateReason] = useState('');
+  // R2-333: a past date is a back-dated booking; the server wants a reason from an Admin/Owner.
+  const backdated = Boolean(todayKey && dateKey < todayKey);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -418,6 +427,7 @@ function AssignCrewSlideOver({
         employeeIds,
         shiftId,
         allocationDate: dateKey,
+        ...(backdated ? { backdateReason: backdateReason.trim() } : {}),
         ...extra,
       });
       if (!result.ok) {
@@ -570,8 +580,18 @@ function AssignCrewSlideOver({
           </div>
         )}
 
+        {backdated && (
+          <label className="text-sm font-medium text-amber-900">
+            Reason for booking a past shift
+            <input
+              value={backdateReason}
+              onChange={(e) => setBackdateReason(e.target.value)}
+              className="mt-1 min-h-12 w-full rounded-lg border border-amber-300 bg-white px-3 text-base text-slate-900"
+            />
+          </label>
+        )}
         <div className="flex gap-2 pt-2">
-          <Button onClick={() => submit([...selected])} disabled={isPending || selected.size === 0 || !shiftId}>
+          <Button onClick={() => submit([...selected])} disabled={isPending || selected.size === 0 || !shiftId || (backdated && backdateReason.trim().length < 3)}>
             {t('crew.assign')} ({selected.size})
           </Button>
           <Button variant="ghost" onClick={onClose}>

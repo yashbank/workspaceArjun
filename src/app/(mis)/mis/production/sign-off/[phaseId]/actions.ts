@@ -16,9 +16,10 @@ import {
  *
  * R3 B127: every export returns an `ActionResult`; the screen shows `detail` on a refusal.
  */
-export async function signOffPhaseAction(phaseId: string, orderId: string, notes?: string) {
+export async function signOffPhaseAction(phaseId: string, orderId: string, notes?: string, reason?: string) {
   return asResult(async () => {
-    await signOffPhase(phaseId, notes?.trim() ? { notes: notes.trim() } : undefined); // R2-295
+    // R2-295 handover note; R2-330 Admin/Owner reason when signing on the in-charge's behalf.
+    await signOffPhase(phaseId, { notes: notes?.trim() || undefined, reason: reason?.trim() || undefined });
     revalidatePath(`/mis/production/sign-off/${phaseId}`);
     revalidatePath(`/mis/orders/${orderId}`);
     revalidatePath('/mis');
@@ -42,7 +43,8 @@ export async function setWasteReasonAction(productionLogId: string, reason: stri
 
 export async function acknowledgeQcFailureAction(checkId: string, note: string, phaseId: string) {
   return asResult(async () => {
-    await acknowledgeQcFailure(checkId, note);
-    revalidatePath(`/mis/production/sign-off/${phaseId}`);
+    const rec = await acknowledgeQcFailure(checkId, note);
+    if (phaseId) revalidatePath(`/mis/production/sign-off/${phaseId}`);
+    if (rec?.orderId) revalidatePath(`/mis/qc/${rec.orderId}`); // R2-311
   });
 }

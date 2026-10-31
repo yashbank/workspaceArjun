@@ -7,6 +7,7 @@ import { resolveShiftAt } from '@/lib/mis/shift-window';
 import { getFactoryTimezone } from '@/server/mis/business-rules';
 import { requireMisAccess } from '@/server/mis/guard';
 import { getMisRole } from '@/server/mis/roles';
+import { CREW_BACKDATE_DAYS } from '@/lib/mis/crew-hours';
 import { getWorkerAvailability, getWorkerLocks, listActiveShifts, listCrewBookings } from '@/server/mis/worker-allocation';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -39,7 +40,9 @@ export default async function CrewPage({
 
   const today = factoryDateKey(now, tz);
   const defaultDate = shift ? shiftDateKeyFor(shift, now, tz) : today;
-  const minDate = defaultDate < today ? defaultDate : today;
+  // R2-333: an Admin/Owner may book a crew on a past shift up to CREW_BACKDATE_DAYS back (reason required by the server).
+  const earliest = role === 'OWNER' || role === 'ADMIN' ? addDaysToDateKey(today, -CREW_BACKDATE_DAYS) : today;
+  const minDate = defaultDate < earliest ? defaultDate : earliest;
   const maxDate = addDaysToDateKey(today, 7);
   const dateKey =
     params.date && isDateKey(params.date) && params.date >= minDate && params.date <= maxDate ? params.date : defaultDate;
@@ -59,6 +62,7 @@ export default async function CrewPage({
       currentShiftId={shift?.id ?? null}
       dateKey={dateKey}
       minDate={minDate}
+      todayKey={today}
       maxDate={maxDate}
       machines={bookings.map((b) => ({
         machineId: b.machineId,

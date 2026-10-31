@@ -65,6 +65,7 @@ export default async function QcDetailPage({ params }: { params: Promise<{ id: s
       stages={stageOptions(stages)}
       summary={summary}
       canWrite={canWrite}
+      canAcknowledge={can(role, 'qc.acknowledge')}
       defectTypes={defectTypes.map((dt) => ({ id: dt.id, code: dt.code, name: dt.name, severity: dt.severity }))}
       templates={templates}
       checklistDay={{ dateKey: factoryDateKey(new Date(), timeZone), timeZone }}

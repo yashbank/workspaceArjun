@@ -207,15 +207,15 @@ Batch C1
 - [x] R2-290 traceability units
 - [x] R2-322 QC summary defect totals
 Batch C2
-- [ ] R2-340 worker regularization (verify)
-- [ ] R2-341 regularization review permission (verify)
-- [ ] R2-342 offline queue resolve (needs Q)
-- [ ] R2-311 QC role phase.write (needs Q)
-- [ ] R2-330 Admin/Owner phase sign-off (needs Q)
-- [ ] R2-331 Admin reopen phase (needs Q)
-- [ ] R2-332 supervisors in crew (needs Q)
-- [ ] R2-333 past-shift crew booking (needs Q)
-- [ ] R2-310 unstaged QC acknowledgement
+- [x] R2-340 worker regularization (verify)
+- [x] R2-341 regularization review permission (verify)
+- [x] R2-342 offline queue resolve (needs Q)
+- [x] R2-311 QC role phase.write (needs Q)
+- [x] R2-330 Admin/Owner phase sign-off (needs Q)
+- [x] R2-331 Admin reopen phase (needs Q)
+- [x] R2-332 supervisors in crew (needs Q)
+- [x] R2-333 past-shift crew booking (needs Q)
+- [x] R2-310 unstaged QC acknowledgement
 Batch C3
 - [ ] R2-308 SHIFT clearance expiry (needs Q)
 - [ ] R2-309 JOB clearance null order (needs Q)
