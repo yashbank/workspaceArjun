@@ -146,7 +146,9 @@ describe('phone and desktop read one table, so they cannot disagree', () => {
     getMisRole.mockResolvedValue('OWNER');
     const ids = (await getNavigationFor('u')).map((e) => e.id);
     // R3 B101: 'crew' is now a desktop sidebar entry as well, so it is no longer phone-only.
-    for (const id of ['leave', 'settings-users', 'settings-rules', 'me']) expect(ids).not.toContain(id);
+    // R2-239: 'me' is on the desktop sidebar for every role too.
+    for (const id of ['leave', 'settings-users', 'settings-rules']) expect(ids).not.toContain(id);
+    expect(ids).toContain('me');
   });
 
   it('entries carry labels and links only — never the required permission', () => {

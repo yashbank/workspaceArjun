@@ -191,14 +191,14 @@ Batch B4
 - [x] R2-260 (dup of 242)
 Batch B5
 - [ ] R2-238 /mis/me unlinked card
-- [ ] R2-249 (dup of 238)
-- [ ] R2-239 desktop Me tab
-- [ ] R2-255 (dup of 239)
-- [ ] R2-240 cancel future leave (needs Q-240)
-- [ ] R2-261 revoke leave, Deferred (needs Q-240)
-- [ ] R2-250 Admin onboarding message (needs Q-250)
-- [ ] R2-262 3-day window, by design (log only)
-- [ ] R2-263 Supervisor roster, Enhancement (needs Q-263)
+- [x] R2-249 (dup of 238)
+- [x] R2-239 desktop Me tab
+- [x] R2-255 (dup of 239)
+- [x] R2-240 cancel future leave (needs Q-240)
+- [x] R2-261 revoke leave, Deferred (needs Q-240)
+- [x] R2-250 Admin onboarding message (needs Q-250)
+- [x] R2-262 3-day window, by design (log only)
+- [x] R2-263 Supervisor roster, Enhancement (needs Q-263)
 Batch B6
 - [ ] R2-266 reopen order (needs Q)
 - [ ] R2-267 BOM gate on start production (needs Q)

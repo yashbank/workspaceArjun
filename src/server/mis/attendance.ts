@@ -824,7 +824,16 @@ export async function cancelLeaveRequest(leaveId: string, reason?: string) {
   }
 
   if (leave.status !== 'APPROVED') throw new Error('Only a pending or approved leave can be cancelled');
-  if (actor.role !== 'OWNER') throw new Error('Only the Owner can revoke an approved leave');
+  // R2-240 / R2-261: while the leave has not started, an Admin or the person themself may cancel it too (with a reason).
+  // Once it has begun only the Owner may revoke it: that rewrites recorded attendance.
+  if (actor.role !== 'OWNER') {
+    const startsInFuture = keyOfDbDate(leave.date) > (await today());
+    const mine = startsInFuture && actor.role !== 'ADMIN'
+      ? (await db.misEmployee.findFirst({ where: { userProfileId: actor.userId }, select: { id: true } }))?.id === leave.employeeId
+      : false;
+    if (!startsInFuture) throw new Error('Only the Owner can revoke an approved leave that has already started');
+    if (actor.role !== 'ADMIN' && !mine) throw new Error('Only the Owner, an Admin or the person on leave can cancel an approved leave');
+  }
   if (why.length < 3) throw new Error('A reason is required to revoke an approved leave');
   const days = leaveWorkingDays(keyOfDbDate(leave.date), leave.endDate ? keyOfDbDate(leave.endDate) : null);
   for (const k of days) {

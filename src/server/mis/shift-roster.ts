@@ -31,7 +31,7 @@ export async function listRosterEmployees() {
 }
 
 export async function assignRoster(input: { employeeIds: string[]; shiftId: string; startDate: string; endDate: string }) {
-  const actor = await requirePermission('attendance.write');
+  const actor = await requirePermission('roster.write'); // R2-263: Supervisor too
   const employeeIds = [...new Set(input.employeeIds ?? [])];
   if (employeeIds.length === 0) throw new Error('Pick at least one employee');
   if (!DATE_KEY.test(input.startDate ?? '') || !DATE_KEY.test(input.endDate ?? '')) throw new Error('Pick a from and to date');
@@ -69,7 +69,7 @@ export async function assignRoster(input: { employeeIds: string[]; shiftId: stri
 }
 
 export async function removeRoster(id: string) {
-  const actor = await requirePermission('attendance.write');
+  const actor = await requirePermission('roster.write'); // R2-263: Supervisor too
   const row = await db.misShiftRoster.findUnique({ where: { id } });
   if (!row) throw new Error('Roster entry not found');
   await db.misShiftRoster.delete({ where: { id } });

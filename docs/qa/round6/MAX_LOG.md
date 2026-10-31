@@ -21,3 +21,12 @@ R2-259 | CONTRACT | - | createRuleRevision: a same-day (UTC date) revision is up
 R2-241 | DEV_DONE | - | getBusinessRules hides shift.start_time / shift.end_time (HIDDEN_RULE_KEYS); rows untouched
 R2-242 | DEV_DONE | - | late_rule_workers: LATE_WORKERS_OPTIONS enum in lib/mis/late-rule.ts, refused on save unless ALL/DAILY/MONTHLY, description overridden server-side, Settings renders a Select
 R2-260 | DUPLICATE | - | same fix as R2-242 (validation on save; runtime parser still falls back to ALL so a punch is never blocked)
+R2-238 | DEV_DONE | - | /mis/me: unlinked login gets an amber "not linked, ask an Admin/Owner" card (role=status); no auto-link; page.test.tsx added
+R2-249 | DUPLICATE | - | same fix as R2-238
+R2-239 | CONTRACT | - | navigation.ts: me entry no longer phoneOnly -> every role's desktop sidebar ends in Me; navigation.test EXPECTED gets 'me' for all roles, navigation-more never-leak list drops 'me' // R2-239
+R2-255 | DUPLICATE | - | same fix as R2-239
+R2-240 | CONTRACT | - | cancelLeaveRequest: approved leave not yet started may be cancelled by ADMIN or the person themself (reason 3+); started -> Owner only. leave/page canRevoke includes ADMIN; MyLeaveScreen Cancel + reason slide-over; r2-batch1a R2-168 pin reworded (past leave) // R2-240
+R2-261 | DUPLICATE | - | same fix as R2-240 (decision: yes)
+R2-250 | DEV_DONE | - | employee form: non-Owner sees "Pay type and wage code are set by the Owner" note; server rule unchanged (decision)
+R2-262 | BY_DESIGN | - | 3-day operator window kept; characterised by correction-window.test.ts ("other roles keep the general window, defaulting to 3")
+R2-263 | CONTRACT | - | new action roster.write (OWNER, ADMIN, SUPERVISOR, ATT_OP, SUPER_ATT_OP) gates assignRoster/removeRoster and the roster section on /mis/attendance/shifts; permissions.test pins + MIS_ACTIONS 41 // R2-263; shift-roster.test.ts added

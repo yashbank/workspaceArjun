@@ -223,8 +223,9 @@ describe('R2-168 cancel leave', () => {
     expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: 'WITHDRAW_LEAVE' }));
   });
 
-  it('an APPROVED leave: only the Owner, with a reason; the LEAVE row it made is removed; audited', async () => {
-    const l = leave();
+  // R2-240: an Admin may cancel an approved leave that has not started; one that began is still the Owner's alone.
+  it('an APPROVED leave: only the Owner once it has started, with a reason; the LEAVE row it made is removed; audited', async () => {
+    const l = leave({ date: day('2026-10-12') }); // yesterday: already started
     as('ADMIN');
     await att.approveLeave(l.id, true);
     expect(store.attendance).toHaveLength(1);
@@ -235,6 +236,29 @@ describe('R2-168 cancel leave', () => {
     expect(l.status).toBe('CANCELLED');
     expect(store.attendance).toHaveLength(0);
     expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: 'REVOKE_LEAVE', after: expect.objectContaining({ reason: 'entered in error' }) }));
+  });
+
+  it('R2-240: an Admin cancels an approved leave that starts tomorrow, with a reason; the register row goes back', async () => {
+    const l = leave({ date: day('2026-10-14'), status: 'APPROVED' });
+    store.attendance.push({ id: 'a1', employeeId: E1, date: day('2026-10-14'), status: 'LEAVE', clockIn: null, clockOut: null, editedAt: null });
+    as('ADMIN');
+    await expect(att.cancelLeaveRequest(l.id)).rejects.toThrow('A reason is required');
+    await att.cancelLeaveRequest(l.id, 'plans changed');
+    expect(l.status).toBe('CANCELLED');
+    expect(store.attendance).toHaveLength(0);
+    expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: 'REVOKE_LEAVE' }));
+  });
+
+  it('R2-240: the person on leave cancels their own future approved leave; not someone else’s; an operator cannot', async () => {
+    const mine = leave({ employeeId: 'emp-me', date: day('2026-10-20'), status: 'APPROVED' });
+    as('WORKER');
+    await att.cancelLeaveRequest(mine.id, 'trip cancelled');
+    expect(mine.status).toBe('CANCELLED');
+    const other = leave({ employeeId: E1, date: day('2026-10-20'), status: 'APPROVED' });
+    await expect(att.cancelLeaveRequest(other.id, 'nope')).rejects.toThrow(/Not permitted/);
+    as('SUPER_ATTENDANCE_OPERATOR');
+    await expect(att.cancelLeaveRequest(other.id, 'nope')).rejects.toThrow('Only the Owner, an Admin or the person on leave');
+    expect(other.status).toBe('APPROVED');
   });
 
   it('revoking a half-day with a punch leaves a PRESENT row', async () => {
