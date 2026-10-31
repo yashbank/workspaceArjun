@@ -26,3 +26,27 @@ export function resolveShiftForDate(
 export function rosterRangesOverlap(a: { startDate: Date | string; endDate: Date | string }, b: { startDate: Date | string; endDate: Date | string }): boolean {
   return key(a.startDate) <= key(b.endDate) && key(b.startDate) <= key(a.endDate);
 }
+
+const shiftKey = (d: string, days: number): string => {
+  const [y, m, dd] = d.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, dd + days)).toISOString().slice(0, 10);
+};
+
+/**
+ * R2-337: what is left of an existing roster entry once `incoming` takes over its overlapping days.
+ * `head` keeps the days before the new range, `tail` the days after; both empty = the old entry goes.
+ * History is kept: only the days the new range claims change hands.
+ */
+export function cutRosterRange(
+  existing: { startDate: Date | string; endDate: Date | string },
+  incoming: { startDate: Date | string; endDate: Date | string },
+): { head: { startDate: string; endDate: string } | null; tail: { startDate: string; endDate: string } | null } {
+  const oldStart = key(existing.startDate);
+  const oldEnd = key(existing.endDate);
+  const newStart = key(incoming.startDate);
+  const newEnd = key(incoming.endDate);
+  return {
+    head: oldStart < newStart ? { startDate: oldStart, endDate: shiftKey(newStart, -1) } : null,
+    tail: oldEnd > newEnd ? { startDate: shiftKey(newEnd, 1), endDate: oldEnd } : null,
+  };
+}

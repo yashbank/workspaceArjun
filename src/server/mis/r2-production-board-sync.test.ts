@@ -145,3 +145,24 @@ describe('permission', () => {
     expect(fake.state.allocations).toHaveLength(0);
   });
 });
+
+describe('R2-339 a late entry extends the booking that just ended instead of opening a duplicate block', () => {
+  it('stretches endsAt to the log time; still one allocation', async () => {
+    fake.state.allocations = [{
+      id: 'ma-sched', machineId: MACHINE, orderId: ORDER, source: 'SCHEDULED', releasedAt: null,
+      startsAt: new Date(AT.getTime() - 8 * 3_600_000), endsAt: new Date(AT.getTime() - 15 * 60_000), order: { orderNumber: 'ORD-101' },
+    }];
+    const result = await submitProductionLog(entry());
+    expect(result.outcome).toBe('APPLIED');
+    expect(fake.state.allocations).toHaveLength(1);
+    expect((fake.state.allocations[0].endsAt as Date).getTime()).toBe(AT.getTime());
+  });
+  it('after the grace window a new block is created as before', async () => {
+    fake.state.allocations = [{
+      id: 'ma-sched', machineId: MACHINE, orderId: ORDER, source: 'SCHEDULED', releasedAt: null,
+      startsAt: new Date(AT.getTime() - 8 * 3_600_000), endsAt: new Date(AT.getTime() - 90 * 60_000), order: { orderNumber: 'ORD-101' },
+    }];
+    await submitProductionLog(entry());
+    expect(fake.state.allocations).toHaveLength(2);
+  });
+});

@@ -217,10 +217,10 @@ Batch C2
 - [x] R2-333 past-shift crew booking (needs Q)
 - [x] R2-310 unstaged QC acknowledgement
 Batch C3
-- [ ] R2-308 SHIFT clearance expiry (needs Q)
-- [ ] R2-309 JOB clearance null order (needs Q)
-- [ ] R2-339 machine board concurrent bookings
-- [ ] R2-337 roster range splitting (needs Q)
+- [x] R2-308 SHIFT clearance expiry (needs Q)
+- [x] R2-309 JOB clearance null order (needs Q)
+- [x] R2-339 machine board concurrent bookings
+- [x] R2-337 roster range splitting (needs Q)
 Batch C4
 - [ ] R2-284 job card qty + PO
 - [ ] R2-294 CoA defaults to approved snapshot

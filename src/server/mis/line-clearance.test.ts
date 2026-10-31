@@ -202,3 +202,43 @@ describe('assertLineCleared — the production.ts precondition', () => {
     });
   });
 });
+
+describe('R2-308 a SHIFT clearance made outside any shift lasts 8 hours, never for ever', () => {
+  const noShift = (hoursAgo: number) => ({ mode: 'SHIFT', orderId: null, shiftId: null, clearedAt: new Date(Date.now() - hoursAgo * 60 * 60 * 1000), expiresAt: null });
+  it('is still valid after 7 hours', async () => {
+    mockClearanceFindFirst.mockResolvedValue(noShift(7));
+    await expect(assertLineCleared('m1')).resolves.toBeUndefined();
+  });
+  it('has expired after 9 hours', async () => {
+    mockClearanceFindFirst.mockResolvedValue(noShift(9));
+    await expect(assertLineCleared('m1')).rejects.toThrow(/expired/i);
+  });
+  it('clearLine in SHIFT mode outside a shift stores an 8-hour expiresAt', async () => {
+    getMisRole.mockResolvedValue('SUPERVISOR');
+    mockRuleFindFirst.mockImplementation(async ({ where }: { where: { ruleKey: string } }) =>
+      where.ruleKey === 'line_clearance.mode' ? { ruleKey: where.ruleKey, ruleValue: 'SHIFT' } : null,
+    );
+    mockShiftFindMany.mockResolvedValue([]);
+    mockAllocationFindFirst.mockResolvedValue(null);
+    mockClearanceCreate.mockImplementation(({ data }: { data: Record<string, unknown> }) => ({ id: 'c1', ...data }));
+    const rec = await clearLine({ machineId: 'm1' });
+    expect(rec.mode).toBe('SHIFT');
+    expect(rec.shiftId).toBeNull();
+    expect((rec.expiresAt as Date).getTime() - (rec.clearedAt as Date).getTime()).toBe(8 * 60 * 60 * 1000);
+    mockRuleFindFirst.mockReset();
+  });
+});
+
+describe('R2-309 a JOB clearance needs an order', () => {
+  it('clearLine refuses when no order is booked and nothing is named, pointing at SHIFT mode', async () => {
+    getMisRole.mockResolvedValue('SUPERVISOR');
+    mockAllocationFindFirst.mockResolvedValue(null);
+    await expect(clearLine({ machineId: 'm1' })).rejects.toThrow(/No order is booked.*SHIFT mode/);
+    expect(mockClearanceCreate).not.toHaveBeenCalled();
+  });
+  it('an older JOB clearance with no order does not clear any order', async () => {
+    mockClearanceFindFirst.mockResolvedValue({ mode: 'JOB', orderId: null, shiftId: null, clearedAt: new Date(), expiresAt: null });
+    mockAllocationFindFirst.mockResolvedValue(null);
+    await expect(assertLineCleared('m1', 'o9')).rejects.toThrow(/needs a line clearance/);
+  });
+});

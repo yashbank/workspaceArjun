@@ -133,7 +133,7 @@ export async function cancelLeaveRequestAction(leaveId: string, reason?: string)
     revalidatePath('/mis/approvals');
   });
 }
-export async function assignRosterAction(input: { employeeIds: string[]; shiftId: string; startDate: string; endDate: string }) {
+export async function assignRosterAction(input: { employeeIds: string[]; shiftId: string; startDate: string; endDate: string; replaceOverlaps?: boolean }) {
   return asResult(async () => {
     const out = await assignRoster(input);
     revalidatePath('/mis/attendance/shifts');

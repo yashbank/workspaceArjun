@@ -233,3 +233,17 @@ describe('B102 manpower report', () => {
     expect(moneyKeys(r)).toEqual([]);
   });
 });
+
+describe('R2-339 the board keeps every concurrent booking', () => {
+  it('two live bookings: the earlier is current, the other is listed, nothing is dropped', async () => {
+    fakeDb.misMachine.findMany = async () => [{ id: 'm1', name: 'Press', code: 'P1', isActive: true, department: null }];
+    const a = { id: 'a1', machineId: 'm1', orderId: 'o1', startsAt: IST('2026-10-13', '06:00'), endsAt: IST('2026-10-13', '14:00'), releasedAt: null, source: 'SCHEDULED', order: { orderNumber: 'ORD-1' }, jobPhase: null, workerAllocations: [] };
+    const b = { ...a, id: 'a2', orderId: 'o2', startsAt: IST('2026-10-13', '08:00'), endsAt: IST('2026-10-13', '16:00'), order: { orderNumber: 'ORD-2' } };
+    q.allocFindMany.mockResolvedValue([b, a]); // DB order must not matter
+    q.logs.mockResolvedValue([]);
+    const [m] = await getMachineBoard();
+    expect(m.status).toBe('BUSY');
+    expect(m.currentAllocation?.id).toBe('a1');
+    expect(m.otherAllocations).toEqual([{ id: 'a2', orderNumber: 'ORD-2', endsAt: b.endsAt, source: 'SCHEDULED' }]);
+  });
+});

@@ -2,7 +2,7 @@ import { addDaysToDateKey, dateKeyToDbDate, factoryDateKey, factoryMinuteOfDay }
 import { isUuid, parkable, rejectable, type QueuedWriteEnvelope } from '@/lib/mis/offline/idempotency';
 import { instantAtAxisMinute, shiftDateKeyFor, shiftWindowInstants } from '@/lib/mis/crew-hours';
 import { correctionVerdict, requireCorrectionReason } from '@/lib/mis/entry-correction';
-import { autoBlockWindow, classifyLogAgainstBookings, decideMachineSync, type SyncBooking } from '@/lib/mis/machine-sync';
+import { autoBlockWindow, classifyLogAgainstBookings, decideMachineSync, LATE_ENTRY_GRACE_MS, type SyncBooking } from '@/lib/mis/machine-sync';
 import { isOrderClosed } from '@/lib/mis/order-status';
 import { PRODUCTION_EDIT_WINDOW_MS } from '@/lib/mis/production-form';
 import { sumByUnit } from '@/lib/mis/qty-by-unit';
@@ -202,6 +202,13 @@ async function createProductionLog(
   });
 
   let autoAllocation: { id: string; startsAt: Date; endsAt: Date } | null = null;
+  if (sync.kind === 'EXTEND') {
+    // R2-339: the press ran past its booking; stretch that booking to the log instead of opening a duplicate block.
+    await client.misMachineAllocation.update({ where: { id: sync.booking.id }, data: { endsAt: at } });
+    for (const w of warnings) {
+      if (w.code === 'NO_BOOKING') w.message = `${w.message} The earlier booking has been extended to cover it.`;
+    }
+  }
   if (sync.kind === 'CREATE') {
     const timeZone = await getFactoryTimezone();
     const window = autoBlockWindow(
@@ -253,7 +260,8 @@ async function operatorLockRefusal(
 /** The live bookings covering `at` on this machine, read through the write's own client. */
 async function decideBoardSync(client: MisTx | typeof db, data: LogProductionInput, at: Date) {
   const rows = await client.misMachineAllocation.findMany({
-    where: { machineId: data.machineId, releasedAt: null, startsAt: { lte: at }, endsAt: { gte: at } },
+    // R2-339: also the booking that ended within the grace window before the log, so a late entry extends it.
+    where: { machineId: data.machineId, releasedAt: null, startsAt: { lte: at }, endsAt: { gte: new Date(at.getTime() - LATE_ENTRY_GRACE_MS) } },
     select: { id: true, machineId: true, orderId: true, startsAt: true, endsAt: true, releasedAt: true, source: true, order: { select: { orderNumber: true } } },
   });
   const bookings: SyncBooking[] = (rows ?? []).map((r) => ({

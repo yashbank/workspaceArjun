@@ -42,7 +42,17 @@ export function ShiftRosterSection({ shifts, employees, rows, days, prevFrom, ne
   const toggle = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
 
   const save = () => startTransition(async () => {
-    const res = await assignRosterAction({ employeeIds: picked, shiftId, startDate: from, endDate: to });
+    let res = await assignRosterAction({ employeeIds: picked, shiftId, startDate: from, endDate: to });
+    if (res.ok && res.value.overlaps?.length) {
+      // R2-337: the old entries are cut around the new range (earlier and later days survive) once confirmed.
+      const ok = await confirm({
+        title: 'Replace the existing roster for these days?',
+        message: `${res.value.overlaps.join(', ')} already rostered in that range. The old entries will be cut to make room; the days before and after stay as they are.`,
+        confirmLabel: 'Replace',
+      });
+      if (!ok) return;
+      res = await assignRosterAction({ employeeIds: picked, shiftId, startDate: from, endDate: to, replaceOverlaps: true });
+    }
     if (!res.ok) { toast('error', res.detail); return; }
     setOpen(false); setPicked([]);
   });
