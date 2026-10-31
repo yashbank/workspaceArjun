@@ -65,6 +65,9 @@ const REVIEWED_UNGATED: Record<string, Reviewed> = {
   // R3-MST B24: item-code allocation, run on the caller's db/tx after createItem / createItemAction / the import route gate.
   'item-code.ts#allocateItemCode': { reason: 'internal helper; callers (item.ts, inventory actions, import route) are gated' },
   'item-code.ts#createWithItemCode': { reason: 'internal helper; callers (item.ts, inventory actions, import route) are gated' },
+  // R2-291/292: the keyed-once helpers run the caller's apply() after that caller's own gate (store.ts, grn.ts, inventory.ts).
+  'keyed-once.ts#runOnce': { reason: 'internal helper; callers (commitReceipt, commitIssue, confirmGRN) are gated' },
+  'keyed-once.ts#keyedWrite': { reason: 'internal helper; callers (createStoreIn, createStoreOut, adjustInventory) are gated' },
   // V2 Epic 4: a writer, not a reader — called by confirmGRN after its gate; best-effort like logAuditEvent.
   'grn-alerts.ts#notifyGrnConfirmed': { reason: 'internal; called only by confirmGRN after its grn.write gate' },
   'notifications.ts#notifyRoles': { reason: 'writer, not a reader; called by gated mutations after their own write (V2 bell)' },

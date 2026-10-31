@@ -26,6 +26,7 @@ import { allocateFromReceipt } from './order-allocation';
 import { notifyGrnConfirmed } from './grn-alerts';
 import { itemLockKey, poItemLockKey } from '@/lib/mis/stock-lock-keys';
 import { lockStockKeys } from './stock-lock';
+import { runOnce } from './keyed-once';
 import { lastLedgerBalance, lastTxnBalance, nextTxnSeq, round2, storeFactoryZone, STXN_SEQ_KEY, txnNumberOf } from './store-books';
 
 /** V2 Epic 1 — the delivery's paperwork. `supplierInvoiceAmount` is money: Owner-only to write and to read. */
@@ -527,11 +528,14 @@ export function auditOverReceipt(
   });
 }
 
-export async function confirmGRN(grnId: string, opts: { overReceiptReason?: string | null } = {}) {
+/** `idempotencyKey` (R2-291): one UUID per GRN screen open; a second tap or a retried request returns the first result. */
+export async function confirmGRN(grnId: string, opts: { overReceiptReason?: string | null; idempotencyKey?: string | null } = {}) {
   const actor = await requirePermission('grn.write');
   const grn = await db.misGrn.findUnique({ where: { id: grnId }, include: { po: { select: { bomRef: true, supplierId: true } }, items: { include: { poItem: { include: { item: true } } } } } });
   if (!grn) throw new Error(`GRN ${grnId} not found`);
-  if (grn.status === 'CONFIRMED') throw new GrnStateError('GRN already confirmed');
+  // R2-291: with a key, a replay must reach the key table instead of this check; the DRAFT -> CONFIRMED claim inside
+  // the transaction still refuses a second confirm under a different key with the same words.
+  if (grn.status === 'CONFIRMED' && !opts.idempotencyKey) throw new GrnStateError('GRN already confirmed');
   assertConfirmable(grn.items);
   assertPaperwork(grn);
   const zone = await storeFactoryZone(); // read before the transaction: the runtime pool is one connection wide
@@ -542,7 +546,7 @@ export async function confirmGRN(grnId: string, opts: { overReceiptReason?: stri
   let overrideReason = '';
 
   // Confirm GRN and update inventory in one transaction
-  await db.$transaction(async (tx) => {
+  const applyConfirm = async (tx: Prisma.TransactionClient) => {
     // Serialise with every other writer of these items' ledgers, these PO lines' counters and the daily
     // transaction sequence, so the cap below is checked on figures nobody else can change until we commit.
     await lockStockKeys(tx, [...[...lockedItems].map(itemLockKey), ...[...lockedPoItems].map(poItemLockKey), STXN_SEQ_KEY]);
@@ -691,7 +695,17 @@ export async function confirmGRN(grnId: string, opts: { overReceiptReason?: stri
       ) ?? (fresh.po.status === 'APPROVED' ? 'RECEIVING' : null);
       if (status && status !== fresh.po.status) await tx.misPurchaseOrder.update({ where: { id: fresh.poId }, data: { status } });
     }
-  });
+  };
+  if (opts.idempotencyKey) {
+    // R2-291: the key row and the stock rows commit together; a replay returns the GRN as it is and books nothing.
+    const keyed = await runOnce<{ grnId: string }>('GRN_CONFIRM', opts.idempotencyKey, actor.userId, { grnId }, 'MisGrn', async (tx) => {
+      await applyConfirm(tx);
+      return { entityId: grnId, result: { grnId } };
+    });
+    if (keyed.replay) return { ...(await db.misGrn.findUnique({ where: { id: grnId } })), warnings: [] as string[] };
+  } else {
+    await db.$transaction(applyConfirm);
+  }
 
   await logAuditEvent({ actorId: actor.userId, action: 'grn.confirm', entity: 'MisGrn', entityId: grnId });
   if (overrides.length > 0) await auditOverReceipt(actor.userId, grnId, overrides, overrideReason);

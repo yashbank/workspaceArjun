@@ -58,7 +58,7 @@ type Props = {
    * once. `overReceiptReason` is set only after an Admin/Owner chose "Override with reason" (B03).
    */
   onCommit: (lines: CartLine[], key: string, overReceiptReason?: string) => Promise<void>;
-  /** RECEIVE, ADMIN/OWNER only: offer "Override with reason" when the server refuses a line past the order + 2%. */
+  /** RECEIVE (ADMIN/OWNER): "Override with reason" past the order + 2%. ISSUE (OWNER/SUPERVISOR, R2-352): past the order's allocation. */
   canOverride?: boolean;
   /** RECEIVE: who delivered. Rendered as a chip row when passed. */
   suppliers?: SupplierOption[];
@@ -447,7 +447,7 @@ export function ItemCart({
         <section className="rounded-2xl border border-red-200 bg-red-50 p-4">
           <SectionLabel>Not saved</SectionLabel>
           <p className="mt-1 font-semibold text-slate-900">{error}</p>
-          {canOverride && isReceive && /more than 2%/.test(error) && (
+          {canOverride && (isReceive ? /more than 2%/.test(error) : /allocated to this order/.test(error)) && (
             <button
               type="button"
               onClick={() => { setOverDraft(''); setOverOpen(true); }}
@@ -459,9 +459,13 @@ export function ItemCart({
         </section>
       )}
 
-      <SlideOver open={overOpen} onClose={() => setOverOpen(false)} title="Override the 2% limit">
+      <SlideOver open={overOpen} onClose={() => setOverOpen(false)} title={isReceive ? 'Override the 2% limit' : 'Issue past the allocation'}>
         <div className="flex flex-col gap-4 p-4">
-          <p className="text-sm text-slate-600">This delivery is more than the order plus 2%. Give a reason; it is recorded.</p>
+          <p className="text-sm text-slate-600">
+            {isReceive
+              ? 'This delivery is more than the order plus 2%. Give a reason; it is recorded.'
+              : 'This issue is more than what is allocated to the order (R2-352). Give a reason; it is recorded.'}
+          </p>
           <input
             value={overDraft}
             onChange={(event) => setOverDraft(event.target.value)}

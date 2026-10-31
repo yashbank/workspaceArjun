@@ -529,3 +529,25 @@ describe('R2-278 quarantine', () => {
     await expect(returnQuarantineToSupplier(quarantine[0].id)).rejects.toThrow(/already returned/);
   });
 });
+
+describe('R2-291 confirmGRN takes an idempotency key', () => {
+  const KEY = '7a1d7c52-8f55-4f7e-9d57-1a2b3c4d5e6f';
+  it('the same key twice confirms once: one set of ledger rows, one audit, and the second call returns the GRN without throwing', async () => {
+    state.poItems = [state.poItems[0]];
+    const grn = await createGRN({ poId: 'po1', dcNumber: 'DC-1' });
+    await addGRNItem(grn.id, { poItemId: state.poItems[0].id, receivedQty: 40, dcQuantity: 40 });
+    const first = await confirmGRN(grn.id, { idempotencyKey: KEY });
+    const second = await confirmGRN(grn.id, { idempotencyKey: KEY });
+    expect(first.status).toBe('CONFIRMED');
+    expect(second.status).toBe('CONFIRMED');
+    expect(state.ledger.filter((l) => l.source === 'GRN')).toHaveLength(1);
+    expect(state.audits.filter((a) => a.action === 'grn.confirm')).toHaveLength(1);
+  });
+  it('without a key a second confirm is still refused in words (unchanged)', async () => {
+    state.poItems = [state.poItems[0]];
+    const grn = await createGRN({ poId: 'po1', dcNumber: 'DC-1' });
+    await addGRNItem(grn.id, { poItemId: state.poItems[0].id, receivedQty: 40, dcQuantity: 40 });
+    await confirmGRN(grn.id);
+    await expect(confirmGRN(grn.id)).rejects.toThrow(/already confirmed/);
+  });
+});

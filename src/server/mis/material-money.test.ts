@@ -43,6 +43,7 @@ vi.mock('@/server/db', () => ({
     misItem: {
       findMany: async () => { queries.push('items'); return world.items; },
       findUnique: async () => { queries.push('item'); return world.items[0]; },
+      findFirst: async () => null, // R2-336 plumbing: no soft-deleted item carries the typed code here
       create: async ({ data }: { data: Row }) => ({ id: 'i2', pricePerUnit: PRICE, ...data }),
       update: async ({ data }: { data: Row }) => ({ ...world.items[0], ...data }),
     },
@@ -56,7 +57,8 @@ vi.mock('@/server/db', () => ({
       delete: async () => poItem,
     },
     misBomStage: { findUnique: async () => ({ id: 's1', bom: { status: 'DRAFT' } }) }, // add/edit needs a DRAFT BOM (C2)
-    misBomMaterial: { create: async ({ data }: { data: Row }) => ({ id: 'm9', ...data }) },
+    misBomMaterial: { create: async ({ data }: { data: Row }) => ({ id: 'm9', ...data }), findFirst: async () => null /* R2-336 plumbing */ },
+    misInventoryLedger: { findFirst: async () => null }, // R2-336 plumbing: no stock on hand
     misAuditLog: { create: async ({ data }: { data: Row }) => { auditRows.push(JSON.parse(JSON.stringify(data))); return data; } },
   },
 }));

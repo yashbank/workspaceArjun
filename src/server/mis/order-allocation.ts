@@ -30,17 +30,32 @@ export async function allocateFromReceipt(
 }
 
 /** Allocated and already-issued totals per item for one order. Items with no allocation are absent. */
+/**
+ * R2-285: ACCEPTED returns to the store against an order give the earmark back. Folded as issue rows with a
+ * POSITIVE changeQty, so `foldAllocationFigures` nets them off what was issued. Optional call: narrow
+ * hand-built test doubles carry no return delegate; a real client always does.
+ */
+type ReturnReader = { misStoreReturn?: { findMany: (args: { where: object; select: object }) => Promise<{ orderId: string | null; itemId: string; quantity: { toNumber(): number } | number; createdAt: Date }[]> } };
+async function acceptedReturns(tx: object, where: { orderId: string | { in: string[] }; itemId: { in: string[] } }) {
+  const rows = (await (tx as ReturnReader).misStoreReturn?.findMany({
+    where: { status: 'ACCEPTED', orderId: where.orderId, itemId: where.itemId },
+    select: { orderId: true, itemId: true, quantity: true, createdAt: true },
+  })) ?? [];
+  return rows.map((r) => ({ orderId: r.orderId ?? '', itemId: r.itemId, changeQty: Number(typeof r.quantity === 'object' ? r.quantity.toNumber() : r.quantity), createdAt: r.createdAt }));
+}
+
 export async function allocationFigures(tx: Tx, orderId: string, itemIds: string[]): Promise<Map<string, AllocationFigures>> {
-  const [allocations, issues] = await Promise.all([
+  const [allocations, issues, returns] = await Promise.all([
     tx.misOrderStockAllocation.findMany({ where: { orderId, itemId: { in: itemIds } }, select: { itemId: true, allocatedQty: true, createdAt: true } }),
     tx.misInventoryLedger.findMany({
       where: { source: 'STORE_ISSUE', sourceId: orderId, itemId: { in: itemIds } },
       select: { itemId: true, changeQty: true, createdAt: true },
     }),
+    acceptedReturns(tx, { orderId, itemId: { in: itemIds } }),
   ]);
   return foldAllocationFigures(
     allocations.map((a) => ({ itemId: a.itemId, allocatedQty: a.allocatedQty.toNumber(), createdAt: a.createdAt })),
-    issues.map((i) => ({ itemId: i.itemId, changeQty: i.changeQty.toNumber(), createdAt: i.createdAt })),
+    [...issues.map((i) => ({ itemId: i.itemId, changeQty: i.changeQty.toNumber(), createdAt: i.createdAt })), ...returns],
     { allocation: (a) => a.itemId, issue: (i) => i.itemId },
   );
 }
@@ -79,13 +94,16 @@ export async function listOpenOrderAllocations(): Promise<Record<string, OrderAl
   if (allocations.length === 0) return {};
   const orderIds = [...new Set(allocations.map((a) => a.orderId))];
   const itemIds = [...new Set(allocations.map((a) => a.itemId))];
-  const issues = await db.misInventoryLedger.findMany({
-    where: { source: 'STORE_ISSUE', sourceId: { in: orderIds }, itemId: { in: itemIds } },
-    select: { sourceId: true, itemId: true, changeQty: true, createdAt: true },
-  });
+  const [issues, returns] = await Promise.all([
+    db.misInventoryLedger.findMany({
+      where: { source: 'STORE_ISSUE', sourceId: { in: orderIds }, itemId: { in: itemIds } },
+      select: { sourceId: true, itemId: true, changeQty: true, createdAt: true },
+    }),
+    acceptedReturns(db, { orderId: { in: orderIds }, itemId: { in: itemIds } }), // R2-285
+  ]);
   const figures = foldAllocationFigures(
     allocations.map((a) => ({ orderId: a.orderId, itemId: a.itemId, allocatedQty: a.allocatedQty.toNumber(), createdAt: a.createdAt })),
-    issues.map((i) => ({ orderId: i.sourceId ?? '', itemId: i.itemId, changeQty: i.changeQty.toNumber(), createdAt: i.createdAt })),
+    [...issues.map((i) => ({ orderId: i.sourceId ?? '', itemId: i.itemId, changeQty: i.changeQty.toNumber(), createdAt: i.createdAt })), ...returns],
     { allocation: (a) => `${a.orderId}|${a.itemId}`, issue: (i) => `${i.orderId}|${i.itemId}` },
   );
   const itemOf = new Map(allocations.map((a) => [`${a.orderId}|${a.itemId}`, a.item]));

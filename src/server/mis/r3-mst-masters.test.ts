@@ -7,8 +7,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- loose rows for an in-memory fake
 type Row = Record<string, any>;
 
-const state: { items: Row[]; suppliers: Row[]; customers: Row[]; pos: Row[]; orders: Row[]; audits: Row[]; failCreate: Row[] } = {
-  items: [], suppliers: [], customers: [], pos: [], orders: [], audits: [], failCreate: [],
+const state: { items: Row[]; suppliers: Row[]; customers: Row[]; pos: Row[]; orders: Row[]; audits: Row[]; failCreate: Row[]; balances: Record<string, number>; inBom: string[] } = {
+  items: [], suppliers: [], customers: [], pos: [], orders: [], audits: [], failCreate: [], balances: {}, inBom: [],
 };
 let seq = 0;
 const p2002 = (field: string) => Object.assign(new Error(`Unique constraint failed on the fields: (\`${field}\`)`), { code: 'P2002', meta: { target: [field] } });
@@ -28,6 +28,8 @@ vi.mock('@/server/db', () => ({
   db: {
     misItem: {
       findMany: async () => state.items.map((i) => ({ code: i.code })),
+      // R2-336 plumbing: createItem looks for a soft-deleted item with the typed code.
+      findFirst: async ({ where }: Row) => { const r = state.items.find((i) => i.code === where.code && (where.deletedAt?.not === null ? i.deletedAt != null : true)); return r ? { ...r } : null; },
       findUnique: async ({ where }: Row) => copyById(state.items, where),
       create: async ({ data }: Row) => {
         const fail = state.failCreate.shift();
@@ -53,13 +55,16 @@ vi.mock('@/server/db', () => ({
     misPurchaseOrder: {
       count: async ({ where }: Row) => state.pos.filter((p) => p.supplierId === where.supplierId && where.status.in.includes(p.status)).length,
     },
+    // R2-336 plumbing: deleteItem reads the stock balance and approved-BOM membership.
+    misInventoryLedger: { findFirst: async ({ where }: Row) => (state.balances[where.itemId] != null ? { balanceQty: { toNumber: () => state.balances[where.itemId] } } : null) },
+    misBomMaterial: { findFirst: async ({ where }: Row) => (state.inBom.includes(where.itemId) ? { id: 'bm1' } : null) },
     misOrder: {
       findMany: async ({ where }: Row) => state.orders.filter((o) => o.customerId === where.customerId).map((o) => ({ status: o.status })),
     },
   },
 }));
 
-const { createItem, updateItem } = await import('./item');
+const { createItem, updateItem, deleteItem } = await import('./item');
 const { createItemAction, adjustInventoryAction } = await import('@/app/(mis)/mis/inventory/actions');
 const { saveItemAction } = await import('@/app/(mis)/mis/masters/items/actions');
 const { deleteSupplier, restoreSupplier } = await import('./supplier');
@@ -70,7 +75,7 @@ const { deleteCustomerAction, restoreCustomerAction } = await import('@/app/(mis
 const as = (role: string) => { getCurrentUser.mockResolvedValue({ id: 'u1' }); getMisRole.mockResolvedValue(role); };
 
 beforeEach(() => {
-  state.items = []; state.suppliers = []; state.customers = []; state.pos = []; state.orders = []; state.audits = []; state.failCreate = [];
+  state.items = []; state.suppliers = []; state.customers = []; state.pos = []; state.orders = []; state.audits = []; state.failCreate = []; state.balances = {}; state.inBom = [];
   seq = 0;
   vi.clearAllMocks();
   as('ADMIN');
@@ -216,5 +221,32 @@ describe('R2-289 a supplier with a RECEIVING PO is still needed', () => {
     state.pos.push({ supplierId: 's1', status: 'RECEIVING' });
     await expect(deleteSupplier('s1')).rejects.toThrow('Supplier has 1 open PO');
     expect(state.suppliers[0].deletedAt).toBeNull();
+  });
+});
+
+describe('R2-336 item delete guards and code re-use', () => {
+  it('refuses to delete an item with stock on hand, naming the balance', async () => {
+    state.items.push({ id: 'i1', code: 'ITM-0001', name: 'Glue', deletedAt: null });
+    state.balances.i1 = 12;
+    await expect(deleteItem('i1')).rejects.toThrow(/still has 12 in stock/);
+    expect(state.items[0].deletedAt).toBeNull();
+  });
+  it('refuses to delete a material of an approved BOM', async () => {
+    state.items.push({ id: 'i1', code: 'ITM-0001', name: 'Glue', deletedAt: null });
+    state.inBom.push('i1');
+    await expect(deleteItem('i1')).rejects.toThrow(/approved BOM/);
+  });
+  it('deletes when stock is zero and no approved BOM uses it', async () => {
+    state.items.push({ id: 'i1', code: 'ITM-0001', name: 'Glue', deletedAt: null });
+    state.balances.i1 = 0;
+    await deleteItem('i1');
+    expect(state.items[0].deletedAt).toBeInstanceOf(Date);
+  });
+  it('re-creating a deleted code restores the old item with the new details, audited as item.restore', async () => {
+    state.items.push({ id: 'old', code: 'GLUE-1', name: 'Glue', unit: 'KG', deletedAt: new Date(), isActive: false });
+    const out = await createItem({ code: 'glue-1', name: 'Hot-melt glue', unit: 'KG' });
+    expect(out).toMatchObject({ id: 'old', code: 'GLUE-1', name: 'Hot-melt glue', deletedAt: null, isActive: true });
+    expect(state.items).toHaveLength(1);
+    expect(state.audits.at(-1)).toMatchObject({ action: 'item.restore', entityId: 'old' });
   });
 });

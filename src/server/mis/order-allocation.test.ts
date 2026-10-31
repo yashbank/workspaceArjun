@@ -9,8 +9,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 type Row = Record<string, any>;
 const D = (n: number) => ({ toNumber: () => n });
 const ORDER = { id: 'o1', orderNumber: 'ORD-202610-00001' };
-const state: { ledger: Row[]; txns: Row[]; allocations: Row[]; grn: Row | null; poItemIncrements: { toNumber(): number }[] } = {
-  ledger: [], txns: [], allocations: [], grn: null, poItemIncrements: [],
+const state: { ledger: Row[]; txns: Row[]; allocations: Row[]; grn: Row | null; poItemIncrements: { toNumber(): number }[]; returns: Row[] } = {
+  ledger: [], txns: [], allocations: [], grn: null, poItemIncrements: [], returns: [],
 };
 const item = { id: 'i1', name: 'Kraft', code: 'K1', unit: 'KG', isActive: true, deletedAt: null };
 
@@ -39,6 +39,8 @@ const db: Row = {
     // R3-STK B08: a delivery's issue is checked against the smaller of the two books, so the storekeeper book has stock too.
     findFirst: async ({ where }: Row) => (where?.txnNumber ? null : { balanceQty: D(1000) }),
   },
+  // R2-285: accepted returns against the order give the earmark back.
+  misStoreReturn: { findMany: async ({ where }: Row) => state.returns.filter((r) => r.status === where.status && r.orderId === where.orderId && where.itemId.in.includes(r.itemId)).map((r) => ({ orderId: r.orderId, itemId: r.itemId, quantity: D(r.quantity), createdAt: r.createdAt })) },
   misPurchaseOrder: { updateMany: async () => ({ count: 1 }), update: async () => null },
   misGrn: { findUnique: async () => state.grn, update: async () => null, updateMany: async () => ({ count: 1 }) },
   misPoItem: {
@@ -62,7 +64,7 @@ const { confirmGRN } = await import('./grn');
 
 beforeEach(() => {
   vi.clearAllMocks();
-  Object.assign(state, { ledger: [], txns: [], allocations: [], grn: null, poItemIncrements: [] });
+  Object.assign(state, { ledger: [], txns: [], allocations: [], grn: null, poItemIncrements: [], returns: [] });
   getCurrentUser.mockResolvedValue({ id: 'u1' });
   getMisRole.mockResolvedValue('STORE_GUY');
 });
@@ -134,5 +136,23 @@ describe('commitIssue against an order', () => {
     allocate(1);
     await commitIssue([{ itemId: 'i1', qty: 500 }], { departmentId: 'd1', general: G });
     expect(state.ledger).toHaveLength(1);
+  });
+});
+
+describe('R2-285 a return to the store restores the order allocation', () => {
+  const allocate = (qty: number) => state.allocations.push({ orderId: 'o1', itemId: 'i1', allocatedQty: qty, source: 'GRN', sourceId: 'g1', createdAt: new Date(Date.now() - 60_000) });
+  it('500 allocated, 500 issued, 200 returned (ACCEPTED): 200 can be issued again; 201 cannot', async () => {
+    allocate(500);
+    await commitIssue([{ itemId: 'i1', qty: 500 }], { orderId: 'o1' });
+    state.returns.push({ orderId: 'o1', itemId: 'i1', quantity: 200, status: 'ACCEPTED', createdAt: new Date() });
+    await expect(commitIssue([{ itemId: 'i1', qty: 201 }], { orderId: 'o1' })).rejects.toThrow(/only 200 of the 500 allocated/);
+    await commitIssue([{ itemId: 'i1', qty: 200 }], { orderId: 'o1' });
+    expect(state.ledger.filter((l) => l.source === 'STORE_ISSUE').map((l) => l.changeQty)).toEqual([-500, -200]);
+  });
+  it('a PENDING (not yet accepted) return gives nothing back', async () => {
+    allocate(100);
+    await commitIssue([{ itemId: 'i1', qty: 100 }], { orderId: 'o1' });
+    state.returns.push({ orderId: 'o1', itemId: 'i1', quantity: 50, status: 'PENDING', createdAt: new Date() });
+    await expect(commitIssue([{ itemId: 'i1', qty: 1 }], { orderId: 'o1' })).rejects.toThrow(/only 0 of the 100 allocated/);
   });
 });

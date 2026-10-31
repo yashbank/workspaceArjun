@@ -244,3 +244,43 @@ describe('G. the issue can run the caller’s own writes inside its transaction'
     await expect(commitIssue([{ itemId: 'i1', qty: 1 }], { departmentId: 'd1', general: G, inTransaction: async () => { throw new Error('line write failed'); } })).rejects.toThrow(/line write failed/);
   });
 });
+
+describe('R2-326 / R2-350 duplicate cart lines are merged before the stock check', () => {
+  it('50 + 60 of an item with 100 in stock is one line of 110 and is refused; nothing is written', async () => {
+    stock('i1', 100);
+    await expect(commitIssue([{ itemId: 'i1', qty: 50 }, { itemId: 'i1', qty: 60 }], { departmentId: 'd1', general: G })).rejects.toThrow(/stock balance \(100 available\)/);
+    expect(state.ledger.filter((l) => l.source === 'STORE_ISSUE')).toHaveLength(0);
+  });
+  it('30 + 40 with 100 in stock books ONE ledger row of 70 and the balance is 30', async () => {
+    stock('i1', 100);
+    const out = await commitIssue([{ itemId: 'i1', qty: 30 }, { itemId: 'i1', qty: 40 }], { departmentId: 'd1', general: G });
+    expect(out).toMatchObject({ lineCount: 1, totalQty: 70 });
+    expect(state.ledger.filter((l) => l.source === 'STORE_ISSUE').map((l) => l.changeQty)).toEqual([-70]);
+    expect(balance('i1')).toBe(30);
+  });
+});
+
+describe('R2-351 zero and negative quantities are refused before anything is written', () => {
+  it.each([0, -5, Number.NaN])('qty %s', async (qty) => {
+    stock('i1', 10);
+    await expect(commitIssue([{ itemId: 'i1', qty }], { departmentId: 'd1', general: G })).rejects.toThrow(/greater than zero/);
+    expect(state.ledger).toHaveLength(1);
+  });
+});
+
+describe('R2-352 issuing past the order allocation needs an OWNER / SUPERVISOR reason', () => {
+  it('the Storekeeper is blocked even with a reason', async () => {
+    stock('i1', 1000);
+    allocate(500);
+    await expect(commitIssue([{ itemId: 'i1', qty: 800 }], { orderId: 'o1', quotaOverride: { reason: 'press needs it' } })).rejects.toThrow(/only 500 of the 500 allocated/);
+    expect(state.ledger.filter((l) => l.source === 'STORE_ISSUE')).toHaveLength(0);
+  });
+  it('the OWNER without a reason is blocked; with a reason the issue goes through and the audit says so', async () => {
+    getMisRole.mockResolvedValue('OWNER');
+    stock('i1', 1000);
+    allocate(500);
+    await expect(commitIssue([{ itemId: 'i1', qty: 800 }], { orderId: 'o1' })).rejects.toThrow(/only 500 of the 500 allocated/);
+    await expect(commitIssue([{ itemId: 'i1', qty: 800 }], { orderId: 'o1', quotaOverride: { reason: 'customer approved extra run' } })).resolves.toMatchObject({ totalQty: 800 });
+    expect(balance('i1')).toBe(200);
+  });
+});

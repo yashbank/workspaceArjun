@@ -233,21 +233,21 @@ Batch C4
 - [x] R2-323 archived checklist template
 - [x] R2-314 Major/Minor AQL (needs Q, Enhancement)
 Batch C5
-- [ ] R2-285 returns restore allocation
-- [ ] R2-326 duplicate cart lines (verify)
-- [ ] R2-350 (dup of 326)
-- [ ] R2-351 zero/negative qty (verify)
-- [ ] R2-352 over-allocation override (needs Q)
-- [ ] R2-361 closed orders in issue list
-- [ ] R2-363 return not issued (needs Q)
-- [ ] R2-364 request link on issue
-- [ ] R2-355 General Use needs cost center
-- [ ] R2-359 double-click issue (verify)
-- [ ] R2-357 stale balance
-- [ ] R2-367 notes truncation
-- [ ] R2-291 confirmGRN idempotency
-- [ ] R2-292 adjust/in/out idempotency
-- [ ] R2-336 item delete guards (needs Q)
+- [x] R2-285 returns restore allocation
+- [x] R2-326 duplicate cart lines (verify)
+- [x] R2-350 (dup of 326)
+- [x] R2-351 zero/negative qty (verify)
+- [x] R2-352 over-allocation override (needs Q)
+- [x] R2-361 closed orders in issue list
+- [x] R2-363 return not issued (needs Q)
+- [x] R2-364 request link on issue
+- [x] R2-355 General Use needs cost center
+- [x] R2-359 double-click issue (verify)
+- [x] R2-357 stale balance
+- [x] R2-367 notes truncation
+- [x] R2-291 confirmGRN idempotency
+- [x] R2-292 adjust/in/out idempotency
+- [x] R2-336 item delete guards (needs Q)
 Batch C6
 - [ ] R2-346 order combobox (Enhancement)
 - [ ] R2-347 department combobox (Enhancement)

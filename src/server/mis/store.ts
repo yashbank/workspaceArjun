@@ -6,11 +6,10 @@ import { can } from '@/lib/mis/permissions';
 import { requirePermission } from './auth';
 import { logAuditEvent } from './audit';
 import { assertPoReceivable, auditOverReceipt, enforceReceiptCap, isGrnNumberClash, GRN_NUMBER_ATTEMPTS, lockPoRow, nextGrnNumber } from './grn';
-import { runIdempotent } from './idempotency';
+import { keyedWrite, runOnce } from './keyed-once';
 import { allocateFromReceipt, allocationShortfalls } from './order-allocation';
 import { notifyGrnConfirmed } from './grn-alerts';
 import { addDaysToDateKey, factoryDateKey } from '@/lib/mis/factory-time';
-import type { QueuedWriteKind } from '@/lib/mis/offline/idempotency';
 import { poPurpose, type PoPurpose } from '@/lib/mis/po-purpose';
 import { resolveGeneralUse, type GeneralUse, type GeneralUseInput } from '@/lib/mis/general-use';
 import { ISSUE_TARGET_REQUIRED } from '@/lib/mis/issue-target';
@@ -180,6 +179,8 @@ export type StoreInInput = {
   quantity: number;
   referenceNo?: string;
   notes?: string;
+  /** R2-292: optional; the same key twice books once. */
+  idempotencyKey?: string | null;
 };
 
 export async function createStoreIn(input: StoreInInput): Promise<StoreTxnRow> {
@@ -196,7 +197,7 @@ export async function createStoreIn(input: StoreInInput): Promise<StoreTxnRow> {
   const zone = await storeFactoryZone();
   // Both books, one transaction, under the item lock: the Inventory ledger and the storekeeper's
   // book must agree, or a later OUT is refused against a ledger that never heard of this stock.
-  const txn = await db.$transaction(async (tx) => {
+  const applyIn = async (tx: Prisma.TransactionClient) => {
     await lockStockKeys(tx, [itemLockKey(input.itemId), STXN_SEQ_KEY]);
     const ledgerBalance = await lastLedgerBalance(tx, input.itemId);
     await tx.misInventoryLedger.create({
@@ -224,17 +225,22 @@ export async function createStoreIn(input: StoreInInput): Promise<StoreTxnRow> {
         createdById: actor.userId,
       },
     });
-  });
+  };
+  // R2-292: with a key, a repeat (double tap, retried request) returns the first booking and writes nothing.
+  const keyedIn = await keyedWrite('STORE_IN', input.idempotencyKey, actor.userId, { itemId: input.itemId, quantity }, applyIn);
+  const txn = keyedIn.value;
   const txnNumber = txn.txnNumber;
   const newBalance = Number(txn.balanceQty);
 
-  await logAuditEvent({
-    action: 'store.in',
-    entity: 'MisStoreTransaction',
-    entityId: txn.id,
-    actorId: actor.userId,
-    after: { itemId: input.itemId, quantity, txnNumber, newBalance: String(newBalance) },
-  });
+  if (!keyedIn.replay) {
+    await logAuditEvent({
+      action: 'store.in',
+      entity: 'MisStoreTransaction',
+      entityId: txn.id,
+      actorId: actor.userId,
+      after: { itemId: input.itemId, quantity, txnNumber, newBalance: String(newBalance) },
+    });
+  }
 
   return {
     id: txn.id,
@@ -249,7 +255,7 @@ export async function createStoreIn(input: StoreInInput): Promise<StoreTxnRow> {
     referenceNo: txn.referenceNo,
     reason: txn.reason,
     isOverIssue: false,
-    createdAt: txn.createdAt,
+    createdAt: new Date(txn.createdAt), // a replayed row comes back from the key table as JSON
   };
 }
 
@@ -266,6 +272,8 @@ export type StoreOutInput = {
   departmentId?: string | null;
   /** R2-80/62/Q11 — required when there is no order: "General / factory use" with a reason and a cost centre. */
   general?: GeneralUseInput;
+  /** R2-292: optional; the same key twice books once. */
+  idempotencyKey?: string | null;
 };
 
 /** The factory-use tail of a stock-out reason: "General / factory use · Press · grease". Null for an order issue. */
@@ -300,7 +308,7 @@ export async function createStoreOut(input: StoreOutInput): Promise<StoreTxnRow>
   const zone = await storeFactoryZone();
   // D2: stock never goes negative, so there is no over-issue. Both books are written under the item
   // lock (as commitIssue does) so Inventory, Store stock and Traceability agree after every issue.
-  const txn = await db.$transaction(async (tx) => {
+  const applyOut = async (tx: Prisma.TransactionClient) => {
     await lockStockKeys(tx, [itemLockKey(input.itemId), STXN_SEQ_KEY]);
     const ledgerBalance = await lastLedgerBalance(tx, input.itemId);
     const txnBalance = await lastTxnBalance(tx, input.itemId);
@@ -340,16 +348,20 @@ export async function createStoreOut(input: StoreOutInput): Promise<StoreTxnRow>
         createdById: actor.userId,
       },
     });
-  });
+  };
+  const keyedOut = await keyedWrite('STORE_OUT', input.idempotencyKey, actor.userId, { itemId: input.itemId, quantity, orderId: input.orderId ?? null }, applyOut);
+  const txn = keyedOut.value;
 
-  await logAuditEvent({
-    action: 'store.out',
-    entity: 'MisStoreTransaction',
-    entityId: txn.id,
-    actorId: actor.userId,
-    after: { itemId: input.itemId, quantity, txnNumber: txn.txnNumber, newBalance: String(Number(txn.balanceQty)), isOverIssue: false, orderId: input.orderId ?? null, departmentId: input.departmentId ?? null, isGeneral: generalUse.isGeneral, chargedTo: generalUse.costCenter, generalReason: generalUse.generalReason },
-  });
-  await notifyGeneralUse(actor.userId, generalUse, { reference: txn.txnNumber, kind: 'issue' });
+  if (!keyedOut.replay) {
+    await logAuditEvent({
+      action: 'store.out',
+      entity: 'MisStoreTransaction',
+      entityId: txn.id,
+      actorId: actor.userId,
+      after: { itemId: input.itemId, quantity, txnNumber: txn.txnNumber, newBalance: String(Number(txn.balanceQty)), isOverIssue: false, orderId: input.orderId ?? null, departmentId: input.departmentId ?? null, isGeneral: generalUse.isGeneral, chargedTo: generalUse.costCenter, generalReason: generalUse.generalReason },
+    });
+    await notifyGeneralUse(actor.userId, generalUse, { reference: txn.txnNumber, kind: 'issue' });
+  }
 
   return {
     id: txn.id,
@@ -364,7 +376,7 @@ export async function createStoreOut(input: StoreOutInput): Promise<StoreTxnRow>
     referenceNo: txn.referenceNo,
     reason: txn.reason,
     isOverIssue: false,
-    createdAt: txn.createdAt,
+    createdAt: new Date(txn.createdAt), // a replayed row comes back from the key table as JSON
   };
 }
 
@@ -1006,6 +1018,8 @@ export type IssueMeta = {
   skipGeneralNotice?: boolean;
   /** R3-STK B11 — one UUID per cart open: pressing Confirm twice books once. */
   idempotencyKey?: string | null;
+  /** R2-352: an OWNER / SUPERVISOR's reason to issue past the order's allocation; ignored (refused) for anyone else. */
+  quotaOverride?: { reason: string } | null;
   /**
    * Runs inside the issue's own transaction, after the ledger rows are written. If it throws, the
    * whole issue rolls back — so a caller's bookkeeping (a request's per-line quantities) commits
@@ -1066,38 +1080,6 @@ async function loadCartItems(lines: CartLineInput[]): Promise<Map<string, CartIt
     }
   }
   return byId;
-}
-
-type KeyedKind = 'STORE_RECEIPT' | 'STORE_ISSUE';
-
-/**
- * R3-STK B11 — run a cart commit exactly once per key, on the shared idempotency table (`runIdempotent`, unedited).
- * The key row and the stock rows commit together or not at all, so a second press of Confirm (or a retry after a
- * dropped connection) returns the FIRST result and writes nothing. `live`: the person is at the screen, so a refusal
- * is handed back as the sentence they read and nothing is recorded or parked.
- *
- * The idempotency vocabulary (`QueuedWriteKind`) is the offline queue's closed list; the column itself is free text,
- * and a store kind needs no timing or inbox rule, so the kind is passed through as-is rather than editing that list.
- */
-async function runOnce<T extends object>(
-  kind: KeyedKind,
-  key: string,
-  actorId: string,
-  payload: object,
-  entityType: string,
-  apply: (tx: Prisma.TransactionClient) => Promise<{ entityId: string | null; result: T }>,
-): Promise<{ value: T; replay: boolean }> {
-  const out = await runIdempotent<T>(
-    { key, kind: kind as unknown as QueuedWriteKind, payload, clientRecordedAt: new Date().toISOString(), actorId },
-    async (tx) => {
-      const done = await apply(tx);
-      return { entityType, entityId: done.entityId as string, result: done.result };
-    },
-    { live: true },
-  );
-  if (out.outcome === 'APPLIED' && out.result) return { value: out.result, replay: false };
-  if (out.outcome === 'DUPLICATE' && out.result) return { value: out.result, replay: true };
-  throw new Error(out.detail || 'That did not save. Try again.');
 }
 
 /**
@@ -1380,6 +1362,9 @@ function grnEntity(grnId: string | null): string {
  * fifteen-line issue with one bad line writes nothing at all and the
  * storekeeper is told which item and how much of it he actually has.
  */
+/** R2-352 (decision): who may issue past an order's allocation, with a reason. */
+const QUOTA_OVERRIDE_ROLES: string[] = ['OWNER', 'SUPERVISOR'];
+
 export async function commitIssue(
   lines: CartLineInput[],
   meta: IssueMeta = {},
@@ -1419,6 +1404,8 @@ export async function commitIssue(
   const reference =
     order?.orderNumber ?? department?.name ?? `Issue ${factoryDateKey(new Date(), zone)}`;
   const reason = [department ? `To ${department.name}` : null, generalReasonText(generalUse), notes].filter(Boolean).join(' · ') || null;
+  const quotaOverrideReason = QUOTA_OVERRIDE_ROLES.includes(actor.role) ? meta.quotaOverride?.reason?.trim() || null : null;
+  let quotaOverridden: string[] = [];
 
   const apply = async (tx: Prisma.TransactionClient): Promise<CartCommitResult> => {
     // One issue at a time per item. The balance read, the order-cap read and the ledger write below
@@ -1454,7 +1441,11 @@ export async function commitIssue(
         meta.orderId,
         cart.map((l) => ({ itemId: l.itemId, qty: l.qty, label: `${items.get(l.itemId)!.name} (${items.get(l.itemId)!.code})` })),
       );
-      if (over.length > 0) throw new OrderStockQuotaExceededError(meta.orderId, over);
+      if (over.length > 0) {
+        // R2-352: a Supervisor or the Owner may go past the earmark with a reason (audited); the Storekeeper is blocked.
+        if (!quotaOverrideReason) throw new OrderStockQuotaExceededError(meta.orderId, over);
+        quotaOverridden = over;
+      }
     }
 
     const { prefix, next } = await nextTxnSeq(tx, zone);
@@ -1535,6 +1526,8 @@ export async function commitIssue(
       chargedTo: generalUse.costCenter,
       generalReason: generalUse.generalReason,
       materialRequestId: meta.materialRequestId ?? null,
+      // R2-352: who went past the earmark, by how much, and why.
+      ...(quotaOverridden.length > 0 ? { quotaOverride: { reason: quotaOverrideReason, lines: quotaOverridden } } : {}),
     },
   });
   if (!meta.skipGeneralNotice) await notifyGeneralUse(actor.userId, generalUse, { reference: result.reference, kind: 'issue', requestId: meta.materialRequestId ?? null });

@@ -220,7 +220,8 @@ export function StoreTransactionsScreen({ txns, items, canWrite, targets = { ord
       key: 'ref',
       header: 'Reference / Reason',
       render: (r) => (
-        <div className="text-sm text-slate-500 max-w-[180px] truncate">
+        // R2-367: the reason is the audit justification; wrap it, never cut it (title carries the full text on hover).
+        <div className="text-sm text-slate-500 max-w-[180px] break-words" title={[r.referenceNo, r.reason].filter(Boolean).join(' · ') || undefined}>
           {r.referenceNo && <span>{r.referenceNo}</span>}
           {r.referenceNo && r.reason && <span className="mx-1">·</span>}
           {r.reason && <span>{r.reason}</span>}

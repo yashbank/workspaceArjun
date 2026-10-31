@@ -280,11 +280,14 @@ export function GrnDetailScreen({ grn, canWrite, orders = [], canOverride = fals
     });
   };
 
+  // R2-291: one key per screen open; a double tap or a retried request books once. Rotated after a success.
+  const confirmKey = useRef(newKey());
   const runConfirm = (reason?: string) => {
     setConfirmError(null);
     startTransition(async () => {
       try {
-        const done = unwrap(await confirmGrnAction(grn.id, reason ?? (overReason || null)));
+        const done = unwrap(await confirmGrnAction(grn.id, reason ?? (overReason || null), confirmKey.current));
+        confirmKey.current = newKey();
         setWarnings(done?.warnings ?? []);
       } catch (e) {
         const message = e instanceof Error ? e.message : 'That did not save.';
@@ -525,4 +528,8 @@ export function GrnDetailScreen({ grn, canWrite, orders = [], canOverride = fals
       </SlideOver>
     </div>
   );
+}
+
+function newKey(): string {
+  return typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
 }

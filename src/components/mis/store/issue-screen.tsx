@@ -33,9 +33,11 @@ type Props = {
   allocations?: Record<string, { itemId: string; name: string; code: string; unit: string; allocated: number; issued: number; remaining: number }[]>;
   /** R2-121 — per open order with an APPROVED BOM, what each BOM stage material calls for and how much of it has gone out so far. Read-only context; the allocation cap above is unchanged. */
   bomMaterials?: Record<string, { stageName: string; description: string; itemId: string | null; required: number; unit: string; issued: number | null; remaining: number | null }[]>;
+  /** R2-352: OWNER / SUPERVISOR may issue past the order's allocation with a reason; the server decides, this shows the field. */
+  canOverrideQuota?: boolean;
 };
 
-export function IssueScreen({ header, items, orders, departments, costCenters = [], allocations = {}, bomMaterials = {} }: Props) {
+export function IssueScreen({ header, items, orders, departments, costCenters = [], allocations = {}, bomMaterials = {}, canOverrideQuota = false }: Props) {
   const [orderId, setOrderId] = useState<string | null>(null);
   const [departmentId, setDepartmentId] = useState<string | null>(null);
   const [general, setGeneral] = useState<GeneralFields>(EMPTY_GENERAL);
@@ -43,10 +45,12 @@ export function IssueScreen({ header, items, orders, departments, costCenters = 
     null,
   );
 
-  async function commit(lines: CartLine[], key: string) {
+  async function commit(lines: CartLine[], key: string, overrideReason?: string) {
     // R2-80: no order => General / factory use with a reason and a cost centre (the server checks it again).
     resolveGeneralUse(orderId, general);
-    const result = unwrap(await commitIssueAction(lines, { orderId, departmentId, general: orderId ? null : general }, key));
+    // R2-352: the reason typed after an "allocated to this order" refusal travels as the quota override.
+    const quotaOverride = overrideReason?.trim() ? { reason: overrideReason.trim() } : null;
+    const result = unwrap(await commitIssueAction(lines, { orderId, departmentId, general: orderId ? null : general, quotaOverride }, key));
     setDone(result);
     setGeneral(EMPTY_GENERAL);
   }
@@ -76,7 +80,7 @@ export function IssueScreen({ header, items, orders, departments, costCenters = 
         </OkCard>
       )}
 
-      <ItemCart items={items} mode="ISSUE" onCommit={commit} refreshBalances={refreshBalances}>
+      <ItemCart items={items} mode="ISSUE" onCommit={commit} refreshBalances={refreshBalances} canOverride={canOverrideQuota}>
         {departments.length > 0 && (
           <InfoCard>
             <SectionLabel>To which department</SectionLabel>
