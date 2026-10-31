@@ -1,5 +1,7 @@
 # R2 Round 6C: work plan for tester bugs R2-284..R2-295 and R2-308..R2-373 (78 rows, none skipped)
 
+> **All decisions are now filled in `docs/qa/R2_ROUND6C_DECISIONS.md` (owner-approved); no row is BLOCKED_DECISION. R2-345 is DEFERRED_BY_OWNER (do not build).** Older note follows.
+>
 > **Decisions pending.** Every row marked UNCLEAR in section 3 needs an owner answer in `docs/qa/R2_ROUND6C_DECISIONS.md` before the builder touches it. Until a row has a decision, log `BLOCKED_DECISION` for it and move to the next row. Never guess. Rows without UNCLEAR can start immediately.
 
 > **Schema protocol for this round (overrides the "stop after Half A" step of `mis-schema-gate`; owner-approved).** Do NOT stop at schema rows. This Mac can run `pnpm db:generate` (no database needed), so:
