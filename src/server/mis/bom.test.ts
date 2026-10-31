@@ -63,6 +63,8 @@ Object.assign(db, {
   misJobPhase: { count: async () => 0 },
 });
 Object.assign(db.misBomStage, { count: async () => 1 });
+// R2-269/270: assertBomComplete now reads the stages with their materials (fixture delegate only).
+Object.assign(db.misBomStage, { findMany: async () => [{ stageName: 'Print', materials: [{ description: 'Ink', itemId: 'item-1' }] }] });
 Object.assign(db.misBomMaterial, { count: async () => 1 });
 vi.mock('@/server/db', () => ({ get db() { return db; } }));
 

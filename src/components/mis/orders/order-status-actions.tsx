@@ -16,11 +16,13 @@ type Props = {
   gates: CloseGate[];
   /** OWNER/ADMIN: may complete past unmet gates with a reason. */
   canOverride: boolean;
+  /** R2-267: OWNER only — may start production without an approved BOM, with a reason. */
+  canStartWithoutBom?: boolean;
   /** Last "completed past unmet gates" override, shown on the order. */
   override: { reason: string; at: Date } | null;
 };
 
-type Panel = null | 'complete' | 'cancel';
+type Panel = null | 'complete' | 'cancel' | 'start';
 
 /**
  * Close / deliver / cancel an order. Shared by the phone detail screen and the D4 desktop twin
@@ -30,7 +32,7 @@ type Panel = null | 'complete' | 'cancel';
  * "Mark complete" is offered on IN_PRODUCTION only: the transition table has no
  * CONFIRMED -> COMPLETED move, so a CONFIRMED order gets "Start production" instead.
  */
-export function OrderStatusActions({ orderId, orderNumber, status, gates: initialGates, canOverride, override }: Props) {
+export function OrderStatusActions({ orderId, orderNumber, status, gates: initialGates, canOverride, override, canStartWithoutBom = false }: Props) {
   // The server is the authority on the gates: a refusal carries the fresh list, which replaces
   // what the page loaded (it may have gone stale) and reveals the override field.
   const [freshGates, setFreshGates] = useState<CloseGate[] | null>(null);
@@ -56,6 +58,8 @@ export function OrderStatusActions({ orderId, orderNumber, status, gates: initia
         toast('error', result.detail);
         if (result.gates) setFreshGates(result.gates);
         if (result.openItems) setOpenItems(result.openItems);
+        // R2-267: the Owner gets a reason box instead of a dead end when the BOM is not approved.
+        if (result.reason === 'BOM_NOT_APPROVED' && canStartWithoutBom && next === 'IN_PRODUCTION') setPanel('start');
       }
     } catch {
       const detail = 'That did not save. Try again.';
@@ -94,6 +98,18 @@ export function OrderStatusActions({ orderId, orderNumber, status, gates: initia
           Completed past unmet gates on {fmtDateTime(override.at)}: {override.reason}
         </p>
       )}
+
+      <SlideOver open={panel === 'start'} onClose={close} title="Start production without an approved BOM">
+        <div className="flex flex-col gap-4 p-4">
+          <p className="text-sm text-slate-600">{orderNumber}</p>
+          {error && <div role="alert" className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900">{error}</div>}
+          <Input label="Reason (required, goes on the record)" value={reason} onChange={(e) => setReason(e.target.value)} />
+          <div className="flex gap-2 pt-2">
+            <Button onClick={() => run('IN_PRODUCTION', reason)} disabled={pending || !reasonOk}>Start anyway</Button>
+            <Button variant="ghost" onClick={close}>Cancel</Button>
+          </div>
+        </div>
+      </SlideOver>
 
       <SlideOver open={panel === 'complete'} onClose={close} title="Mark complete">
         <div className="flex flex-col gap-4 p-4">

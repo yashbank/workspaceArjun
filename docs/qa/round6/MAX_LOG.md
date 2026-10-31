@@ -30,3 +30,12 @@ R2-261 | DUPLICATE | - | same fix as R2-240 (decision: yes)
 R2-250 | DEV_DONE | - | employee form: non-Owner sees "Pay type and wage code are set by the Owner" note; server rule unchanged (decision)
 R2-262 | BY_DESIGN | - | 3-day operator window kept; characterised by correction-window.test.ts ("other roles keep the general window, defaulting to 3")
 R2-263 | CONTRACT | - | new action roster.write (OWNER, ADMIN, SUPERVISOR, ATT_OP, SUPER_ATT_OP) gates assignRoster/removeRoster and the roster section on /mis/attendance/shifts; permissions.test pins + MIS_ACTIONS 41 // R2-263; shift-roster.test.ts added
+R2-264 | SCHEMA (pending) | - | MisOrder.quantity Decimal? + unit String? (PIECE/KG/REAM, lib/mis/order-quantity.ts); mandatory on createOrder; QUANTITY_MET close gate (produced >= ordered, same unit); form/list/detail/job card show it. Migration prisma/migrations-pending/20261031000000_r2_round6b_order_quantity_customer_po NOT applied. orders-numbering createOrder({}) -> ORDER // R2-264 (CONTRACT)
+R2-265 | SCHEMA (pending) | - | MisOrder.customerPoRef String? (same migration); optional; list search + global search match it; printed on the job card; snapshot carries it
+R2-266 | DEV_DONE | - | reopenOrder returns + audits REOPEN_WARNING (reservations/bookings not restored); order detail shows it after a reopen (toast + status line)
+R2-267 | CONTRACT | - | updateOrderStatus CONFIRMED->IN_PRODUCTION needs an APPROVED BOM; Owner may start with a reason (audited startedWithoutApprovedBom); OrderStatusError BOM_NOT_APPROVED; Start panel for the Owner; r3-ord-orders forward-move pin seeds an approved BOM; actions-status outcome pin gains reason // R2-267
+R2-268 | DEV_DONE | - | listOpenOrderBomMaterials scales BOM quantity by order.quantity (none = x1); BOM screen labels quantities "/ unit"; no schema change (decision: per unit as stored)
+R2-269 | DEV_DONE | - | assertBomComplete refuses a material with no catalogue item (names the line) on submit and approve
+R2-270 | DEV_DONE | - | assertBomComplete refuses an empty stage (names it); fixtures bom-lifecycle/r3-ord-bom/bom.test gain misBomStage.findMany
+R2-271 | DEV_DONE | - | BOM overview Owner cost label reads "₹x (floor · N unpriced)" when any line is unpriced
+R2-282 | ALREADY_FIXED | R3 B64 | nav bom entry requires orders.read (STORE_GUY holds it); getBom + getBomDesktopView admit STORE_GUY and strip ratePerUnit (wage-leak.test READERS, bom-desktop.test READERS, navigation.test STORE_GUY 'bom')

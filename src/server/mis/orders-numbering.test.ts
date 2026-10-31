@@ -40,6 +40,8 @@ vi.mock('@/server/db', () => ({
 
 vi.mock('@/server/mis/audit', () => ({ logAuditEvent: vi.fn() }));
 
+// R2-264: a new order must carry its quantity and unit.
+const ORDER = { quantity: 1, unit: 'PIECE' };
 const { createOrder } = await import('./orders');
 
 beforeEach(() => {
@@ -56,7 +58,7 @@ describe('order numbering under concurrency (MIS-111)', () => {
   // the raw unique-constraint error. `createOrder` now retries on exactly that error (P2002) with
   // a re-offset number, up to 6 attempts, so a clock coincidence is absorbed instead of surfaced.
   it('creating 20 orders concurrently produces 20 distinct order numbers, none dropped or thrown away', async () => {
-    const results = await Promise.allSettled(Array.from({ length: 20 }, () => createOrder({})));
+    const results = await Promise.allSettled(Array.from({ length: 20 }, () => createOrder(ORDER)));
     const succeeded = results.filter((r) => r.status === 'fulfilled');
     expect(succeeded).toHaveLength(20);
     const numbers = succeeded.map((r) => (r as PromiseFulfilledResult<Row>).value.orderNumber);
@@ -64,9 +66,9 @@ describe('order numbering under concurrency (MIS-111)', () => {
   });
 
   it('sequential creation (no real concurrency) already works — the bug above is specifically about the same millisecond', async () => {
-    const a = await createOrder({});
+    const a = await createOrder(ORDER);
     await new Promise((r) => setTimeout(r, 2));
-    const b = await createOrder({});
+    const b = await createOrder(ORDER);
     expect(a.orderNumber).not.toBe(b.orderNumber);
   });
 });

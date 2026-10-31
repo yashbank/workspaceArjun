@@ -1,12 +1,12 @@
 'use server';
 import { revalidatePath } from 'next/cache';
 import { isMisForbiddenError } from '@/server/mis/auth';
-import { createOrder, isOrderStatusError, OrderReopenError, reopenOrder, updateOrder, updateOrderStatus } from '@/server/mis/orders';
+import { createOrder, isOrderStatusError, OrderReopenError, reopenOrder, updateOrder, updateOrderStatus, type OrderStatusRefusal } from '@/server/mis/orders';
 import type { CloseGate } from '@/lib/mis/order-transitions';
 import { asResult, type ActionResult } from '@/lib/mis/action-result';
 import { addDocument } from '@/server/mis/documents';
 
-export async function saveOrderAction(id: string | null, values: { customerId?: string | null; description?: string | null; deliveryDate?: string | null; notes?: string | null }): Promise<ActionResult> {
+export async function saveOrderAction(id: string | null, values: { customerId?: string | null; description?: string | null; deliveryDate?: string | null; notes?: string | null; quantity?: number | string | null; unit?: string | null; customerPoRef?: string | null }): Promise<ActionResult> {
   return asResult(async () => {
     if (id) { await updateOrder(id, values); } else { await createOrder(values); }
     revalidatePath('/mis/orders');
@@ -14,7 +14,7 @@ export async function saveOrderAction(id: string | null, values: { customerId?: 
   });
 }
 
-export type OrderStatusOutcome = { ok: true } | { ok: false; detail: string; gates?: CloseGate[]; openItems?: string[] };
+export type OrderStatusOutcome = { ok: true } | { ok: false; detail: string; reason?: OrderStatusRefusal; gates?: CloseGate[]; openItems?: string[] };
 
 /**
  * Returns an outcome rather than throwing, for the same reason `reopenOrderAction` does: a
@@ -25,7 +25,7 @@ export async function updateOrderStatusAction(id: string, status: string, reason
   try {
     await updateOrderStatus(id, status, confirmOpenItems ? { reason, confirmOpenItems } : { reason });
   } catch (error) {
-    if (isOrderStatusError(error)) return { ok: false, detail: error.message, gates: error.gates, openItems: error.openItems };
+    if (isOrderStatusError(error)) return { ok: false, detail: error.message, reason: error.reason, gates: error.gates, openItems: error.openItems };
     if (isMisForbiddenError(error)) return { ok: false, detail: 'You do not have permission to change an order\'s status.' };
     throw error;
   }
@@ -58,8 +58,9 @@ export async function addOrderDocumentAction(orderId: string, data: { name: stri
  * act on come back as data; anything else stays an exception.
  */
 export async function reopenOrderAction(id: string, reason: string) {
+  let warning: string | undefined;
   try {
-    await reopenOrder(id, reason);
+    warning = (await reopenOrder(id, reason)).warning; // R2-266
   } catch (error) {
     if (error instanceof OrderReopenError) return { ok: false as const, detail: error.message };
     if (isMisForbiddenError(error)) return { ok: false as const, detail: 'You do not have permission to reopen an order.' };
@@ -68,5 +69,5 @@ export async function reopenOrderAction(id: string, reason: string) {
   revalidatePath('/mis/orders');
   revalidatePath(`/mis/orders/${id}`);
   revalidatePath('/mis/production');
-  return { ok: true as const };
+  return { ok: true as const, warning };
 }

@@ -9,12 +9,17 @@ import { StatusBadge, type BadgeTone } from '@/components/mis/kit/status-badge';
 import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { addOrderDocumentAction, reopenOrderAction } from '@/app/(mis)/mis/orders/actions';
 import { useToast } from '@/components/ui/toast';
+import { formatOrderQuantity } from '@/lib/mis/order-quantity';
 import { useT } from '@/components/mis/shell/locale-provider';
 import { isOrderClosed } from '@/lib/mis/order-status';
 import { validateDocumentInput } from '@/lib/mis/document-library';
 import { fmtDate, fmtDateTime } from '@/lib/mis/client-dates';
 
-type Order = { id: string; orderNumber: string; status: string; description: string | null; deliveryDate: Date | null; notes: string | null; createdAt: Date; customer: { name: string } | null };
+type Order = {
+  id: string; orderNumber: string; status: string; description: string | null; deliveryDate: Date | null; notes: string | null; createdAt: Date; customer: { name: string } | null;
+  /** R2-264 / R2-265 */
+  quantity?: number | string | null; unit?: string | null; customerPoRef?: string | null;
+};
 type Bom = { id: string; status: string; stages: unknown[] } | null;
 type ProductionLog = { id: string; loggedAt: Date; qtyProduced: number; qtyWaste: number; unit: string; machine: { name: string } | null; employee: { name: string } | null; shift: { name: string } | null };
 type QcLog = { id: string; checkTime: Date; result: string; parameterName: string | null; defectType: string | null; notes: string | null; checkBy: { name: string } | null };
@@ -88,6 +93,7 @@ export function OrderDetailScreen({
   const [reopenOpen, setReopenOpen] = useState(false);
   const [reopenReason, setReopenReason] = useState('');
   const [reopenError, setReopenError] = useState<string | null>(null);
+  const [reopenWarning, setReopenWarning] = useState<string | null>(null); // R2-266
   const [reopening, startReopen] = useTransition();
   const closed = isOrderClosed(order.status);
 
@@ -116,6 +122,7 @@ export function OrderDetailScreen({
     if (result.ok) {
       setReopenOpen(false);
       setReopenReason('');
+      if (result.warning) { setReopenWarning(result.warning); toast('info', result.warning); }
     } else {
       setReopenError(result.detail);
     }
@@ -169,6 +176,7 @@ export function OrderDetailScreen({
               through it — a refusal with no route is a dead end, and a dead end is
               what sends somebody to edit the database by hand. */}
           {closed && <p className="mt-1 text-sm text-amber-800">{t('order.reopen.closedNote')}</p>}
+          {reopenWarning && <p role="status" className="mt-1 rounded-lg bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">{reopenWarning}</p>}
         </div>
         <div className="flex flex-wrap gap-2">
           {statusActions}
@@ -244,6 +252,14 @@ export function OrderDetailScreen({
         <div className="bg-slate-50 rounded-lg p-3">
           <p className="text-xs text-slate-500">Delivery Date</p>
           <p className="font-medium mt-0.5">{order.deliveryDate ? fmtDate(order.deliveryDate) : '—'}</p>
+        </div>
+        <div className="bg-slate-50 rounded-lg p-3">
+          <p className="text-xs text-slate-500">Ordered</p>
+          <p className="font-medium mt-0.5">{formatOrderQuantity(order.quantity, order.unit) ?? '—'}</p>
+        </div>
+        <div className="bg-slate-50 rounded-lg p-3">
+          <p className="text-xs text-slate-500">Customer PO #</p>
+          <p className="font-medium mt-0.5 font-mono">{order.customerPoRef ?? '—'}</p>
         </div>
         <div className="bg-slate-50 rounded-lg p-3">
           <p className="text-xs text-slate-500">Produced</p>

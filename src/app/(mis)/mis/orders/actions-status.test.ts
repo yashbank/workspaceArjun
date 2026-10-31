@@ -30,7 +30,8 @@ describe('updateOrderStatusAction', () => {
   });
   it('returns a refusal as data, with the unmet gates', async () => {
     updateOrderStatus.mockRejectedValue(new FakeStatusError('GATES_UNMET', 'unmet', [{ key: 'QC_RESOLVED' }]));
-    expect(await updateOrderStatusAction('o1', 'COMPLETED')).toEqual({ ok: false, detail: 'unmet', gates: [{ key: 'QC_RESOLVED' }] });
+    // R2-267: the outcome also names the refusal reason, so the screen can offer the Owner's BOM override.
+    expect(await updateOrderStatusAction('o1', 'COMPLETED')).toEqual({ ok: false, detail: 'unmet', reason: 'GATES_UNMET', gates: [{ key: 'QC_RESOLVED' }] });
     expect(revalidatePath).not.toHaveBeenCalled();
   });
   it('returns a permission refusal as data', async () => {

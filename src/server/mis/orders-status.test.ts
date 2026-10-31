@@ -19,14 +19,16 @@ const auditFindMany = vi.fn();
 // R3-ORD fixtures: B104 runs the status write in a transaction (same client here) and reads the
 // order's bookings / reservations / BOM / requests; B105 counts production logs.
 const productionCount = vi.fn();
+const productionFindMany = vi.fn(async () => [] as { qtyProduced: number; unit: string }[]);
+const bomFindUnique = vi.fn(async () => null as { status: string } | null);
 const txDb: Record<string, unknown> = {};
 vi.mock('@/server/db', () => ({
   db: Object.assign(txDb, {
     $transaction: async (fn: (tx: unknown) => unknown) => fn(txDb),
-    misProductionLog: { count: (...a: unknown[]) => productionCount(...a) },
+    misProductionLog: { count: (...a: unknown[]) => productionCount(...a), findMany: () => productionFindMany() },
     misMachineAllocation: { findMany: async () => [] },
     misOrderStockAllocation: { deleteMany: async () => ({ count: 0 }), count: async () => 0 },
-    misBom: { findUnique: async () => null, updateMany: async () => ({ count: 0 }) },
+    misBom: { findUnique: () => bomFindUnique(), updateMany: async () => ({ count: 0 }) },
     misMaterialRequest: { findMany: async () => [], updateMany: async () => ({ count: 0 }) },
     misOrder: { findUnique: (...a: unknown[]) => orderFindUnique(...a), update: (...a: unknown[]) => orderUpdate(...a), updateMany: (...a: unknown[]) => orderUpdateMany(...a) },
     misJobPhase: { findMany: (...a: unknown[]) => phaseFindMany(...a) },
@@ -160,6 +162,48 @@ describe('updateOrderStatus — stale status and reopen-by-status', () => {
     orderUpdateMany.mockResolvedValue({ count: 0 });
     expect((await refusal(updateOrderStatus('o1', 'CONFIRMED'))).reason).toBe('STALE_STATUS');
     expect(audit).not.toHaveBeenCalled();
+  });
+
+  // R2-267: starting production needs an APPROVED BOM; only the Owner may start anyway, with a reason on the record.
+  describe('R2-267 CONFIRMED -> IN_PRODUCTION and the BOM', () => {
+    beforeEach(() => orderFindUnique.mockResolvedValue(order('CONFIRMED')));
+
+    it('an Admin is refused with no BOM, and with a DRAFT one', async () => {
+      bomFindUnique.mockResolvedValue(null);
+      const none = await refusal(updateOrderStatus('o1', 'IN_PRODUCTION'));
+      expect(none.reason).toBe('BOM_NOT_APPROVED');
+      expect(none.message).toMatch(/no BOM/);
+      bomFindUnique.mockResolvedValue({ status: 'DRAFT' });
+      expect((await refusal(updateOrderStatus('o1', 'IN_PRODUCTION', { reason: 'urgent' }))).message).toMatch(/BOM is draft/);
+      expect(orderUpdateMany).not.toHaveBeenCalled();
+    });
+
+    it('the Owner needs a reason, and the reason is audited as a start without an approved BOM', async () => {
+      getMisRole.mockResolvedValue('OWNER');
+      bomFindUnique.mockResolvedValue({ status: 'PENDING_APPROVAL' });
+      expect((await refusal(updateOrderStatus('o1', 'IN_PRODUCTION'))).reason).toBe('BOM_NOT_APPROVED');
+      await updateOrderStatus('o1', 'IN_PRODUCTION', { reason: 'customer sample run, BOM follows' });
+      expect(audit.mock.calls[0][0].after).toMatchObject({ status: 'IN_PRODUCTION', reason: 'customer sample run, BOM follows', startedWithoutApprovedBom: 'BOM is pending approval' });
+    });
+
+    it('an APPROVED BOM lets anyone with orders.write start, no reason needed', async () => {
+      bomFindUnique.mockResolvedValue({ status: 'APPROVED' });
+      await expect(updateOrderStatus('o1', 'IN_PRODUCTION')).resolves.toMatchObject({ status: 'IN_PRODUCTION' });
+    });
+  });
+
+  // R2-264: an order with a target quantity completes only when production in that unit has reached it.
+  describe('R2-264 ordered quantity gate', () => {
+    it('is absent for an order without a quantity, fails short of it, passes at or above it (same unit only)', async () => {
+      orderFindUnique.mockResolvedValue(order('IN_PRODUCTION'));
+      expect((await getOrderCloseGates('o1')).map((g) => g.key)).not.toContain('QUANTITY_MET');
+      orderFindUnique.mockResolvedValue({ ...order('IN_PRODUCTION'), quantity: 100, unit: 'KG' });
+      productionFindMany.mockResolvedValue([{ qtyProduced: 60, unit: 'kg' }, { qtyProduced: 500, unit: 'PIECE' }]);
+      const short = (await getOrderCloseGates('o1')).find((g) => g.key === 'QUANTITY_MET')!;
+      expect(short).toMatchObject({ passed: false, detail: 'Produced 60 of 100 KG' });
+      productionFindMany.mockResolvedValue([{ qtyProduced: 60, unit: 'KG' }, { qtyProduced: 45, unit: 'kg' }]);
+      expect((await getOrderCloseGates('o1')).find((g) => g.key === 'QUANTITY_MET')!.passed).toBe(true);
+    });
   });
 
   it('COMPLETED -> IN_PRODUCTION needs a reason, which is audited', async () => {

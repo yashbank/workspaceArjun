@@ -200,15 +200,15 @@ Batch B5
 - [x] R2-262 3-day window, by design (log only)
 - [x] R2-263 Supervisor roster, Enhancement (needs Q-263)
 Batch B6
-- [ ] R2-266 reopen order (needs Q)
-- [ ] R2-267 BOM gate on start production (needs Q)
-- [ ] R2-269 uncatalogued BOM item (needs Q)
-- [ ] R2-270 empty stages (needs Q)
-- [ ] R2-271 unpriced floor marker
-- [ ] R2-282 STORE_GUY BOM view (needs Q)
-- [ ] R2-264 order qty + UOM (SCHEMA, needs Q)
-- [ ] R2-268 BOM basis (SCHEMA, needs Q, after 264)
-- [ ] R2-265 Customer PO # (SCHEMA, needs Q)
+- [x] R2-266 reopen order (needs Q)
+- [x] R2-267 BOM gate on start production (needs Q)
+- [x] R2-269 uncatalogued BOM item (needs Q)
+- [x] R2-270 empty stages (needs Q)
+- [x] R2-271 unpriced floor marker
+- [x] R2-282 STORE_GUY BOM view (needs Q)
+- [x] R2-264 order qty + UOM (SCHEMA, needs Q)
+- [x] R2-268 BOM basis (SCHEMA, needs Q, after 264)
+- [x] R2-265 Customer PO # (SCHEMA, needs Q)
 Batch B7
 - [ ] R2-275 PO cancel vs DRAFT GRN (needs Q)
 - [ ] R2-276 PO unit mismatch (needs Q)

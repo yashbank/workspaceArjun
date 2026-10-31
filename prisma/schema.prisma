@@ -849,6 +849,12 @@ model MisOrder {
   description  String?
   deliveryDate DateTime?    @map("delivery_date")
   notes        String?
+  /// R2-264 (parked migration 20261031000000). Finished-goods target: mandatory on new orders, null on older rows.
+  /// `unit` is one of lib/mis/order-quantity.ts ORDER_UNITS (PIECE, KG, REAM). Completion needs produced >= quantity.
+  quantity     Decimal?     @db.Decimal(12, 2)
+  unit         String?
+  /// R2-265 (same migration). The customer's own PO number, optional; searchable and printed on order documents.
+  customerPoRef String?     @map("customer_po_ref")
   createdById  String?      @map("created_by_id") @db.Uuid
   createdAt    DateTime     @default(now()) @map("created_at")
   updatedAt    DateTime     @updatedAt @map("updated_at")

@@ -29,6 +29,20 @@ beforeEach(() => {
   getCurrentUser.mockResolvedValue({ id: 'u1' });
 });
 
+describe('R2-271 floor marker', () => {
+  it('an unpriced material turns the Owner’s cost label into a marked floor; a fully priced BOM is a plain figure', async () => {
+    getMisRole.mockResolvedValue('OWNER');
+    orders.push({ id: 'o3', orderNumber: 'ORD-3', status: 'CONFIRMED', description: null, customer: null, bom: { status: 'DRAFT', stages: [{ id: 's3', materials: [{ id: 'm3', quantity: 2, ratePerUnit: 50 }, { id: 'm4', quantity: 1, ratePerUnit: null }, { id: 'm5', quantity: 1, ratePerUnit: null }] }] } });
+    try {
+      const out = await listBomOverviewPage();
+      expect(out.rows.find((r) => r.orderId === 'o3')?.estimatedCostLabel).toMatch(/\(floor · 2 unpriced\)$/);
+      expect(out.rows.find((r) => r.orderId === 'o1')?.estimatedCostLabel).not.toMatch(/floor/);
+    } finally {
+      orders.pop();
+    }
+  });
+});
+
 describe('listBomOverviewPage', () => {
   it('pages 10 at a time and excludes CANCELLED/DELIVERED orders', async () => {
     getMisRole.mockResolvedValue('ADMIN');

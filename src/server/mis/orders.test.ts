@@ -39,6 +39,13 @@ describe('reopenOrder — the route through D14’s refusal', () => {
     });
   });
 
+  it('R2-266: says, in the result and in the audit row, that reservations and machine bookings were NOT restored', async () => {
+    orderFindUnique.mockResolvedValue({ id: 'o1', orderNumber: 'ORD-118', status: 'CANCELLED' });
+    const out = await reopenOrder('o1', 'customer came back');
+    expect(out.warning).toMatch(/machine bookings were released.*NOT restored/);
+    expect(audit.mock.calls[0][0].after).toMatchObject({ status: 'IN_PRODUCTION', warning: out.warning });
+  });
+
   it.each(['CANCELLED', 'DELIVERED', 'COMPLETED'])('reopens a %s order', async (status) => {
     orderFindUnique.mockResolvedValue({ id: 'o1', orderNumber: 'ORD-118', status });
     await expect(reopenOrder('o1', 'reason')).resolves.toBeDefined();

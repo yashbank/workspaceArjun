@@ -29,6 +29,19 @@ describe('order transition table', () => {
   });
 });
 
+describe('R2-264 evaluateCloseGates — ordered quantity', () => {
+  const base = { phases: [], qcChecks: [] };
+  it('no `ordered` (an order without a quantity) adds no gate', () => {
+    expect(evaluateCloseGates(base).map((g) => g.key)).toEqual(['PHASES_SIGNED_OFF', 'QC_RESOLVED']);
+    expect(evaluateCloseGates({ ...base, ordered: null }).map((g) => g.key)).toEqual(['PHASES_SIGNED_OFF', 'QC_RESOLVED']);
+  });
+  it('fails while produced < ordered, naming both figures; passes at or above', () => {
+    const short = evaluateCloseGates({ ...base, ordered: { quantity: 10000, unit: 'PIECE', produced: 9500 } }).find((g) => g.key === 'QUANTITY_MET')!;
+    expect(short).toMatchObject({ passed: false, detail: 'Produced 9500 of 10000 PIECE' });
+    expect(evaluateCloseGates({ ...base, ordered: { quantity: 10000, unit: 'PIECE', produced: 10000 } }).find((g) => g.key === 'QUANTITY_MET')!.passed).toBe(true);
+  });
+});
+
 describe('evaluateCloseGates', () => {
   const t = (h: number) => new Date(2026, 9, 1, h);
   it('an order with no phase plan and no QC passes everything', () => {

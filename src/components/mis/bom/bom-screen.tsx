@@ -154,7 +154,7 @@ export function BomScreen({ bom, orderId, canWrite, isOwner, processes = [], ite
                     {m.description}
                     {m.item && !m.description.includes(m.item.name) ? ` (${m.item.name})` : ''}
                   </span>
-                  <span className="font-mono text-sm font-semibold text-slate-900">{Number(m.quantity).toFixed(3)} {m.unit}</span>
+                  <span className="font-mono text-sm font-semibold text-slate-900" title="Per finished unit; the order quantity scales it (R2-268)">{Number(m.quantity).toFixed(3)} {m.unit} <span className="font-sans text-xs font-normal text-slate-500">/ unit</span></span>
                   {isOwner && m.ratePerUnit && <span className="font-mono text-sm text-slate-500">₹{Number(m.ratePerUnit).toFixed(2)}/unit</span>}
                   {canWrite && bom.status === 'DRAFT' && (
                     <>

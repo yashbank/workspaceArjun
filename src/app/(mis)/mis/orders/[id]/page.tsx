@@ -64,6 +64,7 @@ export default async function OrderDetailPage({
       status={order.status}
       gates={order.status === 'IN_PRODUCTION' ? await getOrderCloseGates(id) : []}
       canOverride={canOverrideCloseGates(role ?? '')}
+      canStartWithoutBom={role === 'OWNER'} // R2-267
       override={order.status === 'COMPLETED' || order.status === 'DELIVERED' ? await getOrderCloseOverride(id) : null}
     />
   ) : undefined;
@@ -74,7 +75,7 @@ export default async function OrderDetailPage({
 
   const phone = (
     <OrderDetailScreen
-      order={order}
+      order={{ ...order, quantity: order.quantity == null ? null : Number(order.quantity) }} // R2-264: Decimal -> number for the client
       phases={phases.map((p) => ({
         id: p.id,
         sequence: p.sequence,
