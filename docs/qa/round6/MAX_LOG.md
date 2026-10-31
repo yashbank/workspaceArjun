@@ -39,3 +39,8 @@ R2-269 | DEV_DONE | - | assertBomComplete refuses a material with no catalogue i
 R2-270 | DEV_DONE | - | assertBomComplete refuses an empty stage (names it); fixtures bom-lifecycle/r3-ord-bom/bom.test gain misBomStage.findMany
 R2-271 | DEV_DONE | - | BOM overview Owner cost label reads "₹x (floor · N unpriced)" when any line is unpriced
 R2-282 | ALREADY_FIXED | R3 B64 | nav bom entry requires orders.read (STORE_GUY holds it); getBom + getBomDesktopView admit STORE_GUY and strip ratePerUnit (wage-leak.test READERS, bom-desktop.test READERS, navigation.test STORE_GUY 'bom')
+R2-275 | DEV_DONE | - | cancelPO counts only CONFIRMED GRNs; DRAFT GRNs (+items) are deleted in the same transaction; audit after.discardedDraftGrns; fixtures r3-mst-po/po-bom-guards gain misGrn.deleteMany + misGrnItem.deleteMany
+R2-276 | DEV_DONE | - | addPOItem/updatePOItem refuse a unitId whose text (or Master Units option) is not the item's unit (normaliseUnit)
+R2-274 | DEV_DONE | - | bomOverOrderWarning: live POs for the same bomRef+item vs BOM per-unit x order qty, >105% -> warning returned from the line write and toasted (never blocks); server-gates REVIEWED_UNGATED entry // R2-274
+R2-273 | BY_DESIGN | - | decision: Admin may not enter PO rates (D5/D24); Owner prices unpriced lines at approval (setPoLineRate); no code
+R2-272 | SCHEMA (pending) | - | MisPurchaseOrder.deliveryDueDate Date? + paymentTerms String? (lib/mis/po-terms.ts PAYMENT_TERMS); validated on create/update, date mandatory via assertPoHeaderComplete in createPoAction; list form, detail header/edit, print PO. Migration prisma/migrations-pending/20261031000001_r2_272_po_delivery_terms NOT applied

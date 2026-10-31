@@ -210,11 +210,11 @@ Batch B6
 - [x] R2-268 BOM basis (SCHEMA, needs Q, after 264)
 - [x] R2-265 Customer PO # (SCHEMA, needs Q)
 Batch B7
-- [ ] R2-275 PO cancel vs DRAFT GRN (needs Q)
-- [ ] R2-276 PO unit mismatch (needs Q)
-- [ ] R2-274 duplicate PO cap (needs Q)
-- [ ] R2-273 Admin PO rates (needs Q, money rule)
-- [ ] R2-272 PO delivery date + terms (SCHEMA, needs Q)
+- [x] R2-275 PO cancel vs DRAFT GRN (needs Q)
+- [x] R2-276 PO unit mismatch (needs Q)
+- [x] R2-274 duplicate PO cap (needs Q)
+- [x] R2-273 Admin PO rates (needs Q, money rule)
+- [x] R2-272 PO delivery date + terms (SCHEMA, needs Q)
 Batch B8
 - [ ] R2-279 over-receipt ceiling (needs Q)
 - [ ] R2-280 invoice variance sign-off (needs Q, maybe SCHEMA)

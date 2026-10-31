@@ -6,7 +6,8 @@ import { Pagination, HiddenParams } from '@/components/mis/kit/pagination';
 import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import { Select } from '@/components/mis/kit/select';
-import { Input } from '@/components/mis/kit/input';
+import { DateInput, Input } from '@/components/mis/kit/input';
+import { PAYMENT_TERMS, PAYMENT_TERMS_LABEL } from '@/lib/mis/po-terms';
 import { StatusBadge, type BadgeTone } from '@/components/mis/kit/status-badge';
 import { createPoAction } from '@/app/(mis)/mis/po/actions';
 import { useConfirm } from '@/components/ui/confirm-dialog';
@@ -57,12 +58,18 @@ export function PoListScreen({ pos, suppliers, canWrite, approvedBoms = [], pagi
   const [purpose, setPurpose] = useState<PoPurpose>('FOR_ORDER');
   const [bomRef, setBomRef] = useState('');
   const [notes, setNotes] = useState('');
+  const [deliveryDueDate, setDeliveryDueDate] = useState(''); // R2-272
+  const [paymentTerms, setPaymentTerms] = useState('');
   const [isPending, startTransition] = useTransition();
 
   const handleCreate = () => {
     if (!supplierId) { toast('error', 'Please select a supplier.'); return; }
+    if (!deliveryDueDate) { toast('error', 'Enter the promised delivery date.'); return; }
     startTransition(async () => {
-      const result = await createPoAction({ supplierId: supplierId || null, purpose, bomRef: purpose === 'FOR_ORDER' ? bomRef || null : null, notes: notes || null });
+      const result = await createPoAction({
+        supplierId: supplierId || null, purpose, bomRef: purpose === 'FOR_ORDER' ? bomRef || null : null, notes: notes || null,
+        deliveryDueDate, paymentTerms: paymentTerms || null,
+      });
       if (!result.ok) {
         // D1: an unapproved BOM is a popup the raiser must acknowledge; any other refusal is a toast.
         if (isBomNotApprovedDetail(result.detail)) {
@@ -144,6 +151,9 @@ export function PoListScreen({ pos, suppliers, canWrite, approvedBoms = [], pagi
               Stock kept on hand. No BOM and no customer order is recorded against this PO.
             </p>
           )}
+          {/* R2-272: promised delivery (mandatory) and payment terms from a fixed list, both printed on the vendor PO. */}
+          <DateInput label="Delivery due date" value={deliveryDueDate} onChange={e => setDeliveryDueDate(e.target.value)} />
+          <Select label="Payment terms" value={paymentTerms} onChange={setPaymentTerms} options={[{ value: '', label: '— Not set —' }, ...PAYMENT_TERMS.map((t) => ({ value: t, label: PAYMENT_TERMS_LABEL[t] }))]} />
           <Input label="Notes" value={notes} onChange={e => setNotes(e.target.value)} />
           <div className="flex gap-2 pt-2">
             <Button onClick={handleCreate} disabled={isPending || (purpose === 'FOR_ORDER' && !bomRef.trim())}>{isPending ? 'Creating…' : 'Create PO'}</Button>

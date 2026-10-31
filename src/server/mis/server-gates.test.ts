@@ -40,6 +40,8 @@ const REVIEWED_UNGATED: Record<string, Reviewed> = {
   'auth.ts#checkPermission': { reason: 'render-only boolean; the server function still gates (documented in auth.ts)' },
   'guard.ts#requireMisAccess': { reason: 'this IS the feature-flag gate' },
   'audit.ts#logAuditEvent': { reason: 'a writer, not a reader; the caller supplies the actor and has already been gated' },
+  // R2-274
+  'po.ts#bomOverOrderWarning': { reason: 'read-only warning helper called from the gated PO line writes; exported for its unit test, returns a sentence or null, never money' },
 
   // --- credential doors: a device token / pairing code / session, checked before anything else ---
   'kiosk-device.ts#requestEnrolment': { reason: 'unauthenticated by design (D18: the tablet asks); returns only a pairing code', door: true },

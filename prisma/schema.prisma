@@ -685,6 +685,10 @@ model MisPurchaseOrder {
   /// the approval chain (D2) — `approvalMode` below never reads this field.
   purpose      MisPoPurpose @default(FOR_ORDER)
   notes        String?
+  /// R2-272 (parked migration 20261031000001). Promised delivery date (mandatory on a NEW PO in code; old rows NULL)
+  /// and the payment terms, one of lib/mis/po-terms.ts PAYMENT_TERMS. Both print on the vendor PO.
+  deliveryDueDate DateTime? @map("delivery_due_date") @db.Date
+  paymentTerms    String?   @map("payment_terms")
   createdById  String?      @map("created_by_id") @db.Uuid
   /// Phase 21 (D2, D34). Decided ONCE, at `submitForApproval`, from the threshold rule in force
   /// that day (or an explicit override) — snapshotted here and never recomputed, so a later

@@ -6,6 +6,8 @@ import { getPO, computePoTotal } from '@/server/mis/po';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { poPurpose, poPurposeLabel } from '@/lib/mis/po-purpose';
+import { paymentTermsLabel } from '@/lib/mis/po-terms';
+import { formatFactoryDate } from '@/lib/mis/factory-time';
 
 export default async function PoPrintPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -77,6 +79,9 @@ export default async function PoPrintPage({ params }: { params: Promise<{ id: st
       <div className="mb-6 text-sm text-gray-600 bg-gray-50 rounded p-3">
         <div><span className="font-medium">Purpose:</span> {poPurposeLabel(poPurpose(po))}</div>
         {po.bomRef && <div className="mt-1"><span className="font-medium">BOM Ref:</span> {po.bomRef}</div>}
+        {/* R2-272: the vendor's contract carries the promised date and the payment terms. */}
+        <div className="mt-1"><span className="font-medium">Delivery due:</span> {po.deliveryDueDate ? formatFactoryDate(new Date(po.deliveryDueDate), 'UTC') : '—'}</div>
+        <div className="mt-1"><span className="font-medium">Payment terms:</span> {paymentTermsLabel(po.paymentTerms) ?? '—'}</div>
         {po.notes && <div className="mt-1"><span className="font-medium">Notes:</span> {po.notes}</div>}
       </div>
 

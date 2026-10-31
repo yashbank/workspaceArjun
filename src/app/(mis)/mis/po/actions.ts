@@ -1,21 +1,21 @@
 'use server';
 import { revalidatePath } from 'next/cache';
-import { createPO, updatePO, deleteDraftPO, addPOItem, updatePOItem, removePOItem, setPoLineRate, submitForApproval, approvePO, cancelPO } from '@/server/mis/po';
-import type { PoPurpose } from '@/lib/mis/po-purpose';
+import { createPO, updatePO, deleteDraftPO, addPOItem, updatePOItem, removePOItem, setPoLineRate, submitForApproval, approvePO, cancelPO, assertPoHeaderComplete, type PoInput } from '@/server/mis/po';
 import { asResult, type ActionResult } from '@/lib/mis/action-result';
 
 // A business refusal (unapproved BOM, empty PO, wrong status) comes back as a value, not a throw —
 // a production build would otherwise replace its message with a generic "An error occurred".
 
-export async function createPoAction(input: { supplierId?: string | null; purpose?: PoPurpose; bomRef?: string | null; notes?: string | null }): Promise<ActionResult<string>> {
+export async function createPoAction(input: PoInput): Promise<ActionResult<string>> {
   return asResult(async () => {
+    assertPoHeaderComplete(input); // R2-272: the delivery date is mandatory on a new PO
     const po = await createPO(input);
     revalidatePath('/mis/po');
     return po.id;
   });
 }
 
-export async function updatePoAction(poId: string, input: { supplierId?: string | null; purpose?: PoPurpose; bomRef?: string | null; notes?: string | null }): Promise<ActionResult> {
+export async function updatePoAction(poId: string, input: PoInput): Promise<ActionResult> {
   return asResult(async () => {
     await updatePO(poId, input);
     revalidatePath(`/mis/po/${poId}`);
@@ -30,10 +30,11 @@ export async function deletePoAction(poId: string): Promise<ActionResult> {
   });
 }
 
-export async function addPoItemAction(poId: string, input: { itemId?: string | null; description: string; quantity: number; unitId?: string | null; ratePerUnit: number }): Promise<ActionResult> {
+export async function addPoItemAction(poId: string, input: { itemId?: string | null; description: string; quantity: number; unitId?: string | null; ratePerUnit: number }): Promise<ActionResult<{ warning?: string }>> {
   return asResult(async () => {
-    await addPOItem(poId, input);
+    const line = await addPOItem(poId, input);
     revalidatePath(`/mis/po/${poId}`);
+    return { warning: (line as { warning?: string }).warning }; // R2-274: a duplicate-order warning, never a block
   });
 }
 

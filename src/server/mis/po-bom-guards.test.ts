@@ -36,7 +36,12 @@ const db: Row = {
     delete: async ({ where }: Row) => { const i = state.items.findIndex((x) => x.id === where.id); const [row] = state.items.splice(i, 1); return row; },
     deleteMany: async ({ where }: Row) => { state.items = state.items.filter((i) => i.poId !== where.poId); },
   },
-  misGrn: { count: async ({ where }: Row) => state.grns.filter((g) => g.poId === where.poId).length },
+  // R2-275: cancel counts CONFIRMED receipts (a row with no status here still counts) and discards DRAFT ones.
+  misGrn: {
+    count: async ({ where }: Row) => state.grns.filter((g) => g.poId === where.poId && (!where.status || !g.status || g.status === where.status)).length,
+    deleteMany: async ({ where }: Row) => { const before = state.grns.length; state.grns = state.grns.filter((g) => !(g.poId === where.poId && g.status === where.status)); return { count: before - state.grns.length }; },
+  },
+  misGrnItem: { deleteMany: async () => ({ count: 0 }) },
   misOrder: {
     findUnique: async ({ where }: Row) => {
       const order = state.orders.find((o) => o.orderNumber === where.orderNumber);

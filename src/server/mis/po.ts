@@ -9,6 +9,9 @@ import { logAuditEvent } from './audit';
 import { poPurpose, poPurposeLabel, type PoPurpose } from '@/lib/mis/po-purpose';
 import { bomNumberFromRef, orderNumberFromRef } from '@/lib/mis/order-allocation';
 import { BomNotApprovedError } from '@/lib/mis/po-errors';
+import { validatePoTerms } from '@/lib/mis/po-terms';
+import { normaliseUnit } from '@/lib/mis/qty-by-unit';
+import { isUuid } from '@/lib/mis/ids';
 import { getPoApprovalThreshold } from './business-rules';
 import type { MisPoApprovalMode } from '@/generated/prisma/enums';
 
@@ -22,7 +25,39 @@ export type PoInput = {
   purpose?: PoPurpose;
   bomRef?: string | null;
   notes?: string | null;
+  /** R2-272: `YYYY-MM-DD`, mandatory on a NEW PO (`assertPoHeaderComplete`); one of PAYMENT_TERMS, optional. */
+  deliveryDueDate?: string | null;
+  paymentTerms?: string | null;
 };
+
+/** R2-272: what a new PO must carry before it is created. Called by the create action; `createPO` itself stays usable for older callers. */
+export function assertPoHeaderComplete(input: PoInput) {
+  const error = validatePoTerms(input, true);
+  if (error) throw new Error(error);
+}
+
+/** 5% over the BOM's need is tolerance; past it the second PO is probably a duplicate (R2-274, warn only). */
+const OVER_ORDER_TOLERANCE = 1.05;
+
+/**
+ * R2-274: for a FOR_ORDER PO, how much of this item every live PO against the same BOM has ordered, against what the
+ * BOM (per finished unit x order quantity) actually needs. A sentence when it is over the tolerance, else null.
+ * Not gated: called from the gated line writes only.
+ */
+export async function bomOverOrderWarning(po: { bomRef: string | null }, itemId: string | null | undefined): Promise<string | null> {
+  if (!po.bomRef || !itemId) return null;
+  const order = await db.misOrder.findUnique({
+    where: { orderNumber: po.bomRef },
+    select: { quantity: true, bom: { select: { stages: { select: { materials: { where: { itemId }, select: { quantity: true } } } } } } },
+  });
+  const perUnit = (order?.bom?.stages ?? []).flatMap((s) => s.materials).reduce((n, m) => n + Number(m.quantity), 0);
+  if (perUnit <= 0) return null;
+  const required = perUnit * (order?.quantity == null ? 1 : Number(order.quantity));
+  const lines = await db.misPoItem.findMany({ where: { itemId, po: { bomRef: po.bomRef, status: { not: 'CANCELLED' } } }, select: { quantity: true } });
+  const ordered = lines.reduce((n, l) => n + Number(l.quantity), 0);
+  if (ordered <= required * OVER_ORDER_TOLERANCE) return null;
+  return `Purchase orders against ${po.bomRef} now total ${ordered} of this item; the BOM needs ${required}. Check for a duplicate PO before submitting.`;
+}
 
 export type PoItemInput = {
   itemId?: string | null;
@@ -223,10 +258,24 @@ function cleanDescription(d: unknown): string {
 }
 
 /** A line's item, when given, must be a live catalogue item (R3-MST B26). */
-async function requireLiveItem(itemId: string | null | undefined) {
-  if (!itemId) return;
-  const item = await db.misItem.findFirst({ where: { id: itemId, isActive: true, deletedAt: null }, select: { id: true } });
+async function requireLiveItem(itemId: string | null | undefined): Promise<{ id: string; unit?: string | null } | null> {
+  if (!itemId) return null;
+  const item = await db.misItem.findFirst({ where: { id: itemId, isActive: true, deletedAt: null }, select: { id: true, unit: true } });
   if (!item) throw new Error('That item is inactive or has been deleted. Pick another item.');
+  return item;
+}
+
+/**
+ * R2-276: a line's unit must be the catalogue item's unit, or the stock ledger would add pieces to kilograms.
+ * `unitId` is either a Master Units option id or the unit text itself; either way it must read as the item's unit.
+ */
+async function assertUnitMatchesItem(unitId: string | null | undefined, item: { unit?: string | null } | null) {
+  if (!unitId || !item?.unit) return;
+  const option = isUuid(unitId) ? await db.misMasterOption.findUnique({ where: { id: unitId }, select: { value: true, label: true } }) : null;
+  const unitText = option?.value ?? option?.label ?? unitId;
+  if (normaliseUnit(unitText) !== normaliseUnit(item.unit)) {
+    throw new Error(`Unit "${unitText}" does not match the item's unit "${item.unit}". Order this item in ${item.unit}.`);
+  }
 }
 
 /** Lines can only change while the PO is a draft; afterwards the approved paperwork is frozen. */
@@ -240,6 +289,8 @@ export async function createPO(input: PoInput) {
   const actor = await requirePermission('po.write');
   // R2-69: a PO is a commercial contract — it cannot exist without a vendor.
   if (!input.supplierId?.trim()) throw new Error('Please select a supplier.');
+  const termsError = validatePoTerms(input, false); // R2-272: valid when given; the create action makes the date mandatory
+  if (termsError) throw new Error(termsError);
   const { purpose, bomRef } = await resolvePurposeAndRef(input);
   let created;
   const MAX_ATTEMPTS = 6;
@@ -257,6 +308,8 @@ export async function createPO(input: PoInput) {
           // this write is what keeps the two in step, not the default.
           purpose,
           notes: input.notes?.trim() || null,
+          deliveryDueDate: input.deliveryDueDate ? new Date(`${input.deliveryDueDate}T00:00:00Z`) : null,
+          paymentTerms: input.paymentTerms || null,
           createdById: actor.userId,
         },
       });
@@ -276,7 +329,8 @@ export async function addPOItem(poId: string, input: PoItemInput) {
   await requireDraftPo(poId, 'adding a line');
   const description = cleanDescription(input.description);
   const quantity = cleanQuantity(input.quantity);
-  await requireLiveItem(input.itemId);
+  const item = await requireLiveItem(input.itemId);
+  await assertUnitMatchesItem(input.unitId, item); // R2-276
   // D5: a purchase rate is the Owner's (`wages.read`). Anyone else's value is ignored: the line is stored
   // unpriced (0; the column is NOT NULL) and the Owner prices it at approval.
   const rate = can(actor.role, 'wages.read') ? Number(input.ratePerUnit) || 0 : 0;
@@ -293,7 +347,9 @@ export async function addPOItem(poId: string, input: PoItemInput) {
     },
   });
   await logAuditEvent({ actorId: actor.userId, action: 'po_item.create', entity: 'MisPoItem', entityId: created.id, after: created });
-  return forRole(actor.role, created);
+  // R2-274: warn (never block) when the POs against this BOM now over-order the item.
+  const warning = await bomOverOrderWarning(await loadPo(poId), created.itemId);
+  return { ...forRole(actor.role, created), ...(warning ? { warning } : {}) };
 }
 
 export async function updatePOItem(id: string, patch: Partial<PoItemInput>) {
@@ -303,7 +359,10 @@ export async function updatePOItem(id: string, patch: Partial<PoItemInput>) {
   await requireDraftPo(before.poId, 'editing a line');
   const description = patch.description !== undefined ? cleanDescription(patch.description) : undefined;
   const quantity = patch.quantity !== undefined ? cleanQuantity(patch.quantity) : undefined;
-  if (patch.itemId) await requireLiveItem(patch.itemId);
+  const nextItemId = patch.itemId !== undefined ? patch.itemId || null : before.itemId;
+  const nextUnitId = patch.unitId !== undefined ? patch.unitId || null : before.unitId;
+  const item = patch.itemId ? await requireLiveItem(patch.itemId) : patch.unitId !== undefined && nextItemId ? await requireLiveItem(nextItemId) : null;
+  await assertUnitMatchesItem(nextUnitId, item); // R2-276
   // A non-Owner's rate is ignored: the stored rate is left unchanged.
   const mayPrice = can(actor.role, 'wages.read');
   const after = await db.misPoItem.update({ where: { id }, data: {
@@ -314,7 +373,8 @@ export async function updatePOItem(id: string, patch: Partial<PoItemInput>) {
     ...(patch.unitId !== undefined ? { unitId: patch.unitId || null } : {}),
   }});
   await logAuditEvent({ actorId: actor.userId, action: 'po_item.update', entity: 'MisPoItem', entityId: id, before, after });
-  return forRole(actor.role, after);
+  const warning = quantity !== undefined || patch.itemId !== undefined ? await bomOverOrderWarning(await loadPo(before.poId), after.itemId) : null; // R2-274
+  return { ...forRole(actor.role, after), ...(warning ? { warning } : {}) };
 }
 
 /**
@@ -425,20 +485,24 @@ export async function approvePO(poId: string) {
 export async function cancelPO(poId: string) {
   const actor = await requirePermission('po.write');
   // The GRN check and the status write share one transaction, so a receipt cannot land in between.
-  const { before, after } = await casWrite(() => db.$transaction(async (tx) => {
+  const { before, after, discardedDraftGrns } = await casWrite(() => db.$transaction(async (tx) => {
     const current = await tx.misPurchaseOrder.findUnique({ where: { id: poId } });
     if (!current) throw new Error(`PO ${poId} not found`);
+    let discardedDraftGrns = 0;
     if (current.status === 'APPROVED') {
-      if ((await tx.misGrn.count({ where: { poId } })) > 0) {
+      // R2-275: only a CONFIRMED receipt has touched stock. A DRAFT GRN someone started and abandoned is discarded with the PO.
+      if ((await tx.misGrn.count({ where: { poId, status: 'CONFIRMED' } })) > 0) {
         throw new Error('This PO already has a goods receipt (GRN), so it can no longer be cancelled.');
       }
+      await tx.misGrnItem.deleteMany({ where: { grn: { poId, status: 'DRAFT' } } });
+      discardedDraftGrns = (await tx.misGrn.deleteMany({ where: { poId, status: 'DRAFT' } })).count;
     } else if (current.status !== 'DRAFT' && current.status !== 'PENDING_APPROVAL') {
       throw new Error(`This PO is ${statusWords(current.status)} and cannot be cancelled.`);
     }
     const updated = await tx.misPurchaseOrder.update({ where: { id: poId, status: current.status }, data: { status: 'CANCELLED' } });
-    return { before: current, after: updated };
+    return { before: current, after: updated, discardedDraftGrns };
   }));
-  await logAuditEvent({ actorId: actor.userId, action: 'po.cancel', entity: 'MisPurchaseOrder', entityId: poId, before, after });
+  await logAuditEvent({ actorId: actor.userId, action: 'po.cancel', entity: 'MisPurchaseOrder', entityId: poId, before, after: { ...after, ...(discardedDraftGrns ? { discardedDraftGrns } : {}) } });
   return after;
 }
 
@@ -460,6 +524,9 @@ export async function deleteDraftPO(poId: string) {
 export async function updatePO(poId: string, input: PoInput) {
   const actor = await requirePermission('po.write');
   const before = await requireDraftPo(poId, 'editing the details');
+  // R2-272: terms given are validated; a delivery date already on the PO cannot be blanked.
+  const termsError = validatePoTerms(input, input.deliveryDueDate === null && before.deliveryDueDate != null);
+  if (termsError) throw new Error(termsError);
   const { purpose, bomRef } = await resolvePurposeAndRef({
     purpose: input.purpose ?? (input.bomRef !== undefined ? undefined : poPurpose(before)),
     bomRef: input.bomRef !== undefined ? input.bomRef : before.bomRef,
@@ -471,6 +538,8 @@ export async function updatePO(poId: string, input: PoInput) {
       purpose,
       bomRef,
       ...(input.notes !== undefined ? { notes: input.notes?.trim() || null } : {}),
+      ...(input.deliveryDueDate !== undefined ? { deliveryDueDate: input.deliveryDueDate ? new Date(`${input.deliveryDueDate}T00:00:00Z`) : null } : {}),
+      ...(input.paymentTerms !== undefined ? { paymentTerms: input.paymentTerms || null } : {}),
     },
   }));
   await logAuditEvent({ actorId: actor.userId, action: 'po.update', entity: 'MisPurchaseOrder', entityId: poId, before, after });
