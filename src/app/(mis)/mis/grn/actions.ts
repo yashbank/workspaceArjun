@@ -2,7 +2,7 @@
 import { revalidatePath } from 'next/cache';
 
 import { asResult } from '@/lib/mis/action-result';
-import { createGRN, addGRNItem, updateGRNItem, updateGRNHeader, confirmGRN, removeGRNItem, discardGRN, type GrnHeaderInput, type GrnItemInput } from '@/server/mis/grn';
+import { createGRN, addGRNItem, updateGRNItem, updateGRNHeader, confirmGRN, removeGRNItem, discardGRN, reverseGRN, returnQuarantineToSupplier, type GrnHeaderInput, type GrnItemInput } from '@/server/mis/grn';
 
 export async function createGrnAction(poId: string, notes?: string | null) {
   // Refusals travel as data: in production a thrown message is replaced by a generic one.
@@ -63,5 +63,22 @@ export async function confirmGrnAction(grnId: string, overReceiptReason?: string
     // B12: an advisory note (e.g. the invoice is already on another PO); nothing at all when there is none.
     const warnings = confirmed?.warnings;
     return warnings && warnings.length > 0 ? { warnings } : undefined;
+  });
+}
+
+/** R2-277: Owner only — reverse a confirmed GRN with a reason. */
+export async function reverseGrnAction(grnId: string, reason: string) {
+  return asResult(async () => {
+    const result = await reverseGRN(grnId, reason);
+    for (const path of [`/mis/grn/${grnId}`, '/mis/grn', '/mis/po', '/mis/inventory', '/mis/store/stock', '/mis/store/transactions', '/mis/supplier-invoices']) revalidatePath(path);
+    return result;
+  });
+}
+
+/** R2-278: Owner only — damaged goods go back to the supplier. */
+export async function returnQuarantineAction(id: string, grnId: string, note?: string | null) {
+  return asResult(async () => {
+    await returnQuarantineToSupplier(id, note);
+    revalidatePath(`/mis/grn/${grnId}`);
   });
 }

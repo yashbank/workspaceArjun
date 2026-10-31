@@ -63,7 +63,7 @@ export async function searchMisEntities(query: string): Promise<MisSearchResult[
 
 async function searchOrders(q: string): Promise<MisSearchResult[]> {
   const rows = await db.misOrder.findMany({
-    where: { OR: [{ orderNumber: { contains: q, mode: 'insensitive' } }, { description: { contains: q, mode: 'insensitive' } }, { customer: { name: { contains: q, mode: 'insensitive' } } }] },
+    where: { OR: [{ orderNumber: { contains: q, mode: 'insensitive' } }, { description: { contains: q, mode: 'insensitive' } }, { customer: { name: { contains: q, mode: 'insensitive' } } }, { customerPoRef: { contains: q, mode: 'insensitive' } }] }, // R2-265
     select: { id: true, orderNumber: true, status: true, description: true, customer: { select: { name: true } } },
     take: PER_TYPE_LIMIT,
     orderBy: { createdAt: 'desc' },

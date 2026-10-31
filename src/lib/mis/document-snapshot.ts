@@ -21,6 +21,10 @@ export type SnapshotOrder = {
   description: string | null;
   deliveryDate: string | null;
   notes: string | null;
+  /** R2-264 / R2-265: optional so a snapshot frozen before these fields existed still parses. */
+  quantity?: number | null;
+  unit?: string | null;
+  customerPoRef?: string | null;
 };
 
 export type CoaQcRow = {
@@ -84,6 +88,9 @@ export type OrderInput = {
   deliveryDate?: DateLike;
   notes?: string | null;
   customer?: { name: string | null } | null;
+  quantity?: { toNumber(): number } | number | string | null;
+  unit?: string | null;
+  customerPoRef?: string | null;
 };
 export type QcInput = {
   id: string;
@@ -136,6 +143,9 @@ function snapshotOrder(o: OrderInput): SnapshotOrder {
     description: o.description ?? null,
     deliveryDate: iso(o.deliveryDate),
     notes: o.notes ?? null,
+    quantity: o.quantity == null ? null : Number(typeof o.quantity === 'object' ? o.quantity.toNumber() : o.quantity),
+    unit: o.unit ?? null,
+    customerPoRef: o.customerPoRef ?? null,
   };
 }
 

@@ -18,7 +18,11 @@ const s = {
   usage: { logs: 0, checks: 0, phases: 0 },
   created: [] as Row[],
   item: { id: 'i1', isActive: true } as Row | null,
+  /** R2-269/270: what assertBomComplete now reads — stages with their materials; null itemId = uncatalogued. */
+  stages: null as Row[] | null,
 };
+const stagesFromCounts = (): Row[] =>
+  Array.from({ length: s.stageCount }, (_, i) => ({ stageName: `Stage ${i + 1}`, materials: i === 0 ? Array.from({ length: s.materialCount }, (_, j) => ({ description: `Mat ${j + 1}`, itemId: 'i1' })) : [{ description: 'Filler', itemId: 'i1' }] }));
 const draft = { id: 'bom-draft', orderId: 'o1', status: 'DRAFT' };
 const approved = { id: 'bom-approved', orderId: 'o1', status: 'APPROVED' };
 const db: Row = {
@@ -35,6 +39,7 @@ const db: Row = {
     findUnique: async () => ({ id: 'st1', bomId: 'bom-draft', bom: { status: 'DRAFT', order: { orderNumber: 'ORD-1', status: s.orderStatus } } }),
     create: async ({ data }: Row) => { s.created.push(data); return { id: 'st-new', ...data }; },
     count: async () => s.stageCount,
+    findMany: async () => s.stages ?? stagesFromCounts(), // R2-269/270
     delete: async () => ({}),
   },
   misBomMaterial: {
@@ -54,7 +59,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   getCurrentUser.mockResolvedValue({ id: 'u1' });
   getMisRole.mockResolvedValue('OWNER');
-  Object.assign(s, { orderStatus: 'CONFIRMED', boms: [draft, approved], stageCount: 1, materialCount: 1, usage: { logs: 0, checks: 0, phases: 0 }, created: [], item: { id: 'i1', isActive: true } });
+  Object.assign(s, { orderStatus: 'CONFIRMED', boms: [draft, approved], stageCount: 1, materialCount: 1, usage: { logs: 0, checks: 0, phases: 0 }, created: [], item: { id: 'i1', isActive: true }, stages: null });
 });
 
 describe('B106', () => {
@@ -93,6 +98,23 @@ describe('B108', () => {
     s.boms = [{ id: 'bp', orderId: 'o1', status: 'PENDING_APPROVAL' }];
     await expect(approveBom('bp')).rejects.toThrow(/at least one material/);
   });
+  it('R2-270: every stage needs a material — a second, empty stage is named and refused', async () => {
+    s.stages = [
+      { stageName: 'Printing', materials: [{ description: 'Ink', itemId: 'i1' }] },
+      { stageName: 'Lamination', materials: [] },
+    ];
+    await expect(submitBomForApproval('bom-draft')).rejects.toThrow(/Stage "Lamination" has no material/);
+    s.boms = [{ id: 'bp', orderId: 'o1', status: 'PENDING_APPROVAL' }];
+    await expect(approveBom('bp')).rejects.toThrow(/Stage "Lamination" has no material/);
+  });
+
+  it('R2-269: a material with no catalogue item blocks submit, naming the line; linked lines pass', async () => {
+    s.stages = [{ stageName: 'Printing', materials: [{ description: 'Ink', itemId: 'i1' }, { description: 'Special Ink', itemId: null }] }];
+    await expect(submitBomForApproval('bom-draft')).rejects.toThrow(/"Special Ink" is not linked to a catalogue item/);
+    s.stages = [{ stageName: 'Printing', materials: [{ description: 'Ink', itemId: 'i1' }, { description: 'Special Ink', itemId: 'i2' }] }];
+    await expect(submitBomForApproval('bom-draft')).resolves.toBeDefined();
+  });
+
   it('submit on a closed order is refused; a complete BOM on an open order passes', async () => {
     s.orderStatus = 'CANCELLED';
     await expect(submitBomForApproval('bom-draft')).rejects.toThrow(/Reopen it first/);

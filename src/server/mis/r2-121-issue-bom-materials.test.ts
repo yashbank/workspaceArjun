@@ -32,6 +32,17 @@ beforeEach(() => {
 });
 
 describe('listOpenOrderBomMaterials', () => {
+  it('R2-268: BOM quantities are per finished unit — the order quantity scales what is required (none = x1)', async () => {
+    boms[0].order = { quantity: { toNumber: () => 500 } };
+    try {
+      const rows = (await listOpenOrderBomMaterials())['o1'];
+      expect(rows.find((r) => r.description === 'Ink')).toMatchObject({ required: 5000, issued: 4, remaining: 4996 });
+      expect(rows.find((r) => r.description === 'Custom foil')).toMatchObject({ required: 1000 });
+    } finally {
+      delete boms[0].order;
+    }
+  });
+
   it('reports required vs issued for a catalogued material', async () => {
     const out = await listOpenOrderBomMaterials();
     const ink = out.o1.find((m) => m.description === 'Ink')!;

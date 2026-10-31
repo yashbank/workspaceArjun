@@ -5,8 +5,10 @@ import Link from 'next/link';
 import { Button } from '@/components/mis/kit/button';
 import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { SlideOver } from '@/components/mis/kit/slide-over';
-import { Input, NumberInput } from '@/components/mis/kit/input';
+import { DateInput, Input, NumberInput } from '@/components/mis/kit/input';
 import { Select } from '@/components/mis/kit/select';
+import { PAYMENT_TERMS, PAYMENT_TERMS_LABEL, paymentTermsLabel } from '@/lib/mis/po-terms';
+import { formatFactoryDate } from '@/lib/mis/factory-time';
 import { StatusBadge, type BadgeTone } from '@/components/mis/kit/status-badge';
 import { Card, CardRow } from '@/components/mis/kit/card';
 import { useRouter } from 'next/navigation';
@@ -27,6 +29,8 @@ type FormattedPoItem = {
 };
 type Po = {
   id: string; poNumber: string; status: string; bomRef: string | null; notes: string | null;
+  /** R2-272 */
+  deliveryDueDate?: Date | string | null; paymentTerms?: string | null;
   supplier: { id: string; name: string; phone: string | null } | null;
   grns: { id: string; grnNumber: string; status: string; createdAt: Date }[];
 };
@@ -53,6 +57,8 @@ export function PoDetailScreen({ po, formattedItems, total, catalogItems, canWri
   const [editPurpose, setEditPurpose] = useState<PoPurpose>(poPurpose(po));
   const [editBomRef, setEditBomRef] = useState(po.bomRef ?? '');
   const [editNotes, setEditNotes] = useState(po.notes ?? '');
+  const [editDeliveryDue, setEditDeliveryDue] = useState(po.deliveryDueDate ? String(po.deliveryDueDate).slice(0, 10) : ''); // R2-272
+  const [editTerms, setEditTerms] = useState(po.paymentTerms ?? '');
   const [addOpen, setAddOpen] = useState(false);
   const [itemId, setItemId] = useState('');
   const [description, setDescription] = useState('');
@@ -75,8 +81,10 @@ export function PoDetailScreen({ po, formattedItems, total, catalogItems, canWri
   const handleAddItem = () => {
     if (!description) return;
     startTransition(async () => {
-      const ok = await settle(await addPoItemAction(po.id, { itemId: itemId || null, description, quantity: parseFloat(quantity) || 1, ratePerUnit: parseFloat(ratePerUnit) || 0 }));
+      const res = await addPoItemAction(po.id, { itemId: itemId || null, description, quantity: parseFloat(quantity) || 1, ratePerUnit: parseFloat(ratePerUnit) || 0 });
+      const ok = await settle(res);
       if (!ok) return;
+      if (res.ok && res.value?.warning) toast('info', res.value.warning); // R2-274
       setItemId(''); setDescription(''); setQuantity('1'); setRatePerUnit('0');
       setAddOpen(false);
     });
@@ -84,7 +92,10 @@ export function PoDetailScreen({ po, formattedItems, total, catalogItems, canWri
 
   const handleSaveDetails = () => {
     startTransition(async () => {
-      const ok = await settle(await updatePoAction(po.id, { supplierId: editSupplierId || null, purpose: editPurpose, bomRef: editPurpose === 'FOR_ORDER' ? editBomRef || null : null, notes: editNotes || null }));
+      const ok = await settle(await updatePoAction(po.id, {
+        supplierId: editSupplierId || null, purpose: editPurpose, bomRef: editPurpose === 'FOR_ORDER' ? editBomRef || null : null, notes: editNotes || null,
+        deliveryDueDate: editDeliveryDue || null, paymentTerms: editTerms || null,
+      }));
       if (ok) setEditOpen(false);
     });
   };
@@ -152,6 +163,9 @@ export function PoDetailScreen({ po, formattedItems, total, catalogItems, canWri
         {po.supplier?.phone && <CardRow label="Supplier Phone" value={po.supplier.phone} />}
         <CardRow label="Purpose" value={poPurposeLabel(poPurpose(po))} />
         {po.bomRef && <CardRow label="BOM Ref" value={po.bomRef} />}
+        {/* R2-272 */}
+        <CardRow label="Delivery due" value={po.deliveryDueDate ? formatFactoryDate(new Date(po.deliveryDueDate), 'UTC') : '—'} />
+        <CardRow label="Payment terms" value={paymentTermsLabel(po.paymentTerms) ?? '—'} />
         {po.notes && <CardRow label="Notes" value={po.notes} />}
       </Card>
 
@@ -272,6 +286,8 @@ export function PoDetailScreen({ po, formattedItems, total, catalogItems, canWri
           ) : (
             <p className="text-sm text-slate-500">Stock kept on hand. No BOM and no customer order is recorded against this PO.</p>
           )}
+          <DateInput label="Delivery due date" value={editDeliveryDue} onChange={e => setEditDeliveryDue(e.target.value)} />
+          <Select label="Payment terms" value={editTerms} onChange={setEditTerms} options={[{ value: '', label: '— Not set —' }, ...PAYMENT_TERMS.map((t) => ({ value: t, label: PAYMENT_TERMS_LABEL[t] }))]} />
           <Input label="Notes" value={editNotes} onChange={e => setEditNotes(e.target.value)} />
           <div className="flex gap-2 pt-2">
             <Button onClick={handleSaveDetails} disabled={isPending || (editPurpose === 'FOR_ORDER' && !editBomRef.trim())}>{isPending ? 'Saving…' : 'Save'}</Button>

@@ -6,6 +6,7 @@ import { AttendanceMonthDesktop } from '@/components/mis/desktop/attendance-mont
 import { can } from '@/lib/mis/permissions';
 import type { AttendanceMonthView } from '@/lib/mis/attendance-month';
 import { getMisRole } from '@/server/mis/roles';
+import { REVIEW_ACTION } from '@/server/mis/punch-regularization';
 import { getFactoryTimezone } from '@/server/mis/business-rules';
 import { factoryDateKey } from '@/lib/mis/factory-time';
 
@@ -18,7 +19,7 @@ export default async function AttendancePage({
   const role = await getMisRole(user.id);
   const canWrite = can(role, 'attendance.write');
   const canNote = can(role, 'attendance.note');
-  const canRegularize = can(role, 'clearance.write'); // R2-222: Supervisor, Admin, Owner (see REVIEW_ACTION in punch-regularization.ts)
+  const canRegularize = can(role, REVIEW_ACTION); // R2-222/R2-252: the register's writers review missed-punch requests
   const sp = await searchParams;
   // D8 is the reading view at `/mis/attendance` with no `view`. ANY explicit `view` — `classic`, or the register's
   // own `daily` / `monthly` tabs — is the register (clock-in, mark absent, edit) at every width, so its tabs

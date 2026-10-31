@@ -384,6 +384,12 @@ export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes
           <p className="text-sm text-slate-500">
             Sets who can see this person&apos;s records — their manager, and everyone above.
           </p>
+          {/* R2-250: pay type and wage code are Owner-only on the server too (R3 B33); say so instead of failing on save. */}
+          {!isOwner && (
+            <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              Pay type and wage code are set by the Owner. A new employee starts as Daily with no wage code; ask the Owner to change it.
+            </p>
+          )}
           {isOwner && (
             <div className="flex flex-col gap-4 rounded-xl border border-indigo-100 bg-indigo-50/50 p-3">
               <p className="text-[11px] font-semibold uppercase tracking-wider text-indigo-700">Pay setup · visible to you only</p>

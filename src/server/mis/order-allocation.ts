@@ -139,6 +139,8 @@ export async function listOpenOrderBomMaterials(): Promise<Record<string, OrderB
     where: { status: 'APPROVED', order: { status: { in: ['CONFIRMED', 'IN_PRODUCTION'] } } },
     select: {
       orderId: true,
+      // R2-268: BOM quantities are per finished unit; the order's quantity scales them (an order without one reads as x1).
+      order: { select: { quantity: true } },
       stages: {
         orderBy: { seq: 'asc' },
         select: { stageName: true, materials: { orderBy: { seq: 'asc' }, select: { description: true, itemId: true, quantity: true, unit: true } } },
@@ -160,9 +162,11 @@ export async function listOpenOrderBomMaterials(): Promise<Record<string, OrderB
 
   const out: Record<string, OrderBomMaterialRow[]> = {};
   for (const bom of boms) {
+    const q = bom.order?.quantity;
+    const orderQty = q == null ? 1 : typeof q === 'object' ? q.toNumber() : Number(q);
     out[bom.orderId] = bom.stages.flatMap((stage) =>
       stage.materials.map((m) => {
-        const required = m.quantity.toNumber();
+        const required = m.quantity.toNumber() * orderQty;
         const issued = m.itemId ? issuedByKey.get(`${bom.orderId}|${m.itemId}`) ?? 0 : null;
         return {
           stageName: stage.stageName,

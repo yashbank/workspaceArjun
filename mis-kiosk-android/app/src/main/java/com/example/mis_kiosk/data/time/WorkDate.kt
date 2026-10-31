@@ -32,7 +32,7 @@ object WorkDate {
         val shift = hinted ?: shifts.firstOrNull { isMinuteInShiftWindow(minute, it) }
             ?: return WorkDateResult(calendar.toString(), null)
 
-        val belongsToPreviousDay = shiftWrapsMidnight(shift) && minute < timeToMinutes(shift.endTime)
+        val belongsToPreviousDay = shiftWrapsMidnight(shift) && minute < overnightCutoffMinute(shift)
         val day = if (belongsToPreviousDay) calendar.minusDays(1) else calendar
         return WorkDateResult(day.toString(), shift.id)
     }
@@ -44,6 +44,16 @@ object WorkDate {
         val m = parts.getOrNull(1)?.trim()?.toIntOrNull() ?: 0
         return h * 60 + m
     }
+
+    /**
+     * R2-235 / R2-246: mirror of the server's `overnightCutoffMinute` — the small-hours minute up to which a punch
+     * still belongs to last night's shift: its end, extended for overtime up to the 16-hour maximum stretch.
+     * A 19:00-07:00 shift keeps its 07:15 overtime clock-out instead of pre-selecting IN.
+     */
+    internal fun overnightCutoffMinute(shift: ShiftWindow): Int =
+        maxOf(timeToMinutes(shift.endTime), timeToMinutes(shift.startTime) + MAX_SHIFT_SPAN_HOURS * 60 - 24 * 60)
+
+    private const val MAX_SHIFT_SPAN_HOURS = 16
 
     internal fun shiftWrapsMidnight(shift: ShiftWindow): Boolean =
         timeToMinutes(shift.endTime) <= timeToMinutes(shift.startTime)

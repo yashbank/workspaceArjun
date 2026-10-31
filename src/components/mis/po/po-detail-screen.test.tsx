@@ -40,6 +40,12 @@ describe('PO detail — draft actions (#6, #5, #4)', () => {
     expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull();
   });
 
+  it('R2-272: the header shows the delivery due date and the payment terms in words', () => {
+    render(<PoDetailScreen po={{ ...po, deliveryDueDate: '2026-11-15T00:00:00.000Z', paymentTerms: 'NET_30' }} formattedItems={[line]} total={null} catalogItems={[]} canWrite canApprove />);
+    expect(screen.getByText('Delivery due')).toBeTruthy();
+    expect(screen.getByText('Net 30 days')).toBeTruthy();
+  });
+
   it('a read-only viewer gets no draft actions', () => {
     render(<PoDetailScreen po={po} formattedItems={[line]} total={null} catalogItems={[]} canWrite={false} canApprove={false} />);
     expect(screen.queryByRole('button', { name: 'Submit for Approval' })).toBeNull();

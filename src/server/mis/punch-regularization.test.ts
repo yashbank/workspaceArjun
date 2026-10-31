@@ -113,13 +113,14 @@ describe('withdraw - own pending only', () => {
 });
 
 describe('decide - reviewers only', () => {
-  it.each(['WORKER', 'QC', 'ATTENDANCE_OPERATOR', 'STORE_GUY'])('%s cannot approve or list', async (role) => {
+  // R2-252: review moved from clearance.write to attendance.write — Supervisor out, the two attendance operators in.
+  it.each(['WORKER', 'QC', 'SUPERVISOR', 'STORE_GUY'])('%s cannot approve or list', async (role) => {
     getMisRole.mockResolvedValue(role);
     await expect(decidePunchRegularization(REQ_ID, true)).rejects.toThrow(/Not permitted/);
     await expect(listPunchRegularizations()).rejects.toThrow(/Not permitted/);
   });
 
-  it.each(['SUPERVISOR', 'ADMIN', 'OWNER'])('%s approves: register row written, worker told', async (role) => {
+  it.each(['ATTENDANCE_OPERATOR', 'SUPER_ATTENDANCE_OPERATOR', 'ADMIN', 'OWNER'])('%s approves: register row written, worker told', async (role) => { // R2-252
     getMisRole.mockResolvedValue(role);
     await expect(decidePunchRegularization(REQ_ID, true)).resolves.toMatchObject({ status: 'APPROVED', attendanceId: 'att-1' });
     expect(upsert).toHaveBeenCalledWith(expect.objectContaining({ create: expect.objectContaining({ status: 'PRESENT', editedById: 'u1' }) }));
@@ -128,7 +129,7 @@ describe('decide - reviewers only', () => {
   });
 
   it('reject needs a note, then records it without touching the register', async () => {
-    getMisRole.mockResolvedValue('SUPERVISOR');
+    getMisRole.mockResolvedValue('SUPER_ATTENDANCE_OPERATOR'); // R2-252
     await expect(decidePunchRegularization(REQ_ID, false, '')).rejects.toThrow(/reason/);
     await expect(decidePunchRegularization(REQ_ID, false, 'No proof')).resolves.toMatchObject({ status: 'REJECTED' });
     expect(upsert).not.toHaveBeenCalled();

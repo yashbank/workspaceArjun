@@ -180,6 +180,8 @@ const TABLE: Entry[] = [
   { module: 'store-return.ts', name: 'decideStoreReturn', requires: 'store.write', call: () => storeReturn.decideStoreReturn('r1', 'ACCEPT') },
   { module: 'store-return.ts', name: 'listStoreReturns', requires: 'store.read', call: () => storeReturn.listStoreReturns() },
   { module: 'supplier-invoice.ts', name: 'reconcileSupplierInvoice', requires: 'supplier_invoice.write', call: () => supplierInvoice.reconcileSupplierInvoice('i1') },
+  // R2-280: the variance sign-off is the Owner's (wages.read is the Owner's money gate, D24).
+  { module: 'supplier-invoice.ts', name: 'signOffInvoiceVariance', requires: 'wages.read', call: () => supplierInvoice.signOffInvoiceVariance('i1', 'ok') },
 ];
 
 /** Functions in these modules deliberately not in TABLE: ungated internals (see server-gates.test.ts). */

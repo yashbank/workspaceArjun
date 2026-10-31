@@ -61,6 +61,20 @@ export function MyLeaveScreen({ employeeId, leaves }: { employeeId: string; leav
       else router.refresh();
     });
 
+  // R2-240: an approved leave that has not started yet can still be cancelled by me, with a reason (the server re-checks the date).
+  const [cancelFor, setCancelFor] = useState<MyLeaveRow | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const notStarted = (l: MyLeaveRow) => l.date.slice(0, 10) > todayKey;
+  const cancelApproved = () =>
+    startTransition(async () => {
+      if (!cancelFor) return;
+      const res = await cancelLeaveRequestAction(cancelFor.id, cancelReason);
+      if (!res.ok) { toast('error', res.detail); return; }
+      setCancelFor(null); setCancelReason('');
+      router.refresh();
+    });
+
   return (
     <div className="mx-auto flex w-full max-w-[420px] flex-col gap-3 pb-24 md:max-w-3xl">
       <section className="flex items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white p-4">
@@ -85,11 +99,25 @@ export function MyLeaveScreen({ employeeId, leaves }: { employeeId: string; leav
                 {l.status === 'PENDING' && (
                   <Button variant="ghost" onClick={() => withdraw(l.id)} disabled={isPending}>Withdraw</Button>
                 )}
+                {l.status === 'APPROVED' && notStarted(l) && (
+                  <Button variant="ghost" onClick={() => { setCancelFor(l); setCancelReason(''); }} disabled={isPending}>Cancel</Button>
+                )}
               </div>
             </li>
           ))}
         </ul>
       )}
+
+      <SlideOver open={!!cancelFor} onClose={() => setCancelFor(null)} title="Cancel approved leave">
+        <div className="flex flex-col gap-4 p-4">
+          <p className="text-sm text-slate-600">{cancelFor ? `${day(cancelFor.date)}${cancelFor.endDate ? ` – ${day(cancelFor.endDate)}` : ''}` : ''} · this leave has not started, so you can take it back. Say why.</p>
+          <Input label="Reason" value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} />
+          <div className="flex gap-2">
+            <Button onClick={cancelApproved} disabled={isPending || cancelReason.trim().length < 3}>Cancel this leave</Button>
+            <Button variant="ghost" onClick={() => setCancelFor(null)}>Keep it</Button>
+          </div>
+        </div>
+      </SlideOver>
 
       <SlideOver open={open} onClose={() => setOpen(false)} title="Apply for leave">
         <div className="flex flex-col gap-4 p-4">

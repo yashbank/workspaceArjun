@@ -51,6 +51,17 @@ describe('which day does a punch belong to? (night shift, D20)', () => {
     expect(workDateFor(at(21, 5, 50), SHIFTS, TZ, 's1')).toEqual({ workDate: '2026-09-21', shiftId: 's1' });
   });
 
+  // R2-235 / R2-246: an overtime clock-out past the night shift's end still belongs to the night it started.
+  it('R2-235: a 07:15 overtime clock-out on a 19:00–07:00 shift is STILL the previous day (grace to start + 16 h)', () => {
+    const LATE_NIGHT: ShiftDef = { id: 'ln', name: 'Late night', startTime: '19:00', endTime: '07:00' };
+    expect(workDateFor(at(21, 7, 15), [LATE_NIGHT], TZ, 'ln')).toEqual({ workDate: '2026-09-20', shiftId: 'ln' });
+    expect(workDateFor(at(21, 10, 59), [LATE_NIGHT], TZ, 'ln').workDate).toBe('2026-09-20'); // 19:00 + 16 h = 11:00
+    expect(workDateFor(at(21, 11, 0), [LATE_NIGHT], TZ, 'ln').workDate).toBe('2026-09-21');
+    // 22:00–06:00: the cutoff is 14:00 (22:00 + 16 h), so 06:15 is last night; a day shift's late out is unchanged.
+    expect(workDateFor(at(21, 6, 15), SHIFTS, TZ, 'n').workDate).toBe('2026-09-20');
+    expect(workDateFor(at(21, 14, 15), SHIFTS, TZ, 's1')).toEqual({ workDate: '2026-09-21', shiftId: 's1' });
+  });
+
   it('ignores a hint that names no real shift, rather than trusting it', () => {
     expect(workDateFor(at(20, 6, 4), SHIFTS, TZ, 'nope')).toEqual({ workDate: '2026-09-20', shiftId: 's1' });
   });

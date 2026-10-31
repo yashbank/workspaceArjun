@@ -4,6 +4,7 @@ import {
   RECEIPT_TOLERANCE,
   isReceivablePoStatus,
   maxReceivable,
+  overCeilingMessage,
   overReceiptMessage,
   poNotReceivableMessage,
   poStatusAfterReceipt,
@@ -37,6 +38,17 @@ describe('R3-STK B03 maxReceivable / receiptVerdict', () => {
       expect(receiptVerdict({ ...base, role, overReceiptReason: '  ok  ' }).kind).toBe('REFUSED');
       expect(receiptVerdict({ ...base, role, overReceiptReason: ' short delivery note ' })).toMatchObject({ kind: 'OVERRIDE', reason: 'short delivery note' });
     }
+  });
+
+  // R2-279: past ordered + 5% an Admin's reason is not enough; only the Owner may accept it.
+  it('R2-279: between 2% and 5% an Admin overrides with a reason; past 5% only the Owner can, and the refusal says so', () => {
+    expect(receiptVerdict({ ordered: 100, receivedSoFar: 0, qty: 105, role: 'ADMIN', overReceiptReason: 'supplier over-shipped' }).kind).toBe('OVERRIDE');
+    const admin = receiptVerdict({ ordered: 100, receivedSoFar: 0, qty: 105.01, role: 'ADMIN', overReceiptReason: 'supplier over-shipped' });
+    expect(admin).toMatchObject({ kind: 'REFUSED', beyondCeiling: true, ceiling: 105 });
+    expect(receiptVerdict({ ordered: 100, receivedSoFar: 0, qty: 10000, role: 'OWNER' }).kind).toBe('REFUSED');
+    expect(receiptVerdict({ ordered: 100, receivedSoFar: 0, qty: 10000, role: 'OWNER', overReceiptReason: 'bulk deal, confirmed by phone' }).kind).toBe('OVERRIDE');
+    expect(overCeilingMessage('Kraft', 105, 'KG', false)).toMatch(/more than 5% \(ceiling 105 KG\)\. Only the Owner can accept this much/);
+    expect(overCeilingMessage('Kraft', 105, 'KG', true)).toMatch(/Give a reason/);
   });
 
   it('no other role can override, whatever the reason', () => {

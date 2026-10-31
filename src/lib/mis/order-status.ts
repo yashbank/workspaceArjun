@@ -21,3 +21,10 @@ export function isOrderClosed(status: string): boolean {
  * D14 refused is meaningful again.
  */
 export const REOPENED_ORDER_STATUS = 'IN_PRODUCTION';
+
+/**
+ * R2-266: closing an order released its machine bookings and (on cancel) deleted its stock reservations. A reopen
+ * does not put them back — the stock may be committed elsewhere by now — so the person is told, in words.
+ */
+export const REOPEN_WARNING =
+  'Stock reservations and machine bookings were released when this order closed and are NOT restored. Re-reserve stock and re-book machines before production continues.';

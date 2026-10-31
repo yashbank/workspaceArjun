@@ -79,6 +79,14 @@ describe('R2-213 stale open clock-in', () => {
     const night = punch('b', 'IN', ist('2026-10-12', '22:00'), NIGHT.id);
     expect(isStaleOpenIn(night, ist('2026-10-13', '06:00'), DAY.id, shifts, TZ)).toBe(false);
   });
+  // R2-235: 15 minutes of overtime after a 19:00–07:00 night shift is a clock-out, not a stale IN.
+  it('R2-235: a 07:15 overtime scan after a 19:00 night clock-in is NOT stale', () => {
+    const LATE_NIGHT = { id: 's-ln', name: 'Late night', startTime: '19:00', endTime: '07:00' };
+    const openIn = punch('n', 'IN', ist('2026-10-12', '19:00'), LATE_NIGHT.id);
+    expect(isStaleOpenIn(openIn, ist('2026-10-13', '07:15'), LATE_NIGHT.id, [DAY, LATE_NIGHT], TZ)).toBe(false);
+    expect(isStaleOpenIn(openIn, ist('2026-10-13', '11:01'), LATE_NIGHT.id, [DAY, LATE_NIGHT], TZ)).toBe(true); // > 16 h
+  });
+
   it('over 16 hours is always stale; a same-day IN is not', () => {
     expect(isStaleOpenIn(punch('a', 'IN', ist('2026-10-12', '06:00')), ist('2026-10-13', '05:00'), null, shifts, TZ)).toBe(true);
     expect(isStaleOpenIn(punch('a', 'IN', ist('2026-10-13', '06:00')), ist('2026-10-13', '13:00'), null, shifts, TZ)).toBe(false);

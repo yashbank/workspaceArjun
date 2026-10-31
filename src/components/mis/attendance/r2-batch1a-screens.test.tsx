@@ -35,6 +35,13 @@ describe('AttendanceScreen — past day, person with no record', () => {
     expect(screen.getByRole('button', { name: 'Bulk Clock Out' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Mark Absent' })).toBeTruthy();
   });
+
+  // R2-244 (ALREADY_FIXED by R2-165, 48965ff): the unrecorded row's own Clock In opens the timed punch dialog on a past day.
+  it('R2-244: Clock In on an unrecorded row for a past date opens the punch dialog asking for the time', () => {
+    render(<AttendanceScreen {...props} />);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Clock In' })[0]);
+    expect(screen.getByLabelText('Time (required for a past day)')).toBeTruthy();
+  });
 });
 
 describe('LeaveScreen', () => {

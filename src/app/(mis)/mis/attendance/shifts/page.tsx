@@ -43,7 +43,7 @@ export default async function ShiftsPage({ searchParams }: { searchParams: Promi
           days={days}
           prevFrom={addDaysToDateKey(weekStart, -7)}
           nextFrom={addDaysToDateKey(weekStart, 7)}
-          canWrite={canWrite}
+          canWrite={can(role, 'roster.write')} // R2-263
         />
       </div>
     </>

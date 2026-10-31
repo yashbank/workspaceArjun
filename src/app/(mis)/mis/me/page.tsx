@@ -32,6 +32,17 @@ export default async function MisMePage() {
         <CardRow label="Hindi name" value={employee?.nameHi ?? '—'} />
       </Card>
 
+      {/* R2-238 / R2-249: no employee row points at this login, so there is nothing of "mine" to show. Never auto-linked. */}
+      {!employee && (
+        <section role="status" className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 md:col-span-2">
+          <p className="font-semibold">Your account is not linked to an employee record yet.</p>
+          <p className="mt-1">
+            Ask an Admin or the Owner to link your login to your employee entry on the Employees screen. Your attendance, payslips, leave and
+            missed-punch requests appear here once that is done.
+          </p>
+        </section>
+      )}
+
       {/* R2-172: my own attendance - days worked, punches, late and overtime. */}
       {employee && (
         <Link

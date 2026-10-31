@@ -14,11 +14,19 @@ export function maxReceivable(ordered: number): number {
   return roundQty(ordered * (1 + RECEIPT_TOLERANCE));
 }
 
+/** R2-279: past ordered + 5% an Admin's reason is not enough — only the Owner may accept it (owner decision, round 6B). */
+export const RECEIPT_HARD_CEILING = 0.05;
+
+export function maxOverridable(ordered: number): number {
+  return roundQty(ordered * (1 + RECEIPT_HARD_CEILING));
+}
+
 export type ReceiptVerdict =
   | { kind: 'OK'; max: number; receivedTotal: number }
-  /** Beyond tolerance, but the actor is ADMIN/OWNER and gave a reason: allowed, and audited. */
+  /** Beyond tolerance, but the actor is ADMIN/OWNER (OWNER alone past the 5% ceiling) and gave a reason: allowed, and audited. */
   | { kind: 'OVERRIDE'; max: number; receivedTotal: number; reason: string }
-  | { kind: 'REFUSED'; max: number; receivedTotal: number };
+  /** `beyondCeiling`: past 5%, where an Admin cannot override at all. */
+  | { kind: 'REFUSED'; max: number; receivedTotal: number; beyondCeiling?: boolean; ceiling?: number };
 
 /** Roles that may override the cap (the role comes from `requirePermission`, never from the client). */
 export function mayOverrideReceipt(role: MisRoleName): boolean {
@@ -47,6 +55,12 @@ export function receiptVerdict(input: {
   const receivedTotal = roundQty(input.receivedSoFar + (input.alreadyOnThisGrn ?? 0) + input.qty);
   if (receivedTotal <= max) return { kind: 'OK', max, receivedTotal };
   const reason = cleanOverReceiptReason(input.overReceiptReason);
+  const ceiling = maxOverridable(input.ordered);
+  if (receivedTotal > ceiling) {
+    // R2-279: the hard ceiling. The Owner alone, with a reason.
+    if (input.role === 'OWNER' && reason) return { kind: 'OVERRIDE', max, receivedTotal, reason };
+    return { kind: 'REFUSED', max, receivedTotal, beyondCeiling: true, ceiling };
+  }
   if (mayOverrideReceipt(input.role) && reason) return { kind: 'OVERRIDE', max, receivedTotal, reason };
   return { kind: 'REFUSED', max, receivedTotal };
 }
@@ -55,6 +69,12 @@ export function receiptVerdict(input: {
 export function overReceiptMessage(label: string, max: number, unit: string, canOverride = false): string {
   const head = `${label} exceeds the order by more than 2% (max ${max}${unit ? ` ${unit}` : ''}).`;
   return canOverride ? `${head} Give a reason (at least 3 characters) to override.` : `${head} Ask an Admin to override.`;
+}
+
+/** R2-279: the sentence past the 5% ceiling. The Owner is told how; everyone else is told it is the Owner's call. */
+export function overCeilingMessage(label: string, ceiling: number, unit: string, isOwner = false): string {
+  const head = `${label} exceeds the order by more than 5% (ceiling ${ceiling}${unit ? ` ${unit}` : ''}).`;
+  return isOwner ? `${head} Give a reason (at least 3 characters) to accept it anyway.` : `${head} Only the Owner can accept this much; ask them.`;
 }
 
 /** PO statuses that goods may be received against: approved, and part-received. */

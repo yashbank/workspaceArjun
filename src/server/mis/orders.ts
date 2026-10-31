@@ -1,4 +1,6 @@
-import { CLOSED_ORDER_STATUSES, isOrderClosed, REOPENED_ORDER_STATUS } from '@/lib/mis/order-status';
+import { CLOSED_ORDER_STATUSES, isOrderClosed, REOPEN_WARNING, REOPENED_ORDER_STATUS } from '@/lib/mis/order-status';
+import { validateOrderQuantity } from '@/lib/mis/order-quantity';
+import { normaliseUnit } from '@/lib/mis/qty-by-unit';
 import {
   canOverrideCloseGates, canTransitionOrder, evaluateCloseGates, isOrderStatus, MIN_REASON_LENGTH, transitionNeedsReason, unmetGates, type CloseGate,
 } from '@/lib/mis/order-transitions';
@@ -19,6 +21,11 @@ export type OrderInput = {
   description?: string | null;
   deliveryDate?: string | null;
   notes?: string | null;
+  /** R2-264: finished-goods target, mandatory on create (lib/mis/order-quantity.ts validates). */
+  quantity?: number | string | null;
+  unit?: string | null;
+  /** R2-265: the customer's own PO number, optional. */
+  customerPoRef?: string | null;
 };
 
 /**
@@ -50,6 +57,7 @@ export async function listOrdersPage(opts: { q?: string; customerId?: string; pa
             { orderNumber: { contains: q, mode: 'insensitive' } },
             { description: { contains: q, mode: 'insensitive' } },
             { customer: { name: { contains: q, mode: 'insensitive' } } },
+            { customerPoRef: { contains: q, mode: 'insensitive' } }, // R2-265
           ],
         }
       : {}),
@@ -103,6 +111,9 @@ export async function getOrder(id: string) {
 
 export async function createOrder(input: OrderInput) {
   const actor = await requirePermission('orders.write');
+  // R2-264: a new order names what is being made, so production can be gated on it.
+  const quantityError = validateOrderQuantity(input.quantity, input.unit);
+  if (quantityError) throw new Error(quantityError);
 
   let created;
   const prefix = await resolveOrderPrefix((key) => getRuleValue(key)); // R2-229
@@ -116,6 +127,9 @@ export async function createOrder(input: OrderInput) {
           description: input.description?.trim() || null,
           deliveryDate: input.deliveryDate ? new Date(input.deliveryDate) : null,
           notes: input.notes?.trim() || null,
+          quantity: Number(input.quantity),
+          unit: input.unit,
+          customerPoRef: input.customerPoRef?.trim() || null,
           createdById: actor.userId,
         },
       });
@@ -138,6 +152,12 @@ export async function updateOrder(id: string, input: OrderInput) {
   if (isOrderClosed(before.status)) {
     throw new Error(`Order ${before.orderNumber} is ${humanStatus(before.status)}. Reopen it first.`);
   }
+  // R2-264: a quantity, once given, is edited as a valid pair; an older order with none may stay without.
+  const touchesQuantity = input.quantity !== undefined || input.unit !== undefined;
+  if (touchesQuantity && (input.quantity != null || input.unit != null || before.quantity != null)) {
+    const quantityError = validateOrderQuantity(input.quantity === undefined ? before.quantity : input.quantity, input.unit === undefined ? before.unit : input.unit);
+    if (quantityError) throw new Error(quantityError);
+  }
   const after = await db.misOrder.update({
     where: { id },
     data: {
@@ -145,6 +165,9 @@ export async function updateOrder(id: string, input: OrderInput) {
       description: input.description !== undefined ? (input.description?.trim() || null) : undefined,
       deliveryDate: input.deliveryDate !== undefined ? (input.deliveryDate ? new Date(input.deliveryDate) : null) : undefined,
       notes: input.notes !== undefined ? (input.notes?.trim() || null) : undefined,
+      quantity: input.quantity !== undefined ? (input.quantity == null ? null : Number(input.quantity)) : undefined,
+      unit: input.unit !== undefined ? (input.unit || null) : undefined,
+      customerPoRef: input.customerPoRef !== undefined ? (input.customerPoRef?.trim() || null) : undefined, // R2-265
     },
   });
   await logAuditEvent({ actorId: actor.userId, action: 'order.update', entity: 'MisOrder', entityId: id, before, after });
@@ -157,7 +180,7 @@ export async function updateOrder(id: string, input: OrderInput) {
  * `OrderReopenError`, so the server action can return the message as data while a database
  * error stays an exception. `reason` is what callers branch on.
  */
-export type OrderStatusRefusal = 'OPEN_ITEMS' | 'UNKNOWN_STATUS' | 'ILLEGAL_TRANSITION' | 'REASON_REQUIRED' | 'STALE_STATUS' | 'GATES_UNMET' | 'OVERRIDE_NOT_ALLOWED';
+export type OrderStatusRefusal = 'OPEN_ITEMS' | 'UNKNOWN_STATUS' | 'ILLEGAL_TRANSITION' | 'REASON_REQUIRED' | 'STALE_STATUS' | 'GATES_UNMET' | 'OVERRIDE_NOT_ALLOWED' | 'BOM_NOT_APPROVED';
 
 export class OrderStatusError extends Error {
   constructor(
@@ -182,12 +205,21 @@ export async function getOrderCloseGates(orderId: string): Promise<CloseGate[]> 
 }
 
 async function computeCloseGates(orderId: string): Promise<CloseGate[]> {
-  const [phases, qcChecks, productionCount] = await Promise.all([
+  const [phases, qcChecks, productionCount, order] = await Promise.all([
     db.misJobPhase.findMany({ where: { orderId, deletedAt: null }, select: { status: true } }),
     db.misQcCheck.findMany({ where: { orderId, voidedAt: null }, select: { bomStageId: true, parameterName: true, result: true, checkTime: true } }),
     db.misProductionLog.count({ where: { orderId, voidedAt: null } }),
+    db.misOrder.findUnique({ where: { id: orderId }, select: { quantity: true, unit: true } }),
   ]);
-  return evaluateCloseGates({ phases, qcChecks, productionCount });
+  // R2-264: produced in the order's own unit only; an order with no target (pre-column rows) is not gated on it.
+  let ordered = null;
+  if (order?.quantity != null && order.unit) {
+    const logs = await db.misProductionLog.findMany({ where: { orderId, voidedAt: null }, select: { qtyProduced: true, unit: true } });
+    const unit = normaliseUnit(order.unit);
+    const produced = logs.filter((l) => normaliseUnit(l.unit) === unit).reduce((n, l) => n + Number(l.qtyProduced), 0);
+    ordered = { quantity: Number(order.quantity), unit: order.unit, produced };
+  }
+  return evaluateCloseGates({ phases, qcChecks, productionCount, ordered });
 }
 
 export type CloseOverrideNote = { reason: string; at: Date };
@@ -234,6 +266,22 @@ export async function updateOrderStatus(id: string, status: string, options: { r
 
   if (transitionNeedsReason(before.status, status) && reason.length < MIN_REASON_LENGTH) {
     throw new OrderStatusError('REASON_REQUIRED', status === 'CANCELLED' ? 'Cancelling an order needs a reason.' : 'Sending a completed order back to production needs a reason.');
+  }
+  // R2-267: production starts only on an APPROVED BOM. The Owner may start anyway, with a reason on the record.
+  // (COMPLETED -> IN_PRODUCTION is sending work back, not starting it, and is already reasoned above.)
+  let bomOverride: string | undefined;
+  if (status === 'IN_PRODUCTION' && before.status !== 'COMPLETED') {
+    const bom = await db.misBom.findUnique({ where: { orderId: id }, select: { status: true } });
+    if (bom?.status !== 'APPROVED') {
+      const state = bom ? `BOM is ${humanStatus(bom.status)}` : 'no BOM';
+      if (actor.role !== 'OWNER') {
+        throw new OrderStatusError('BOM_NOT_APPROVED', `${before.orderNumber} cannot start production: ${state}. Get the BOM approved first (the Owner can start anyway with a reason).`);
+      }
+      if (reason.length < MIN_REASON_LENGTH) {
+        throw new OrderStatusError('BOM_NOT_APPROVED', `${before.orderNumber} has ${state}. Give a reason to start production anyway.`);
+      }
+      bomOverride = state;
+    }
   }
   if (status === 'COMPLETED') {
     const unmet = unmetGates(await computeCloseGates(id));
@@ -328,6 +376,7 @@ export async function updateOrderStatus(id: string, status: string, options: { r
       ...(reason ? { reason } : {}),
       ...(closes ? released : {}),
       ...(overriddenGates ? { gatesOverridden: overriddenGates.map((g) => ({ key: g.key, detail: g.detail })) } : {}),
+      ...(bomOverride ? { startedWithoutApprovedBom: bomOverride } : {}), // R2-267
     },
   });
   return after;
@@ -380,9 +429,10 @@ export async function reopenOrder(id: string, reason: string) {
     entity: 'MisOrder',
     entityId: id,
     before: { status: before.status },
-    after: { status: after.status, reason: trimmed },
+    // R2-266: the warning travels with the audit row too, so "nobody told me" cannot be said later.
+    after: { status: after.status, reason: trimmed, warning: REOPEN_WARNING },
   });
-  return after;
+  return { ...after, warning: REOPEN_WARNING };
 }
 
 export type OrderNeedingAction = {

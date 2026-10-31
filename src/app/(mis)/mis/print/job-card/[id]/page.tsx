@@ -1,6 +1,7 @@
 import { isUuid } from '@/lib/mis/ids';
 import { dateKeyToDbDate, formatFactoryDate, formatFactoryDateTime } from '@/lib/mis/factory-time';
 import { formatQty } from '@/lib/mis/qty-by-unit';
+import { formatOrderQuantity } from '@/lib/mis/order-quantity';
 import { requireMisAccess } from '@/server/mis/guard';
 import { unreadableSnapshotView } from '@/components/mis/print/snapshot-unreadable';
 import { PrintButton } from '@/components/mis/print/print-button';
@@ -127,6 +128,19 @@ export default async function JobCardPrintPage({
           <span className="text-xs text-gray-500 uppercase tracking-wide">Description</span>
           <p className="font-medium mt-0.5">{doc.order.description ?? '—'}</p>
         </div>
+        {/* R2-264 / R2-265: the target and the customer's own reference, when the order carries them. */}
+        {doc.order.quantity != null && (
+          <div>
+            <span className="text-xs text-gray-500 uppercase tracking-wide">Ordered Quantity</span>
+            <p className="font-medium mt-0.5">{formatOrderQuantity(doc.order.quantity, doc.order.unit)}</p>
+          </div>
+        )}
+        {doc.order.customerPoRef && (
+          <div>
+            <span className="text-xs text-gray-500 uppercase tracking-wide">Customer PO #</span>
+            <p className="font-medium mt-0.5 font-mono">{doc.order.customerPoRef}</p>
+          </div>
+        )}
         <div>
           <span className="text-xs text-gray-500 uppercase tracking-wide">Status</span>
           <p className="font-medium mt-0.5">{doc.order.status?.replace(/_/g, ' ') ?? '—'}</p>

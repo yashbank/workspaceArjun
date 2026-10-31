@@ -205,7 +205,9 @@ export async function listBomOverviewPage(opts: { q?: string; page?: number | st
   const rows: BomOverviewRow[] = orders.map((order) => {
     const stages = order.bom?.stages ?? [];
     const materialCount = stages.reduce((n, s) => n + s.materials.length, 0);
-    const estimatedCostLabel = canSeeCost && order.bom ? formatRupees(rollUp(stages).total) : null;
+    // R2-271: an unpriced line makes the total a lower bound; say so beside the figure, never a bare rupee.
+    const costed = canSeeCost && order.bom ? rollUp(stages) : null;
+    const estimatedCostLabel = costed ? (costed.isFloor ? `${formatRupees(costed.total)} (floor · ${costed.unpriced} unpriced)` : formatRupees(costed.total)) : null;
     return {
       orderId: order.id,
       orderNumber: order.orderNumber,
@@ -322,16 +324,24 @@ export async function addBomMaterial(stageId: string, data: { description: strin
   return forRole(actor.role, rec);
 }
 
-/** R3 B108: a BOM goes for approval (and gets approved) only with a stage, a material and an open order. */
+/**
+ * R3 B108: a BOM goes for approval (and gets approved) only with a stage, a material and an open order.
+ * R2-270: EVERY stage needs a material (an empty stage is a blank job phase on the floor).
+ * R2-269: every material names a catalogue item, or the PO and the store issue downstream will refuse it once the BOM is frozen.
+ */
 async function assertBomComplete(bomId: string, orderId: string) {
-  const [stages, materials, order] = await Promise.all([
-    db.misBomStage.count({ where: { bomId } }),
-    db.misBomMaterial.count({ where: { stage: { bomId } } }),
+  const [stages, order] = await Promise.all([
+    db.misBomStage.findMany({ where: { bomId }, orderBy: { seq: 'asc' }, select: { stageName: true, materials: { select: { description: true, itemId: true } } } }),
     db.misOrder.findUnique({ where: { id: orderId }, select: { orderNumber: true, status: true } }),
   ]);
   assertOrderOpen(order);
-  if (stages < 1) throw new Error('Add at least one stage before this BOM goes for approval.');
-  if (materials < 1) throw new Error('Add at least one material before this BOM goes for approval.');
+  if (stages.length < 1) throw new Error('Add at least one stage before this BOM goes for approval.');
+  const materials = stages.flatMap((s) => s.materials);
+  if (materials.length < 1) throw new Error('Add at least one material before this BOM goes for approval.');
+  const empty = stages.find((s) => s.materials.length === 0);
+  if (empty) throw new Error(`Stage "${empty.stageName}" has no material. Add one or remove the stage before this BOM goes for approval.`);
+  const unlinked = materials.find((m) => !m.itemId);
+  if (unlinked) throw new Error(`"${unlinked.description}" is not linked to a catalogue item. Pick an item on every material before this BOM goes for approval.`);
 }
 
 /**

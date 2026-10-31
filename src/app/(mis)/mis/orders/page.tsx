@@ -16,7 +16,8 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
     listCustomers(),
     checkPermission('orders.write'),
   ]);
-  const orders = paged.rows;
+  // R2-264: Decimal is not a plain object; the client screen takes a number.
+  const orders = paged.rows.map((o) => ({ ...o, quantity: o.quantity == null ? null : Number(o.quantity) }));
   // R2-31/32: status controls on the list. Close gates are only needed for orders that can still be completed.
   const role = await getMisRole(user.id);
   const gatesByOrder: Record<string, CloseGate[]> = {};
@@ -33,6 +34,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
       initialCustomerId={sp.customerId}
       gatesByOrder={gatesByOrder}
       canOverride={canOverrideCloseGates(role ?? '')}
+      canStartWithoutBom={role === 'OWNER'} // R2-267
       paging={{ total: paged.total, page: clampPage(parsePage(sp.page), paged.total), params: { q, customerId: sp.customerId } }}
     />
   );

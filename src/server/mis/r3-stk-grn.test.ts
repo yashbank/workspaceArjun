@@ -27,6 +27,7 @@ const state: {
 const kraft = { id: 'i1', name: 'Kraft', code: 'K1', unit: 'KG', category: 'RAW_MATERIAL', isActive: true, deletedAt: null };
 const stamp = () => new Date(Date.UTC(2026, 9, 1) + ++state.stamp);
 
+const quarantine: Row[] = []; // R2-278
 const grnView = (g: Row): Row => ({
   ...g,
   po: {
@@ -59,13 +60,13 @@ const db: Row = {
     },
     update: async ({ where, data }: Row) => { Object.assign(state.pos.find((p) => p.id === where.id)!, data); return null; },
     // The PO row lock: matches only while the PO is open for goods.
-    updateMany: async ({ where }: Row) => { state.events.push('po-lock'); return { count: state.pos.filter((p) => p.id === where.id && where.status.in.includes(p.status)).length }; },
+    updateMany: async ({ where }: Row) => { state.events.push('po-lock'); return { count: state.pos.filter((p) => p.id === where.id && (!where.status || where.status.in.includes(p.status))).length }; }, // R2-277: the reversal locks the row in any status
   },
   misPoItem: {
     findMany: async ({ where }: Row) => (state.events.push('po-lines'), state.poItems)
       .filter((p) => (where.poId ? p.poId === where.poId : where.id.in.includes(p.id)))
       .map((p) => ({ ...p, quantity: D(p.quantity), receivedQuantity: D(p.receivedQuantity), ratePerUnit: D(p.ratePerUnit) })),
-    update: async ({ where, data }: Row) => { const p = state.poItems.find((x) => x.id === where.id)!; p.receivedQuantity = Math.round((p.receivedQuantity + n(data.receivedQuantity.increment)) * 100) / 100; return p; },
+    update: async ({ where, data }: Row) => { const p = state.poItems.find((x) => x.id === where.id)!; p.receivedQuantity = Math.round((p.receivedQuantity + n(data.receivedQuantity.increment) - n(data.receivedQuantity.decrement)) * 100) / 100; return p; }, // R2-277: decrement too
   },
   misGrn: {
     create: async ({ data }: Row) => {
@@ -108,7 +109,13 @@ const db: Row = {
     },
   },
   misOrder: { findFirst: async () => null },
-  misOrderStockAllocation: { create: async () => null },
+  misOrderStockAllocation: { create: async () => null, deleteMany: async () => ({ count: 0 }) },
+  // R2-278: damaged lots land here, never in the ledger.
+  misQuarantineStock: {
+    create: async ({ data }: Row) => { const row = { id: `q${quarantine.length + 1}`, status: 'HELD', ...data }; quarantine.push(row); return row; },
+    findUnique: async ({ where }: Row) => quarantine.find((q) => q.id === where.id) ?? null,
+    updateMany: async ({ where, data }: Row) => { const q = quarantine.find((x) => x.id === where.id && x.status === where.status); if (q) Object.assign(q, data); return { count: q ? 1 : 0 }; },
+  },
   $transaction: async (cb: (tx: Row) => Promise<unknown>) => {
     const snapshot = clone({ pos: state.pos, poItems: state.poItems, grns: state.grns, grnItems: state.grnItems, ledger: state.ledger, txns: state.txns, invoices: state.invoices });
     const tx: Row = { ...db, $queryRaw: async (_s: TemplateStringsArray, key: string) => { state.lockCalls.at(-1)?.push(key); return [{ locked: 1 }]; } };
@@ -140,7 +147,7 @@ vi.mock('@/server/auth', () => ({ getCurrentUser: (...a: unknown[]) => getCurren
 const getMisRole = vi.fn();
 vi.mock('@/server/mis/roles', () => ({ getMisRole: (...a: unknown[]) => getMisRole(...a) }));
 
-const { addGRNItem, confirmGRN, createGRN, nextGrnNumber, updateGRNHeader } = await import('./grn');
+const { addGRNItem, confirmGRN, createGRN, nextGrnNumber, updateGRNHeader, reverseGRN, returnQuarantineToSupplier } = await import('./grn');
 const { commitReceipt } = await import('./store');
 
 const grnRow = (id: string, over: Row = {}): Row => ({ id, grnNumber: id.toUpperCase(), poId: 'po1', status: 'DRAFT', dcNumber: 'DC-1', supplierInvoiceNo: null, invoiceDate: null, supplierInvoiceAmount: null, ...over });
@@ -161,6 +168,7 @@ beforeEach(() => {
   });
   getCurrentUser.mockResolvedValue({ id: 'u1' });
   as('STORE_GUY');
+  quarantine.length = 0;
 });
 
 describe('B01 PO status after a GRN', () => {
@@ -237,26 +245,41 @@ describe('B03 receipt cap, 2% tolerance, ADMIN override', () => {
 
   it('a STORE_GUY cannot override with a reason, at confirm or at add', async () => {
     state.grnItems = [line('g1', 'pi1', 150)];
-    await expect(confirmGRN('g1', { overReceiptReason: 'because I said so' })).rejects.toThrow(/Ask an Admin to override/);
-    await expect(addGRNItem('g2', { poItemId: 'pi1', receivedQty: 150, dcQuantity: 150, overReceiptReason: 'because I said so' })).rejects.toThrow(/Ask an Admin to override/);
+    // R2-279 (CONTRACT): 150 of 100 is past the 5% ceiling, so the sentence now points at the Owner, not an Admin.
+    await expect(confirmGRN('g1', { overReceiptReason: 'because I said so' })).rejects.toThrow(/Only the Owner can accept this much/);
+    await expect(addGRNItem('g2', { poItemId: 'pi1', receivedQty: 150, dcQuantity: 150, overReceiptReason: 'because I said so' })).rejects.toThrow(/Only the Owner can accept this much/);
   });
 
-  it('an ADMIN can add the line beyond tolerance once they give the reason', async () => {
+  // R2-279 (CONTRACT): an Admin's override reaches the 5% ceiling; 110 of 100 is the Owner's call now.
+  it('an ADMIN can add the line beyond tolerance (up to 5%) once they give the reason', async () => {
     as('ADMIN');
-    await expect(addGRNItem('g1', { poItemId: 'pi1', receivedQty: 110, dcQuantity: 110 })).rejects.toThrow(/Give a reason/);
-    await expect(addGRNItem('g1', { poItemId: 'pi1', receivedQty: 110, dcQuantity: 110, overReceiptReason: 'supplier over-shipped' })).resolves.toBeTruthy();
+    await expect(addGRNItem('g1', { poItemId: 'pi1', receivedQty: 104, dcQuantity: 104 })).rejects.toThrow(/Give a reason/);
+    await expect(addGRNItem('g1', { poItemId: 'pi1', receivedQty: 104, dcQuantity: 104, overReceiptReason: 'supplier over-shipped' })).resolves.toBeTruthy();
+  });
+
+  it('R2-279: past the 5% ceiling an Admin is refused even with a reason; the Owner accepts it with one, audited', async () => {
+    as('ADMIN');
+    await expect(addGRNItem('g1', { poItemId: 'pi1', receivedQty: 110, dcQuantity: 110, overReceiptReason: 'supplier over-shipped' })).rejects.toThrow(/more than 5%.*Only the Owner can accept this much/);
+    state.grnItems = [line('g1', 'pi1', 110)];
+    await expect(confirmGRN('g1', { overReceiptReason: 'supplier over-shipped' })).rejects.toThrow(/Only the Owner/);
+    expect(state.grns[0].status).toBe('DRAFT');
+    as('OWNER');
+    await expect(confirmGRN('g1')).rejects.toThrow(/Give a reason/);
+    await confirmGRN('g1', { overReceiptReason: 'bulk deal agreed on the phone' });
+    expect(state.grns[0].status).toBe('CONFIRMED');
+    expect(state.audits.find((a) => a.action === 'GRN_OVER_RECEIPT_OVERRIDE')!.after).toMatchObject({ lines: [{ receivedTotal: 110 }] });
   });
 
   it('(c) commitReceipt of 500 against a line with 100 outstanding is refused for a Store Guy and writes nothing', async () => {
-    await expect(commitReceipt([{ itemId: 'i1', qty: 500 }], { poId: 'po1' })).rejects.toThrow(/more than 2%/);
+    await expect(commitReceipt([{ itemId: 'i1', qty: 500 }], { poId: 'po1' })).rejects.toThrow(/more than 5%/); // R2-279: 500 of 100 is past the ceiling
     expect(state.ledger).toHaveLength(1);
     expect(state.grns).toHaveLength(2);
   });
 
-  it('commitReceipt: an Admin with a reason books it and audits the override', async () => {
+  it('commitReceipt: an Admin with a reason books it (within the 5% ceiling, R2-279) and audits the override', async () => {
     as('ADMIN');
-    await commitReceipt([{ itemId: 'i1', qty: 130 }], { poId: 'po1', overReceiptReason: 'both lots arrived' });
-    expect(state.poItems[0].receivedQuantity).toBe(130);
+    await commitReceipt([{ itemId: 'i1', qty: 105 }], { poId: 'po1', overReceiptReason: 'both lots arrived' });
+    expect(state.poItems[0].receivedQuantity).toBe(105);
     expect(state.audits.some((a) => a.action === 'GRN_OVER_RECEIPT_OVERRIDE')).toBe(true);
   });
 
@@ -394,7 +417,7 @@ describe('B11 cart idempotency', () => {
 
   it('a refusal under a key writes nothing and the key stays free for the corrected cart', async () => {
     state.poItems = [state.poItems[0]];
-    await expect(commitReceipt([{ itemId: 'i1', qty: 500 }], { poId: 'po1', idempotencyKey: KEY })).rejects.toThrow(/more than 2%/);
+    await expect(commitReceipt([{ itemId: 'i1', qty: 500 }], { poId: 'po1', idempotencyKey: KEY })).rejects.toThrow(/more than 5%/); // R2-279
     expect(state.keyed.has(KEY)).toBe(false);
     await expect(commitReceipt([{ itemId: 'i1', qty: 50 }], { poId: 'po1', idempotencyKey: KEY })).resolves.toMatchObject({ totalQty: 50 });
   });
@@ -455,5 +478,54 @@ describe('R3 review: a GRN-number clash on a keyed commit is retried', () => {
       random.mockRestore();
       vi.useRealTimers();
     }
+  });
+});
+
+describe('R2-277 reverseGRN (Owner only)', () => {
+
+  it('credits the stock back out in both books, takes the PO line counter back, reopens the PO and marks the GRN REVERSED, audited', async () => {
+    state.poItems = [state.poItems[0]];
+    state.grnItems = [line('g1', 'pi1', 100)];
+    await confirmGRN('g1');
+    expect(poStatus()).toBe('COMPLETE');
+    as('OWNER');
+    const out = await reverseGRN('g1', 'typed 100 for 10');
+    expect(out).toMatchObject({ status: 'REVERSED', poStatus: 'APPROVED', reversed: [{ itemId: 'i1', qty: 100 }] });
+    expect(state.grns[0]).toMatchObject({ status: 'REVERSED', reverseReason: 'typed 100 for 10', reversedById: 'u1' });
+    expect(state.ledger.at(-1)).toMatchObject({ changeQty: -100, balanceQty: 0, source: 'GRN_REVERSAL', sourceId: 'g1' });
+    expect(state.txns.at(-1)).toMatchObject({ type: 'OUT', quantity: 100, referenceNo: 'G1' });
+    expect(state.poItems[0].receivedQuantity).toBe(0);
+    expect(poStatus()).toBe('APPROVED');
+    const audit = state.audits.find((a) => a.action === 'grn.reverse')!;
+    expect(audit.after).toMatchObject({ status: 'REVERSED', reason: 'typed 100 for 10', poStatus: 'APPROVED' });
+    expect(JSON.stringify(audit)).not.toMatch(/rate|amount|₹/i);
+  });
+
+  it('an Admin is refused; a draft GRN cannot be reversed; a reason is required', async () => {
+    state.grnItems = [line('g1', 'pi1', 10)];
+    await confirmGRN('g1');
+    as('ADMIN');
+    await expect(reverseGRN('g1', 'oops')).rejects.toThrow(/Not permitted/);
+    as('OWNER');
+    await expect(reverseGRN('g1', 'x')).rejects.toThrow(/reason/);
+    await expect(reverseGRN('g2', 'never confirmed')).rejects.toThrow(/Only a confirmed GRN/);
+    expect(state.grns[0].status).toBe('CONFIRMED');
+  });
+});
+
+describe('R2-278 quarantine', () => {
+
+  it('the damaged quantity on a confirmed line is held in quarantine, not booked to stock; the Owner returns it to the supplier', async () => {
+    state.grnItems = [line('g1', 'pi1', 80, { damageQuantity: 20, dcQuantity: 100 })];
+    await confirmGRN('g1');
+    expect(state.ledger.at(-1)).toMatchObject({ changeQty: 80 });
+    expect(quarantine).toHaveLength(1);
+    expect(quarantine[0]).toMatchObject({ grnId: 'g1', itemId: 'i1', quantity: 20, status: 'HELD', supplierId: 's1' });
+    as('ADMIN');
+    await expect(returnQuarantineToSupplier(quarantine[0].id, 'sent back')).rejects.toThrow(/Not permitted/);
+    as('OWNER');
+    await expect(returnQuarantineToSupplier(quarantine[0].id, 'sent back with the driver')).resolves.toMatchObject({ status: 'RETURNED' });
+    expect(quarantine[0]).toMatchObject({ status: 'RETURNED', returnNote: 'sent back with the driver', returnedById: 'u1' });
+    await expect(returnQuarantineToSupplier(quarantine[0].id)).rejects.toThrow(/already returned/);
   });
 });

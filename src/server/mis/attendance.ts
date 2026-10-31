@@ -451,8 +451,9 @@ export async function bulkPunch(kind: 'IN' | 'OUT', employeeIds: string[], opts:
   const at = time ? factoryTimeToInstant(key, time, timeZone) : new Date();
   if (at.getTime() > Date.now() + 60_000) throw new Error('That time is in the future');
 
-  const people = await db.misEmployee.findMany({ where: { id: { in: ids }, isActive: true, deletedAt: null }, select: { id: true } });
+  const people = await db.misEmployee.findMany({ where: { id: { in: ids }, isActive: true, deletedAt: null }, select: { id: true, defaultShiftId: true } });
   if (people.length !== ids.length) throw new Error('One or more employees were not found or are not active');
+  const defaultShiftOf = new Map(people.map((p) => [p.id, p.defaultShiftId ?? null]));
   const d = dateKeyToDbDate(key);
   const existing = await db.misAttendance.findMany({ where: { date: d, employeeId: { in: ids } }, include: { breaks: true } });
   const byEmp = new Map(existing.map((r) => [r.employeeId, r]));
@@ -483,11 +484,13 @@ export async function bulkPunch(kind: 'IN' | 'OUT', employeeIds: string[], opts:
     const out = [];
     for (const employeeId of toWrite) {
       if (kind === 'IN') {
+        // R2-251: store the shift like clockIn does (named, else roster, else default) so the clock-out can derive late/OT.
+        const shiftId = opts.shiftId ?? (await resolveEmployeeShiftId(employeeId, key, db, defaultShiftOf.get(employeeId))) ?? null;
         out.push(
           await tx.misAttendance.upsert({
             where: { employeeId_date: { employeeId, date: d } },
-            create: { employeeId, date: d, clockIn: at, status: 'PRESENT', ...stamp },
-            update: { clockIn: at, status: byEmp.get(employeeId)?.status === 'HALF_DAY' ? 'HALF_DAY' : 'PRESENT', ...stamp },
+            create: { employeeId, date: d, shiftId, clockIn: at, status: 'PRESENT', ...stamp },
+            update: { clockIn: at, status: byEmp.get(employeeId)?.status === 'HALF_DAY' ? 'HALF_DAY' : 'PRESENT', ...(shiftId ? { shiftId } : {}), ...stamp },
           }),
         );
       } else {
@@ -821,7 +824,16 @@ export async function cancelLeaveRequest(leaveId: string, reason?: string) {
   }
 
   if (leave.status !== 'APPROVED') throw new Error('Only a pending or approved leave can be cancelled');
-  if (actor.role !== 'OWNER') throw new Error('Only the Owner can revoke an approved leave');
+  // R2-240 / R2-261: while the leave has not started, an Admin or the person themself may cancel it too (with a reason).
+  // Once it has begun only the Owner may revoke it: that rewrites recorded attendance.
+  if (actor.role !== 'OWNER') {
+    const startsInFuture = keyOfDbDate(leave.date) > (await today());
+    const mine = startsInFuture && actor.role !== 'ADMIN'
+      ? (await db.misEmployee.findFirst({ where: { userProfileId: actor.userId }, select: { id: true } }))?.id === leave.employeeId
+      : false;
+    if (!startsInFuture) throw new Error('Only the Owner can revoke an approved leave that has already started');
+    if (actor.role !== 'ADMIN' && !mine) throw new Error('Only the Owner, an Admin or the person on leave can cancel an approved leave');
+  }
   if (why.length < 3) throw new Error('A reason is required to revoke an approved leave');
   const days = leaveWorkingDays(keyOfDbDate(leave.date), leave.endDate ? keyOfDbDate(leave.endDate) : null);
   for (const k of days) {

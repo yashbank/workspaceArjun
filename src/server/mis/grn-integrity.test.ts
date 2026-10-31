@@ -80,6 +80,7 @@ const db: Row = {
   misPurchaseOrder: { update: async () => null, updateMany: async () => ({ count: 1 }) },
   misOrder: { findFirst: async () => null },
   misOrderStockAllocation: { create: async () => null },
+  misQuarantineStock: { create: async ({ data }: Row) => ({ id: 'q1', ...data }) }, // R2-278: damaged quantity is quarantined on confirm (fixture delegate)
   misAuditLog: { create: async ({ data }: Row) => data },
   $transaction: async (cb: (tx: Row) => Promise<unknown>) => {
     const take = () => clone({ grns: state.grns, grnItems: state.grnItems, poItems: state.poItems, ledger: state.ledger });

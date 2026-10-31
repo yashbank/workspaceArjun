@@ -15,6 +15,11 @@ export type LateRule = { graceMinutes: number; workers: LateWorkers };
 export type PayTypeLike = 'DAILY' | 'MONTHLY';
 
 export const DEFAULT_LATE_RULE: LateRule = { graceMinutes: 0, workers: 'ALL' };
+/** R2-242 / R2-260: the only values the workers setting accepts — Settings offers exactly these and refuses anything else. */
+export const LATE_WORKERS_OPTIONS: readonly LateWorkers[] = ['ALL', 'DAILY', 'MONTHLY'];
+export function isLateWorkers(value: string): value is LateWorkers {
+  return (LATE_WORKERS_OPTIONS as readonly string[]).includes(value);
+}
 const MAX_GRACE_MINUTES = 240;
 
 export function parseLateRule(thresholdRaw: string | null | undefined, workersRaw: string | null | undefined): LateRule {

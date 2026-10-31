@@ -67,7 +67,7 @@ export function canOverrideCloseGates(role: string): boolean {
 
 export const MIN_REASON_LENGTH = 3;
 
-export type CloseGateKey = 'PHASES_SIGNED_OFF' | 'QC_RESOLVED' | 'PRODUCTION_LOGGED';
+export type CloseGateKey = 'PHASES_SIGNED_OFF' | 'QC_RESOLVED' | 'PRODUCTION_LOGGED' | 'QUANTITY_MET';
 
 export type CloseGate = {
   key: CloseGateKey;
@@ -91,7 +91,10 @@ export type CloseGateQcCheck = {
  * (c) No QC parameter whose latest check is a FAIL: a failure is resolved only by a later
  * PASS on the same stage + parameter (the rule MisQcCheck documents).
  */
-export function evaluateCloseGates(input: { phases: CloseGatePhase[]; qcChecks: CloseGateQcCheck[]; productionCount?: number }): CloseGate[] {
+/** R2-264: the order's target and what has been produced in the SAME unit. Null/undefined (no quantity on the order) = not gated. */
+export type CloseGateQuantity = { quantity: number; unit: string; produced: number };
+
+export function evaluateCloseGates(input: { phases: CloseGatePhase[]; qcChecks: CloseGateQcCheck[]; productionCount?: number; ordered?: CloseGateQuantity | null }): CloseGate[] {
   const applicable = input.phases.filter((p) => p.status !== 'NOT_APPLICABLE');
   const unsigned = applicable.filter((p) => p.status !== 'SIGNED_OFF').length;
 
@@ -114,6 +117,16 @@ export function evaluateCloseGates(input: { phases: CloseGatePhase[]; qcChecks: 
           detail: input.productionCount > 0 ? '' : 'No production has been logged',
         }];
 
+  // R2-264: an order with a target quantity completes only once production in that unit has reached it.
+  const quantityGate: CloseGate[] = input.ordered
+    ? [{
+        key: 'QUANTITY_MET',
+        label: 'Ordered quantity produced',
+        passed: input.ordered.produced >= input.ordered.quantity,
+        detail: input.ordered.produced >= input.ordered.quantity ? '' : `Produced ${input.ordered.produced} of ${input.ordered.quantity} ${input.ordered.unit}`,
+      }]
+    : [];
+
   return [
     {
       key: 'PHASES_SIGNED_OFF',
@@ -131,6 +144,7 @@ export function evaluateCloseGates(input: { phases: CloseGatePhase[]; qcChecks: 
           : `Failed and not re-passed: ${failing.map((c) => c.parameterName ?? 'General').join(', ')}`,
     },
     ...productionGate,
+    ...quantityGate,
   ];
 }
 

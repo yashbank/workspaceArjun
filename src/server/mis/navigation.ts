@@ -73,7 +73,9 @@ const NAV: NavDefinition[] = [
   { id: 'settings-users', labelKey: 'nav.users', href: '/mis/settings/users', icon: 'users', primary: false, requires: 'settings.read', phoneOnly: true },
   // The page 404s for anyone without wages.read (D30): Owner only.
   { id: 'settings-rules', labelKey: 'nav.rules', href: '/mis/settings/rules', icon: 'settings', primary: false, requires: 'wages.read', phoneOnly: true },
-  { id: 'me', labelKey: 'nav.me', href: '/mis/me', icon: 'users', primary: false, requires: null, phoneOnly: true },
+  // R2-239 / R2-255: Me is on every surface for every signed-in role — anyone with an employee profile has attendance,
+  // leave and payslips of their own to look at (it was phone-only, desktop WORKER-only, under R2-218).
+  { id: 'me', labelKey: 'nav.me', href: '/mis/me', icon: 'users', primary: false, requires: null },
 ];
 
 /** The bottom bar holds five at most; a sixth thumb target does not fit at 360px. */
@@ -93,8 +95,7 @@ export function navigationForRole(
   if (surface === 'phone' && !hasMoreTab(role)) return [];
   const permitted = new Set<MisAction>(allowedActions(role));
   return NAV.filter((entry) => {
-    // R2-218: Me is phone-only for everyone but a WORKER, whose only screen it is - without it the sidebar is empty.
-    if (surface === 'desktop' && entry.phoneOnly && !(entry.id === 'me' && role === 'WORKER')) return false;
+    if (surface === 'desktop' && entry.phoneOnly) return false;
     return entry.requires === null ? role !== null : permitted.has(entry.requires);
   }).map(({ requires: _requires, phoneOnly: _phoneOnly, ...entry }) => entry);
 }

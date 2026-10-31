@@ -25,6 +25,18 @@ describe('EmployeeScreen', () => {
     expect(document.body.textContent).toContain('Default shift');
   });
 
+  it('R2-250: a non-Owner sees why pay type and wage code are not on the form; the Owner gets the pay setup instead', () => {
+    const { unmount } = render(<EmployeeScreen {...base} />);
+    fireEvent.click(screen.getByRole('button', { name: '+ Add Employee' }));
+    expect(document.body.textContent).toContain('Pay type and wage code are set by the Owner');
+    expect(document.body.textContent).not.toContain('Pay setup');
+    unmount();
+    render(<EmployeeScreen {...base} isOwner />);
+    fireEvent.click(screen.getByRole('button', { name: '+ Add Employee' }));
+    expect(document.body.textContent).toContain('Pay setup');
+    expect(document.body.textContent).not.toContain('are set by the Owner');
+  });
+
   it('has separate Deactivate and Delete buttons; an inactive person shows Activate (R2-171)', () => {
     const { unmount } = render(<EmployeeScreen {...base} />);
     expect(screen.getAllByRole('button', { name: 'Deactivate' }).length).toBeGreaterThan(0);

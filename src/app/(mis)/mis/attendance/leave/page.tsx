@@ -11,7 +11,7 @@ export default async function LeavePage({ searchParams }: { searchParams: { empl
   const role = await getMisRole(user.id);
   const canApprove = can(role, 'attendance.write');
   const canDecideHalfDay = can(role, 'approvals.read');
-  const canRevoke = role === 'OWNER';
+  const canRevoke = role === 'OWNER' || role === 'ADMIN'; // R2-240: an Admin may cancel an approved leave that has not started
 
   const [leaves, employees] = await Promise.all([
     listLeaveRequests(),

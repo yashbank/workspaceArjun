@@ -42,7 +42,12 @@ const db: Row = {
     update: async ({ where, data }: Row) => { const row = state.lines.find((l) => l.id === where.id)!; Object.assign(row, data); return { ...row }; },
   },
   misItem: { findFirst: async ({ where }: Row) => state.items.find((i) => i.id === where.id && i.isActive && !i.deletedAt) ?? null },
-  misGrn: { count: async ({ where }: Row) => state.grns.filter((g) => g.poId === where.poId).length },
+  // R2-275: the cancel path counts CONFIRMED receipts and deletes DRAFT ones.
+  misGrn: {
+    count: async ({ where }: Row) => state.grns.filter((g) => g.poId === where.poId && (!where.status || g.status === where.status)).length,
+    deleteMany: async ({ where }: Row) => { const before = state.grns.length; state.grns = state.grns.filter((g) => !(g.poId === where.poId && g.status === where.status)); return { count: before - state.grns.length }; },
+  },
+  misGrnItem: { deleteMany: async () => ({ count: 0 }) },
   $transaction: async (cb: (tx: Row) => Promise<unknown>) => cb(db),
 };
 vi.mock('@/server/db', () => ({ db }));
@@ -60,7 +65,7 @@ const as = (role: string) => getMisRole.mockResolvedValue(role);
 
 beforeEach(() => {
   seq = 0; state.pos = []; state.lines = []; state.grns = [];
-  state.items = [{ id: 'i1', isActive: true, deletedAt: null }, { id: 'i2', isActive: false, deletedAt: null }, { id: 'i3', isActive: true, deletedAt: new Date() }];
+  state.items = [{ id: 'i1', isActive: true, deletedAt: null, unit: 'KG' }, { id: 'i2', isActive: false, deletedAt: null }, { id: 'i3', isActive: true, deletedAt: new Date() }];
   staleSnapshot = null;
   vi.clearAllMocks();
   getCurrentUser.mockResolvedValue({ id: 'u1' });
@@ -204,9 +209,39 @@ describe('B28 compare-and-set transitions', () => {
   it('cancel after a GRN appears is refused and the status is untouched', async () => {
     const p = await submitted();
     await po.approvePO(p.id);
-    state.grns.push({ id: 'g1', poId: p.id });
+    state.grns.push({ id: 'g1', poId: p.id, status: 'CONFIRMED' }); // R2-275: a CONFIRMED receipt is what blocks
     await expect(po.cancelPO(p.id)).rejects.toThrow(/goods receipt/i);
     expect(state.pos[0].status).toBe('APPROVED');
+  });
+
+  it('R2-275: an abandoned DRAFT GRN does not block cancel — it is discarded with the PO', async () => {
+    const p = await submitted();
+    await po.approvePO(p.id);
+    state.grns.push({ id: 'g-draft', poId: p.id, status: 'DRAFT' }, { id: 'g-other', poId: 'other', status: 'DRAFT' });
+    expect((await po.cancelPO(p.id)).status).toBe('CANCELLED');
+    expect(state.grns.map((g) => g.id)).toEqual(['g-other']);
+  });
+
+  it('R2-276: a line unit that is not the item’s unit is refused; the item’s own unit (any case) is fine', async () => {
+    const p = await draft();
+    await expect(po.addPOItem(p.id, { itemId: 'i1', description: 'Kraft', quantity: 10, unitId: 'PIECE', ratePerUnit: 0 })).rejects.toThrow(/does not match the item's unit "KG"/);
+    await expect(po.addPOItem(p.id, { itemId: 'i1', description: 'Kraft', quantity: 10, unitId: 'kg', ratePerUnit: 0 })).resolves.toMatchObject({ unitId: 'kg' });
+    const line = state.lines[0];
+    await expect(po.updatePOItem(line.id, { unitId: 'BOX' })).rejects.toThrow(/does not match/);
+    expect(state.lines[0].unitId).toBe('kg');
+  });
+
+  it('R2-272: terms are validated when given, stored on create and edit, and a set delivery date cannot be blanked', async () => {
+    await expect(po.createPO({ purpose: 'BUFFER_STOCK', supplierId: 's1', deliveryDueDate: 'soon' })).rejects.toThrow(/look like/);
+    await expect(po.createPO({ purpose: 'BUFFER_STOCK', supplierId: 's1', deliveryDueDate: '2026-11-15', paymentTerms: 'COD' })).rejects.toThrow(/from the list/);
+    const p = await po.createPO({ purpose: 'BUFFER_STOCK', supplierId: 's1', deliveryDueDate: '2026-11-15', paymentTerms: 'NET_30' });
+    expect(state.pos[0]).toMatchObject({ deliveryDueDate: new Date('2026-11-15T00:00:00Z'), paymentTerms: 'NET_30' });
+    await po.updatePO(p.id, { paymentTerms: 'ADVANCE_50' });
+    expect(state.pos[0].paymentTerms).toBe('ADVANCE_50');
+    await expect(po.updatePO(p.id, { deliveryDueDate: null })).rejects.toThrow(/delivery date/);
+    // The create action makes the date mandatory on a new PO; `createPO` itself still serves older callers.
+    expect(() => po.assertPoHeaderComplete({ supplierId: 's1' })).toThrow(/delivery date/);
+    expect(() => po.assertPoHeaderComplete({ supplierId: 's1', deliveryDueDate: '2026-11-15' })).not.toThrow();
   });
 
   it('a stale cancel is refused', async () => {

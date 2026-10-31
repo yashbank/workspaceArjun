@@ -36,7 +36,7 @@ const tx: Row = {
   },
   misJobPhase: { findMany: async () => [] },
   misQcCheck: { findMany: async () => [] },
-  misProductionLog: { count: async () => 1 },
+  misProductionLog: { count: async () => 1, findMany: async () => [] },
   misMachineAllocation: {
     findMany: async () => s.bookings.filter((b) => !b.releasedAt).map((b) => ({ id: b.id })),
     updateMany: async ({ where }: Row) => { s.bookings.forEach((b) => { if (where.id.in.includes(b.id)) b.releasedAt = 'x'; }); return { count: 1 }; },
@@ -141,6 +141,7 @@ describe('B104 — close/cancel side effects', () => {
 
   it('a plain forward move touches no bookings', async () => {
     s.status = 'CONFIRMED';
+    s.bom = { id: 'bom1', status: 'APPROVED' }; // R2-267: starting production needs an approved BOM
     await updateOrderStatus('o1', 'IN_PRODUCTION');
     expect(s.bookings[0].releasedAt).toBeNull();
     expect(s.reservations).toBe(1);

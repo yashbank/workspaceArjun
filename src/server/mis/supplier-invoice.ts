@@ -72,6 +72,8 @@ export type SupplierInvoiceRow = {
   figures?: { billedQty: number | null; receivedQty: number; qtyVariance: number | null; variancePct: number | null };
   /** Owner only (D24): rupee values, formatted on the server. Absent for every other role. */
   money?: { expected: string; invoiced: string | null; variance: string | null };
+  /** R2-280: the Owner's variance sign-off on a discrepancy invoice, or null. Visible to every reader (no money in it). */
+  signedOff: { at: Date; note: string | null } | null;
 };
 
 const grnItemsSelect = { select: { receivedQty: true, dcQuantity: true, poItem: { select: { ratePerUnit: true } } } } as const;
@@ -152,6 +154,7 @@ function invoiceRowFor(role: Parameters<typeof can>[0], inv: InvoiceWithGrn): Su
     grnNumber: inv.grn?.grnNumber ?? null,
     supplierName: inv.supplier?.name ?? null,
     status: inv.status,
+    signedOff: inv.varianceSignedOffAt ? { at: inv.varianceSignedOffAt, note: inv.varianceSignOffNote ?? null } : null,
   };
   if (!seesFigures) return base;
   const m = matchFor(inv);
@@ -174,7 +177,8 @@ export async function reconcileSupplierInvoice(id: string): Promise<{ id: string
   if (!inv) throw new Error(`Supplier invoice ${id} not found`);
   const { status } = matchFor(inv);
   if (status === inv.status) return { id, status, changed: false };
-  await db.misSupplierInvoice.update({ where: { id }, data: { status } });
+  // R2-280: a sign-off was given on the OLD variance; a changed match needs a fresh one.
+  await db.misSupplierInvoice.update({ where: { id }, data: { status, varianceSignedOffById: null, varianceSignedOffAt: null, varianceSignOffNote: null } });
   await logAuditEvent({
     actorId: actor.userId,
     action: 'supplier_invoice.reconcile',
@@ -184,4 +188,24 @@ export async function reconcileSupplierInvoice(id: string): Promise<{ id: string
     after: { status },
   });
   return { id, status, changed: true };
+}
+
+/**
+ * R2-280: a DISCREPANCY invoice is not to be paid until the Owner has looked at the variance and said so, on the record.
+ * Owner only (`wages.read` is the Owner's money gate, D24). The audit row carries the note, never a figure.
+ */
+export async function signOffInvoiceVariance(id: string, note?: string | null) {
+  const actor = await requirePermission('wages.read');
+  const inv = await db.misSupplierInvoice.findUnique({ where: { id }, select: { id: true, status: true, varianceSignedOffAt: true } });
+  if (!inv) throw new Error(`Supplier invoice ${id} not found`);
+  if (inv.status !== 'DISCREPANCY_QTY' && inv.status !== 'DISCREPANCY_PRICE') throw new Error('Only an invoice with a quantity or price discrepancy needs a sign-off.');
+  if (inv.varianceSignedOffAt) throw new Error('This variance was already signed off.');
+  const trimmed = note?.trim() || null;
+  const at = new Date();
+  await db.misSupplierInvoice.update({ where: { id }, data: { varianceSignedOffById: actor.userId, varianceSignedOffAt: at, varianceSignOffNote: trimmed } });
+  await logAuditEvent({
+    actorId: actor.userId, action: 'supplier_invoice.sign_off_variance', entity: 'MisSupplierInvoice', entityId: id,
+    before: { status: inv.status, signedOff: false }, after: { status: inv.status, signedOff: true, note: trimmed },
+  });
+  return { id, signedOff: { at, note: trimmed } };
 }

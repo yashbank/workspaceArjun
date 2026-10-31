@@ -60,6 +60,14 @@ describe('job card (R3)', () => {
     expect(t).toContain('Coater 1');
   });
 
+  it('R2-264 / R2-265: prints the ordered quantity and the Customer PO # when the order carries them', async () => {
+    getOrder.mockResolvedValue({ id: ID, orderNumber: 'ORD-1', description: 'd', status: 'IN_PRODUCTION', deliveryDate: null, notes: null, customer: { name: 'Acme' }, quantity: 10000, unit: 'PIECE', customerPoRef: 'PO-AMZ-2026-99' });
+    const t = text(await Page({ params: Promise.resolve({ id: ID }) }));
+    expect(t).toContain('Customer PO #');
+    expect(t).toContain('PO-AMZ-2026-99');
+    expect(t).toMatch(/Ordered Quantity\s+10,000 Pieces/);
+  });
+
   it('shows per-unit totals, not one mixed figure or a hard-coded kg', async () => {
     const t = text(await Page({ params: Promise.resolve({ id: ID }) }));
     expect(t).toMatch(/200\s+KG/);

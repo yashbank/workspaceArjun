@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { HiddenParams, Pagination } from '@/components/mis/kit/pagination';
 import { pageHref } from '@/lib/mis/pagination';
 
-import { reconcileSupplierInvoiceAction } from '@/app/(mis)/mis/supplier-invoices/actions';
+import { reconcileSupplierInvoiceAction, signOffInvoiceVarianceAction } from '@/app/(mis)/mis/supplier-invoices/actions';
 import { Button } from '@/components/mis/kit/button';
 import { unwrap } from '@/lib/mis/action-result';
 import { MATCH_STATUSES, type MatchStatus } from '@/lib/mis/invoice-match';
@@ -51,9 +51,11 @@ type Props = {
   canReconcile: boolean;
   /** R2-83: the server-side page — the status filter and search are URL params, `counts` is per status over the search. */
   paging?: { total: number; page: number; status: MatchStatus | ''; q: string; counts: Record<MatchStatus, number> };
+  /** R2-280: the Owner may sign off a discrepancy invoice's variance. */
+  canSignOff?: boolean;
 };
 
-export function SupplierInvoicesScreen({ rows, canReconcile, paging }: Props) {
+export function SupplierInvoicesScreen({ rows, canReconcile, paging, canSignOff = false }: Props) {
   const [busy, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -66,6 +68,27 @@ export function SupplierInvoicesScreen({ rows, canReconcile, paging }: Props) {
   const hasFigures = rows.some((r) => r.figures);
   const hasMoney = rows.some((r) => r.money);
 
+  // R2-280: a discrepancy invoice is not paid until the Owner has signed its variance off, on the record.
+  const [signNote, setSignNote] = useState('');
+  const isDiscrepancy = (r: SupplierInvoiceRow) => r.status === 'DISCREPANCY_QTY' || r.status === 'DISCREPANCY_PRICE';
+  const signOff = (id: string) =>
+    startTransition(async () => {
+      setError(null);
+      try { unwrap(await signOffInvoiceVarianceAction(id, signNote || null)); setSignNote(''); } catch (e) { setError(e instanceof Error ? e.message : 'That did not save.'); }
+    });
+  const signOffControl = (r: SupplierInvoiceRow) =>
+    r.signedOff ? (
+      <p className="text-xs text-emerald-800">Variance signed off by the Owner · {fmtDate(r.signedOff.at)}{r.signedOff.note ? ` · ${r.signedOff.note}` : ''}</p>
+    ) : isDiscrepancy(r) ? (
+      canSignOff ? (
+        <span className="flex flex-wrap items-center gap-2">
+          <input aria-label="Sign-off note" className="min-h-11 rounded-lg border border-slate-300 px-3 text-base" placeholder="Note (optional)" value={signNote} onChange={(e) => setSignNote(e.target.value)} />
+          <Button variant="secondary" disabled={busy} onClick={() => signOff(r.id)}>Sign off variance</Button>
+        </span>
+      ) : (
+        <p className="text-xs text-amber-900">Not to be paid until the Owner signs off the variance.</p>
+      )
+    ) : null;
   const reconcile = (id: string) =>
     startTransition(async () => {
       setError(null);
@@ -130,6 +153,7 @@ export function SupplierInvoicesScreen({ rows, canReconcile, paging }: Props) {
                     Expected {r.money.expected} · Invoice {r.money.invoiced ?? '—'} · Difference {r.money.variance ?? '—'}
                   </p>
                 )}
+                <div className="mt-2">{signOffControl(r)}</div>
                 {canReconcile && (
                   <Button variant="secondary" className="mt-3" block disabled={busy} onClick={() => reconcile(r.id)}>Re-check match</Button>
                 )}
@@ -159,7 +183,7 @@ export function SupplierInvoicesScreen({ rows, canReconcile, paging }: Props) {
                     <td className="p-3 font-mono text-xs text-slate-700">{r.poNumber}{r.grnNumber ? ` · ${r.grnNumber}` : ''}</td>
                     <td className="p-3">{r.supplierName ?? '—'}</td>
                     <td className="p-3">{fmtDate(r.invoiceDate)}</td>
-                    <td className="p-3"><Pill status={r.status} /></td>
+                    <td className="p-3"><Pill status={r.status} /><div className="mt-1">{signOffControl(r)}</div></td>
                     {hasFigures && <>
                       <td className="p-3 text-right">{fmtQty(r.figures?.billedQty)}</td>
                       <td className="p-3 text-right">{fmtQty(r.figures?.receivedQty)}</td>

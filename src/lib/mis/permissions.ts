@@ -23,6 +23,8 @@ export const MIS_ACTIONS = [
   'attendance.write',
   // R3 B64: add a note to a register row; no status/time change.
   'attendance.note',
+  // R2-263: assign or remove shift-roster entries. Held by the register writers AND the Supervisor, who plans the crew.
+  'roster.write',
   'reports.read',
   'settings.read',
   'settings.write',
@@ -106,6 +108,7 @@ const MATRIX: Record<MisRoleName, readonly MisAction[]> = {
     'attendance.read',
     'attendance.write',
     'attendance.note',
+    'roster.write', // R2-263
     'reports.read',
     'settings.read',
     'settings.write',
@@ -141,6 +144,7 @@ const MATRIX: Record<MisRoleName, readonly MisAction[]> = {
     'qc.write', // R3 B64
     'attendance.read',
     'attendance.note', // R3 B64
+    'roster.write', // R2-263: a Supervisor rosters the floor crew, without attendance.write
     'reports.read',
     'inventory.read',
     'grn.read',
@@ -159,11 +163,12 @@ const MATRIX: Record<MisRoleName, readonly MisAction[]> = {
     'attendance.read',
     'attendance.write',
     'attendance.note', // R3 B64
+    'roster.write', // R2-263
     'reports.read',
     'queue.review',
   ],
 
-  ATTENDANCE_OPERATOR: ['employees.read', 'attendance.read', 'attendance.write', 'attendance.note' /* R3 B64 */],
+  ATTENDANCE_OPERATOR: ['employees.read', 'attendance.read', 'attendance.write', 'attendance.note' /* R3 B64 */, 'roster.write' /* R2-263 */],
 
   STORE_GUY: [
     'orders.read', // R3 B64: read-only Orders tab, no prices

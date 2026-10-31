@@ -34,6 +34,8 @@ const EXPECTED: Record<MisRoleName, string[]> = {
   // R2-218: a worker's only screen is Me; without it the desktop sidebar was blank.
   WORKER: ['me'],
 };
+// R2-239 / R2-255: Me is the last sidebar entry for EVERY role now, not only the WORKER.
+for (const role of MIS_ROLES) if (!EXPECTED[role].includes('me')) EXPECTED[role].push('me');
 
 beforeEach(() => vi.clearAllMocks());
 

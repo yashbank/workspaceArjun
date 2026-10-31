@@ -79,8 +79,17 @@ export function workDateFor(
   const shift = hinted ?? shifts.find((s) => isMinuteInShiftWindow(minute, s));
   if (!shift) return { workDate: calendar, shiftId: null };
 
-  const belongsToPreviousDay = shiftWrapsMidnight(shift) && minute < timeToMinutes(shift.endTime);
+  const belongsToPreviousDay = shiftWrapsMidnight(shift) && minute < overnightCutoffMinute(shift);
   return { workDate: belongsToPreviousDay ? previousDateKey(calendar) : calendar, shiftId: shift.id };
+}
+
+/**
+ * R2-235: the small-hours minute up to which a punch still belongs to the night shift that started yesterday —
+ * the shift's end, extended for overtime up to the maximum stretch (`start + 16 h`, read on the next day's clock).
+ * A 19:00–07:00 shift keeps its 07:15 overtime clock-out; `WorkDate.kt` carries the same formula.
+ */
+export function overnightCutoffMinute(shift: ShiftWindow): number {
+  return Math.max(timeToMinutes(shift.endTime), timeToMinutes(shift.startTime) + MAX_SHIFT_SPAN_HOURS * 60 - 24 * 60);
 }
 
 export type DerivedDay = {
