@@ -262,11 +262,11 @@ Batch C6
 - [x] R2-366 sort rows (Enhancement)
 - [x] R2-368 focus after plus
 Batch C7
-- [ ] R2-372 night-shift wrap helper
-- [ ] R2-369 edit Clock Out prefill (needs Q, Enhancement)
-- [ ] R2-370 Clock Out follows Clock In (needs Q, Enhancement)
-- [ ] R2-371 bulk Clock Out default (needs Q, Enhancement)
-- [ ] R2-373 standard shift fill (needs Q, Enhancement)
+- [x] R2-372 night-shift wrap helper
+- [x] R2-369 edit Clock Out prefill (needs Q, Enhancement)
+- [x] R2-370 Clock Out follows Clock In (needs Q, Enhancement)
+- [x] R2-371 bulk Clock Out default (needs Q, Enhancement)
+- [x] R2-373 standard shift fill (needs Q, Enhancement)
 Batch C8
 - [ ] R2-324 bank transfer net pay (needs Q)
 - [ ] R2-325 GST in invoice match (needs Q, SCHEMA)

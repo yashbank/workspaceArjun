@@ -121,3 +121,9 @@ R2-362 | DEV_DONE | - | "Clear cart" with useConfirm (components/ui) empties eve
 R2-366 | DEV_DONE | - | "Sort" select: as added / item name / stock balance (display order only); item-cart.test R2-366
 R2-368 | DEV_DONE | - | +/- buttons preventDefault on mousedown and refocus the quantity field after the step; item-cart.test R2-368
 GATE | C6 | - | tsc clean, eslint 0 errors (6 warnings: 5 pre-existing + 1 new sonar hint), vitest 433 files / 7073 tests green
+R2-372 | DEV_DONE | - | new pure lib/mis/shift-clock.ts: addMinutesToTime (mod 1440) + expectedClockOut(shift, clockIn?) (clock-in + shift length, else shift end); workDateFor untouched (WorkDate.kt parity); shift-clock.test
+R2-369 | DEV_DONE | - | attendance Edit dialog: an empty Clock Out is pre-filled from the shift (shift end / clock-in + length), still editable, with a note that it is saved as a real punch; a recorded Clock Out is never overwritten; attendance-screen-c7.test
+R2-370 | DEV_DONE | - | Clock Out follows Clock In + shift length while it is still the pre-filled value; once typed it stays; attendance-screen-c7.test
+R2-371 | DEV_DONE | - | Bulk Clock Out: Time defaults to the (pre-selected or chosen) shift end and changes with the shift until typed; shift select labelled; attendance-screen-c7.test
+R2-373 | DEV_DONE | - | past-day Clock In dialog: pick a shift -> "Standard shift (06:00 – 15:00): clock in and out" records IN at the start and OUT at the end (two bulkPunch calls, skips toasted); attendance-screen-c7.test. Props.shifts widened to carry start/end (listShifts already returns them)
+GATE | C7 | - | tsc clean, eslint 0 errors (6 warnings), vitest 435 files / 7080 tests green
