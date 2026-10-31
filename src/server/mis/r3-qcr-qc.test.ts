@@ -34,6 +34,8 @@ vi.mock('@/server/db', () => ({
       findFirst: async ({ where }: Row) => world.stages.find((s) => s.id === where.id && s.orderId === where.bom.orderId) ?? null,
     },
     misDefectType: { findMany: async ({ where }: Row) => world.defectTypes.filter((d) => where.id.in.includes(d.id)) },
+    // R2-318 plumbing: the machine a check names must be active.
+    misMachine: { findFirst: async ({ where }: Row) => (where.id === 'm-active' ? { id: 'm-active' } : null) },
   },
 }));
 const getCurrentUser = vi.fn();
@@ -212,5 +214,14 @@ describe('R2-322 getQcSummary counts unresolved defects only', () => {
     );
     const s = await getQcSummary('ord-1');
     expect(s).toMatchObject({ total: 3, pass: 1, fail: 2, totalDefectQty: 3 });
+  });
+});
+
+describe('R2-318 a QC check records the machine it was taken at', () => {
+  it('stores an active machine id; refuses an inactive / unknown one', async () => {
+    as('QC');
+    const rec = await addQcCheck({ orderId: 'ord-1', result: 'PASS', machineId: 'm-active' });
+    expect(rec.machineId).toBe('m-active');
+    await expect(addQcCheck({ orderId: 'ord-1', result: 'PASS', machineId: 'm-gone' })).rejects.toThrow(/not active/);
   });
 });

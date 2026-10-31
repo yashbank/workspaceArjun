@@ -37,10 +37,11 @@ export async function allocateFromReceipt(
  */
 type ReturnReader = { misStoreReturn?: { findMany: (args: { where: object; select: object }) => Promise<{ orderId: string | null; itemId: string; quantity: { toNumber(): number } | number; createdAt: Date }[]> } };
 async function acceptedReturns(tx: object, where: { orderId: string | { in: string[] }; itemId: { in: string[] } }) {
-  const rows = (await (tx as ReturnReader).misStoreReturn?.findMany({
+  const delegate = (tx as ReturnReader).misStoreReturn;
+  const rows = (typeof delegate?.findMany === 'function' ? await delegate.findMany({
     where: { status: 'ACCEPTED', orderId: where.orderId, itemId: where.itemId },
     select: { orderId: true, itemId: true, quantity: true, createdAt: true },
-  })) ?? [];
+  }) : null) ?? [];
   return rows.map((r) => ({ orderId: r.orderId ?? '', itemId: r.itemId, changeQty: Number(typeof r.quantity === 'object' ? r.quantity.toNumber() : r.quantity), createdAt: r.createdAt }));
 }
 

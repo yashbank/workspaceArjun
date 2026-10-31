@@ -102,6 +102,8 @@ const db: Row = {
     create: async ({ data }: Row) => { const row = { id: `t${state.txns.length + 1}`, createdAt: stamp(), ...data, quantity: n(data.quantity) }; state.txns.push(row); return row; },
   },
   misSupplierInvoice: {
+    // R2-288 plumbing: the confirm reads the invoice's current state so a paid one keeps it.
+    findUnique: async ({ where }: Row) => { const hit = state.invoices.find((i) => i.create.poId === where.poId_invoiceNo?.poId && i.create.invoiceNo === where.poId_invoiceNo?.invoiceNo); return hit ? { status: hit.create.status } : null; },
     upsert: async (args: Row) => { state.invoices.push(args); return null; },
     findFirst: async ({ where }: Row) => {
       const hit = state.invoices.find((i) => i.create.supplierId === where.supplierId && i.create.invoiceNo === where.invoiceNo && i.create.poId !== where.poId.not);

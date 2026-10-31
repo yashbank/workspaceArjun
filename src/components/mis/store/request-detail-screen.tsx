@@ -2,7 +2,7 @@
 import Link from 'next/link';
 import { useState, useTransition } from 'react';
 
-import { approveMaterialRequestAction, approveMaterialRequestForPickingAction, rejectMaterialRequestAction } from '@/app/(mis)/mis/store/requests/actions';
+import { approveMaterialRequestAction, approveMaterialRequestForPickingAction, issueMaterialRequestBalanceAction, rejectMaterialRequestAction } from '@/app/(mis)/mis/store/requests/actions';
 import { unwrap } from '@/lib/mis/action-result';
 import { generalUseLabel } from '@/lib/mis/general-use';
 import { PICK_STATUS_LABEL, type PickStatus } from '@/lib/mis/pick-list';
@@ -22,14 +22,30 @@ type Request = Omit<RequestListRow, 'lines'> & { lines: Line[]; notes: string | 
  */
 export function RequestDetailScreen({ request, canDecide }: { request: Request; canDecide: boolean }) {
   const [isPending, startTransition] = useTransition();
+  // R2-286: a partially issued request opens at what is still owed per line.
+  const isPartial = request.status === 'PARTIALLY_ISSUED';
+  const owed = (l: Line) => Math.max(0, Math.round((l.requestedQty - (l.actualIssuedQty ?? 0)) * 100) / 100);
   const [qty, setQty] = useState<Record<string, string>>(
-    Object.fromEntries(request.lines.map((l) => [l.id, String(l.requestedQty)])),
+    Object.fromEntries(request.lines.map((l) => [l.id, String(isPartial ? owed(l) : l.requestedQty)])),
   );
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
   const isOpen = request.status === 'PENDING';
 
-  const overCap = request.lines.filter((l) => (Number(qty[l.id]) || 0) > l.requestedQty);
+  const capOf = (l: Line) => (isPartial ? owed(l) : l.requestedQty);
+  const overCap = request.lines.filter((l) => (Number(qty[l.id]) || 0) > capOf(l));
+
+  const issueBalance = () => {
+    if (overCap.length > 0) return;
+    setError(null);
+    startTransition(async () => {
+      try {
+        unwrap(await issueMaterialRequestBalanceAction(request.id, request.lines.map((l) => ({ lineId: l.id, actualIssuedQty: Number(qty[l.id]) || 0 })), note));
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'That did not save.');
+      }
+    });
+  };
 
   const approveForPicking = () => {
     if (overCap.length > 0) return;
@@ -110,19 +126,28 @@ export function RequestDetailScreen({ request, canDecide }: { request: Request; 
                 {l.actualIssuedQty !== null && <div>Issued <strong>{l.actualIssuedQty}</strong></div>}
               </div>
             </div>
-            {isOpen && canDecide && (
+            {(isOpen || isPartial) && canDecide && (
               <NumberInput
-                label={`Issue qty (max ${l.requestedQty})`}
+                label={isPartial ? `Balance to issue now (max ${capOf(l)})` : `Issue qty (max ${l.requestedQty})`}
                 value={qty[l.id] ?? ''}
-                max={l.requestedQty}
+                max={capOf(l)}
                 min={0}
                 onChange={(e) => setQty({ ...qty, [l.id]: e.target.value })}
-                error={(Number(qty[l.id]) || 0) > l.requestedQty ? `Cannot issue more than ${l.requestedQty}` : undefined}
+                error={(Number(qty[l.id]) || 0) > capOf(l) ? `Cannot issue more than ${capOf(l)}` : undefined}
               />
             )}
           </div>
         ))}
       </div>
+
+      {isPartial && canDecide && (
+        <div className="flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
+          <p className="text-sm text-amber-900">R2-286: part of this request was issued; the balance stays open until it is issued here.</p>
+          <Input label="Note (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <Button onClick={issueBalance} disabled={isPending || overCap.length > 0}>{isPending ? 'Saving…' : 'Issue balance'}</Button>
+        </div>
+      )}
 
       {isOpen && canDecide && (
         <div className="flex flex-col gap-3 rounded-lg border border-slate-200 p-4">

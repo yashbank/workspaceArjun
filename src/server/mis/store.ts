@@ -312,7 +312,8 @@ export async function createStoreOut(input: StoreOutInput): Promise<StoreTxnRow>
     await lockStockKeys(tx, [itemLockKey(input.itemId), STXN_SEQ_KEY]);
     const ledgerBalance = await lastLedgerBalance(tx, input.itemId);
     const txnBalance = await lastTxnBalance(tx, input.itemId);
-    const available = Math.min(ledgerBalance, txnBalance);
+    const staged = (await stagedHoldByItem(tx, [input.itemId])).get(input.itemId) ?? 0; // R2-287
+    const available = Math.min(ledgerBalance, txnBalance) - staged;
     if (quantity > available) {
       throw new Error(`Cannot issue more than the stock balance (${round2(Math.max(0, available))} available)`);
     }
@@ -1020,6 +1021,8 @@ export type IssueMeta = {
   idempotencyKey?: string | null;
   /** R2-352: an OWNER / SUPERVISOR's reason to issue past the order's allocation; ignored (refused) for anyone else. */
   quotaOverride?: { reason: string } | null;
+  /** R2-287: the STAGED pick list this issue hands over, so its own hold does not count against it. */
+  releasesPickListId?: string | null;
   /**
    * Runs inside the issue's own transaction, after the ledger rows are written. If it throws, the
    * whole issue rolls back — so a caller's bookkeeping (a request's per-line quantities) commits
@@ -1067,6 +1070,25 @@ function mergeCartLines(lines: CartLineInput[]): CartLineInput[] {
 }
 
 type CartItem = { id: string; name: string; code: string; unit: string; category: string };
+
+/**
+ * R2-287 / R2-365: stock set aside on STAGED pick lists is spoken for. Per item, the picked quantity on every
+ * STAGED list (except `excludePickListId`, the list being handed over), so a direct issue cannot take it and the
+ * picker shows what is really free. Released when the list is handed over (it is then issued) — there is no
+ * pick-list cancel on HEAD. Optional call: narrow hand-built test doubles carry no pick-list delegate.
+ */
+type StagedReader = { misPickListLine?: { findMany: (args: { where: object; select: object }) => Promise<{ itemId: string; pickedQty: unknown }[]> } };
+async function stagedHoldByItem(client: object, itemIds: string[], excludePickListId?: string | null): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (itemIds.length === 0) return out;
+  const delegate = (client as StagedReader).misPickListLine;
+  const rows = (typeof delegate?.findMany === 'function' ? await delegate.findMany({
+    where: { itemId: { in: itemIds }, pickList: { status: 'STAGED', ...(excludePickListId ? { id: { not: excludePickListId } } : {}) } },
+    select: { itemId: true, pickedQty: true },
+  }) : null) ?? [];
+  for (const r of rows) out.set(r.itemId, round2((out.get(r.itemId) ?? 0) + Number(r.pickedQty)));
+  return out;
+}
 
 async function loadCartItems(lines: CartLineInput[]): Promise<Map<string, CartItem>> {
   const items = await db.misItem.findMany({
@@ -1418,13 +1440,14 @@ export async function commitIssue(
     const ledgerBalances = new Map<string, number>();
     const txnBalances = new Map<string, number>();
     const shortfalls: { label: string; available: number; unit: string }[] = [];
+    const staged = await stagedHoldByItem(tx, cart.map((l) => l.itemId), meta.releasesPickListId); // R2-287
     for (const line of cart) {
       const item = items.get(line.itemId)!;
       const ledgerBalance = await lastLedgerBalance(tx, item.id);
       const txnBalance = await lastTxnBalance(tx, item.id);
       ledgerBalances.set(item.id, ledgerBalance);
       txnBalances.set(item.id, txnBalance);
-      const available = round2(Math.max(0, Math.min(ledgerBalance, txnBalance)));
+      const available = round2(Math.max(0, Math.min(ledgerBalance, txnBalance) - (staged.get(item.id) ?? 0)));
       if (line.qty > available) shortfalls.push({ label: `${item.name} (${item.code})`, available, unit: item.unit });
     }
     if (shortfalls.length === 1) {
@@ -1572,6 +1595,7 @@ export async function listPickerItems(): Promise<PickerItemRow[]> {
     ORDER BY item_id, created_at DESC
   `;
   for (const row of rows) balances.set(row.item_id, Number(row.balance_qty));
+  const staged = await stagedHoldByItem(db, items.map((i) => i.id)); // R2-365: staged pick lists are not free stock
 
   return items.map((item) => ({
     id: item.id,
@@ -1579,7 +1603,7 @@ export async function listPickerItems(): Promise<PickerItemRow[]> {
     sku: item.sku,
     name: item.name,
     unit: item.unit,
-    balance: balances.get(item.id) ?? 0,
+    balance: round2(Math.max(0, (balances.get(item.id) ?? 0) - (staged.get(item.id) ?? 0))),
   }));
 }
 
@@ -1595,7 +1619,8 @@ export async function listItemBalances(): Promise<Record<string, number>> {
     FROM mis_inventory_ledger
     ORDER BY item_id, created_at DESC
   `;
-  return Object.fromEntries(rows.map((r) => [r.item_id, Number(r.balance_qty)]));
+  const staged = await stagedHoldByItem(db, rows.map((r) => r.item_id)); // R2-365
+  return Object.fromEntries(rows.map((r) => [r.item_id, round2(Math.max(0, Number(r.balance_qty) - (staged.get(r.item_id) ?? 0)))]));
 }
 
 /** Suppliers a delivery can be booked against. */

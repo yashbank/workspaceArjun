@@ -27,6 +27,15 @@ export function sameInvoiceNo(a: string | null | undefined, b: string | null | u
 export const MATCH_STATUSES =['MATCHED', 'DISCREPANCY_QTY', 'DISCREPANCY_PRICE', 'PENDING_REVIEW'] as const;
 export type MatchStatus = (typeof MATCH_STATUSES)[number];
 
+/** R2-288: the states after the match. Owner approves payment; Admin / Owner records it or rejects the invoice. */
+export const PAYMENT_STATUSES = ['APPROVED_FOR_PAYMENT', 'PAID', 'REJECTED'] as const;
+export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
+export type InvoiceStatus = MatchStatus | PaymentStatus;
+export const INVOICE_STATUSES: readonly InvoiceStatus[] = [...MATCH_STATUSES, ...PAYMENT_STATUSES];
+export function isPaymentStatus(status: string): status is PaymentStatus {
+  return (PAYMENT_STATUSES as readonly string[]).includes(status);
+}
+
 /** Units a challan and a receipt may differ by before it is a quantity discrepancy (rounding guard). */
 export const QTY_TOLERANCE = 0.01;
 /** Rupees an invoice may differ from the expected amount by, whatever its size. */

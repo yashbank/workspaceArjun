@@ -81,7 +81,8 @@ export type TraceGrn = {
   grnNumber: string;
   status: string;
   receivedAt: Date | null;
-  lines: { itemName: string; unit: string | null; receivedQty: number }[];
+  /** R2-334: `batchNo` is the supplier's lot / reel number typed on the GRN line (null when none was). */
+  lines: { itemName: string; unit: string | null; receivedQty: number; batchNo: string | null }[];
 };
 export type TracePo = {
   poNumber: string;
@@ -107,7 +108,7 @@ async function loadPurchaseOrders(orderNumber: string, withGrns: boolean): Promi
           grnNumber: true,
           status: true,
           receivedAt: true,
-          items: { select: { receivedQty: true, poItem: { select: { description: true, item: { select: { name: true, unit: true } } } } } },
+          items: { select: { receivedQty: true, batchNo: true, poItem: { select: { description: true, item: { select: { name: true, unit: true } } } } } },
         },
       },
     },
@@ -121,7 +122,7 @@ async function loadPurchaseOrders(orderNumber: string, withGrns: boolean): Promi
           grnNumber: g.grnNumber,
           status: g.status,
           receivedAt: g.receivedAt,
-          lines: g.items.map((i) => ({ itemName: i.poItem.item?.name ?? i.poItem.description, unit: i.poItem.item?.unit ?? null, receivedQty: Number(i.receivedQty) })),
+          lines: g.items.map((i) => ({ itemName: i.poItem.item?.name ?? i.poItem.description, unit: i.poItem.item?.unit ?? null, receivedQty: Number(i.receivedQty), batchNo: i.batchNo ?? null })),
         }))
       : null,
   }));

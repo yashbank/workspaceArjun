@@ -1,6 +1,6 @@
 import { DEFAULT_FACTORY_TIMEZONE, factoryDateKey } from '@/lib/mis/factory-time';
 import { shortQuantity, withoutInvoiceMoney } from '@/lib/mis/grn-match';
-import { matchSupplierInvoice } from '@/lib/mis/invoice-match';
+import { isPaymentStatus, matchSupplierInvoice } from '@/lib/mis/invoice-match';
 import { bomNumberFromRef, orderNumberFromRef } from '@/lib/mis/order-allocation';
 import { roundQty } from '@/lib/mis/quantity';
 import {
@@ -629,10 +629,13 @@ export async function confirmGRN(grnId: string, opts: { overReceiptReason?: stri
         ...(gst !== null ? { gstPercent: gst } : {}),
         ...(fresh.supplierInvoiceAmount !== null ? { invoiceAmount: fresh.supplierInvoiceAmount, status } : {}),
       };
+      // R2-288: an invoice already approved for payment / paid / rejected keeps that state; only the figures are refreshed.
+      const existingInvoice = await tx.misSupplierInvoice.findUnique({ where: { poId_invoiceNo: { poId: fresh.poId, invoiceNo: fresh.supplierInvoiceNo } }, select: { status: true } });
+      const { status: _matched, ...knownNoStatus } = known as typeof known & { status?: unknown };
       await tx.misSupplierInvoice.upsert({
         where: { poId_invoiceNo: { poId: fresh.poId, invoiceNo: fresh.supplierInvoiceNo } },
         create: { poId: fresh.poId, invoiceNo: fresh.supplierInvoiceNo, grnId, supplierId: fresh.po.supplierId, status, ...known },
-        update: { grnId, supplierId: fresh.po.supplierId, ...known },
+        update: { grnId, supplierId: fresh.po.supplierId, ...(existingInvoice && isPaymentStatus(existingInvoice.status) ? knownNoStatus : known) },
       });
     }
 
@@ -826,7 +829,7 @@ export async function reverseGRN(grnId: string, reason: string) {
         select: { items: { select: { receivedQty: true, dcQuantity: true, poItem: { select: { ratePerUnit: true } } } } },
       });
       const invoice = await tx.misSupplierInvoice.findUnique({ where: { poId_invoiceNo: { poId: grn.poId, invoiceNo: grn.supplierInvoiceNo } } });
-      if (invoice) {
+      if (invoice && !isPaymentStatus(invoice.status)) { // R2-288: a settled invoice is not re-matched
         const { status } = matchSupplierInvoice(
           remaining.flatMap((g) => g.items).map((i) => ({ receivedQty: i.receivedQty.toNumber(), ratePerUnit: i.poItem.ratePerUnit.toNumber(), dcQuantity: i.dcQuantity?.toNumber() ?? null })),
           invoice.invoiceAmount?.toNumber() ?? null,

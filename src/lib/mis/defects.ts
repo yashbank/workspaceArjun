@@ -37,6 +37,8 @@ export type DefectCheck = {
   notes: string | null;
   parameterName: string | null;
   checkerName: string | null;
+  /** R2-318: the machine recorded on the check itself; when present it wins over the booking lookup. */
+  machineName?: string | null;
 };
 
 /** A machine booking with its real end (a released booking ends when it was released). */
@@ -64,7 +66,8 @@ export function resolveReason(text: string | null, masters: readonly DefectMaste
 }
 
 /** The machine that was booked to the order at the moment of the check. */
-export function attributeMachine(check: Pick<DefectCheck, 'orderId' | 'checkTime'>, bookings: readonly Booking[]): string {
+export function attributeMachine(check: Pick<DefectCheck, 'orderId' | 'checkTime' | 'machineName'>, bookings: readonly Booking[]): string {
+  if (check.machineName) return check.machineName; // R2-318: recorded at inspection, never guessed
   const at = check.checkTime.getTime();
   const covering = new Set(bookings.filter((b) => b.orderId === check.orderId && b.from.getTime() <= at && at < b.to.getTime()).map((b) => b.machine));
   if (covering.size === 0) return NO_MACHINE;

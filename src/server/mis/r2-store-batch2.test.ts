@@ -348,3 +348,38 @@ describe('Task B review — handover and returns', () => {
     await expect(decideStoreReturn('ret1', 'ACCEPT')).rejects.toThrow(/only 2 was issued/);
   });
 });
+
+const { issueMaterialRequestBalance } = await import('./material-request');
+
+describe('R2-286 a partly issued request keeps its balance open', () => {
+  it('approving 4 of 10 leaves the request PARTIALLY_ISSUED; issuing the balance later turns it APPROVED', async () => {
+    state.request = pendingRequest();
+    commitIssue.mockImplementationOnce(async (...a: unknown[]) => { await (a[1] as { inTransaction: (tx: unknown) => Promise<void> }).inTransaction(db); return { reference: 'R', lineCount: 1, totalQty: 4 }; });
+    await approveMaterialRequest('r1', [{ lineId: 'l1', actualIssuedQty: 4 }], 'short today');
+    expect(state.request.status).toBe('PARTIALLY_ISSUED');
+    expect(state.requestLineWrites.at(-1)).toMatchObject({ where: { id: 'l1' }, data: { actualIssuedQty: 4 } });
+
+    // the balance: 6 owed; asking 7 is refused in words; issuing all 6 closes the request
+    state.request = { ...state.request, lines: [{ id: 'l1', itemId: 'i1', requestedQty: dec(10), actualIssuedQty: 4 }] };
+    await expect(issueMaterialRequestBalance('r1', [{ lineId: 'l1', actualIssuedQty: 7 }])).rejects.toThrow(/only 6 was requested/);
+    commitIssue.mockImplementationOnce(async (...a: unknown[]) => { await (a[1] as { inTransaction: (tx: unknown) => Promise<void> }).inTransaction(db); return { reference: 'R2', lineCount: 1, totalQty: 6 }; });
+    await issueMaterialRequestBalance('r1', [{ lineId: 'l1', actualIssuedQty: 6 }]);
+    expect(commitIssue).toHaveBeenLastCalledWith([{ itemId: 'i1', qty: 6 }], expect.objectContaining({ materialRequestId: 'r1' }));
+    expect(state.request.status).toBe('APPROVED');
+    expect(state.requestLineWrites.at(-1)).toMatchObject({ data: { actualIssuedQty: 10 } });
+  });
+  it('a full approval stays APPROVED, and a balance issue on it is refused', async () => {
+    state.request = pendingRequest();
+    commitIssue.mockImplementationOnce(async (...a: unknown[]) => { await (a[1] as { inTransaction: (tx: unknown) => Promise<void> }).inTransaction(db); return { reference: 'R', lineCount: 1, totalQty: 10 }; });
+    await approveMaterialRequest('r1', [{ lineId: 'l1', actualIssuedQty: 10 }]);
+    expect(state.request.status).toBe('APPROVED');
+    await expect(issueMaterialRequestBalance('r1', [{ lineId: 'l1', actualIssuedQty: 1 }])).rejects.toThrow(/only a partially issued request/);
+  });
+  it('issuing part of the balance keeps it PARTIALLY_ISSUED', async () => {
+    state.request = { ...pendingRequest(), status: 'PARTIALLY_ISSUED', lines: [{ id: 'l1', itemId: 'i1', requestedQty: dec(10), actualIssuedQty: 4 }] };
+    commitIssue.mockImplementationOnce(async (...a: unknown[]) => { await (a[1] as { inTransaction: (tx: unknown) => Promise<void> }).inTransaction(db); return { reference: 'R3', lineCount: 1, totalQty: 2 }; });
+    await issueMaterialRequestBalance('r1', [{ lineId: 'l1', actualIssuedQty: 2 }]);
+    expect(state.request.status).toBe('PARTIALLY_ISSUED');
+    expect(state.requestLineWrites.at(-1)).toMatchObject({ data: { actualIssuedQty: 6 } });
+  });
+});

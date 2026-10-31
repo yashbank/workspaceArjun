@@ -11,7 +11,8 @@ vi.mock('@/server/db', () => ({
     misProductionLog: { findMany: async () => world.logs },
     misQcCheck: { findMany: async () => [] },
     misDocument: { findMany: async () => [] },
-    misPurchaseOrder: { findMany: async () => [] },
+    // R2-334: the GRN line carries the supplier's lot / reel number.
+    misPurchaseOrder: { findMany: async () => [{ poNumber: 'PO-1', status: 'PARTIAL', supplier: { name: 'Acme' }, grns: [{ grnNumber: 'GRN-1', status: 'CONFIRMED', receivedAt: new Date('2026-10-01T00:00:00Z'), items: [{ receivedQty: 40, batchNo: 'REEL-7781', poItem: { description: 'Board', item: { name: 'FBB', unit: 'KG' } } }, { receivedQty: 5, batchNo: null, poItem: { description: 'Ink', item: null } }] }] }] },
     misInventoryLedger: { findMany: async () => [] },
     misStoreTransaction: { findMany: async () => [] },
   },
@@ -49,5 +50,15 @@ describe('R2-290 getOrderTrace groups production by unit', () => {
     expect(t.byUnit).toEqual([{ unit: 'KG', produced: 700, waste: 6 }]);
     expect(t.totalProduced).toBe(700);
     expect(t.totalWaste).toBe(6);
+  });
+});
+
+describe('R2-334 lot numbers reach the trace', () => {
+  it('each GRN line carries its batch / reel number (null when none was typed)', async () => {
+    const t = await getOrderTrace('o1');
+    expect(t.purchaseOrders![0].grns![0].lines).toEqual([
+      { itemName: 'FBB', unit: 'KG', receivedQty: 40, batchNo: 'REEL-7781' },
+      { itemName: 'Ink', unit: null, receivedQty: 5, batchNo: null },
+    ]);
   });
 });

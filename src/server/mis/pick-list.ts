@@ -94,6 +94,7 @@ export async function handOverPickList(id: string) {
       departmentId: req.departmentId,
       general: generalOf(req),
       materialRequestId: req.id,
+      releasesPickListId: id, // R2-287: this list's own hold does not count against its handover
       // The approval for picking already told Owner + Admin about this General-use request; the handover stays quiet.
       skipGeneralNotice: true,
       notes: `${req.requestNumber} · pick list handover`,

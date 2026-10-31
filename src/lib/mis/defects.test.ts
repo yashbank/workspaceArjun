@@ -275,3 +275,19 @@ describe('the log', () => {
     expect(r.log[0]).toMatchObject({ reasonLabel: null, severity: null, qty: null, by: null });
   });
 });
+
+describe('R2-318 a check that names its machine is attributed to it', () => {
+
+  const at = new Date('2026-10-05T04:00:00Z');
+  const bookings = [
+    { orderId: 'o1', machine: 'Press 1', from: new Date('2026-10-05T00:00:00Z'), to: new Date('2026-10-05T12:00:00Z') },
+    { orderId: 'o1', machine: 'Cutter 2', from: new Date('2026-10-05T00:00:00Z'), to: new Date('2026-10-05T12:00:00Z') },
+  ];
+  it('two concurrent bookings used to read as several; the recorded machine wins', () => {
+    expect(attributeMachine({ orderId: 'o1', checkTime: at }, bookings)).toBe(MULTI_MACHINE);
+    expect(attributeMachine({ orderId: 'o1', checkTime: at, machineName: 'Cutter 2' }, bookings)).toBe('Cutter 2');
+  });
+  it('an older check with no machine keeps the booking lookup', () => {
+    expect(attributeMachine({ orderId: 'o1', checkTime: at, machineName: null }, [bookings[0]])).toBe('Press 1');
+  });
+});

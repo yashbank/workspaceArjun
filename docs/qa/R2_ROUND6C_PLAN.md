@@ -271,13 +271,13 @@ Batch C8
 - [x] R2-324 bank transfer net pay (needs Q)
 - [x] R2-325 GST in invoice match (needs Q, SCHEMA)
 Batch C9
-- [ ] R2-286 partial material request (needs Q, SCHEMA)
-- [ ] R2-287 pick list reservation (needs Q)
-- [ ] R2-365 (dup of 287)
-- [ ] R2-288 invoice payment states (needs Q, SCHEMA)
-- [ ] R2-318 QC check machine (SCHEMA)
-- [ ] R2-334 batch/lot traceability (needs Q, SCHEMA)
-- [ ] R2-345 dispatch (needs Q, SCHEMA)
+- [x] R2-286 partial material request (needs Q, SCHEMA)
+- [x] R2-287 pick list reservation (needs Q)
+- [x] R2-365 (dup of 287)
+- [x] R2-288 invoice payment states (needs Q, SCHEMA)
+- [x] R2-318 QC check machine (SCHEMA)
+- [x] R2-334 batch/lot traceability (needs Q, SCHEMA)
+- [x] R2-345 dispatch — DEFERRED_BY_OWNER (not built)
 
 ## Final step (after C9)
 - [ ] FINAL: ask the owner to apply pending migrations (Schema protocol, step 4) and WAIT for "migrations applied" (the owner applies them from another clone, so the builder cannot do or verify it; it must still stop here), then re-run typecheck + lint + full vitest, push, report "ready to deploy".

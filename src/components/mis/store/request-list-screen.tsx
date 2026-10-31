@@ -17,7 +17,7 @@ export type RequestListRow = {
   lines: { id: string; requestedQty: number; actualIssuedQty: number | null; item: { name: string } }[];
 };
 
-export const STATUS_TONE: Record<string, BadgeTone> = { PENDING: 'warning', APPROVED: 'good', REJECTED: 'critical' };
+export const STATUS_TONE: Record<string, BadgeTone> = { PENDING: 'warning', APPROVED: 'good', REJECTED: 'critical', PARTIALLY_ISSUED: 'warning' /* R2-286 */ };
 
 export function RequestListScreen({ requests, canDecide }: { requests: RequestListRow[]; canDecide: boolean }) {
   return (

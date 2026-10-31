@@ -161,6 +161,10 @@ const TABLE: Entry[] = [
   { module: 'supplier-invoice.ts', name: 'reconcilePO', requires: 'po.read', call: () => supplierInvoice.reconcilePO('po1') },
   { module: 'supplier-invoice.ts', name: 'listSupplierInvoices', requires: 'supplier_invoice.read', call: () => supplierInvoice.listSupplierInvoices() },
   { module: 'supplier-invoice.ts', name: 'listSupplierInvoicesPage', requires: 'supplier_invoice.read', call: () => supplierInvoice.listSupplierInvoicesPage() },
+  // R2-288: payment states — the Owner approves, Admin/Owner records or rejects.
+  { module: 'supplier-invoice.ts', name: 'approveInvoiceForPayment', requires: 'wages.read', call: () => supplierInvoice.approveInvoiceForPayment('inv1') },
+  { module: 'supplier-invoice.ts', name: 'markInvoicePaid', requires: 'supplier_invoice.write', call: () => supplierInvoice.markInvoicePaid('inv1', { paymentDate: '2026-11-01', paymentRef: 'UTR1' }) },
+  { module: 'supplier-invoice.ts', name: 'rejectSupplierInvoice', requires: 'supplier_invoice.write', call: () => supplierInvoice.rejectSupplierInvoice('inv1', 'duplicate') },
   // R2-37 — QC may VIEW PO / GRN read-only: po.view / grn.view (QC holds neither po.read nor any write).
   { module: 'grn.ts', name: 'listGRNs', requires: 'grn.view', call: () => grn.listGRNs() },
   { module: 'grn.ts', name: 'listGRNsPage', requires: 'grn.view', call: () => grn.listGRNsPage({}) },
@@ -176,6 +180,7 @@ const TABLE: Entry[] = [
   { module: 'material-request.ts', name: 'createMaterialRequest', requires: 'store.read', call: () => materialRequest.createMaterialRequest([{ itemId: 'i1', qty: 1 }], { general: { reason: 'grease', costCenter: 'Press' } }) },
   { module: 'material-request.ts', name: 'approveMaterialRequest', requires: 'store.write', call: () => materialRequest.approveMaterialRequest('r1', []) },
   { module: 'material-request.ts', name: 'approveMaterialRequestForPicking', requires: 'store.write', call: () => materialRequest.approveMaterialRequestForPicking('r1', []) },
+  { module: 'material-request.ts', name: 'issueMaterialRequestBalance', requires: 'store.write', call: () => materialRequest.issueMaterialRequestBalance('r1', []) }, // R2-286
   { module: 'material-request.ts', name: 'rejectMaterialRequest', requires: 'store.write', call: () => materialRequest.rejectMaterialRequest('r1', 'no') },
   { module: 'pick-list.ts', name: 'listPickLists', requires: 'store.read', call: () => pickList.listPickLists() },
   { module: 'pick-list.ts', name: 'getPickList', requires: 'store.read', call: () => pickList.getPickList('p1') },

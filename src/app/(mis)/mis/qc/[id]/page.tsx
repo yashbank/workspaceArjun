@@ -30,7 +30,7 @@ export default async function QcDetailPage({ params }: { params: Promise<{ id: s
   });
   if (!order) notFound();
 
-  const [checks, summary, defectTypes, allTemplates, timeZone, stages, shifts] = await Promise.all([
+  const [checks, summary, defectTypes, allTemplates, timeZone, stages, shifts, machines] = await Promise.all([
     getQcForOrder(id),
     getQcSummary(id),
     listDefectTypes(),
@@ -43,6 +43,8 @@ export default async function QcDetailPage({ params }: { params: Promise<{ id: s
       orderBy: { seq: 'asc' },
     }),
     db.misShift.findMany({ where: { isActive: true }, select: { id: true, startTime: true, endTime: true }, orderBy: { startTime: 'asc' } }),
+    // R2-318: the machine a check was taken at.
+    db.misMachine.findMany({ where: { isActive: true, deletedAt: null }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),
   ]);
   // R2-323: an archived (inactive) template stays readable for the checks already recorded on it for this order.
   const usedTemplateIds = new Set(checks.map((c) => c.templateId).filter(Boolean));
@@ -72,6 +74,7 @@ export default async function QcDetailPage({ params }: { params: Promise<{ id: s
         deletable: mayCorrect(c, 'DELETE'),
       }))}
       stages={stageOptions(stages)}
+      machines={machines.map((m) => ({ value: m.id, label: m.name }))}
       summary={summary}
       canWrite={canWrite}
       canAcknowledge={can(role, 'qc.acknowledge')}

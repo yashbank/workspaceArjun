@@ -483,7 +483,7 @@ async function computePayroll(year: number, month: number, client: Prisma.Transa
  */
 async function salaryAdvancesFor(client: Prisma.TransactionClient, year: number, month: number, onlyEmployeeId: string | null): Promise<Map<string, number>> {
   const delegate = (client as unknown as { misSalaryAdvance?: { findMany: (args: { where: object; select: object }) => Promise<{ employeeId: string; amount: unknown }[]> } }).misSalaryAdvance;
-  const rows = (await delegate?.findMany({ where: { year, month, ...(onlyEmployeeId ? { employeeId: onlyEmployeeId } : {}) }, select: { employeeId: true, amount: true } })) ?? [];
+  const rows = (typeof delegate?.findMany === 'function' ? await delegate.findMany({ where: { year, month, ...(onlyEmployeeId ? { employeeId: onlyEmployeeId } : {}) }, select: { employeeId: true, amount: true } }) : null) ?? [];
   const out = new Map<string, number>();
   for (const r of rows) out.set(r.employeeId, (out.get(r.employeeId) ?? 0) + Number(r.amount));
   return out;

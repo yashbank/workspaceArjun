@@ -24,7 +24,7 @@ vi.mock('@/server/db', () => ({
       findUnique: async () => ({ ...state.grnItems[0], receivedQty: D(state.grnItems[0].receivedQty), dcQuantity: state.grnItems[0].dcQuantity == null ? null : D(state.grnItems[0].dcQuantity), damageQuantity: D(state.grnItems[0].damageQuantity) }),
       update: async ({ data }: Row) => { Object.assign(state.grnItems[0], data); return state.grnItems[0]; },
     },
-    misSupplierInvoice: { upsert: async (args: Row) => { state.invoices.push(args); return args.create; }, findFirst: async () => null },
+    misSupplierInvoice: { upsert: async (args: Row) => { state.invoices.push(args); return args.create; }, findFirst: async () => null, findUnique: async () => null /* R2-288 plumbing */ },
     // R3-STK B02/B01: creating a GRN reads the PO's status; confirming moves it on.
     misPurchaseOrder: { findUnique: async () => ({ poNumber: 'PO-1', status: 'APPROVED' }), update: async () => null, updateMany: async () => ({ count: 1 }) },
     misInventoryLedger: { findFirst: async () => null, create: async () => null },

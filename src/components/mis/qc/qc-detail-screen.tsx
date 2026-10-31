@@ -51,6 +51,8 @@ interface Props {
   defectTypes: DefectTypeOption[];
   /** Stages of this order's BOM (#33); empty when it has none. */
   stages?: SelectOption[];
+  /** R2-318: active machines, so a check can say where it was taken. */
+  machines?: SelectOption[];
   /** V2 Epic 5 — the paper forms; empty until the templates migration is applied. */
   templates?: QcTemplateRow[];
   /** The factory day the checklist shows (server-computed), so another day's taps never fill today's cells. */
@@ -81,7 +83,7 @@ const defectTypeOptions = (types: DefectTypeOption[]): SelectOption[] =>
 // defect that is not yet classified must still be recordable, as free text (F-19/D14).
 const OTHER_DEFECT = '';
 
-export function QcDetailScreen({ order, checks, summary, canWrite, canAcknowledge = false, defectTypes, stages = [], templates = [], checklistDay }: Props) {
+export function QcDetailScreen({ order, checks, summary, canWrite, canAcknowledge = false, defectTypes, stages = [], machines = [], templates = [], checklistDay }: Props) {
   const [open, setOpen] = useState(false);
   // R2-311: acknowledge / waive a failed check from the QC screen.
   const [acking, setAcking] = useState<Check | null>(null);
@@ -99,6 +101,7 @@ export function QcDetailScreen({ order, checks, summary, canWrite, canAcknowledg
   };
   const [result, setResult] = useState<'PASS' | 'FAIL' | 'NA'>('PASS');
   const [stageId, setStageId] = useState<string | null>(null);
+  const [machineId, setMachineId] = useState<string | null>(null); // R2-318
   const [parameterName, setParameterName] = useState('');
   const [defectTypeCode, setDefectTypeCode] = useState(OTHER_DEFECT);
   const [defectTypeOther, setDefectTypeOther] = useState('');
@@ -143,6 +146,7 @@ export function QcDetailScreen({ order, checks, summary, canWrite, canAcknowledg
       orderId: order.id,
       result,
       bomStageId: stageId ?? undefined,
+      machineId: machineId ?? undefined, // R2-318
       parameterName: parameterName || undefined,
       defectType: (defectTypeCode || defectTypeOther.trim()) || undefined,
       defectQty: defectQty ? parseFloat(defectQty) : undefined,
@@ -361,6 +365,9 @@ export function QcDetailScreen({ order, checks, summary, canWrite, canAcknowledg
           <Select label="Result" value={result} options={resultOptions} onChange={(v) => setResult(v as 'PASS' | 'FAIL' | 'NA')} />
           {stages.length > 0 && (
             <Select label="Process / BOM stage (optional)" value={stageId} options={stages} onChange={setStageId} placeholder="Select a stage…" />
+          )}
+          {machines.length > 0 && (
+            <Select label="Machine (optional)" value={machineId} options={machines} onChange={setMachineId} placeholder="Where was it checked?" />
           )}
           <Input label="Parameter Name" value={parameterName} onChange={(e) => setParameterName(e.target.value)} />
           {result === 'FAIL' && (

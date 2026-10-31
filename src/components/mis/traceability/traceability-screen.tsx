@@ -36,7 +36,7 @@ type TraceQcCheck = {
 };
 type TraceDocument = { id: string; name: string; filePath: string };
 // null = this role may not see the leg (no po.read / store.read); [] = may see it, nothing behind it.
-type TraceGrn = { grnNumber: string; status: string; receivedAt: string | null; lines: { itemName: string; unit: string | null; receivedQty: number }[] };
+type TraceGrn = { grnNumber: string; status: string; receivedAt: string | null; lines: { itemName: string; unit: string | null; receivedQty: number; batchNo?: string | null }[] };
 type TracePo = { poNumber: string; status: string; supplierName: string | null; grns: TraceGrn[] | null };
 type TraceIssued = { itemName: string; unit: string; qty: number; issuedAt: string };
 type TraceResult = {
@@ -168,7 +168,7 @@ export function TraceabilityScreen({ orders }: { orders: Order[] }) {
                                 <span className="text-slate-500">{g.receivedAt ? fmtDate(g.receivedAt) : 'not received'}</span>
                               </p>
                               <ul className="mt-1 text-slate-600">
-                                {g.lines.map((l, i) => <li key={i}>{l.itemName}: {Number(l.receivedQty).toLocaleString('en-IN')} {l.unit ?? ''}</li>)}
+                                {g.lines.map((l, i) => <li key={i}>{l.itemName}: {Number(l.receivedQty).toLocaleString('en-IN')} {l.unit ?? ''}{l.batchNo ? <span className="ml-1 font-mono text-xs text-slate-500">· Lot {l.batchNo}</span> : null}</li>)}
                               </ul>
                             </li>
                           ))}

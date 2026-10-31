@@ -1,6 +1,6 @@
 import type { Prisma } from '@/generated/prisma/client';
 import { threeWayMatch, type ThreeWayMatch } from '@/lib/mis/grn-match';
-import { matchSupplierInvoice, sameInvoiceNo, type MatchStatus } from '@/lib/mis/invoice-match';
+import { INVOICE_STATUSES, isPaymentStatus, matchSupplierInvoice, sameInvoiceNo, type InvoiceStatus, type MatchStatus } from '@/lib/mis/invoice-match';
 import { can } from '@/lib/mis/permissions';
 import { pageQuery, parseSearch, type Paged } from '@/lib/mis/pagination';
 import { db } from '@/server/db';
@@ -67,7 +67,9 @@ export type SupplierInvoiceRow = {
   poNumber: string;
   grnNumber: string | null;
   supplierName: string | null;
-  status: MatchStatus;
+  status: InvoiceStatus;
+  /** R2-288: payment trail, visible to every reader (dates and a reference, no money). */
+  payment?: { approvedAt: Date | null; paidAt: Date | null; paymentDate: Date | null; paymentRef: string | null; rejectReason: string | null } | null;
   /** Admin and Owner (never the Store Guy): quantities and the variance as a percentage. */
   figures?: { billedQty: number | null; receivedQty: number; qtyVariance: number | null; variancePct: number | null };
   /** Owner only (D24): rupee values, formatted on the server. Absent for every other role. */
@@ -103,7 +105,7 @@ function matchFor(inv: InvoiceWithGrn) {
  * only; Admin adds quantities and the variance %; the Owner adds rupees (D24). Three payloads
  * built from the role, not one payload hidden by the screen.
  */
-export async function listSupplierInvoices(filter?: { status?: MatchStatus }): Promise<SupplierInvoiceRow[]> {
+export async function listSupplierInvoices(filter?: { status?: InvoiceStatus }): Promise<SupplierInvoiceRow[]> {
   const actor = await requirePermission('supplier_invoice.read');
   const rows = await db.misSupplierInvoice.findMany({
     where: filter?.status ? { status: filter.status } : undefined,
@@ -119,8 +121,8 @@ export async function listSupplierInvoices(filter?: { status?: MatchStatus }): P
  * `counts` is per-status over the `q` search so the filter chips stay honest. Same role-shaped payloads as the board.
  */
 export async function listSupplierInvoicesPage(
-  opts: { status?: MatchStatus; q?: string; page?: number | string } = {},
-): Promise<Paged<SupplierInvoiceRow> & { counts: Record<MatchStatus, number> }> {
+  opts: { status?: InvoiceStatus; q?: string; page?: number | string } = {},
+): Promise<Paged<SupplierInvoiceRow> & { counts: Record<InvoiceStatus, number> }> {
   const actor = await requirePermission('supplier_invoice.read');
   const q = parseSearch(opts.q);
   const search: Prisma.MisSupplierInvoiceWhereInput = q
@@ -139,8 +141,8 @@ export async function listSupplierInvoicesPage(
     db.misSupplierInvoice.count({ where }),
     db.misSupplierInvoice.groupBy({ by: ['status'], where: search, _count: { _all: true } }),
   ]);
-  const counts = { MATCHED: 0, DISCREPANCY_QTY: 0, DISCREPANCY_PRICE: 0, PENDING_REVIEW: 0 } as Record<MatchStatus, number>;
-  for (const g of grouped) counts[g.status as MatchStatus] = g._count._all;
+  const counts = Object.fromEntries(INVOICE_STATUSES.map((s) => [s, 0])) as Record<InvoiceStatus, number>;
+  for (const g of grouped) counts[g.status as InvoiceStatus] = g._count._all;
   return { rows: rows.map((inv) => invoiceRowFor(actor.role, inv)), total, counts };
 }
 
@@ -156,6 +158,9 @@ function invoiceRowFor(role: Parameters<typeof can>[0], inv: InvoiceWithGrn): Su
     supplierName: inv.supplier?.name ?? null,
     status: inv.status,
     signedOff: inv.varianceSignedOffAt ? { at: inv.varianceSignedOffAt, note: inv.varianceSignOffNote ?? null } : null,
+    payment: inv.paymentApprovedAt || inv.paidAt || inv.rejectReason
+      ? { approvedAt: inv.paymentApprovedAt ?? null, paidAt: inv.paidAt ?? null, paymentDate: inv.paymentDate ?? null, paymentRef: inv.paymentRef ?? null, rejectReason: inv.rejectReason ?? null }
+      : null,
   };
   if (!seesFigures) return base;
   const m = matchFor(inv);
@@ -176,6 +181,8 @@ export async function reconcileSupplierInvoice(id: string): Promise<{ id: string
   const actor = await requirePermission('supplier_invoice.write');
   const inv = await db.misSupplierInvoice.findUnique({ where: { id }, include: invoiceInclude });
   if (!inv) throw new Error(`Supplier invoice ${id} not found`);
+  // R2-288: once approved for payment, paid or rejected, the match is history; the state is not overwritten.
+  if (isPaymentStatus(inv.status)) throw new Error(`This invoice is ${inv.status.toLowerCase().replace(/_/g, ' ')}; its match is no longer re-checked.`);
   const { status } = matchFor(inv);
   if (status === inv.status) return { id, status, changed: false };
   // R2-280: a sign-off was given on the OLD variance; a changed match needs a fresh one.
@@ -209,4 +216,51 @@ export async function signOffInvoiceVariance(id: string, note?: string | null) {
     before: { status: inv.status, signedOff: false }, after: { status: inv.status, signedOff: true, note: trimmed },
   });
   return { id, signedOff: { at, note: trimmed } };
+}
+
+// ---------------------------------------------------------------------------------------------
+// R2-288 — payment states. Audit rows carry statuses, dates and the payment reference, never an amount (D24).
+// ---------------------------------------------------------------------------------------------
+
+/** The Owner (the money gate, wages.read) approves a MATCHED invoice, or a discrepancy they have signed off, for payment. */
+export async function approveInvoiceForPayment(id: string) {
+  const actor = await requirePermission('wages.read');
+  const inv = await db.misSupplierInvoice.findUnique({ where: { id }, select: { id: true, status: true, varianceSignedOffAt: true } });
+  if (!inv) throw new Error(`Supplier invoice ${id} not found`);
+  if (isPaymentStatus(inv.status)) throw new Error(`This invoice is already ${inv.status.toLowerCase().replace(/_/g, ' ')}.`);
+  if (inv.status === 'PENDING_REVIEW') throw new Error('This invoice has not been matched yet; re-check it first.');
+  if (inv.status !== 'MATCHED' && !inv.varianceSignedOffAt) throw new Error('Sign off the variance before approving this invoice for payment.');
+  const at = new Date();
+  await db.misSupplierInvoice.update({ where: { id }, data: { status: 'APPROVED_FOR_PAYMENT', paymentApprovedById: actor.userId, paymentApprovedAt: at } });
+  await logAuditEvent({ actorId: actor.userId, action: 'supplier_invoice.approve_for_payment', entity: 'MisSupplierInvoice', entityId: id, before: { status: inv.status }, after: { status: 'APPROVED_FOR_PAYMENT' } });
+  return { id, status: 'APPROVED_FOR_PAYMENT' as const };
+}
+
+/** Admin or Owner (supplier_invoice.write) records the payment: date and UTR / cheque number, both required. */
+export async function markInvoicePaid(id: string, input: { paymentDate: string; paymentRef: string }) {
+  const actor = await requirePermission('supplier_invoice.write');
+  const inv = await db.misSupplierInvoice.findUnique({ where: { id }, select: { id: true, status: true } });
+  if (!inv) throw new Error(`Supplier invoice ${id} not found`);
+  if (inv.status !== 'APPROVED_FOR_PAYMENT') throw new Error('Only an invoice approved for payment can be marked paid.');
+  const ref = input.paymentRef?.trim() ?? '';
+  if (ref.length < 3) throw new Error('Enter the UTR / cheque number (at least 3 characters).');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.paymentDate ?? '') || Number.isNaN(Date.parse(input.paymentDate))) throw new Error('Enter the payment date (YYYY-MM-DD).');
+  const paymentDate = new Date(`${input.paymentDate}T00:00:00Z`);
+  await db.misSupplierInvoice.update({ where: { id }, data: { status: 'PAID', paidById: actor.userId, paidAt: new Date(), paymentDate, paymentRef: ref } });
+  await logAuditEvent({ actorId: actor.userId, action: 'supplier_invoice.mark_paid', entity: 'MisSupplierInvoice', entityId: id, before: { status: inv.status }, after: { status: 'PAID', paymentDate: input.paymentDate, paymentRef: ref } });
+  return { id, status: 'PAID' as const };
+}
+
+/** Admin or Owner rejects an invoice (not one already paid), with a reason. */
+export async function rejectSupplierInvoice(id: string, reason: string) {
+  const actor = await requirePermission('supplier_invoice.write');
+  const inv = await db.misSupplierInvoice.findUnique({ where: { id }, select: { id: true, status: true } });
+  if (!inv) throw new Error(`Supplier invoice ${id} not found`);
+  if (inv.status === 'PAID') throw new Error('A paid invoice cannot be rejected.');
+  if (inv.status === 'REJECTED') throw new Error('This invoice is already rejected.');
+  const why = reason?.trim() ?? '';
+  if (why.length < 3) throw new Error('Give a reason (at least 3 characters).');
+  await db.misSupplierInvoice.update({ where: { id }, data: { status: 'REJECTED', rejectReason: why } });
+  await logAuditEvent({ actorId: actor.userId, action: 'supplier_invoice.reject', entity: 'MisSupplierInvoice', entityId: id, before: { status: inv.status }, after: { status: 'REJECTED', reason: why } });
+  return { id, status: 'REJECTED' as const };
 }

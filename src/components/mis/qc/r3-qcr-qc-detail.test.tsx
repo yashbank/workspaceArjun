@@ -99,7 +99,8 @@ describe('B84 Edit action', () => {
 
 describe('R2-320 the AQL sample names its process stage', () => {
   it('a stage picked in the dialog is sent as bomStageId', async () => {
-    recordAqlSampleAction.mockResolvedValue({ ok: true, value: { decision: 'ACCEPT', counts: { critical: 0, major: 0, minor: 0 }, thresholds: { sampleSize: 32, criticalMax: 0, majorMax: 2, minorMax: 5 } } });
+    // A refusal keeps the dialog open (no AqlBreakdown render); the point is the payload the action receives.
+    recordAqlSampleAction.mockResolvedValue({ ok: false, detail: 'Sample too small: inspect at least 32' });
     render(<QcDetailScreen {...props({ stages: [{ value: 's1', label: 'Printing' }, { value: 's2', label: 'Lamination' }] })} />);
     fireEvent.click(screen.getByRole('button', { name: 'Run AQL Sample' }));
     fireEvent.change(screen.getByLabelText('Process / BOM stage (optional)'), { target: { value: 's2' } });

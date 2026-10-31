@@ -14,6 +14,8 @@ export async function addQcCheckAction(data: {
   defectType?: string;
   defectQty?: number;
   notes?: string;
+  /** R2-318 */
+  machineId?: string;
 }) {
   return asResult(async () => {
     await addQcCheck(data);

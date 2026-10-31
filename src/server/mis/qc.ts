@@ -157,6 +157,8 @@ export async function addQcCheck(
     /** V2 Epic 5: set when the check is a checklist tap (qc-template.ts). */
     templateId?: string;
     slotTime?: string;
+    /** R2-318: the machine the inspection was taken at (optional). */
+    machineId?: string;
   },
   /** Server-internal (the server action passes only `data`): the checklist's plain FAIL tap carries no reason. */
   options: { requireFailReason?: boolean } = {},
@@ -165,6 +167,10 @@ export async function addQcCheck(
   validateCheckFields(data, options.requireFailReason ?? true);
   await assertOrderOpen(data.orderId);
   if (data.bomStageId) await assertStageBelongsToOrder(data.orderId, data.bomStageId);
+  if (data.machineId) {
+    const machine = await db.misMachine.findFirst({ where: { id: data.machineId, isActive: true, deletedAt: null }, select: { id: true } });
+    if (!machine) throw new Error('That machine is not active. Pick another, or leave it empty.');
+  }
   const rec = await db.misQcCheck.create({
     data: { ...data, parameterName: data.parameterName ?? 'General', checkTime: new Date(), checkById: actor.userId },
   });
