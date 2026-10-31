@@ -100,7 +100,8 @@ export function evaluateCloseGates(input: { phases: CloseGatePhase[]; qcChecks: 
 
   const latest = new Map<string, CloseGateQcCheck>();
   for (const check of input.qcChecks) {
-    const key = `${check.bomStageId ?? ''}|${check.parameterName ?? 'General'}`;
+    // R2-319: 'Shade' and 'shade ' are the same parameter (the key qc-verdict.ts uses).
+    const key = `${check.bomStageId ?? ''}|${(check.parameterName ?? 'General').trim().toLowerCase()}`;
     const prev = latest.get(key);
     if (!prev || new Date(check.checkTime).getTime() >= new Date(prev.checkTime).getTime()) latest.set(key, check);
   }

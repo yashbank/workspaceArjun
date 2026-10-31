@@ -2,6 +2,7 @@ import { evaluateAql, resolveAqlPlan, thresholdsFromPlan, type AqlResult } from 
 import { correctionVerdict, requireCorrectionReason } from '@/lib/mis/entry-correction';
 import { addDaysToDateKey, dateKeyToDbDate, factoryDateKey, factoryMinuteOfDay } from '@/lib/mis/factory-time';
 import { isOrderClosed } from '@/lib/mis/order-status';
+import { latestChecks } from '@/lib/mis/qc-verdict';
 import { db } from '@/server/db';
 import { requirePermission } from '@/server/mis/auth';
 import { logAuditEvent } from '@/server/mis/audit';
@@ -296,8 +297,9 @@ export async function getQcSummary(orderId: string) {
   const pass = checks.filter(c => c.result === 'PASS').length;
   const fail = checks.filter(c => c.result === 'FAIL').length;
   const na = checks.length - pass - fail;
-  /** Labelled "Defects (failed checks)" wherever shown: it sums the defect quantity of FAILED checks only. */
-  const totalDefectQty = checks.filter(c => c.result === 'FAIL').reduce((s, c) => s + Number(c.defectQty ?? 0), 0);
+  // R2-322: labelled "Defects (failed checks)": a FAIL re-passed later on the same stage + parameter
+  // (setup waste, since corrected) no longer counts. Same "latest check per key" rule as the order close gate.
+  const totalDefectQty = latestChecks(checks).filter(c => c.result === 'FAIL').reduce((s, c) => s + Number(c.defectQty ?? 0), 0);
   return { total: checks.length, pass, fail, na, totalDefectQty };
 }
 

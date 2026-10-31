@@ -18,7 +18,13 @@
  * PRICE outranks QTY (red beats amber) when both hold; both flags are still returned.
  */
 
-export const MATCH_STATUSES = ['MATCHED', 'DISCREPANCY_QTY', 'DISCREPANCY_PRICE', 'PENDING_REVIEW'] as const;
+/** R2-335: 'inv-9988 ' on the GRN and 'INV-9988' on the invoice are the same number. */
+export function sameInvoiceNo(a: string | null | undefined, b: string | null | undefined): boolean {
+  const norm = (s: string | null | undefined) => (s ?? '').trim().toUpperCase();
+  return norm(a) !== '' && norm(a) === norm(b);
+}
+
+export const MATCH_STATUSES =['MATCHED', 'DISCREPANCY_QTY', 'DISCREPANCY_PRICE', 'PENDING_REVIEW'] as const;
 export type MatchStatus = (typeof MATCH_STATUSES)[number];
 
 /** Units a challan and a receipt may differ by before it is a quantity discrepancy (rounding guard). */

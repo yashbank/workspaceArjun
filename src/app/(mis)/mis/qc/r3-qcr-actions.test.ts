@@ -56,3 +56,12 @@ describe('qc/actions.ts returns ActionResult', () => {
     expect(Object.keys(actions).sort()).toEqual(['addQcCheckAction', 'editQcCheckAction', 'recordAqlSampleAction', 'recordChecklistCheckAction']);
   });
 });
+
+describe('R2-321 the floor grid is refreshed after an AQL sample', () => {
+  it('recordAqlSampleAction revalidates /mis/qc/grid', async () => {
+    const { revalidatePath } = await import('next/cache');
+    recordAqlSample.mockResolvedValue({ result: { decision: 'ACCEPT' } });
+    await actions.recordAqlSampleAction({ orderId: 'o', sampleSize: 32, defects: [] });
+    expect(vi.mocked(revalidatePath).mock.calls.map((c) => c[0])).toContain('/mis/qc/grid');
+  });
+});

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { PRICE_TOLERANCE_ABS, PRICE_TOLERANCE_PCT, QTY_TOLERANCE, matchSupplierInvoice } from './invoice-match';
+import { PRICE_TOLERANCE_ABS, PRICE_TOLERANCE_PCT, QTY_TOLERANCE, matchSupplierInvoice, sameInvoiceNo } from './invoice-match';
 
 const line = (receivedQty: number, ratePerUnit: number, dcQuantity: number | null = null) => ({ receivedQty, ratePerUnit, dcQuantity });
 
@@ -110,5 +110,15 @@ describe('matchSupplierInvoice', () => {
     const r = matchSupplierInvoice([line(2, 50.5, 2), line(3, 10.25, 3)], 131.75);
     expect(r.expectedAmount).toBe(131.75);
     expect(r.status).toBe('MATCHED');
+  });
+});
+
+describe('R2-335 invoice numbers match trimmed and case-insensitively', () => {
+  it('treats casing and surrounding spaces as the same number', () => {
+    expect(sameInvoiceNo('inv-9988 ', 'INV-9988')).toBe(true);
+    expect(sameInvoiceNo(' INV-1', 'inv-1')).toBe(true);
+    expect(sameInvoiceNo('INV-1', 'INV-2')).toBe(false);
+    expect(sameInvoiceNo(null, '')).toBe(false);
+    expect(sameInvoiceNo('  ', '')).toBe(false);
   });
 });

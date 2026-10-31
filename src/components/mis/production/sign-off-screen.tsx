@@ -51,6 +51,7 @@ export function SignOffScreen(props: SignOffScreenProps) {
   const t = useT();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [notes, setNotes] = useState('');
 
   const wasteBlockers = props.blockers.filter((b) => b.kind === 'WASTE_REASON');
   const qcBlockers = props.blockers.filter((b) => b.kind === 'QC_FAILURE');
@@ -189,14 +190,27 @@ export function SignOffScreen(props: SignOffScreenProps) {
 
       {/* ---- The confirm action. Below the numbers, always. ---- */}
       {props.canSign ? (
+        <>
+          {/* R2-295: optional, but the server insists on it when an earlier phase was skipped. */}
+          <label className="block rounded-2xl border border-slate-200 bg-white p-4">
+            <span className="text-sm font-semibold text-slate-700">{t('phase.signOff.handoverNote')}</span>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={2}
+              placeholder={t('phase.signOff.handoverNoteHint')}
+              className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-3 text-base"
+            />
+          </label>
         <button
           type="button"
           disabled={isPending}
-          onClick={() => run(() => signOffPhaseAction(props.phaseId, props.orderId))}
+          onClick={() => run(() => signOffPhaseAction(props.phaseId, props.orderId, notes))}
           className="w-full rounded-xl bg-indigo-600 py-3.5 text-base font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
         >
           {isPending ? t('phase.signOff.signing') : t('phase.signOff.confirm')}
         </button>
+        </>
       ) : (
         <section className="rounded-2xl border border-slate-200 bg-white p-4">
           <p className="text-sm text-slate-600">

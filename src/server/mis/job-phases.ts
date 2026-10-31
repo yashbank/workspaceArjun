@@ -68,6 +68,7 @@ export type JobPhaseRefusal =
   | 'NO_PRODUCTION_RECORDED'
   | 'WASTE_REASON_MISSING'
   | 'QC_FAILURE_UNACKNOWLEDGED'
+  | 'HANDOVER_NOTE_REQUIRED'
   | 'PRODUCTION_ALREADY_RECORDED'
   | 'LATER_PHASE_STARTED'
   | 'REASON_REQUIRED'
@@ -384,6 +385,20 @@ export async function signOffPhase(phaseId: string, input?: { notes?: string }) 
   const blockers = await collectSignOffBlockers(phase);
   const first = blockers[0];
   if (first) throw refusalForBlocker(phase, first, blockers);
+
+  // R2-295: a skipped upstream stage must be explained in the handover, not left to the audit reader to guess.
+  if (!input?.notes?.trim()) {
+    const skipped = await db.misJobPhase.count({
+      where: { orderId: phase.orderId, deletedAt: null, sequence: { lt: phase.sequence }, status: 'NOT_APPLICABLE' },
+    });
+    if (skipped > 0) {
+      throw new JobPhaseError(
+        'HANDOVER_NOTE_REQUIRED',
+        `${skipped === 1 ? 'An earlier phase was' : `${skipped} earlier phases were`} marked not applicable. Write a handover note saying why before signing off ${phase.process.name}.`,
+        { phaseId, skipped },
+      );
+    }
+  }
 
   const signedOffAt = new Date();
   const next = await nextApplicablePhase(phase.orderId, phase.sequence);

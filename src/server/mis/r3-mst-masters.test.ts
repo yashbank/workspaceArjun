@@ -209,3 +209,12 @@ describe('B29 customer guards', () => {
     expect(await restoreCustomerAction('c1')).toMatchObject({ ok: false });
   });
 });
+
+describe('R2-289 a supplier with a RECEIVING PO is still needed', () => {
+  it('delete is refused while a RECEIVING PO exists', async () => {
+    state.suppliers.push({ id: 's1', name: 'Acme', deletedAt: null });
+    state.pos.push({ supplierId: 's1', status: 'RECEIVING' });
+    await expect(deleteSupplier('s1')).rejects.toThrow('Supplier has 1 open PO');
+    expect(state.suppliers[0].deletedAt).toBeNull();
+  });
+});

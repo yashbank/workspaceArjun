@@ -16,9 +16,9 @@ import {
  *
  * R3 B127: every export returns an `ActionResult`; the screen shows `detail` on a refusal.
  */
-export async function signOffPhaseAction(phaseId: string, orderId: string) {
+export async function signOffPhaseAction(phaseId: string, orderId: string, notes?: string) {
   return asResult(async () => {
-    await signOffPhase(phaseId);
+    await signOffPhase(phaseId, notes?.trim() ? { notes: notes.trim() } : undefined); // R2-295
     revalidatePath(`/mis/production/sign-off/${phaseId}`);
     revalidatePath(`/mis/orders/${orderId}`);
     revalidatePath('/mis');

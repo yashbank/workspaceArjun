@@ -51,3 +51,18 @@ R2-277 | SCHEMA (pending) | - | MisGrnStatus REVERSED + MisGrn.reversedById/At/r
 R2-281 | ALREADY_FIXED | R3-STK B11 | item-cart.tsx sends a crypto.randomUUID commit key (rotated after success); commitReceipt/commitIssue run under runIdempotent (store.ts runOnce); tests r3-stk-grn "B11 cart idempotency", r3-stk-actions key pass-through
 R2-283 | ALREADY_FIXED | R3-STK B09 | reconcilePhysicalCount recomputes delta = physical - min(ledger, txn balance) under the item lock, never the stored discrepancy; test r3-stk-store "B09 reconcile works against the stock now"
 GATE | B1-B9 | - | tsc clean, eslint 0 errors (5 pre-existing warnings), vitest 421 files / 6958 tests green, pnpm build green. 3 migrations pending in prisma/migrations-pending (20261031000000, 20261031000001, 20261031000002). Waiting for the owner to apply them before the final re-verify.
+R2-289 | DEV_DONE | - | supplier.ts OPEN_PO_STATUSES gains RECEIVING; r3-mst-masters test "RECEIVING PO blocks delete"
+R2-293 | ALREADY_FIXED | C6b #29 | saveCustomerAction/saveSupplierAction wrap asResult -> P2002 becomes "Customer with code 'X' already exists"; master-duplicates.test.ts covers both
+R2-313 | DEV_DONE | - | createDefectType restores a soft-deleted row with the same code (new details, audited defectType.restore); active duplicate still a friendly asResult message; defect-type.test.ts added
+R2-335 | DEV_DONE | - | lib/mis/invoice-match sameInvoiceNo (trim + case-insensitive) used by supplier-invoice matchFor; invoice-match.test
+R2-319 | DEV_DONE | - | evaluateCloseGates keys on trim().toLowerCase() parameterName (same as qc-verdict); order-transitions.test
+R2-321 | DEV_DONE | - | recordAqlSampleAction revalidates /mis/qc/grid; r3-qcr-actions.test
+R2-343 | CONTRACT | - | reports.ts wastePct = W/(P+W) (0 produced + waste = 100%), matches getProductionSummary; screen label "waste (of total input)"; r3-qcr-reports pins 10 -> 9.1 // R2-343, new 90%/100%/null test
+R2-344 | DEV_DONE | - | allocateItemCode: one SELECT MAX(...) over ITM- codes via $queryRaw on a real client; fakes without $queryRaw keep the findMany path; item-code.test.ts (server) added
+R2-329 | DEV_DONE | - | back-dated production (producedOn) is placed at factory NOON of that day via instantAtAxisMinute (was UTC midnight = 05:30 IST); named shift still wins in resolveShift; production.test
+R2-328 | CONTRACT | - | editProductionLog no longer refuses waste > produced (create never did; make-ready); r3-prd-logic pin flipped // R2-328
+R2-327 | DEV_DONE | - | computeCloseGates counts only logs with qtyProduced > 0 for PRODUCTION_LOGGED; 0-qty entries still allowed; orders-status.test
+R2-295 | DEV_DONE | - | signOffPhase: HANDOVER_NOTE_REQUIRED when an earlier phase is NOT_APPLICABLE and notes blank; sign-off screen gets an optional handover-note textarea passed through signOffPhaseAction; i18n keys EN/HI; job-phases.test; fixtures job-phases.release/r3-prd-signoff-tx gain misJobPhase.count
+R2-290 | DEV_DONE | - | getOrderTrace returns byUnit (sumByUnit); totalProduced/totalWaste null when units mix; trace screen prints "1,000 SHEETS · 10,000 PIECE", yield only for one unit; traceability-units.test.ts
+R2-322 | DEV_DONE | - | getQcSummary.totalDefectQty sums only the latest FAIL per stage+parameter (qc-verdict latestChecks, R2-319 normalisation); label unchanged; r3-qcr-qc.test
+GATE | C1 | - | tsc clean, eslint 0 errors (5 pre-existing warnings), vitest 424 files / 6978 tests green

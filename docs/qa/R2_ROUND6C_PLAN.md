@@ -192,20 +192,20 @@ Order rule: small no-schema server fixes first, permissions next (contract tests
 
 ## 5. PROGRESS checklist (tick = DEV_DONE + gate green, else write state)
 Batch C1
-- [ ] R2-289 supplier delete vs RECEIVING PO
-- [ ] R2-293 duplicate customer/supplier code
-- [ ] R2-313 soft-deleted defect type code
-- [ ] R2-335 invoice number match trim/case
-- [ ] R2-319 close-gate parameter case
-- [ ] R2-321 AQL revalidate grid
-- [ ] R2-343 wastage % formula
-- [ ] R2-344 item code allocation (Enhancement)
-- [ ] R2-329 back-dated production timezone
-- [ ] R2-328 edit production waste > produced
-- [ ] R2-327 zero-qty satisfies close gate
-- [ ] R2-295 sign-off note when upstream NOT_APPLICABLE
-- [ ] R2-290 traceability units
-- [ ] R2-322 QC summary defect totals
+- [x] R2-289 supplier delete vs RECEIVING PO
+- [x] R2-293 duplicate customer/supplier code
+- [x] R2-313 soft-deleted defect type code
+- [x] R2-335 invoice number match trim/case
+- [x] R2-319 close-gate parameter case
+- [x] R2-321 AQL revalidate grid
+- [x] R2-343 wastage % formula
+- [x] R2-344 item code allocation (Enhancement)
+- [x] R2-329 back-dated production timezone
+- [x] R2-328 edit production waste > produced
+- [x] R2-327 zero-qty satisfies close gate
+- [x] R2-295 sign-off note when upstream NOT_APPLICABLE
+- [x] R2-290 traceability units
+- [x] R2-322 QC summary defect totals
 Batch C2
 - [ ] R2-340 worker regularization (verify)
 - [ ] R2-341 regularization review permission (verify)

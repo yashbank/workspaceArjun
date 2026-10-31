@@ -34,6 +34,7 @@ export async function recordAqlSampleAction(data: {
   return asResult(async () => {
     const { result } = await recordAqlSample(data);
     revalidatePath('/mis/qc');
+    revalidatePath('/mis/qc/grid'); // R2-321
     revalidatePath(`/mis/qc/${data.orderId}`);
     return result;
   });

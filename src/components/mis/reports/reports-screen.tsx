@@ -283,7 +283,7 @@ export function ReportsScreen({ production, attendance, qc, orders, store, machi
         <div className="bg-white border border-slate-200 rounded-lg p-4">
           <p className="text-xs text-slate-500 uppercase tracking-wide">Waste</p>
           <p className="text-2xl font-bold mt-1">{prodTotals.length === 0 ? '0' : prodTotals.map(t => formatQty(t.waste)).join(' / ')}</p>
-          <p className="text-xs text-slate-400">{prodTotals.length === 0 ? 'waste' : prodTotals.map(t => `${t.unit}${t.wastePct == null ? '' : ` (${t.wastePct}%)`}`).join(' / ')} waste</p>
+          <p className="text-xs text-slate-400">{prodTotals.length === 0 ? 'waste' : prodTotals.map(t => `${t.unit}${t.wastePct == null ? '' : ` (${t.wastePct}%)`}`).join(' / ')} waste (of total input)</p>
         </div>
         <div className="bg-white border border-slate-200 rounded-lg p-4">
           <p className="text-xs text-slate-500 uppercase tracking-wide">Attendance</p>

@@ -49,8 +49,8 @@ describe('B76 per-unit production totals', () => {
     const { from, to } = factoryMonthRange(2026, 10, 'Asia/Kolkata');
     const report = await getProductionReport({ from, to });
     expect(report.totals).toEqual([
-      { unit: 'KG', produced: 200, waste: 20, wastePct: 10 },
-      { unit: 'PIECE', produced: 50, waste: 5, wastePct: 10 },
+      { unit: 'KG', produced: 200, waste: 20, wastePct: 9.1 }, // R2-343: 20 / (200 + 20)
+      { unit: 'PIECE', produced: 50, waste: 5, wastePct: 9.1 }, // R2-343: 5 / (50 + 5)
     ]);
     expect(report.rows.filter((r) => r.orderNumber === 'ORD-a')).toHaveLength(1);
   });
@@ -114,5 +114,17 @@ describe('B78 clampReportMonth', () => {
     [{ year: ['2024', '2025'] as unknown, month: '7' }, { year: 2026, month: 7 }],
   ])('%j -> %j', (input, expected) => {
     expect(clampReportMonth(input, today)).toEqual(expected);
+  });
+});
+
+describe('R2-343 waste % is a share of total input', () => {
+  it('10 good + 90 waste is 90%, never 900%; 0 good + waste is 100%; nothing at all is null', async () => {
+    world.logs = [log('a', 10, 90, 'PIECE'), log('b', 0, 5, 'KG')];
+    const { from, to } = factoryMonthRange(2026, 10, 'Asia/Kolkata');
+    const report = await getProductionReport({ from, to });
+    expect(report.totals).toEqual([
+      { unit: 'KG', produced: 0, waste: 5, wastePct: 100 },
+      { unit: 'PIECE', produced: 10, waste: 90, wastePct: 90 },
+    ]);
   });
 });

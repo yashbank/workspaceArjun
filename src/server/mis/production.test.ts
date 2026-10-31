@@ -405,3 +405,14 @@ describe('logProduction, the direct path', () => {
     ).rejects.toMatchObject({ rejectReason: 'MACHINE_MISSING' });
   });
 });
+
+describe('R2-329 a back-dated entry lands on the factory day, not UTC midnight', () => {
+  it('sits at factory noon of the chosen date (UTC midnight would be 05:30 IST, outside every shift)', async () => {
+    const { factoryDateKey, factoryMinuteOfDay } = await import('@/lib/mis/factory-time');
+    await submitProductionLog(entry({}, { producedOn: '2026-09-15' }));
+    const loggedAt = fake.state.logs[0].loggedAt as Date;
+    expect(factoryDateKey(loggedAt, 'Asia/Kolkata')).toBe('2026-09-15');
+    expect(factoryMinuteOfDay(loggedAt, 'Asia/Kolkata')).toBe(12 * 60);
+    expect(loggedAt.toISOString()).toBe('2026-09-15T06:30:00.000Z');
+  });
+});

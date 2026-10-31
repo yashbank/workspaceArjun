@@ -1,6 +1,6 @@
 import { addDaysToDateKey, dateKeyToDbDate, factoryDateKey, factoryMinuteOfDay } from '@/lib/mis/factory-time';
 import { isUuid, parkable, rejectable, type QueuedWriteEnvelope } from '@/lib/mis/offline/idempotency';
-import { shiftDateKeyFor, shiftWindowInstants } from '@/lib/mis/crew-hours';
+import { instantAtAxisMinute, shiftDateKeyFor, shiftWindowInstants } from '@/lib/mis/crew-hours';
 import { correctionVerdict, requireCorrectionReason } from '@/lib/mis/entry-correction';
 import { autoBlockWindow, classifyLogAgainstBookings, decideMachineSync, type SyncBooking } from '@/lib/mis/machine-sync';
 import { isOrderClosed } from '@/lib/mis/order-status';
@@ -406,7 +406,10 @@ export type ProductionLogResult = {
  * `createProductionLog` checks it belongs to this order's BOM. `loggedAt` is the device's
  * `clientRecordedAt` — production entries are a client-recorded kind (D15).
  */
-function toLogInput(payload: unknown, clientRecordedAt: string): LogProductionInput {
+/** R2-329: where a back-dated entry sits on its factory day (12:00). */
+const BACKDATE_MINUTE_OF_DAY = 12 * 60;
+
+function toLogInput(payload: unknown, clientRecordedAt: string, timeZone: string): LogProductionInput {
   const p = (payload ?? {}) as Record<string, unknown>;
   const text = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : undefined);
 
@@ -443,7 +446,10 @@ function toLogInput(payload: unknown, clientRecordedAt: string): LogProductionIn
     if (!day || Number.isNaN(day.getTime())) throw rejectable('MALFORMED', 'The production date is not a valid date.');
     // Not the future: a back-date is for something that already happened.
     if (day.getTime() > Date.now() + 24 * 60 * 60 * 1000) throw rejectable('MALFORMED', 'The production date is in the future.');
-    loggedAt = day;
+    // R2-329: a back-date has no real clock time, so it is placed at factory noon of that day (the
+    // default working hours), never UTC midnight = 05:30 IST, which no shift covers. A named shift
+    // still wins in resolveShift; without one, noon resolves to the day shift.
+    loggedAt = instantAtAxisMinute(producedOn, BACKDATE_MINUTE_OF_DAY, timeZone);
   }
 
   const makereadyMinutes = cleanMakeready(p.makereadyMinutes);
@@ -516,7 +522,7 @@ export async function submitProductionLog(
           'This entry was recorded by a different user than the one signed in now, so it will not be sent under their name. Ask them to sign in.',
         );
       }
-      const { rec, warnings, autoAllocation } = await createProductionLog(toLogInput(envelope.payload, envelope.clientRecordedAt), tx, {
+      const { rec, warnings, autoAllocation } = await createProductionLog(toLogInput(envelope.payload, envelope.clientRecordedAt, await getFactoryTimezone()), tx, {
         skipClearance: options.override?.skipClearance,
       });
       auto = autoAllocation;
@@ -744,7 +750,6 @@ export async function editProductionLog(id: string, patch: ProductionLogPatch, n
   const qtyWaste = patch.qtyWaste ?? Number(log.qtyWaste);
   if (!Number.isFinite(qtyProduced) || qtyProduced < 0) throw new Error('The produced quantity is not a valid number.');
   if (!Number.isFinite(qtyWaste) || qtyWaste < 0) throw new Error('The wastage quantity is not a valid number.');
-  if (qtyWaste > qtyProduced) throw new Error('Waste cannot be more than the quantity produced.');
   const makereadyMinutes = patch.makereadyMinutes === null ? null : cleanMakeready(patch.makereadyMinutes);
 
   const bomStageId = patch.bomStageId === undefined ? log.bomStageId : patch.bomStageId;

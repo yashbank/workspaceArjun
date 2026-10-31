@@ -1,6 +1,6 @@
 import type { Prisma } from '@/generated/prisma/client';
 import { threeWayMatch, type ThreeWayMatch } from '@/lib/mis/grn-match';
-import { matchSupplierInvoice, type MatchStatus } from '@/lib/mis/invoice-match';
+import { matchSupplierInvoice, sameInvoiceNo, type MatchStatus } from '@/lib/mis/invoice-match';
 import { can } from '@/lib/mis/permissions';
 import { pageQuery, parseSearch, type Paged } from '@/lib/mis/pagination';
 import { db } from '@/server/db';
@@ -88,7 +88,7 @@ const invoiceInclude = {
 type InvoiceWithGrn = Prisma.MisSupplierInvoiceGetPayload<{ include: typeof invoiceInclude }>;
 
 function matchFor(inv: InvoiceWithGrn) {
-  const named = (inv.po.grns ?? []).filter((g) => g.supplierInvoiceNo === inv.invoiceNo);
+  const named = (inv.po.grns ?? []).filter((g) => sameInvoiceNo(g.supplierInvoiceNo, inv.invoiceNo)); // R2-335
   // An older invoice whose GRN header never carried the number still has its one linked GRN.
   const items = named.length > 0 ? named.flatMap((g) => g.items) : (inv.grn?.items ?? []);
   return matchSupplierInvoice(

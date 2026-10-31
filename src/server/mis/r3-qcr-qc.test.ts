@@ -200,3 +200,17 @@ describe('B84 editQcCheck', () => {
     await expect(editQcCheck(id, { reason: 'recheck', notes: 'abc def' }, now)).resolves.toMatchObject({ notes: 'abc def' });
   });
 });
+
+describe('R2-322 getQcSummary counts unresolved defects only', () => {
+  it('a FAIL re-passed later on the same parameter drops out of totalDefectQty', async () => {
+    as('QC');
+    const t0 = new Date('2026-10-05T04:00:00Z');
+    world.checks.push(
+      { id: 'f1', orderId: 'ord-1', result: 'FAIL', parameterName: 'Shade', defectQty: 100, bomStageId: null, checkTime: t0 },
+      { id: 'p1', orderId: 'ord-1', result: 'PASS', parameterName: 'shade', defectQty: 0, bomStageId: null, checkTime: new Date(t0.getTime() + HOUR) },
+      { id: 'f2', orderId: 'ord-1', result: 'FAIL', parameterName: 'Registration', defectQty: 3, bomStageId: null, checkTime: new Date(t0.getTime() + 2 * HOUR) },
+    );
+    const s = await getQcSummary('ord-1');
+    expect(s).toMatchObject({ total: 3, pass: 1, fail: 2, totalDefectQty: 3 });
+  });
+});

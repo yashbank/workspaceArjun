@@ -747,3 +747,21 @@ describe('the sign-off summary (MIS-164)', () => {
     expect(summary.handedOver).toEqual(EXPECTED.handedOver);
   });
 });
+
+describe('R2-295 a skipped upstream phase needs a handover note', () => {
+  it('refuses a blank note when an earlier phase is NOT_APPLICABLE', async () => {
+    readyToSign();
+    phaseCount.mockResolvedValue(1);
+    await expect(signOffPhase('ph-2')).rejects.toMatchObject({ reason: 'HANDOVER_NOTE_REQUIRED' });
+    await expect(signOffPhase('ph-2', { notes: '   ' })).rejects.toMatchObject({ reason: 'HANDOVER_NOTE_REQUIRED' });
+    expect(phaseUpdate).not.toHaveBeenCalled();
+    expect(phaseCount).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ status: 'NOT_APPLICABLE', sequence: { lt: 2 } }) }));
+  });
+  it('signs off with a note, and without one when nothing upstream was skipped', async () => {
+    readyToSign();
+    phaseCount.mockResolvedValue(1);
+    await expect(signOffPhase('ph-2', { notes: 'Lamination skipped: customer wants uncoated board' })).resolves.toMatchObject({ status: 'SIGNED_OFF' });
+    phaseCount.mockResolvedValue(0);
+    await expect(signOffPhase('ph-2')).resolves.toMatchObject({ status: 'SIGNED_OFF' });
+  });
+});

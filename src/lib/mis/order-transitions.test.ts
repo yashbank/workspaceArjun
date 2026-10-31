@@ -73,3 +73,26 @@ describe('canOverrideCloseGates', () => {
     expect(canOverrideCloseGates(r)).toBe(ok);
   });
 });
+
+describe('R2-319 QC parameter names are matched case- and space-insensitively', () => {
+  it("a later PASS on 'shade ' resolves the FAIL on 'Shade'", () => {
+    const gates = evaluateCloseGates({
+      phases: [],
+      qcChecks: [
+        { bomStageId: null, parameterName: 'Shade', result: 'FAIL', checkTime: '2026-10-01T09:00:00Z' },
+        { bomStageId: null, parameterName: 'shade ', result: 'PASS', checkTime: '2026-10-01T10:00:00Z' },
+      ],
+    });
+    expect(gates.find((g) => g.key === 'QC_RESOLVED')?.passed).toBe(true);
+  });
+  it('a different stage with the same parameter name stays distinct', () => {
+    const gates = evaluateCloseGates({
+      phases: [],
+      qcChecks: [
+        { bomStageId: 's1', parameterName: 'Shade', result: 'FAIL', checkTime: '2026-10-01T09:00:00Z' },
+        { bomStageId: 's2', parameterName: 'shade', result: 'PASS', checkTime: '2026-10-01T10:00:00Z' },
+      ],
+    });
+    expect(gates.find((g) => g.key === 'QC_RESOLVED')?.passed).toBe(false);
+  });
+});
