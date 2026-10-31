@@ -2,6 +2,14 @@
 
 > **All UNCLEAR rows are resolved** — see `docs/qa/R2_ROUND6B_DECISIONS.md` (owner-approved). Implement those decisions as written; do not re-ask.
 
+> **Schema protocol for this round (overrides the "stop after Half A" step of `mis-schema-gate`; owner-approved).** Do NOT stop at schema rows. This Mac can run `pnpm db:generate` (no database needed), so:
+> 1. Edit `prisma/schema.prisma`, hand-write additive SQL in `prisma/migrations-pending/<ts>_<name>/migration.sql` (nullable or defaulted columns only, rollback comment block), run `pnpm db:generate`, then do Half B (server code, UI, tests with mocked db) in the same pass.
+> 2. NEVER run `pnpm db:deploy`, `db:migrate`, or `mv` a folder into `prisma/migrations/`, and never touch the live database.
+> 3. Keep every migration additive so the currently deployed code keeps working before and after it is applied.
+> 4. After the LAST batch passes all gates, STOP and send the owner one message: "All batches verified. Apply migrations before I merge:" with the list of pending folders and the exact command `mv prisma/migrations-pending/<folder> prisma/migrations/` for each, then `pnpm db:deploy && pnpm db:generate`. Wait for the owner to say the migrations are applied.
+> 5. After that, re-run `tsc`, `eslint`, full `vitest` once more, push, and report "ready to deploy". The owner deploys to `main` from the other Mac; do not merge or push to `main`.
+> The only reason to stop earlier is a row marked BLOCKED in `PROGRESS.md`.
+
 
 Bug text (verbatim, the only source for the Mac with no sheet access): `docs/qa/R2_ROUND6B_BUGS.md`.
 Earlier plan for 234-263: `docs/qa/R2_ROUND6_COORDINATION.md` (F1-F17 fix map, D1-D4 decisions). Reuse its roles, states and log files (`docs/qa/round6/MAX_LOG.md`, `PRO_LOG.md`, append-only, line `ID | STATE | sha | note`).
@@ -215,3 +223,6 @@ Batch B8
 Batch B9
 - [ ] R2-281 store commit idempotency (verify)
 - [ ] R2-283 count reconcile (needs Q)
+
+## Final step (after B9)
+- [ ] FINAL: ask owner to apply pending migrations (see Schema protocol, step 4), wait, re-verify, report ready to deploy
