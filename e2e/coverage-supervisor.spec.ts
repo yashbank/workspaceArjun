@@ -68,7 +68,7 @@ const PRINT_ROUTES: { print: string; list: string; prefix: string; may404?: stri
   { print: '/mis/print/badge/', list: '/mis/employees', prefix: '/mis/employees/' },
 ];
 
-/** From permissions.ts: no approvals.read, settings.read, po.read, wages.read, store.count, attendance.write, queue.review. */
+/** From permissions.ts: no approvals.read, settings.read, po.read, wages.read, store.count, attendance.write. (R2-342: Supervisor now holds queue.review, so /mis/queue is open.) */
 const REFUSED_ROUTES = [
   '/mis/approvals',
   '/mis/settings',
@@ -76,7 +76,6 @@ const REFUSED_ROUTES = [
   '/mis/suppliers',
   '/mis/payroll',
   '/mis/audit',
-  '/mis/queue',
   '/mis/kiosk',
   '/mis/settings/qc-templates',
   '/mis/settings/rules',

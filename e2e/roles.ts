@@ -41,7 +41,7 @@ const ALL = [
 export const EXPECTED_NAV: Record<MisRoleName, string[]> = {
   OWNER: ALL,
   ADMIN: ALL.filter((id) => id !== 'payroll'),
-  SUPERVISOR: ['masters', 'orders', 'production', 'quality', 'attendance', 'machine-board', 'reports', 'employees', 'grn', 'inventory', 'customers', 'documents', 'bom', 'traceability', 'store'],
+  SUPERVISOR: ['masters', 'orders', 'production', 'quality', 'attendance', 'machine-board', 'reports', 'employees', 'grn', 'inventory', 'customers', 'documents', 'bom', 'traceability', 'queue', 'store'],
   QC: ['masters', 'orders', 'production', 'quality', 'machine-board', 'reports', 'customers', 'documents', 'bom', 'traceability'],
   ATTENDANCE_OPERATOR: ['attendance', 'employees', 'kiosk'],
   SUPER_ATTENDANCE_OPERATOR: ['attendance', 'reports', 'employees', 'queue', 'kiosk'],
