@@ -174,9 +174,9 @@ Batch B1
 - [x] R2-252 regularization permission
 - [x] R2-244 past-date Clock In (verify)
 Batch B2
-- [ ] R2-246 Android WorkDate parity
-- [ ] R2-243 queue dismiss
-- [ ] R2-254 (dup of 243)
+- [x] R2-246 Android WorkDate parity
+- [x] R2-243 queue dismiss
+- [x] R2-254 (dup of 243)
 Batch B3
 - [ ] R2-236 DAILY Sunday pay
 - [ ] R2-245 (dup of 236)

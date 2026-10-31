@@ -74,6 +74,16 @@ class WorkDateTest {
         assertEquals("2026-09-21", wd(20, 23, 30, zone = sgt, list = emptyList()).workDate)
     }
 
+    @Test // R2-235 / R2-246: 'a 07:15 overtime clock-out on a 19:00–07:00 shift is STILL the previous day'
+    fun overtimeClockOutPastNightShiftEndStaysOnTheNightItStarted() {
+        val lateNight = ShiftWindow("ln", "19:00", "07:00")
+        assertEquals(WorkDateResult("2026-09-20", "ln"), wd(21, 7, 15, list = listOf(lateNight), hint = "ln"))
+        assertEquals("2026-09-20", wd(21, 10, 59, list = listOf(lateNight), hint = "ln").workDate) // 19:00 + 16 h = 11:00
+        assertEquals("2026-09-21", wd(21, 11, 0, list = listOf(lateNight), hint = "ln").workDate)
+        assertEquals("2026-09-20", wd(21, 6, 15, hint = "n").workDate) // 22:00-06:00 cutoff is 14:00
+        assertEquals(WorkDateResult("2026-09-21", "s1"), wd(21, 14, 15, hint = "s1")) // a day shift's late out is unchanged
+    }
+
     @Test
     fun malformedShiftTimesReadAsZeroRatherThanThrowing() {
         val broken = listOf(ShiftWindow("x", "??", ""))
