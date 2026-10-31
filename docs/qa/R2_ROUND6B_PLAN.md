@@ -185,10 +185,10 @@ Batch B3
 - [x] R2-237 payroll layout
 - [x] R2-258 (dup of 237)
 Batch B4
-- [ ] R2-259 same-day rule save
-- [ ] R2-241 hide orphan rules
-- [ ] R2-242 late-rule enum
-- [ ] R2-260 (dup of 242)
+- [x] R2-259 same-day rule save
+- [x] R2-241 hide orphan rules
+- [x] R2-242 late-rule enum
+- [x] R2-260 (dup of 242)
 Batch B5
 - [ ] R2-238 /mis/me unlinked card
 - [ ] R2-249 (dup of 238)

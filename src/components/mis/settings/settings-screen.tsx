@@ -3,7 +3,12 @@ import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/mis/kit/button';
 import { Input } from '@/components/mis/kit/input';
+import { Select } from '@/components/mis/kit/select';
+import { LATE_RULE_KEYS, LATE_WORKERS_OPTIONS } from '@/lib/mis/late-rule';
 import { updateRuleAction } from '@/app/(mis)/mis/settings/actions';
+
+/** R2-242: settings whose value is one of a fixed list get a picker, not free text. */
+const RULE_OPTIONS: Record<string, readonly string[]> = { [LATE_RULE_KEYS[1]]: LATE_WORKERS_OPTIONS };
 
 export type Rule = { id: string; ruleKey: string; ruleValue: string; valueType: string; label: string; description: string | null; effectiveFrom: Date };
 
@@ -34,7 +39,9 @@ export function RuleRow({ rule, canWrite, onSave }: { rule: Rule; canWrite: bool
       <div className="flex items-center gap-2">
         {editing ? (
           <>
-            <Input label="" value={val} onChange={e => setVal(e.target.value)} />
+            {RULE_OPTIONS[rule.ruleKey]
+              ? <Select label="" value={val} options={RULE_OPTIONS[rule.ruleKey].map((v) => ({ value: v, label: v }))} onChange={setVal} />
+              : <Input label="" value={val} onChange={e => setVal(e.target.value)} />}
             <Button onClick={save} disabled={isPending}>Save</Button>
             <Button variant="ghost" onClick={() => { setVal(rule.ruleValue); setEditing(false); }}>Cancel</Button>
           </>

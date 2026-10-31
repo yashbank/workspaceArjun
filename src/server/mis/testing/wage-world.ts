@@ -136,6 +136,13 @@ export const fakeDb = {
       state.rules.push(row);
       return row;
     },
+    // R2-259: a same-day rule edit corrects today's revision in place.
+    update: async ({ where, data }: Row) => {
+      state.writes.push('misBusinessRule.update');
+      const row = state.rules.find((r) => r.id === where.id)!;
+      Object.assign(row, data);
+      return row;
+    },
   },
   // Honours the date range, as the real query does — a fake that returned every row would let a
   // payroll bug about WHICH month hide behind the fixture.

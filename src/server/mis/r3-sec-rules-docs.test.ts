@@ -90,11 +90,10 @@ describe('B37 updateBusinessRule', () => {
     await expect(rules.updateBusinessRule('po_approval_threshold', '5000')).resolves.toMatchObject({ ruleValue: '5000' });
   });
 
-  it('a second same-day revision gets the friendly message, not the constraint name', async () => {
+  // R2-259 (CONTRACT): a second same-day revision now corrects today's row in place; still never the constraint name.
+  it('a second same-day revision corrects today’s row in place, never the constraint name', async () => {
     await rules.updateBusinessRule('po_approval_threshold', '6000');
-    await expect(rules.updateBusinessRule('po_approval_threshold', '7000')).rejects.toThrow(
-      'A change for this rule is already scheduled for today; edit that one.',
-    );
+    await expect(rules.updateBusinessRule('po_approval_threshold', '7000')).resolves.toMatchObject({ ruleValue: '7000' });
   });
 });
 

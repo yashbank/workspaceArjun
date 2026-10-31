@@ -3,6 +3,7 @@ import { can } from '@/lib/mis/permissions';
 import { isWageRuleKey, isPayrollPolicyRuleKey, type WageRuleKey } from '@/lib/mis/rule-keys';
 import { dbDateKey } from '@/lib/mis/attendance-month';
 import { DEFAULT_FACTORY_TIMEZONE, dateKeyToDbDate, factoryDateKey, isValidTimeZone, resolveFactoryTimezone } from '@/lib/mis/factory-time';
+import { isLateWorkers, LATE_RULE_KEYS } from '@/lib/mis/late-rule';
 import { validateSchedule } from '@/lib/mis/rules-ledger';
 import { db } from '@/server/db';
 import { requirePermission } from '@/server/mis/auth';
@@ -246,8 +247,16 @@ const RULE_RANGES: Record<string, [number, number]> = {
   [LUNCH_BREAK_KEY]: [0, 180],
 };
 
+/** R2-241: legacy seeded rows no code reads (shifts live in MisShift). Hidden from Settings, never deleted. */
+const HIDDEN_RULE_KEYS = ['shift.start_time', 'shift.end_time'];
+const LATE_RULE_WORKERS_KEY = LATE_RULE_KEYS[1];
+/** R2-242: the stored description once suggested values the code never read; the screen shows this instead. */
+const LATE_RULE_WORKERS_DESCRIPTION = 'Who the late rule applies to, by pay type: ALL, DAILY or MONTHLY.';
+
 /** R3 B37: a number rule must be a finite number (an integer for the integer keys) inside its range. */
 function assertRuleValueValid(ruleKey: string, ruleValue: string, valueType: string) {
+  // R2-242 / R2-260: an unknown word here used to be read as ALL at punch time; refuse it on save instead.
+  if (ruleKey === LATE_RULE_WORKERS_KEY && !isLateWorkers(ruleValue.trim().toUpperCase())) throw new Error('Choose ALL, DAILY or MONTHLY.');
   if (valueType !== 'number') return;
   const text = String(ruleValue).trim();
   const n = text === '' ? Number.NaN : Number(text);
@@ -278,17 +287,22 @@ async function createRuleRevision(
     ...(opts.effectiveFrom ? { effectiveFrom: opts.effectiveFrom.toISOString().slice(0, 10) } : {}),
     ...(opts.reason ? { reason: opts.reason } : {}),
   };
-  const rec = await db.misBusinessRule.create({
-    data: {
-      ruleKey,
-      ruleValue,
-      valueType: existing.valueType,
-      label: existing.label,
-      description: existing.description,
-      effectiveFrom: opts.effectiveFrom ?? new Date(),
-      updatedById: actorId,
-    },
-  });
+  // R2-259: a second change starting today corrects today's row in place (as addWageRate does, R2-161) — never a P2002.
+  // A scheduled change (`opts.effectiveFrom`) was already checked against existing days by its caller.
+  const sameDay = opts.effectiveFrom ? null : await todaysRevision(ruleKey, new Date());
+  const rec = sameDay
+    ? await db.misBusinessRule.update({ where: { id: sameDay.id }, data: { ruleValue, updatedById: actorId } })
+    : await db.misBusinessRule.create({
+        data: {
+          ruleKey,
+          ruleValue,
+          valueType: existing.valueType,
+          label: existing.label,
+          description: existing.description,
+          effectiveFrom: opts.effectiveFrom ?? new Date(),
+          updatedById: actorId,
+        },
+      });
   await logAuditEvent({
     actorId,
     action: opts.action ?? 'UPDATE_RULE',
@@ -297,10 +311,18 @@ async function createRuleRevision(
     // A wage rule's value is a wage: the audit row names WHICH rule changed and who changed it,
     // never the figure (D24, MIS_UI_SPEC §3). redact() matches property names and `ruleValue` is
     // not one, so the omission has to happen here (F-04).
-    before: isWageRuleKey(ruleKey) || isPayrollPolicyRuleKey(ruleKey) ? { ruleKey } : { ruleKey, ruleValue: replaced.ruleValue },
+    before: isWageRuleKey(ruleKey) || isPayrollPolicyRuleKey(ruleKey) ? { ruleKey } : { ruleKey, ruleValue: (sameDay ?? replaced).ruleValue },
     after: isWageRuleKey(ruleKey) || isPayrollPolicyRuleKey(ruleKey) ? { ruleKey, ...scheduled } : { ruleKey, ruleValue, ...scheduled },
   });
   return rec;
+}
+
+/** The revision of `ruleKey` that starts on `at`'s (UTC) calendar day — the day `@db.Date` keys on — or null. */
+async function todaysRevision(ruleKey: string, at: Date) {
+  const dayKey = at.toISOString().slice(0, 10);
+  const start = new Date(`${dayKey}T00:00:00.000Z`);
+  const row = await db.misBusinessRule.findFirst({ where: { ruleKey, effectiveFrom: { gte: start, lte: new Date(start.getTime() + 86_400_000 - 1) } } });
+  return row && row.effectiveFrom.toISOString().slice(0, 10) === dayKey ? row : null;
 }
 
 function isAqlRuleKey(ruleKey: string): ruleKey is AqlRuleKey {
@@ -317,9 +339,10 @@ export async function getBusinessRules() {
   // those are edited from the Owner-only /mis/settings/aql screen instead.
   const seen = new Set<string>();
   return rows
-    .filter((r) => !isAqlRuleKey(r.ruleKey))
+    .filter((r) => !isAqlRuleKey(r.ruleKey) && !HIDDEN_RULE_KEYS.includes(r.ruleKey))
     .filter((r) => mayReadWages || !(isWageRuleKey(r.ruleKey) || isPayrollPolicyRuleKey(r.ruleKey)))
-    .filter(r => { if (seen.has(r.ruleKey)) return false; seen.add(r.ruleKey); return true; });
+    .filter(r => { if (seen.has(r.ruleKey)) return false; seen.add(r.ruleKey); return true; })
+    .map((r) => (r.ruleKey === LATE_RULE_WORKERS_KEY ? { ...r, description: LATE_RULE_WORKERS_DESCRIPTION } : r));
 }
 
 export async function updateBusinessRule(ruleKey: string, ruleValue: string) {

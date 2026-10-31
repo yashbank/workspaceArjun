@@ -189,12 +189,24 @@ describe('F-09 — changing the same rule twice in one day', () => {
   // The schema keys a rule revision on (ruleKey, effectiveFrom) and effectiveFrom is a DATE, so
   // a second edit on the same day collides. The right behaviour is a deliberate one — the
   // later edit wins, or a clear refusal — not a raw constraint error.
-  it.fails('a second edit on the same day does not surface a raw database constraint error', async () => {
+  // R2-259: the gap is closed — today's row is corrected in place; `it.fails` flipped to `it`.
+  it('a second edit on the same day does not surface a raw database constraint error', async () => {
     await updateBusinessRule('OT_MULTIPLIER', '3');
     await expect(updateBusinessRule('OT_MULTIPLIER', '4')).resolves.toBeDefined();
   });
 
-  it.fails('the same on the very first AQL edit: the defaults are created today, so editing one today collides', async () => {
+  it('R2-259: the second edit updates today’s revision in place — one row for today, the later value wins, earlier rows untouched', async () => {
+    const before = snapshot(state.rules);
+    await updateBusinessRule('OT_MULTIPLIER', '3');
+    const afterFirst = state.rules.length;
+    await updateBusinessRule('OT_MULTIPLIER', '4');
+    expect(state.rules).toHaveLength(afterFirst);
+    expect(snapshot(state.rules.slice(0, afterFirst - 1))).toBe(before);
+    expect(state.rules[afterFirst - 1]).toMatchObject({ ruleKey: 'OT_MULTIPLIER', ruleValue: '4' });
+    expect(await getRuleValue('OT_MULTIPLIER')).toBe('4');
+  });
+
+  it('the same on the very first AQL edit: the defaults are created today, so editing one today collides', async () => { // R2-259
     const { getAqlThresholdRules, updateAqlThreshold } = await import('./business-rules');
     state.rules = state.rules.filter((r) => !String(r.ruleKey).startsWith('AQL_')); // a workspace that never opened the AQL screen
     await getAqlThresholdRules(); // seeds AQL_* rows with effectiveFrom = today

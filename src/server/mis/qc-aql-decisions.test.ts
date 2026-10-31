@@ -34,6 +34,8 @@ const db = {
       return rows[0] ?? null;
     },
     create: async ({ data }: Row) => { const row = { id: nextId(), _seq: ++seq, ...data }; state.rules.push(row); return row; },
+    // R2-259: a same-day edit corrects today's revision in place (fixture delegate only).
+    update: async ({ where, data }: Row) => { const row = state.rules.find((r) => r.id === where.id)!; Object.assign(row, data); return row; },
   },
   misDefectType: {
     findMany: async ({ where }: Row) => state.defectTypes.filter((d) => where.id.in.includes(d.id)),

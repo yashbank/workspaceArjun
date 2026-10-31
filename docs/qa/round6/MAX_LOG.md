@@ -17,3 +17,7 @@ R2-256 | DEV_DONE | - | server already: Owner edit with reason bumps corrections
 R2-257 | DEV_DONE | - | Half-day column in payroll table (payroll-screen.tsx)
 R2-237 | DEV_DONE | - | payroll-screen: lg:max-w-7xl, cards 2-up grid on desktop, actions in one column, table lg:col-span-2; phone unchanged
 R2-258 | DUPLICATE | - | same fix as R2-237
+R2-259 | CONTRACT | - | createRuleRevision: a same-day (UTC date) revision is updated in place (todaysRevision), audited UPDATE_RULE; rule-history it.fails x2 flipped to it; r3-sec-rules-docs same-day pin flipped to resolves // R2-259; fixture delegates misBusinessRule.update added (wage-world, qc-aql-decisions)
+R2-241 | DEV_DONE | - | getBusinessRules hides shift.start_time / shift.end_time (HIDDEN_RULE_KEYS); rows untouched
+R2-242 | DEV_DONE | - | late_rule_workers: LATE_WORKERS_OPTIONS enum in lib/mis/late-rule.ts, refused on save unless ALL/DAILY/MONTHLY, description overridden server-side, Settings renders a Select
+R2-260 | DUPLICATE | - | same fix as R2-242 (validation on save; runtime parser still falls back to ALL so a punch is never blocked)
