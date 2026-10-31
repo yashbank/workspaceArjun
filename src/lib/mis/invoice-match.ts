@@ -67,7 +67,17 @@ const toTenThousandths = (n: number) => Math.round(n * 100) * 100;
 const hundredthsTo2dp = (u: number) => Math.round(u) / 100;
 const tenThousandthsTo2dp = (u: number) => Math.round(u / 100) / 100;
 
-export function matchSupplierInvoice(lines: readonly InvoiceMatchLine[], invoiceAmount: number | null | undefined): InvoiceMatchResult {
+/** R2-325: the billed total less GST at `gstPercent` (118000 at 18% -> 100000), to 2 dp; no GST = the amount as typed. */
+export function amountExcludingGst(invoiceAmount: number, gstPercent: number | null | undefined): number {
+  const g = typeof gstPercent === 'number' && Number.isFinite(gstPercent) && gstPercent > 0 ? gstPercent : 0;
+  return Math.round((invoiceAmount / (1 + g / 100)) * 100) / 100;
+}
+
+/**
+ * `gstPercent` (R2-325): when the supplier's tax invoice carries GST, the comparison is made on the amount
+ * EXCLUDING it, since PO rates are ex-GST; `invoiceAmount` in the result is that ex-GST figure.
+ */
+export function matchSupplierInvoice(lines: readonly InvoiceMatchLine[], invoiceAmount: number | null | undefined, gstPercent?: number | null): InvoiceMatchResult {
   let received = 0;
   let billed = 0;
   let billedReceived = 0;
@@ -90,7 +100,7 @@ export function matchSupplierInvoice(lines: readonly InvoiceMatchLine[], invoice
   }
 
   const hasAmount = typeof invoiceAmount === 'number' && Number.isFinite(invoiceAmount);
-  const invoiced = hasAmount ? toTenThousandths(invoiceAmount as number) : 0;
+  const invoiced = hasAmount ? toTenThousandths(amountExcludingGst(invoiceAmount as number, gstPercent)) : 0;
   const variance = invoiced - expected;
   const tolerance = Math.max(toTenThousandths(PRICE_TOLERANCE_ABS), Math.round((expected * PRICE_TOLERANCE_PCT) / 100));
   const priceDiscrepancy = lines.length > 0 && hasAmount && Math.abs(variance) > tolerance;

@@ -94,6 +94,7 @@ function matchFor(inv: InvoiceWithGrn) {
   return matchSupplierInvoice(
     items.map((i) => ({ receivedQty: i.receivedQty.toNumber(), ratePerUnit: i.poItem.ratePerUnit.toNumber(), dcQuantity: i.dcQuantity?.toNumber() ?? null })),
     inv.invoiceAmount?.toNumber() ?? null,
+    inv.gstPercent?.toNumber() ?? null, // R2-325: compare excluding GST
   );
 }
 

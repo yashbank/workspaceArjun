@@ -89,17 +89,18 @@ describe('R2-110 — wage ledger export', () => {
   it('lays out every rupee column plus a total row, from the payroll rows', async () => {
     state.attendance = [rec('1', '2026-01-05', 'PRESENT', 60, 0), rec('2', '2026-01-05', 'PRESENT', 0, 0, OTHER), rec('3', '2026-01-06', 'PRESENT', 0, 0, OTHER)];
     const rows = wageLedgerRows(await calculateMonthlyPayroll(2026, 1));
-    expect(rows[0]).toEqual(['Code', 'Employee', 'Pay Type', 'Wage Code', 'Present Days', 'Half Days', 'Late Minutes', 'OT Minutes', 'Basic', 'HRA', 'Allowance', 'OT Pay', 'Bonus', 'Extra Pay', 'Late Penalty', 'Gross Pay']);
-    expect(rows[1]).toEqual(['E-001', 'Asha', 'DAILY', null, 1, 0, 60, 0, 731, 0, 0, 0, 0, 0, 50, 681]);
-    expect(rows[2]).toEqual(['E-002', 'Bala', 'DAILY', null, 2, 0, 0, 0, 1462, 0, 0, 0, 0, 0, 0, 1462]);
-    expect(rows[3]).toEqual(['TOTAL', '2 employees', null, null, null, null, null, null, 2193, 0, 0, 0, 0, 0, 50, 2143]);
+    // R2-324: five deduction columns follow Gross Pay (PF 12% of basic, ESIC 0.75% of gross, PT from 10,000, advances, net).
+    expect(rows[0]).toEqual(['Code', 'Employee', 'Pay Type', 'Wage Code', 'Present Days', 'Half Days', 'Late Minutes', 'OT Minutes', 'Basic', 'HRA', 'Allowance', 'OT Pay', 'Bonus', 'Extra Pay', 'Late Penalty', 'Gross Pay', 'PF', 'ESIC', 'PT', 'Advance', 'Net Pay']);
+    expect(rows[1]).toEqual(['E-001', 'Asha', 'DAILY', null, 1, 0, 60, 0, 731, 0, 0, 0, 0, 0, 50, 681, 88, 5, 0, 0, 588]);
+    expect(rows[2]).toEqual(['E-002', 'Bala', 'DAILY', null, 2, 0, 0, 0, 1462, 0, 0, 0, 0, 0, 0, 1462, 175, 11, 0, 0, 1276]);
+    expect(rows[3]).toEqual(['TOTAL', '2 employees', null, null, null, null, null, null, 2193, 0, 0, 0, 0, 0, 50, 2143, 263, 16, 0, 0, 1864]);
   });
 
   it('builds the CSV, names the month, and audits the export without any money figure', async () => {
     state.attendance = [rec('1', '2026-01-05', 'PRESENT', 0, 0)];
     const out = await buildWageLedgerCsv(2026, 1);
     expect(out.filename).toBe('wage-ledger-2026-01.csv');
-    expect(out.csv.split('\r\n')[1]).toBe('E-001,Asha,DAILY,,1,0,0,0,731,0,0,0,0,0,0,731');
+    expect(out.csv.split('\r\n')[1]).toBe('E-001,Asha,DAILY,,1,0,0,0,731,0,0,0,0,0,0,731,88,5,0,0,638'); // R2-324
     const audit = state.auditRows.find((r) => r.action === 'payrollPeriod.wageLedgerExport');
     expect(audit?.after).toEqual({ year: 2026, month: 1, lines: 1 });
   });

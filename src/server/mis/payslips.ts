@@ -237,6 +237,8 @@ export async function getMyPayslip(year: number, month: number): Promise<Payslip
       extraPay: n(line.extraPay),
       latePenalty: n(line.latePenalty),
       grossPay: n(line.grossPay),
+      // R2-324: a line frozen before the deduction columns existed has no net; it then reads as gross (no deductions known).
+      pf: n(line.pf ?? 0), esic: n(line.esic ?? 0), pt: n(line.pt ?? 0), advance: n(line.advance ?? 0), netPay: n(line.netPay ?? line.grossPay),
       wageTypeCode: null,
     },
   };

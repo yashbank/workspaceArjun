@@ -551,3 +551,12 @@ describe('R2-291 confirmGRN takes an idempotency key', () => {
     await expect(confirmGRN(grn.id)).rejects.toThrow(/already confirmed/);
   });
 });
+
+describe('R2-325 the GST % on the delivery paperwork', () => {
+  it('is stored on the GRN header by any grn.write holder (it is a percentage, not money) and bounded 0-100', async () => {
+    const grn = await createGRN({ poId: 'po1', dcNumber: 'DC-1' });
+    const header = await updateGRNHeader(grn.id, { supplierInvoiceGstPercent: 18 });
+    expect(Number(header.supplierInvoiceGstPercent)).toBe(18);
+    await expect(updateGRNHeader(grn.id, { supplierInvoiceGstPercent: 150 })).rejects.toThrow(/between 0 and 100/);
+  });
+});

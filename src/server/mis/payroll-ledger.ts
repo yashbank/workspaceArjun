@@ -21,6 +21,8 @@ import { calculateMonthlyPayroll, type PayrollRow } from '@/server/mis/payroll';
 export const WAGE_LEDGER_HEADERS = [
   'Code', 'Employee', 'Pay Type', 'Wage Code', 'Present Days', 'Half Days', 'Late Minutes', 'OT Minutes',
   'Basic', 'HRA', 'Allowance', 'OT Pay', 'Bonus', 'Extra Pay', 'Late Penalty', 'Gross Pay',
+  // R2-324
+  'PF', 'ESIC', 'PT', 'Advance', 'Net Pay',
 ] as const;
 
 export function wageLedgerRows(rows: readonly PayrollRow[]): Cell[][] {
@@ -28,12 +30,14 @@ export function wageLedgerRows(rows: readonly PayrollRow[]): Cell[][] {
   const body: Cell[][] = sorted.map((r) => [
     r.employeeCode, r.employeeName, r.payType, r.wageTypeCode, r.present, r.halfDay, r.totalLateMinutes, r.totalOTMinutes,
     r.basicWage, r.hra, r.allowance, r.otPay, r.bonus, r.extraPay, r.latePenalty, r.grossPay,
+    r.pf, r.esic, r.pt, r.advance, r.netPay,
   ]);
   const sum = (pick: (r: PayrollRow) => number) => rows.reduce((s, r) => s + pick(r), 0);
   const total: Cell[] = [
     'TOTAL', `${rows.length} employees`, null, null, null, null, null, null,
     sum((r) => r.basicWage), sum((r) => r.hra), sum((r) => r.allowance), sum((r) => r.otPay),
     sum((r) => r.bonus), sum((r) => r.extraPay), sum((r) => r.latePenalty), sum((r) => r.grossPay),
+    sum((r) => r.pf), sum((r) => r.esic), sum((r) => r.pt), sum((r) => r.advance), sum((r) => r.netPay),
   ];
   return [[...WAGE_LEDGER_HEADERS], ...body, total];
 }
@@ -76,7 +80,7 @@ async function bankAccountsFor(employeeIds: string[]): Promise<Map<string, BankT
 
 /**
  * R2-110 — the month's BANK TRANSFER CSV: one line per employee with pay to receive, carrying their
- * account number, IFSC and the gross pay from the SAME single `calculateMonthlyPayroll` run the
+ * account number, IFSC and the NET pay (R2-324: gross less PF, ESIC, PT and advances) from the SAME single `calculateMonthlyPayroll` run the
  * ledger and payslips use (a CLOSED month exports its frozen figures). Owner only (`wages.read`).
  *
  * Employees with no (or invalid) bank details are left out and returned in `skipped` so the Owner

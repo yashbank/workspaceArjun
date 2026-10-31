@@ -43,6 +43,8 @@ export const state: {
   /** Phase 25 — empty in every pre-25 fixture world; `payroll-25.test.ts` populates these. */
   payrollPeriods: Row[];
   payrollSnapshotLines: Row[];
+  /** R2-324: MisSalaryAdvance rows { employeeId, year, month, amount }. */
+  salaryAdvances: Row[];
   payComponents: Row[];
   extraPayDays: Row[];
   extraPayDayEmployees: Row[];
@@ -53,7 +55,7 @@ export const state: {
   leavePayRules: Row[];
 } = {
   wageTypes: [], rules: [], attendance: [], storeTxns: [], boms: null, attendanceWhere: [],
-  auditRows: [], rawAudit: [], writes: [], payrollPeriods: [], payrollSnapshotLines: [],
+  auditRows: [], rawAudit: [], writes: [], payrollPeriods: [], payrollSnapshotLines: [], salaryAdvances: [],
   payComponents: [], extraPayDays: [], extraPayDayEmployees: [], extraPayDayDepartments: [],
   employees: [], leaveRequests: [], leavePayRules: [],
 };
@@ -177,6 +179,13 @@ export const fakeDb = {
     create: async ({ data }: Row) => { const row = { id: nextId(), correctionsAfterClose: 0, closedById: null, closedAt: null, lastExportedById: null, lastExportedAt: null, ...data }; state.payrollPeriods.push(row); return row; },
     update: async ({ where, data }: Row) => { const row = state.payrollPeriods.find((p) => p.id === where.id)!; Object.assign(row, data); return row; },
   },
+  // R2-324: the Owner's salary advances for a month.
+  misSalaryAdvance: {
+    findMany: async (args: Row = {}) => state.salaryAdvances.filter((r) => match(r, args.where)),
+    create: async ({ data }: Row) => { const row = { id: nextId(), createdAt: new Date(), ...data }; state.salaryAdvances.push(row); return row; },
+    findUnique: async ({ where }: Row) => state.salaryAdvances.find((r) => r.id === where.id) ?? null,
+    delete: async ({ where }: Row) => { const i = state.salaryAdvances.findIndex((r) => r.id === where.id); return state.salaryAdvances.splice(i, 1)[0]; },
+  },
   misPayrollSnapshotLine: {
     findMany: async (args: Row = {}) => sortRows(state.payrollSnapshotLines.filter((r) => match(r, args.where)), args.orderBy),
     deleteMany: async ({ where }: Row) => {
@@ -258,6 +267,7 @@ export function seedWorld() {
   state.auditRows = [];
   state.rawAudit = [];
   state.payrollPeriods = [];
+  state.salaryAdvances = [];
   state.payrollSnapshotLines = [];
   state.payComponents = [];
   state.extraPayDays = [];

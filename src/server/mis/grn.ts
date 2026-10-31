@@ -35,6 +35,8 @@ export type GrnHeaderInput = {
   /** ISO date `YYYY-MM-DD`. */
   invoiceDate?: string | null;
   supplierInvoiceAmount?: number | null;
+  /** R2-325: GST % on the supplier's tax invoice (0-100); the 3-way match compares the amount excluding it. */
+  supplierInvoiceGstPercent?: number | null;
   lrNumber?: string | null;
   vehicleNumber?: string | null;
   transporterName?: string | null;
@@ -66,6 +68,13 @@ function parseInvoiceDate(value: string | null | undefined): Date | null {
   return date;
 }
 
+/** R2-325: a percentage, not money: anyone who edits the paperwork may type it. */
+function parseGstPercent(value: number | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  if (!Number.isFinite(value) || value < 0 || value > 100) throw new Error('GST % must be between 0 and 100.');
+  return Math.round(value * 100) / 100;
+}
+
 function headerData(role: MisRoleName, input: GrnHeaderInput, mode: 'create' | 'patch') {
   const has = (k: keyof GrnHeaderInput) => mode === 'create' || input[k] !== undefined;
   if (input.supplierInvoiceAmount !== undefined && input.supplierInvoiceAmount !== null && !can(role, 'wages.read')) {
@@ -75,6 +84,7 @@ function headerData(role: MisRoleName, input: GrnHeaderInput, mode: 'create' | '
     ...(has('supplierInvoiceNo') ? { supplierInvoiceNo: text(input.supplierInvoiceNo) } : {}),
     ...(has('invoiceDate') ? { invoiceDate: parseInvoiceDate(input.invoiceDate) } : {}),
     ...(has('supplierInvoiceAmount') && can(role, 'wages.read') ? { supplierInvoiceAmount: input.supplierInvoiceAmount ?? null } : {}),
+    ...(has('supplierInvoiceGstPercent') ? { supplierInvoiceGstPercent: parseGstPercent(input.supplierInvoiceGstPercent) } : {}),
     ...(has('lrNumber') ? { lrNumber: text(input.lrNumber) } : {}),
     ...(has('vehicleNumber') ? { vehicleNumber: text(input.vehicleNumber) } : {}),
     ...(has('transporterName') ? { transporterName: text(input.transporterName) } : {}),
@@ -612,9 +622,11 @@ export async function confirmGRN(grnId: string, opts: { overReceiptReason?: stri
         dcQuantity: i.dcQuantity?.toNumber() ?? null,
       }));
       // A later GRN naming the same invoice without a date/amount must not blank the Owner's figures.
-      const { status } = matchSupplierInvoice(matchItems, fresh.supplierInvoiceAmount?.toNumber() ?? null);
+      const gst = fresh.supplierInvoiceGstPercent?.toNumber() ?? null; // R2-325
+      const { status } = matchSupplierInvoice(matchItems, fresh.supplierInvoiceAmount?.toNumber() ?? null, gst);
       const known = {
         ...(fresh.invoiceDate ? { invoiceDate: fresh.invoiceDate } : {}),
+        ...(gst !== null ? { gstPercent: gst } : {}),
         ...(fresh.supplierInvoiceAmount !== null ? { invoiceAmount: fresh.supplierInvoiceAmount, status } : {}),
       };
       await tx.misSupplierInvoice.upsert({
@@ -818,6 +830,7 @@ export async function reverseGRN(grnId: string, reason: string) {
         const { status } = matchSupplierInvoice(
           remaining.flatMap((g) => g.items).map((i) => ({ receivedQty: i.receivedQty.toNumber(), ratePerUnit: i.poItem.ratePerUnit.toNumber(), dcQuantity: i.dcQuantity?.toNumber() ?? null })),
           invoice.invoiceAmount?.toNumber() ?? null,
+          invoice.gstPercent?.toNumber() ?? null, // R2-325
         );
         await tx.misSupplierInvoice.update({
           where: { id: invoice.id },

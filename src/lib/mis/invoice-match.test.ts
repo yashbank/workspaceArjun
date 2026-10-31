@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { PRICE_TOLERANCE_ABS, PRICE_TOLERANCE_PCT, QTY_TOLERANCE, matchSupplierInvoice, sameInvoiceNo } from './invoice-match';
+import { PRICE_TOLERANCE_ABS, PRICE_TOLERANCE_PCT, QTY_TOLERANCE, amountExcludingGst, matchSupplierInvoice, sameInvoiceNo } from './invoice-match';
 
 const line = (receivedQty: number, ratePerUnit: number, dcQuantity: number | null = null) => ({ receivedQty, ratePerUnit, dcQuantity });
 
@@ -120,5 +120,26 @@ describe('R2-335 invoice numbers match trimmed and case-insensitively', () => {
     expect(sameInvoiceNo('INV-1', 'INV-2')).toBe(false);
     expect(sameInvoiceNo(null, '')).toBe(false);
     expect(sameInvoiceNo('  ', '')).toBe(false);
+  });
+});
+
+describe('R2-325 GST on the invoice is excluded before the price comparison', () => {
+  const lines10 = [line(1000, 100)]; // expected 1,00,000 ex-GST
+  it('a tax invoice of 1,18,000 at 18% GST matches a 1,00,000 expectation', () => {
+    const m = matchSupplierInvoice(lines10, 118000, 18);
+    expect(m.status).toBe('MATCHED');
+    expect(m.invoiceAmount).toBe(100000);
+    expect(m.priceVariance).toBe(0);
+  });
+  it('without a GST % the same invoice is still a price discrepancy (unchanged), and 0% behaves as none', () => {
+    expect(matchSupplierInvoice(lines10, 118000).status).toBe('DISCREPANCY_PRICE');
+    expect(matchSupplierInvoice(lines10, 118000, 0).status).toBe('DISCREPANCY_PRICE');
+    expect(matchSupplierInvoice(lines10, 100000, null).status).toBe('MATCHED');
+  });
+  it('amountExcludingGst rounds to paise', () => {
+    expect(amountExcludingGst(118000, 18)).toBe(100000);
+    expect(amountExcludingGst(1180, 18)).toBe(1000);
+    expect(amountExcludingGst(1000, 5)).toBe(952.38);
+    expect(amountExcludingGst(500, null)).toBe(500);
   });
 });

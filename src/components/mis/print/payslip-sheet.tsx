@@ -147,16 +147,28 @@ export function PayslipSheet({
                       <td className="py-2 text-right text-red-600">−{fmtCurrency(payroll.latePenalty)}</td>
                     </tr>
                   )}
-                  {/* R2-108: this is GROSS pay. No statutory deductions are recorded, so it is never "net". */}
                   <tr className="border-t-2 border-gray-300">
                     <td className="py-3 font-bold text-gray-900">GROSS PAY</td>
                     <td className="py-3 text-right font-bold text-gray-900 text-base">{fmtCurrency(payroll.grossPay)}</td>
+                  </tr>
+                  {/* R2-324: statutory deductions and the advance recovered this month; NET is what the bank file transfers. */}
+                  {([['PF', payroll.pf], ['ESIC', payroll.esic], ['Professional Tax', payroll.pt], ['Advance recovery', payroll.advance]] as const).map(([label, value]) =>
+                    value > 0 ? (
+                      <tr key={label} className="border-b border-gray-100">
+                        <td className="py-2 text-gray-700">{label}</td>
+                        <td className="py-2 text-right text-red-600">−{fmtCurrency(value)}</td>
+                      </tr>
+                    ) : null,
+                  )}
+                  <tr className="border-t-2 border-gray-300">
+                    <td className="py-3 font-bold text-gray-900">NET PAY</td>
+                    <td className="py-3 text-right font-bold text-gray-900 text-base">{fmtCurrency(payroll.netPay)}</td>
                   </tr>
                 </tbody>
               </table>
             </div>
             <p className="mt-2 text-xs text-gray-500">
-              Gross earnings before statutory deductions. PF, ESI, TDS and advances are not recorded in this system and are not deducted here.
+              Net pay is gross earnings less PF, ESIC, Professional Tax and any salary advance recovered this month (rates in Settings; TDS is not computed here).
             </p>
           </div>
         </>

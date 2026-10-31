@@ -42,6 +42,7 @@ const employee = await import('./employee');
 const users = await import('./users');
 const wageType = await import('./wage-type');
 const rules = await import('./business-rules');
+const advances = await import('./salary-advance'); // R2-324
 const payroll = await import('./payroll');
 const reports = await import('./reports');
 const payComponents = await import('./pay-components');
@@ -97,6 +98,10 @@ const TABLE: Entry[] = [
   { module: 'business-rules.ts', name: 'getWageRuleHistory', requires: 'wages.read', call: () => rules.getWageRuleHistory('DAILY_WAGE_DEFAULT') },
   { module: 'business-rules.ts', name: 'getAqlThresholdRules', requires: 'aql.read', call: () => rules.getAqlThresholdRules() },
   { module: 'business-rules.ts', name: 'getAqlLimitRules', requires: 'aql.read', call: () => rules.getAqlLimitRules() }, // R2-314
+  // R2-324: salary advances are pay figures: Owner only.
+  { module: 'salary-advance.ts', name: 'listSalaryAdvances', requires: 'wages.read', call: () => advances.listSalaryAdvances(2026, 1) },
+  { module: 'salary-advance.ts', name: 'recordSalaryAdvance', requires: 'wages.read', call: () => advances.recordSalaryAdvance({ employeeId: 'e1', year: 2026, month: 1, amount: 100 }) },
+  { module: 'salary-advance.ts', name: 'deleteSalaryAdvance', requires: 'wages.read', call: () => advances.deleteSalaryAdvance('a1') },
   { module: 'business-rules.ts', name: 'updateAqlThreshold', requires: 'aql.read', call: () => rules.updateAqlThreshold('AQL_MAJOR_MAX', '1') },
   // D12: scheduling a change to ANY rule is the Owner's (wages.read is the Owner marker, D24/D25).
   { module: 'business-rules.ts', name: 'scheduleBusinessRule', requires: 'wages.read', call: () => rules.scheduleBusinessRule({ ruleKey: 'k', ruleValue: '1', effectiveFrom: '2099-01-01', reason: 'For the test' }) },

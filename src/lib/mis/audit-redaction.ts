@@ -29,6 +29,8 @@ export const WAGE_KEYS: readonly string[] = [
   'wage', 'wageAmount', 'dailyWage', 'salary', 'netPay',
   'otRatePerHour', 'hra', 'hraAmount', 'allowance', 'allowanceAmount', 'bonusAmount',
   'basicWage', 'otPay', 'bonus', 'extraPay', 'latePenalty', 'grossPay',
+  // R2-324: deductions and the advance are pay figures too.
+  'pf', 'esic', 'pt', 'advance',
 ];
 
 /** Ambiguous names that could carry a wage: masked at write like a wage. */

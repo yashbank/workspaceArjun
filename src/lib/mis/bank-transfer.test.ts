@@ -13,7 +13,8 @@ import {
 } from './bank-transfer';
 
 const acct = (id: string, bankAccountNo: string | null, ifsc: string | null, bankName: string | null = 'SBI') => ({ id, bankName, bankAccountNo, ifsc });
-const pay = (employeeId: string, employeeCode: string, employeeName: string, grossPay: number) => ({ employeeId, employeeCode, employeeName, grossPay });
+// R2-324: the transfer carries the NET pay (gross less PF / ESIC / PT / advances).
+const pay = (employeeId: string, employeeCode: string, employeeName: string, netPay: number) => ({ employeeId, employeeCode, employeeName, netPay });
 
 describe('R2-110 — money is exact', () => {
   it('rupees ↔ paise round-trip with two decimals', () => {

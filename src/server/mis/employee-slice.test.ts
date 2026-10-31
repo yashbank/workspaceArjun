@@ -136,6 +136,8 @@ describe('the employee model holds no money — so no employee function can retu
       'MisPayrollSnapshotLine.basicWage',
       'MisPayrollSnapshotLine.grossPay',
       'MisPoItem.ratePerUnit',
+      // R2-324: a salary advance is a wage figure — Owner-only (salary-advance.ts gates on wages.read).
+      'MisSalaryAdvance.amount',
       'MisSupplierInvoice.invoiceAmount',
       'MisWageType.allowanceAmount',
       'MisWageType.amount',

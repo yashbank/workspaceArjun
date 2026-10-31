@@ -268,8 +268,8 @@ Batch C7
 - [x] R2-371 bulk Clock Out default (needs Q, Enhancement)
 - [x] R2-373 standard shift fill (needs Q, Enhancement)
 Batch C8
-- [ ] R2-324 bank transfer net pay (needs Q)
-- [ ] R2-325 GST in invoice match (needs Q, SCHEMA)
+- [x] R2-324 bank transfer net pay (needs Q)
+- [x] R2-325 GST in invoice match (needs Q, SCHEMA)
 Batch C9
 - [ ] R2-286 partial material request (needs Q, SCHEMA)
 - [ ] R2-287 pick list reservation (needs Q)

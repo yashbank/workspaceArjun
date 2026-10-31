@@ -397,6 +397,8 @@ model MisEmployee {
   @@index([managerId])
   @@index([departmentId])
   @@index([deletedAt])
+  advances      MisSalaryAdvance[] // R2-324
+
   @@index([wageTypeCode])
   @@index([defaultShiftId])
   @@map("mis_employees")
@@ -794,6 +796,8 @@ model MisGrn {
   supplierInvoiceNo     String?   @map("supplier_invoice_no")
   invoiceDate           DateTime? @map("invoice_date") @db.Date
   supplierInvoiceAmount Decimal?  @map("supplier_invoice_amount") @db.Decimal(14, 2)
+  /// R2-325 (parked migration 20261101000000). GST % on the supplier's tax invoice; the 3-way match compares the amount excluding it.
+  supplierInvoiceGstPercent Decimal? @map("supplier_invoice_gst_percent") @db.Decimal(5, 2)
   lrNumber              String?   @map("lr_number")
   vehicleNumber         String?   @map("vehicle_number")
   transporterName       String?   @map("transporter_name")
@@ -1804,6 +1808,13 @@ model MisPayrollSnapshotLine {
   extraPay      Decimal          @default(0) @db.Decimal(12, 2) @map("extra_pay")
   latePenalty   Decimal          @db.Decimal(12, 2) @map("late_penalty")
   grossPay      Decimal          @db.Decimal(12, 2) @map("gross_pay")
+  /// R2-324 (parked migration 20261101000001). Statutory deductions and the net pay frozen with the month.
+  /// NULL on lines closed before the migration: payroll recomputes them from the rules when read.
+  pf            Decimal?         @db.Decimal(12, 2)
+  esic          Decimal?         @db.Decimal(12, 2)
+  pt            Decimal?         @db.Decimal(12, 2)
+  advance       Decimal?         @db.Decimal(12, 2)
+  netPay        Decimal?         @db.Decimal(12, 2) @map("net_pay")
 
   wageTypeCode  String?          @map("wage_type_code")
   createdAt     DateTime         @default(now()) @map("created_at")
@@ -1813,6 +1824,26 @@ model MisPayrollSnapshotLine {
   @@unique([periodId, employeeId])
   @@index([employeeId])
   @@map("mis_payroll_snapshot_lines")
+}
+
+/// R2-324 (parked migration 20261101000001). A salary advance to recover from one month's pay. Owner only (wages.read).
+/// shortcut: one row = the amount to deduct that month, no running balance; upgrade to a balance ledger when advances
+/// start to span months.
+model MisSalaryAdvance {
+  id          String   @id @default(uuid()) @db.Uuid
+  employeeId  String   @map("employee_id") @db.Uuid
+  year        Int
+  month       Int
+  amount      Decimal  @db.Decimal(12, 2)
+  notes       String?
+  createdById String?  @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  employee    MisEmployee @relation(fields: [employeeId], references: [id])
+
+  @@index([employeeId, year, month])
+  @@index([year, month])
+  @@map("mis_salary_advances")
 }
 
 /// V2 Epic 3 — a Material Issue Note. A Supervisor ASKS (`requestedQty`); the Store APPROVES and
@@ -2048,6 +2079,8 @@ model MisSupplierInvoice {
   invoiceNo     String           @map("invoice_no")
   invoiceDate   DateTime?        @map("invoice_date") @db.Date
   invoiceAmount Decimal?         @map("invoice_amount") @db.Decimal(14, 2)
+  /// R2-325 (parked migration 20261101000000). Optional GST %; `invoiceAmount` is the billed total including it.
+  gstPercent    Decimal?         @map("gst_percent") @db.Decimal(5, 2)
   notes         String?
   /// 3-way match result (`lib/mis/invoice-match.ts`). Set when a GRN confirms the invoice; recomputed by `reconcileSupplierInvoice`.
   status        MisSupplierInvoiceStatus @default(PENDING_REVIEW)

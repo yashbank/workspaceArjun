@@ -145,6 +145,8 @@ export async function closePayrollPeriod(
             extraPay: r.extraPay,
             latePenalty: r.latePenalty,
             grossPay: r.grossPay,
+            // R2-324: deductions and net pay are frozen with the month too.
+            pf: r.pf, esic: r.esic, pt: r.pt, advance: r.advance, netPay: r.netPay,
             wageTypeCode: r.wageTypeCode,
           })),
         });
