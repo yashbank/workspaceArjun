@@ -178,12 +178,12 @@ Batch B2
 - [x] R2-243 queue dismiss
 - [x] R2-254 (dup of 243)
 Batch B3
-- [ ] R2-236 DAILY Sunday pay
-- [ ] R2-245 (dup of 236)
-- [ ] R2-256 closed-month edit (needs Q-256)
-- [ ] R2-257 Half-Day column
-- [ ] R2-237 payroll layout
-- [ ] R2-258 (dup of 237)
+- [x] R2-236 DAILY Sunday pay
+- [x] R2-245 (dup of 236)
+- [x] R2-256 closed-month edit (needs Q-256)
+- [x] R2-257 Half-Day column
+- [x] R2-237 payroll layout
+- [x] R2-258 (dup of 237)
 Batch B4
 - [ ] R2-259 same-day rule save
 - [ ] R2-241 hide orphan rules

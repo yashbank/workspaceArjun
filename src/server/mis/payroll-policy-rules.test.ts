@@ -44,6 +44,31 @@ describe('R2-228 — attendance.ot_rate', () => {
   });
 });
 
+describe('R2-236 / R2-245 — a DAILY worker with sundayPaid earns the weekly off', () => {
+  it('sundayPaid: 1 worked Monday + 4 January Sundays at the daily rate; without the flag only the worked day', async () => {
+    state.attendance = [rec('1', '2026-01-05', 'PRESENT', 0, { ...EMP, payType: 'DAILY', sundayPaid: true })];
+    const [paid] = await calculateMonthlyPayroll(2026, 1);
+    expect(paid.allowanceDays).toBe(4); // Sundays 4, 11, 18, 25
+    expect(paid.basicWage).toBe(Math.round(DAILY_WAGE * 5)); // 3656
+
+    state.attendance = [rec('1', '2026-01-05', 'PRESENT', 0, { ...EMP, payType: 'DAILY', sundayPaid: false })];
+    const [unpaid] = await calculateMonthlyPayroll(2026, 1);
+    expect(unpaid.allowanceDays).toBe(0);
+    expect(unpaid.basicWage).toBe(Math.round(DAILY_WAGE)); // 731
+  });
+
+  it('sundayPaid still obeys the sandwich rule: a Sunday with neither neighbour worked is unpaid', async () => {
+    setRule('sunday.paid_if_adjacent', 'true');
+    state.attendance = [
+      rec('1', '2026-01-10', 'PRESENT', 0, { ...EMP, payType: 'DAILY', sundayPaid: true }),
+      rec('2', '2026-01-12', 'PRESENT', 0, { ...EMP, payType: 'DAILY', sundayPaid: true }),
+    ];
+    const [row] = await calculateMonthlyPayroll(2026, 1);
+    expect(row.allowanceDays).toBe(1); // only Sun 11 (Sat 10 + Mon 12 worked)
+    expect(row.basicWage).toBe(Math.round(DAILY_WAGE * 3));
+  });
+});
+
 describe('R2-231 — weekly off and the sandwich rule', () => {
   beforeEach(() => state.wageTypes.push(wageRow({})));
 

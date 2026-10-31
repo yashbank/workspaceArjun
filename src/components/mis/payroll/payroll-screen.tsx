@@ -210,6 +210,12 @@ export function PayrollScreen({ rows: payroll, year, month, period, preflight, r
           <div className="flex justify-between py-2"><dt className="text-slate-500">Attendance rows</dt><dd className="font-semibold text-slate-900">{String(attendanceRows)}</dd></div>
           <div className="flex justify-between py-2"><dt className="text-slate-500">Corrections after close</dt><dd className="font-semibold text-slate-900">{period.correctionsAfterClose}</dd></div>
         </dl>
+        {/* R2-256: the Owner may correct attendance in a closed month (with a reason); the figures stay frozen until a reopen. */}
+        {isClosed && period.correctionsAfterClose > 0 && (
+          <p role="status" className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            {period.correctionsAfterClose} attendance correction{period.correctionsAfterClose === 1 ? '' : 's'} since this month was closed. Payslips and exports still use the closed figures — reopen the month to recalculate.
+          </p>
+        )}
       </div>
 
       {/* Before export */}
@@ -240,6 +246,8 @@ export function PayrollScreen({ rows: payroll, year, month, period, preflight, r
         </div>
       </div>
 
+      {/* R2-237 / R2-258: one actions column on desktop (grid cell), the same stack on a phone. */}
+      <div className="flex flex-col gap-4">
       <Button onClick={handleExport} disabled={isPending} className="w-full min-h-11">
         Export {MONTHS[month - 1]}
       </Button>
@@ -348,9 +356,10 @@ export function PayrollScreen({ rows: payroll, year, month, period, preflight, r
           {needsPayCodeCount} employee{needsPayCodeCount === 1 ? '' : 's'} have no wage type set — payslips for them use the factory default.
         </p>
       )}
+      </div>
 
-      {/* Attendance-only table — no money columns, ever, on this screen */}
-      <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+      {/* Attendance-only table — no money columns, ever, on this screen. Full width on desktop (R2-237). */}
+      <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white lg:col-span-2">
         <input
           type="search"
           className="m-3 min-h-12 w-[calc(100%-1.5rem)] rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -363,6 +372,7 @@ export function PayrollScreen({ rows: payroll, year, month, period, preflight, r
             <tr className="border-b border-slate-100 text-xs text-slate-500">
               <th className="px-4 py-3 text-left font-medium">Employee</th>
               <th className="px-4 py-3 text-center font-medium">Present</th>
+              <th className="px-4 py-3 text-center font-medium">Half-day</th>
               <th className="px-4 py-3 text-center font-medium">Absent</th>
               <th className="px-4 py-3 text-center font-medium">Leave</th>
               <th className="px-4 py-3 text-center font-medium">OT</th>
@@ -373,7 +383,7 @@ export function PayrollScreen({ rows: payroll, year, month, period, preflight, r
           </thead>
           <tbody className="divide-y divide-slate-50">
             {filtered.length === 0 ? (
-              <tr><td colSpan={isClosed ? 8 : 7} className="px-4 py-10 text-center text-slate-400">No attendance recorded for this month.</td></tr>
+              <tr><td colSpan={isClosed ? 9 : 8} className="px-4 py-10 text-center text-slate-400">No attendance recorded for this month.</td></tr>
             ) : (
               filtered.map((row) => (
                 <tr key={row.employeeId} className="hover:bg-slate-50">
@@ -383,6 +393,7 @@ export function PayrollScreen({ rows: payroll, year, month, period, preflight, r
                     {row.complianceFlags?.length ? <div className="mt-0.5 text-xs font-medium text-amber-700">⚠ {row.complianceFlags.join(' · ')}</div> : null}
                   </td>
                   <td className="px-4 py-3 text-center font-medium text-green-700">{row.present}</td>
+                  <td className="px-4 py-3 text-center text-amber-700">{row.halfDay}</td>{/* R2-257 */}
                   <td className="px-4 py-3 text-center text-red-600">{row.absent}</td>
                   <td className="px-4 py-3 text-center text-amber-600">{row.leave}</td>
                   <td className="px-4 py-3 text-center text-xs text-indigo-600">{fmtMin(row.totalOTMinutes)}</td>
@@ -415,12 +426,13 @@ export function PayrollScreen({ rows: payroll, year, month, period, preflight, r
   );
 
   return (
-    <div className="mx-auto w-full max-w-2xl">
+    <div className="mx-auto w-full max-w-2xl lg:max-w-7xl">
       {confirmDialog}
       <div className="hidden lg:block">
         <DesktopPageHeader title="Payroll · Month end" summary={`${payroll.length} employees · ${monthLabel}`} />
       </div>
-      <div className="flex flex-col gap-4 pb-24 lg:pb-6">{body}</div>
+      {/* R2-237 / R2-258: phone keeps the single column; desktop lays the cards two-up with the table full width. */}
+      <div className="flex flex-col gap-4 pb-24 lg:grid lg:grid-cols-2 lg:items-start lg:pb-6">{body}</div>
     </div>
   );
 }

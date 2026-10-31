@@ -142,6 +142,9 @@ function computeEmployeeMonth(
 ): PayrollRow {
   const { otMultiplierOn } = policy;
   const payType: 'MONTHLY' | 'DAILY' = emp.payType === 'MONTHLY' ? 'MONTHLY' : 'DAILY';
+  // R2-236 / R2-245: a DAILY worker the Owner marked `sundayPaid` earns the weekly off exactly like a MONTHLY one
+  // (same `attendance.weekly_off` day, same sandwich rule). Without the flag a daily worker is paid only for days worked.
+  const paidWeeklyOff = payType === 'MONTHLY' || emp.sundayPaid === true;
   const monthEnd = new Date(Date.UTC(year, month, 0));
 
   const rowOn = (date: Date) => (wageHistory ? resolveAsOf(wageHistory, date) : null);
@@ -165,7 +168,7 @@ function computeEmployeeMonth(
     return status === 'PRESENT' || status === 'HALF_DAY' || (status === 'LEAVE' && paidLeaveOn(date));
   };
   const weeklyOffPaidOn = (date: Date): boolean => {
-    if (payType !== 'MONTHLY' || !isWeekday(date, policy.weeklyOffOn(date))) return false;
+    if (!paidWeeklyOff || !isWeekday(date, policy.weeklyOffOn(date))) return false;
     const before = new Date(date.getTime() - 86_400_000);
     const after = new Date(date.getTime() + 86_400_000);
     return weeklyOffIsPaid(policy.sandwichOn(date), workedOn(before), workedOn(after));
@@ -209,8 +212,8 @@ function computeEmployeeMonth(
   // 25.3: a MONTHLY employee is paid every Sunday, including one with no attendance row at all
   // (the normal case — nobody clocks in on a day off). A Sunday that DOES have a row was already
   // priced as a paid Sunday above (`monthlySunday` overrides its own status); this only fills the
-  // gap for Sundays no row exists for.
-  if (payType === 'MONTHLY') {
+  // gap for Sundays no row exists for. R2-236: a `sundayPaid` DAILY worker is filled the same way.
+  if (paidWeeklyOff) {
     for (let d = 1; d <= workingDays; d++) {
       const date = new Date(Date.UTC(year, month - 1, d));
       if (!seenDates.has(date.toISOString().slice(0, 10)) && weeklyOffPaidOn(date)) {
