@@ -190,7 +190,7 @@ Batch B4
 - [x] R2-242 late-rule enum
 - [x] R2-260 (dup of 242)
 Batch B5
-- [ ] R2-238 /mis/me unlinked card
+- [x] R2-238 /mis/me unlinked card
 - [x] R2-249 (dup of 238)
 - [x] R2-239 desktop Me tab
 - [x] R2-255 (dup of 239)
