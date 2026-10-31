@@ -225,4 +225,4 @@ Batch B9
 - [x] R2-283 count reconcile (needs Q)
 
 ## Final step (after B9)
-- [ ] FINAL: ask owner to apply pending migrations (see Schema protocol, step 4), wait, re-verify, report ready to deploy
+- [x] FINAL: ask owner to apply pending migrations (see Schema protocol, step 4), wait, re-verify, report ready to deploy
