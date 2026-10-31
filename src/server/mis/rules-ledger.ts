@@ -12,9 +12,9 @@ import { db } from '@/server/db';
 import { requirePermission } from '@/server/mis/auth';
 import { getFactoryTimezone } from '@/server/mis/business-rules';
 import { factoryDateKey } from '@/lib/mis/factory-time';
-import { isWageRuleKey } from '@/lib/mis/rule-keys';
+import { isOwnerOnlyPayrollRuleKey } from '@/lib/mis/rule-keys';
 
-const SENSITIVE_KEYS = (keys: readonly string[]) => keys.filter((k) => isWageRuleKey(k) || k.startsWith('AQL_'));
+const SENSITIVE_KEYS = (keys: readonly string[]) => keys.filter((k) => isOwnerOnlyPayrollRuleKey(k) || k.startsWith('AQL_'));
 
 export async function getRulesLedger(
   input: { asOf?: unknown; rule?: unknown } = {},

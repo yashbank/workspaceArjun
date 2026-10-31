@@ -49,6 +49,7 @@ const NOW = ist(21, 7, 41); // the tablet finds signal at 07:41 on the 21st
 const DEVICE = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const OTHER_DEVICE = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 const OPERATOR = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+const OPERATOR_2 = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const USER = '11111111-1111-4111-8111-111111111111';
 const S1 = '51111111-1111-4111-8111-111111111111';
 const S2 = '52222222-2222-4222-8222-222222222222';
@@ -75,6 +76,7 @@ beforeEach(() => {
   fake.state.queued.clear();
   fake.state.punches = [];
   fake.state.attendance = [];
+  fake.state.handovers = [];
   fake.state.employees = [
     { id: 'e1', employeeCode: 'BPP-0142', name: 'Ramesh Kumar', isActive: true, deletedAt: null },
     { id: 'e2', employeeCode: 'BPP-0001', name: 'Left Company', isActive: false, deletedAt: null },
@@ -466,6 +468,27 @@ describe('the tablet door — a device token, and only that (D18)', () => {
     await send(punchBody('out', ist(20, 14, 0)));
     expect(fake.state.punches).toHaveLength(2);
     expect(fake.state.punches.find((p) => p.direction === 'OUT')!.operatorId).toBeNull();
+  });
+
+  it('records a shift handover the moment a device switches to a different named operator', async () => {
+    fake.state.employees.push(
+      { id: OPERATOR, role: 'ATTENDANCE_OPERATOR', isActive: true, deletedAt: null },
+      { id: OPERATOR_2, role: 'ATTENDANCE_OPERATOR', isActive: true, deletedAt: null },
+    );
+    // Same operator twice — no handover yet. (All times the day before NOW, same as the
+    // precedent test above, so none of this trips the clock-skew-ahead-of-now check.)
+    await send(punchBody('in', ist(20, 6, 4), { operatorId: OPERATOR }));
+    await send(punchBody('out', ist(20, 10, 0), { operatorId: OPERATOR }));
+    expect(fake.state.handovers).toHaveLength(0);
+
+    // A different operator's first punch on this device IS the handover.
+    await send(punchBody('in', ist(20, 14, 0), { operatorId: OPERATOR_2 }));
+    expect(fake.state.handovers).toHaveLength(1);
+    expect(fake.state.handovers[0]).toMatchObject({ deviceId: DEVICE, fromOperatorId: OPERATOR, toOperatorId: OPERATOR_2 });
+
+    // The next punch, still under OPERATOR_2, does not record a second handover.
+    await send(punchBody('out', ist(20, 18, 0), { operatorId: OPERATOR_2 }));
+    expect(fake.state.handovers).toHaveLength(1);
   });
 
   it('records a successful sync with the tablet’s own health report — but not when the server asked it to retry', async () => {

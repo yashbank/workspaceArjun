@@ -44,7 +44,7 @@ export function LeavePayScreen({ view }: { view: LeavePayView }) {
       </p>
       <p className="text-sm text-slate-500">
         Until you change one, <strong>every type is Unpaid</strong> — the way payroll has always priced a leave day. Turn
-        CL, SL and EL to <strong>Paid</strong> below if they should earn a day's wage.
+        CL, SL and EL to <strong>Paid</strong> below if they should earn a day&apos;s wage. For a <strong>half-day leave</strong>, the worked half is always paid; <strong>Paid</strong> also pays the leave half (a full day), <strong>Unpaid</strong> deducts it (0.5 day).
       </p>
 
       {view.setupPending && (
@@ -55,7 +55,7 @@ export function LeavePayScreen({ view }: { view: LeavePayView }) {
       )}
 
       <div className="rounded-xl border border-slate-200 bg-white px-4">
-        {view.types.map((t) => (
+        {[...view.types, view.halfDay].map((t) => (
           <div key={t.leaveType} className="flex flex-col gap-2 border-b border-slate-100 py-3 last:border-0 sm:flex-row sm:items-center">
             <div className="min-w-0 flex-1">
               <div className="text-sm font-medium text-slate-800">{t.label}</div>

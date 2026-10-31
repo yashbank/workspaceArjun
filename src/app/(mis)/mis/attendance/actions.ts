@@ -11,8 +11,13 @@ import {
   markAbsentBulk,
   listPunchesForDay,
   waiveLateness,
+  bulkPunch,
+  punchBreak,
+  deleteShift,
+  cancelLeaveRequest,
 } from '@/server/mis/attendance';
 import { addAttendanceNote } from '@/server/mis/attendance-month';
+import { assignRoster, removeRoster } from '@/server/mis/shift-roster';
 import { asResult } from '@/lib/mis/action-result';
 import { revalidatePath } from 'next/cache';
 
@@ -97,5 +102,47 @@ export async function waiveLatenessAction(reason: string, date?: string) {
     revalidatePath('/mis/attendance');
     revalidatePath('/mis');
     return { count: out.count };
+  });
+}
+export async function bulkPunchAction(kind: 'IN' | 'OUT', employeeIds: string[], opts?: { date?: string; time?: string | null; shiftId?: string | null }) {
+  return asResult(async () => {
+    const out = await bulkPunch(kind, employeeIds, opts);
+    revalidatePath('/mis/attendance');
+    return { skipped: out.skipped };
+  });
+}
+export async function punchBreakAction(kind: 'OUT' | 'IN', employeeIds: string[]) {
+  return asResult(async () => {
+    const out = await punchBreak(kind, employeeIds);
+    revalidatePath('/mis/attendance');
+    return { skipped: out.skipped };
+  });
+}
+export async function deleteShiftAction(id: string) {
+  return asResult(async () => {
+    await deleteShift(id);
+    revalidatePath('/mis/attendance');
+    revalidatePath('/mis/attendance/shifts');
+  });
+}
+export async function cancelLeaveRequestAction(leaveId: string, reason?: string) {
+  return asResult(async () => {
+    await cancelLeaveRequest(leaveId, reason);
+    revalidatePath('/mis/attendance');
+    revalidatePath('/mis/attendance/leave');
+    revalidatePath('/mis/approvals');
+  });
+}
+export async function assignRosterAction(input: { employeeIds: string[]; shiftId: string; startDate: string; endDate: string }) {
+  return asResult(async () => {
+    const out = await assignRoster(input);
+    revalidatePath('/mis/attendance/shifts');
+    return out;
+  });
+}
+export async function removeRosterAction(id: string) {
+  return asResult(async () => {
+    await removeRoster(id);
+    revalidatePath('/mis/attendance/shifts');
   });
 }

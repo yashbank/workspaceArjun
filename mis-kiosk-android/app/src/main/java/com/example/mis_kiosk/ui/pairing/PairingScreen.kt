@@ -34,17 +34,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.mis_kiosk.data.local.RosterPreferences
 import com.example.mis_kiosk.ui.common.KioskStatusBar
 import com.example.mis_kiosk.ui.theme.KioskColors
 import com.example.mis_kiosk.ui.theme.KioskMono
-import java.text.SimpleDateFormat
-import java.util.Date
+import java.time.Instant
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlinx.coroutines.delay
 
@@ -104,10 +106,15 @@ private fun PairingScreenContent(
 
 @Composable
 private fun liveClock(): String {
-    var now by remember { mutableStateOf(SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())) }
-    LaunchedEffect(Unit) {
+    // Same factory-zone fix as PunchScreen.kt's liveClock(). Before the first successful pull
+    // there is no factory zone yet, so this correctly falls back to the device's own zone
+    // (FactoryDay.zoneFrom's documented fallback) rather than hard-coding one.
+    val zone = RosterPreferences(LocalContext.current).factoryZone
+    val formatter = remember(zone) { DateTimeFormatter.ofPattern("HH:mm", Locale.ENGLISH).withZone(zone) }
+    var now by remember(formatter) { mutableStateOf(formatter.format(Instant.now())) }
+    LaunchedEffect(formatter) {
         while (true) {
-            now = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+            now = formatter.format(Instant.now())
             delay(1000)
         }
     }

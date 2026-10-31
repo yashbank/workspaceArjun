@@ -83,6 +83,7 @@ const REVIEWED_UNGATED: Record<string, Reviewed> = {
   'business-rules.ts#getOfflineRules': { reason: 'internal; idempotency.ts reads the tolerance (D15)' },
   'business-rules.ts#getFactoryTimezone': { reason: 'internal; carries no wage or personal data (D22)' },
   'business-rules.ts#getCorrectionWindowDays': { reason: 'internal; carries no wage or personal data (D21)' },
+  'business-rules.ts#getLunchBreakMinutes': { reason: 'internal; minutes allowance, carries no wage or personal data (R2-179)' },
   'business-rules.ts#getPoApprovalThreshold': { reason: 'internal; carries a policy figure, not a wage or a PO\'s own value (D2/D34) — po.ts reads it after its own po.write gate' },
   'wage-type.ts#listWageCodes': { reason: 'opens by calling the gated listWageTypes()', alsoContains: 'listWageTypes' },
   'line-clearance.ts#assertLineCleared': { reason: 'internal precondition called by production.ts after its own gate' },
@@ -103,6 +104,11 @@ const REVIEWED_UNGATED: Record<string, Reviewed> = {
   // row), not a role grant; wages.read stays Owner-only. Proven per role in payslips.test.ts.
   'payslips.ts#listMyPayslips': { reason: "the caller's own released payslip months; employee id from the login", alsoContains: 'requireOwnEmployee', door: true },
   'payslips.ts#getMyPayslip': { reason: "the caller's own released, closed, previous-month slip; employee id from the login", alsoContains: 'requireOwnEmployee', door: true },
+  // R2-172: an employee reads ONLY their own attendance — an identity gate (the login's own employee row), no money.
+  'my-attendance.ts#getMyAttendanceMonth': { reason: "the caller's own punches; employee id from the login, never the request", alsoContains: 'userProfileId: user.id', door: true },
+  // R2-212/217: called only AFTER the caller's own gated write/read; payload is minutes and names, never money.
+  'attendance-compliance.ts#notifyLongOvertime': { reason: 'best-effort notice fired after an attendance.write punch; minutes only' },
+  'attendance-compliance.ts#getComplianceFlags': { reason: 'called by attendance-month (attendance.read + role check) and the Owner payroll page; labels only' },
   'navigation.ts#getNavigationFor': { reason: 'derives the menu from the role; returns labels only' },
   // The dashboard catalogue is the navigation menu's shape, for widgets: it derives from the
   // role and returns labels and grid sizes, never factory data. Omission IS the rule here

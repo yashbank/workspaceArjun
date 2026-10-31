@@ -238,8 +238,8 @@ const TABS: Record<MisRoleName, NavTab[]> = {
     { id: 'issue', label: 'Issue', href: '/mis/store/issue', icon: Icons.issue },
     ME,
   ],
-  // A worker has no login; the row exists so the map is total.
-  WORKER: [HOME],
+  // R2-219: a worker lands on Me (attendance, payslips, leave).
+  WORKER: [HOME, ME],
 };
 
 /**

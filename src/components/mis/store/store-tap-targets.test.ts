@@ -19,6 +19,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 function read(file: string): string {
+  // CRLF-tolerant: the multi-line needles below use \n, and a CRLF checkout would otherwise miss them.
   return readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
 }
 

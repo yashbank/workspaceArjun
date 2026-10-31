@@ -1,6 +1,6 @@
 import type { AqlThresholds } from '@/lib/mis/aql';
 import { can } from '@/lib/mis/permissions';
-import { isWageRuleKey, type WageRuleKey } from '@/lib/mis/rule-keys';
+import { isWageRuleKey, isPayrollPolicyRuleKey, type WageRuleKey } from '@/lib/mis/rule-keys';
 import { dbDateKey } from '@/lib/mis/attendance-month';
 import { DEFAULT_FACTORY_TIMEZONE, dateKeyToDbDate, factoryDateKey, isValidTimeZone, resolveFactoryTimezone } from '@/lib/mis/factory-time';
 import { validateSchedule } from '@/lib/mis/rules-ledger';
@@ -210,22 +210,40 @@ export async function getFactoryTimezone(): Promise<string> {
 
 /**
  * How many days back the register may still be corrected, today included — the
- * `ATTENDANCE_CORRECTION_DAYS` rule, three when unset. Ungated: the gate that
+ * `ATTENDANCE_CORRECTION_DAYS` rule, three when unset (Admin/Owner: `attendance.edit_window_days_admin` first). Ungated: the gate that
  * matters is on changing it. Read by punch ingestion (D21) and by the Super
  * Attendance Operator's "corrections open" card, so the two can never disagree.
  */
-export async function getCorrectionWindowDays(): Promise<number> {
-  const parsed = Number.parseInt((await getRuleValue('ATTENDANCE_CORRECTION_DAYS')) ?? '', 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 3;
+export async function getCorrectionWindowDays(role?: string): Promise<number> {
+  // R2-227: Admin and Owner follow their own, longer window (the Settings key `attendance.edit_window_days_admin`).
+  if (role === 'ADMIN' || role === 'OWNER') {
+    const adminDays = positiveInt(await getRuleValue(ADMIN_EDIT_WINDOW_KEY));
+    if (adminDays) return adminDays;
+  }
+  return positiveInt(await getRuleValue('ATTENDANCE_CORRECTION_DAYS')) ?? 3;
 }
+
+const ADMIN_EDIT_WINDOW_KEY = 'attendance.edit_window_days_admin';
+const positiveInt = (raw: string | null): number | null => {
+  const n = Number.parseInt(raw ?? '', 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
 
 /** R3 B37: keys that move money or the attendance register are Owner-level (`wages.read`) even though Admin holds `settings.write`. */
 const ATTENDANCE_CORRECTION_KEY = 'ATTENDANCE_CORRECTION_DAYS';
-const OWNER_ONLY_RULE_KEYS: readonly string[] = [PO_APPROVAL_THRESHOLD_KEY, ATTENDANCE_CORRECTION_KEY];
-const INTEGER_RULE_KEYS: readonly string[] = [ATTENDANCE_CORRECTION_KEY, OFFLINE_SKEW_KEY, OFFLINE_MAX_AGE_KEY, LINE_CLEARANCE_MAX_MINUTES_KEY];
+
+/** R2-179: the paid lunch allowance in minutes (Owner setting, row seeded by the migration). Ungated read; 30 when unset. */
+export async function getLunchBreakMinutes(): Promise<number> {
+  const parsed = Number.parseInt((await getRuleValue(LUNCH_BREAK_KEY)) ?? '', 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 30;
+}
+export const LUNCH_BREAK_KEY = 'ATTENDANCE_LUNCH_BREAK_MINUTES';
+const OWNER_ONLY_RULE_KEYS: readonly string[] = [PO_APPROVAL_THRESHOLD_KEY, ATTENDANCE_CORRECTION_KEY, LUNCH_BREAK_KEY];
+const INTEGER_RULE_KEYS: readonly string[] = [ATTENDANCE_CORRECTION_KEY, LUNCH_BREAK_KEY, OFFLINE_SKEW_KEY, OFFLINE_MAX_AGE_KEY, LINE_CLEARANCE_MAX_MINUTES_KEY];
 const RULE_RANGES: Record<string, [number, number]> = {
   [PO_APPROVAL_THRESHOLD_KEY]: [0, 10_000_000],
   [ATTENDANCE_CORRECTION_KEY]: [0, 60],
+  [LUNCH_BREAK_KEY]: [0, 180],
 };
 
 /** R3 B37: a number rule must be a finite number (an integer for the integer keys) inside its range. */
@@ -279,8 +297,8 @@ async function createRuleRevision(
     // A wage rule's value is a wage: the audit row names WHICH rule changed and who changed it,
     // never the figure (D24, MIS_UI_SPEC §3). redact() matches property names and `ruleValue` is
     // not one, so the omission has to happen here (F-04).
-    before: isWageRuleKey(ruleKey) ? { ruleKey } : { ruleKey, ruleValue: replaced.ruleValue },
-    after: isWageRuleKey(ruleKey) ? { ruleKey, ...scheduled } : { ruleKey, ruleValue, ...scheduled },
+    before: isWageRuleKey(ruleKey) || isPayrollPolicyRuleKey(ruleKey) ? { ruleKey } : { ruleKey, ruleValue: replaced.ruleValue },
+    after: isWageRuleKey(ruleKey) || isPayrollPolicyRuleKey(ruleKey) ? { ruleKey, ...scheduled } : { ruleKey, ruleValue, ...scheduled },
   });
   return rec;
 }
@@ -300,7 +318,7 @@ export async function getBusinessRules() {
   const seen = new Set<string>();
   return rows
     .filter((r) => !isAqlRuleKey(r.ruleKey))
-    .filter((r) => mayReadWages || !isWageRuleKey(r.ruleKey))
+    .filter((r) => mayReadWages || !(isWageRuleKey(r.ruleKey) || isPayrollPolicyRuleKey(r.ruleKey)))
     .filter(r => { if (seen.has(r.ruleKey)) return false; seen.add(r.ruleKey); return true; });
 }
 
@@ -311,7 +329,7 @@ export async function updateBusinessRule(ruleKey: string, ruleValue: string) {
   // this an Admin could rewrite the rates and thresholds that the dedicated Owner-only screens
   // exist to protect (F-03).
   if (isAqlRuleKey(ruleKey)) await requirePermission('aql.read', ruleKey);
-  else if (isWageRuleKey(ruleKey) || OWNER_ONLY_RULE_KEYS.includes(ruleKey)) await requirePermission('wages.read', ruleKey);
+  else if (isWageRuleKey(ruleKey) || isPayrollPolicyRuleKey(ruleKey) || OWNER_ONLY_RULE_KEYS.includes(ruleKey)) await requirePermission('wages.read', ruleKey);
   // A timezone that is not a real IANA name would silently mis-file every punch from
   // now on, so it is refused here rather than discovered in a payroll dispute (D22).
   if (ruleKey === FACTORY_TIMEZONE_KEY && !isValidTimeZone(ruleValue)) {

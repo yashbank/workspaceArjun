@@ -133,6 +133,11 @@ export function DeviceListScreen({ devices, asOf }: { devices: KioskDeviceRow[];
                   {d.batteryPercent === null ? 'not reported' : `${d.batteryPercent}%${d.isCharging === null ? '' : d.isCharging ? ' · charging' : ' · not charging'}`}
                 </Row>
                 <Row label="App version">{d.appVersion ?? 'not reported'}</Row>
+                <Row label="Last handover">
+                  {d.lastHandover
+                    ? `${d.lastHandover.fromOperatorName ?? 'Unknown'} → ${d.lastHandover.toOperatorName}, ${describeAge(d.lastHandover.occurredAt, now)} ago`
+                    : 'none recorded'}
+                </Row>
               </dl>
 
               {d.isCharging === false && d.batteryPercent !== null && d.batteryPercent < BATTERY_WARN_PERCENT && (

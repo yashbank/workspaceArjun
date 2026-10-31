@@ -11,7 +11,7 @@ import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { WagePicker } from '@/components/mis/payroll/wage-picker';
 import type { WageTypeCode } from '@/server/mis/wage-type';
 import { isMisRole } from '@/lib/mis/roles';
-import { saveEmployeeAction, deleteEmployeeAction, restoreEmployeeAction, uploadEmployeePhotoAction } from '@/app/(mis)/mis/employees/actions';
+import { saveEmployeeAction, deleteEmployeeAction, restoreEmployeeAction, setEmployeeActiveAction, uploadEmployeePhotoAction, importEmployeesCsvAction } from '@/app/(mis)/mis/employees/actions';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { PhotoPicker } from './photo-picker';
 import { unwrap } from '@/lib/mis/action-result';
@@ -25,11 +25,17 @@ import { normaliseBankDetails } from '@/lib/mis/bank-details';
 const actionLinkClass =
   'inline-flex min-h-11 flex-1 items-center justify-center rounded-lg px-3 text-base font-medium text-slate-700 transition-colors hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900';
 
+// Same Button-ghost look as actionLinkClass, without the row's flex-1 — for a nav link
+// sitting beside "↓ CSV" / "+ Add Employee" in the page header instead of a table row.
+const toolbarLinkClass =
+  'inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg px-4 text-base font-medium text-slate-700 transition-colors hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900';
+
 type Employee = {
   id: string; employeeCode: string; name: string; nameHi: string | null; phone: string | null; role: string; isActive: boolean;
   deletedAt: Date | null; managerId: string | null; userProfile: { email: string } | null;
   department?: { name: string } | null;
   departmentId?: string | null;
+  defaultShiftId?: string | null;
   // Phase 25 (25.2/25.3, D28) — none of the three is money; wageTypeCode is a CODE, never an amount (D33).
   wageTypeCode: string | null; payType: 'MONTHLY' | 'DAILY'; sundayPaid: boolean;
   photoUrl?: string | null;
@@ -50,6 +56,8 @@ type Props = {
   wageCodes: WageTypeCode[];
   /** Active departments for the Department picker (R2-86). */
   departments?: { id: string; name: string }[];
+  /** R2-163: active shifts for the Default shift picker. */
+  shifts?: { id: string; name: string; startTime: string; endTime: string }[];
   /** R2-83: `employees` is now one page; the manager picker and the manager-name lookup still need the whole (D4-scoped) roll. */
   allPeople?: Employee[];
   /** R2-83: the server-side page — total matching rows, the page number, and the URL params kept in the page links. */
@@ -79,7 +87,36 @@ const roleTone = (role: string) => {
 
 const roleLabel = (role: string) => ROLE_OPTIONS.find(o => o.value === role)?.label ?? role;
 
-export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes, departments = [], initialEditId, allPeople, paging }: Props) {
+/**
+ * The inverse of `downloadCsv`'s quoting: every field there is wrapped in `"..."` with embedded
+ * quotes doubled (`""`), so a plain `split(',')` would break on a quoted comma (e.g. a name with
+ * a comma in it). This walks the text a character at a time, tracking whether it is inside a
+ * quoted field, and also tolerates a field that was never quoted (a hand-edited file).
+ */
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = '';
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"' && text[i + 1] === '"') { field += '"'; i++; }
+      else if (c === '"') { inQuotes = false; }
+      else { field += c; }
+      continue;
+    }
+    if (c === '"') { inQuotes = true; }
+    else if (c === ',') { row.push(field); field = ''; }
+    else if (c === '\r') { /* paired \n below closes the row */ }
+    else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+    else { field += c; }
+  }
+  if (field.length > 0 || row.length > 0) { row.push(field); rows.push(row); }
+  return rows.filter((r) => r.some((c) => c.trim() !== ''));
+}
+
+export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes, departments = [], shifts = [], initialEditId, allPeople, paging }: Props) {
   const everyone = allPeople ?? employees;
   const { confirm, confirmDialog } = useConfirm();
   const [open, setOpen] = useState(false);
@@ -91,6 +128,7 @@ export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes
   const [role, setRole] = useState('WORKER');
   const [managerId, setManagerId] = useState<string | null>(null);
   const [departmentId, setDepartmentId] = useState<string | null>(null);
+  const [defaultShiftId, setDefaultShiftId] = useState<string | null>(null);
   const [wageTypeCode, setWageTypeCode] = useState<string | null>(null);
   const [payType, setPayType] = useState<'MONTHLY' | 'DAILY'>('DAILY');
   const [sundayPaid, setSundayPaid] = useState(false);
@@ -102,8 +140,8 @@ export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes
   const [photo, setPhoto] = useState<File | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  const openAdd = () => { setEditing(null); setCode(''); setName(''); setNameHi(''); setPhone(''); setRole('WORKER'); setManagerId(null); setDepartmentId(null); setWageTypeCode(null); setPayType('DAILY'); setSundayPaid(false); setBankName(''); setBankAccountNo(''); setIfsc(''); setSaveError(null); setPhoto(null); setOpen(true); };
-  const openEdit = (emp: Employee) => { setEditing(emp); setCode(emp.employeeCode); setName(emp.name); setNameHi(emp.nameHi ?? ''); setPhone(emp.phone ?? ''); setRole(emp.role); setManagerId(emp.managerId); setDepartmentId(emp.departmentId ?? null); setWageTypeCode(emp.wageTypeCode); setPayType(emp.payType); setSundayPaid(emp.sundayPaid); setBankName(emp.bankName ?? ''); setBankAccountNo(emp.bankAccountNo ?? ''); setIfsc(emp.ifsc ?? ''); setSaveError(null); setPhoto(null); setOpen(true); };
+  const openAdd = () => { setEditing(null); setCode(''); setName(''); setNameHi(''); setPhone(''); setRole('WORKER'); setManagerId(null); setDepartmentId(null); setDefaultShiftId(null); setWageTypeCode(null); setPayType('DAILY'); setSundayPaid(false); setBankName(''); setBankAccountNo(''); setIfsc(''); setSaveError(null); setPhoto(null); setOpen(true); };
+  const openEdit = (emp: Employee) => { setEditing(emp); setCode(emp.employeeCode); setName(emp.name); setNameHi(emp.nameHi ?? ''); setPhone(emp.phone ?? ''); setRole(emp.role); setManagerId(emp.managerId); setDepartmentId(emp.departmentId ?? null); setDefaultShiftId(emp.defaultShiftId ?? null); setWageTypeCode(emp.wageTypeCode); setPayType(emp.payType); setSundayPaid(emp.sundayPaid); setBankName(emp.bankName ?? ''); setBankAccountNo(emp.bankAccountNo ?? ''); setIfsc(emp.ifsc ?? ''); setSaveError(null); setPhoto(null); setOpen(true); };
 
   // R2-88: open the edit form once for the person named in ?edit=, never again after it is closed.
   const [autoOpened, setAutoOpened] = useState(false);
@@ -138,6 +176,7 @@ export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes
           role: isMisRole(role) ? role : undefined,
           managerId,
           departmentId,
+          defaultShiftId,
           // Only an Owner's form ever holds these — an Admin's form never renders the section
           // that sets them, so they stay `undefined` (unchanged) on an Admin's save.
           ...(isOwner ? { wageTypeCode, payType, sundayPaid } : {}),
@@ -179,6 +218,41 @@ export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes
     URL.revokeObjectURL(url);
   }
 
+  /**
+   * Import CSV — the mirror of `downloadCsv`. Columns are matched by header name (so a file
+   * exported by this same screen, or a hand-built one with the same headers in a different
+   * order, both work); unmatched headers fall back to the export's own column order. "Login
+   * Email" and "Active" are read-only exports with no matching input here and are ignored.
+   */
+  async function handleImportFile(file: File) {
+    setRowError(null);
+    const text = await file.text();
+    const table = parseCsv(text);
+    if (table.length === 0) { setRowError('That file has no rows to import.'); return; }
+    const header = table[0].map((h) => h.trim().toLowerCase());
+    const colIndex = (label: string, fallback: number) => {
+      const i = header.indexOf(label);
+      return i === -1 ? fallback : i;
+    };
+    const col = { code: colIndex('code', 0), name: colIndex('name', 1), nameHi: colIndex('name (hindi)', 2), phone: colIndex('phone', 3), role: colIndex('role', 4) };
+    const rows = table.slice(1).map((r) => ({
+      employeeCode: r[col.code] ?? '',
+      name: r[col.name] ?? '',
+      nameHi: r[col.nameHi] || undefined,
+      phone: r[col.phone] || undefined,
+      role: r[col.role] || undefined,
+    }));
+    if (rows.length === 0) { setRowError('That file has no rows to import.'); return; }
+    startTransition(async () => {
+      const res = await importEmployeesCsvAction(rows);
+      if (!res.ok) { setRowError(res.detail); return; }
+      const { created, errors } = res.value;
+      const summary = [`Imported ${created} of ${rows.length} employee${rows.length === 1 ? '' : 's'}.`];
+      if (errors.length > 0) summary.push(`${errors.length} row${errors.length === 1 ? '' : 's'} failed: ${errors.map((e) => `Row ${e.row} — ${e.message}`).join('; ')}`);
+      setRowError(summary.join(' '));
+    });
+  }
+
   const columns: Column<Employee>[] = [
     { key: 'code', header: 'Code', render: (r) => <span className="font-mono text-sm">{r.employeeCode}</span> },
     { key: 'name', header: 'Name', render: (r) => <div><div>{r.name}</div>{r.nameHi && <div className="text-xs text-slate-500">{r.nameHi}</div>}</div> },
@@ -205,7 +279,12 @@ export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes
         <Link href={`/mis/print/badge/${r.id}`} target="_blank" className={actionLinkClass}>Badge</Link>
         {!r.deletedAt && canWrite && <Button variant="ghost" onClick={() => openEdit(r)}>Edit</Button>}
         {!r.deletedAt && canWrite && <Button variant="ghost" onClick={async () => {
-          if (!(await confirm({ title: 'Deactivate employee', message: `Are you sure you want to deactivate ${r.name}? They will no longer be able to log in or punch at the gate.`, confirmLabel: 'Deactivate', destructive: true }))) return;
+          const next = !r.isActive;
+          if (!(await confirm({ title: next ? 'Activate employee' : 'Make employee inactive', message: next ? `${r.name} will be back on the roll and can punch again.` : `${r.name} stays on record with all history, but will not be offered for punches or attendance until made active again.`, confirmLabel: next ? 'Activate' : 'Make inactive', destructive: !next }))) return;
+          startTransition(async () => { setRowError(null); const res = await setEmployeeActiveAction(r.id, next); if (!res.ok) setRowError(res.detail); });
+        }}>{r.isActive ? 'Deactivate' : 'Activate'}</Button>}
+        {!r.deletedAt && canWrite && <Button variant="ghost" onClick={async () => {
+          if (!(await confirm({ title: 'Delete employee', message: `Are you sure you want to delete ${r.name}? They are removed from the roll (it can be undone with Restore) and will no longer be able to log in or punch at the gate. To pause someone temporarily, use Deactivate instead.`, confirmLabel: 'Delete', destructive: true }))) return;
           startTransition(async () => { setRowError(null); const res = await deleteEmployeeAction(r.id); if (!res.ok) setRowError(res.detail); });
         }}>Delete</Button>}
         {r.deletedAt && canWrite && <Button variant="ghost" onClick={() => startTransition(async () => { setRowError(null); const res = await restoreEmployeeAction(r.id); if (!res.ok) setRowError(res.detail); })}>Restore</Button>}
@@ -218,8 +297,24 @@ export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes
       {confirmDialog}
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-slate-900">Employees</h1>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="ghost" onClick={downloadCsv}>↓ CSV</Button>
+          <Link href="/mis/print/badges" target="_blank" className={toolbarLinkClass}>Print all badges</Link>
+          {canWrite && (
+            <label className={toolbarLinkClass}>
+              Import CSV
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                className="sr-only"
+                onChange={(e) => {
+                  const file = e.target.files?.[0] ?? null;
+                  e.target.value = '';
+                  if (file) handleImportFile(file);
+                }}
+              />
+            </label>
+          )}
           {canWrite && <Button onClick={openAdd}>+ Add Employee</Button>}
         </div>
       </div>
@@ -279,6 +374,12 @@ export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes
             value={departmentId ?? ''}
             options={[{ value: '', label: 'No department' }, ...departments.map((d) => ({ value: d.id, label: d.name }))]}
             onChange={(v) => setDepartmentId(v || null)}
+          />
+          <Select
+            label="Default shift"
+            value={defaultShiftId ?? ''}
+            options={[{ value: '', label: 'No default shift' }, ...shifts.map((sh) => ({ value: sh.id, label: `${sh.name} (${sh.startTime}–${sh.endTime})` }))]}
+            onChange={(v) => setDefaultShiftId(v || null)}
           />
           <p className="text-sm text-slate-500">
             Sets who can see this person&apos;s records — their manager, and everyone above.

@@ -33,6 +33,7 @@ const gate1: KioskDeviceRow = {
   queuedPunches: 14,
   syncLevel: 'GREEN',
   cacheLevel: 'AMBER',
+  lastHandover: null,
 };
 
 const retired: KioskDeviceRow = {

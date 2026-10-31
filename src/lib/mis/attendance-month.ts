@@ -24,6 +24,7 @@
  * Pure: no Prisma, no React.
  */
 
+import type { BreakShape } from './attendance-breaks';
 import { formatFactoryTime } from './factory-time';
 import { shiftDurationMinutes } from './shift-window';
 
@@ -221,6 +222,8 @@ export type DayDetail = {
   lateMinutes: number;
   /** null when there is nothing to compare; false is a fact the screen must say out loud. */
   otAgrees: boolean | null;
+  /** R2-216: every break of the day, oldest first. Plain strings and whole minutes; no money. */
+  breaks?: BreakShape[];
 };
 
 const wholeMinute = (at: Date) => Math.floor(at.getTime() / 60_000);
@@ -265,7 +268,7 @@ export type AttendanceMonthView = {
   departments: { id: string; name: string }[];
   departmentId: string | null;
   departmentName: string | null;
-  rows: { id: string; name: string; code: string; department: string | null; cells: CellState[]; counts: Counts }[];
+  rows: { id: string; name: string; code: string; department: string | null; cells: CellState[]; counts: Counts; /** R2-217: Factories Act warnings (Owner/Admin/Supervisor only; empty otherwise). */ flags: string[] }[];
   totals: Matrix['totals'];
   identityHolds: boolean;
   /** The person whose month and day the side panels show. Null only when the pool is empty. */
@@ -279,6 +282,8 @@ export type AttendanceMonthView = {
     day: DayDetail | null;
     /** The chosen day's cell state, so the panel can say "not recorded" rather than show blanks. */
     dayState: CellState | null;
+    /** R2-217: warnings for the chosen day (e.g. 'Exceeds 9h/day'). */
+    dayFlags: string[];
   };
   /** May this person go on to payroll? A flag only — no figure travels with it (D24). */
   canPayroll: boolean;

@@ -200,6 +200,14 @@ export function jobCardSnapshotFrom(
   };
 }
 
+/** R2-160: a stored frozen copy that cannot be read. The print pages catch this one and show an inline alert. */
+export class SnapshotUnreadableError extends Error {
+  constructor() {
+    super('The stored copy of this version cannot be read. Do not print it.');
+    this.name = 'SnapshotUnreadableError';
+  }
+}
+
 /**
  * The stored JSON as a snapshot of `type`, or null when it is absent, of another type, or not a
  * shape this code can print (a corrupt row must not print as if it were the frozen copy).

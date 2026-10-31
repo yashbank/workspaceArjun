@@ -1,0 +1,7 @@
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.xlsx binary
+*.apk binary
+*.jar binary
+*.bat text eol=crlf

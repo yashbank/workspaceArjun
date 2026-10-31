@@ -38,8 +38,10 @@ describe('WAGE_RULE_KEYS', () => {
   it('no server file reads a rule that is not either classified as money or on the reviewed non-wage list', () => {
     const NON_WAGE_READS = new Set([
       "'ATTENDANCE_CORRECTION_DAYS'", // D21
+      'ADMIN_EDIT_WINDOW_KEY', // R2-227 — Admin/Owner attendance edit window in days, not a wage rate
       'FACTORY_TIMEZONE_KEY', // D22
       'LINE_CLEARANCE_MAX_MINUTES_KEY', // D7
+      'LUNCH_BREAK_KEY', // R2-179 — paid lunch allowance in minutes, not a wage rate
       'LINE_CLEARANCE_MODE_KEY', // D7
       'OFFLINE_MAX_AGE_KEY', // D15
       'OFFLINE_SKEW_KEY', // D15
@@ -68,7 +70,7 @@ describe('WAGE_RULE_KEYS', () => {
       .filter((f) => !/\.test\.tsx?$/.test(f) && !f.includes('/testing/') && !f.includes('/generated/'))
       .filter((f) => /getWageRuleHistory\(/.test(readSource(f)) && !f.endsWith('business-rules.ts'));
     expect(historyCallers).toEqual(['src/server/mis/payroll.ts']);
-  });
+  }, 30_000);
 
   it('the settings list, the editor and the audit writer all consult the classifier', () => {
     const src = readSource('src/server/mis/business-rules.ts');

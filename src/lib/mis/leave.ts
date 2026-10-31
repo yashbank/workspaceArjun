@@ -16,11 +16,25 @@ export const LEAVE_TYPE_LABEL: Record<LeaveType, string> = {
   OTHER: 'Other',
 };
 
+/**
+ * R2-167 — a half-day leave. Not a pay-settable type (it is always 0.5 day: the register row is
+ * HALF_DAY, which payroll prices at half a day), so it is kept out of `LEAVE_TYPES`, which the
+ * Owner's PAID / UNPAID setting iterates. It is always a single day.
+ */
+export const HALF_DAY_LEAVE = 'HALF_DAY' as const;
+export const REQUESTABLE_LEAVE_TYPES = [...LEAVE_TYPES, HALF_DAY_LEAVE] as const;
+export type RequestableLeaveType = (typeof REQUESTABLE_LEAVE_TYPES)[number];
+
+export function isRequestableLeaveType(value: unknown): value is RequestableLeaveType {
+  return typeof value === 'string' && (REQUESTABLE_LEAVE_TYPES as readonly string[]).includes(value);
+}
+
 export function isLeaveType(value: unknown): value is LeaveType {
   return typeof value === 'string' && (LEAVE_TYPES as readonly string[]).includes(value);
 }
 
 export function leaveTypeLabel(value: string | null | undefined): string {
+  if (value === HALF_DAY_LEAVE) return 'Half-day leave (0.5 day)';
   return isLeaveType(value) ? LEAVE_TYPE_LABEL[value] : LEAVE_TYPE_LABEL.OTHER;
 }
 

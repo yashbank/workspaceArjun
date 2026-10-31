@@ -55,15 +55,43 @@ export type MisActor = {
  *
  * Every MIS server module opens with this and closes with logAuditEvent().
  */
+export type OwnRecordGrant = {
+  /** R2-220: allow any signed-in person who has an employee record, for reads scoped to that record only. */
+  self?: true;
+  /** R2-220: also allow the signed-in person whose OWN employee record this is. Never anyone else's. */
+  ownEmployeeId?: string;
+  /** R2-220: same, naming a leave request; allowed when the leave belongs to the signed-in person's own record. */
+  ownLeaveId?: string;
+  /** R2-222: same, naming a missed-punch regularization request. */
+  ownRegularizationId?: string;
+};
+
+async function ownsRecord(userId: string, grant: OwnRecordGrant): Promise<boolean> {
+  const { db } = await import('@/server/db');
+  const me = await db.misEmployee.findFirst({ where: { userProfileId: userId }, select: { id: true } });
+  if (!me) return false;
+  if (grant.self) return true;
+  if (grant.ownEmployeeId) return me.id === grant.ownEmployeeId;
+  if (grant.ownRegularizationId) {
+    const reg = await db.misPunchRegularization.findUnique({ where: { id: grant.ownRegularizationId }, select: { employeeId: true } });
+    return reg?.employeeId === me.id;
+  }
+  if (!grant.ownLeaveId) return false;
+  const leave = await db.misLeaveRequest.findUnique({ where: { id: grant.ownLeaveId }, select: { employeeId: true } });
+  return leave?.employeeId === me.id;
+}
+
 export async function requirePermission(
   action: MisAction,
   resource?: string,
+  own?: OwnRecordGrant,
 ): Promise<MisActor> {
   const user = await getCurrentUser();
   if (!user) throw new MisForbiddenError(action, resource);
 
   const role = await getMisRole(user.id);
   if (!role || !can(role, action)) {
+    if (own && (await ownsRecord(user.id, own))) return { userId: user.id, role: role ?? 'WORKER' };
     throw new MisForbiddenError(action, resource);
   }
 

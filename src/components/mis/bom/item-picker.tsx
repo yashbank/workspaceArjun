@@ -1,7 +1,8 @@
 'use client';
-import { useId, useState } from 'react';
+import { useId, useMemo } from 'react';
 
-import { catalogLabel, searchCatalog, type CatalogItem } from '@/lib/mis/catalog-search';
+import { Combobox } from '@/components/ui/combobox';
+import { catalogLabel, type CatalogItem } from '@/lib/mis/catalog-search';
 
 /**
  * R2-10 — link a BOM material to a catalog item: type to search code or name, tap a result.
@@ -18,15 +19,12 @@ export function ItemPicker({
   onChange: (item: CatalogItem | null) => void;
 }) {
   const id = useId();
-  const [query, setQuery] = useState('');
+  const options = useMemo(() => items.map((i) => ({ value: i.id, label: catalogLabel(i) })), [items]);
   const picked = value ? (items.find((i) => i.id === value) ?? null) : null;
-  const results = searchCatalog(items, query);
 
   return (
     <div className="flex flex-col gap-1">
-      <label htmlFor={id} className="text-sm font-medium text-slate-700">
-        Catalog item (optional)
-      </label>
+      <span className="text-sm font-medium text-slate-700">Catalog item (optional)</span>
       {picked && (
         <div className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-800">
           <span data-testid="picked-item" className="truncate">{catalogLabel(picked)}</span>
@@ -35,36 +33,18 @@ export function ItemPicker({
           </button>
         </div>
       )}
-      <input
+      <Combobox
         id={id}
-        type="search"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
+        label="Catalog item (optional)"
+        hideLabel
+        value={value}
+        options={options}
         placeholder="Search by code or name"
-        className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900"
+        onChange={(v) => {
+          const it = items.find((i) => i.id === v);
+          if (it) onChange(it);
+        }}
       />
-      {query.trim() !== '' && (
-        <ul role="listbox" aria-label="Matching items" className="max-h-60 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 bg-white">
-          {results.length === 0 ? (
-            <li className="px-3 py-3 text-sm text-slate-500">No item matches.</li>
-          ) : (
-            results.map((it) => (
-              <li key={it.id} role="option" aria-selected={it.id === value}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onChange(it);
-                    setQuery('');
-                  }}
-                  className="flex min-h-11 w-full items-center px-3 text-left text-sm text-slate-800 hover:bg-slate-50"
-                >
-                  {catalogLabel(it)}
-                </button>
-              </li>
-            ))
-          )}
-        </ul>
-      )}
     </div>
   );
 }

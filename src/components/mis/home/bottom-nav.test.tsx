@@ -28,7 +28,7 @@ const SPEC: Record<MisRoleName, string[]> = {
   ATTENDANCE_OPERATOR: ['Home', 'Register', 'Leave', 'Kiosk', 'Me'],
   SUPER_ATTENDANCE_OPERATOR: ['Home', 'Register', 'Leave', 'Kiosk', 'Me'],
   STORE_GUY: ['Home', 'Stock', 'Receive', 'Issue', 'Me'],
-  WORKER: ['Home'],
+  WORKER: ['Home', 'Me'],
 };
 
 /** What each destination needs before it will show data — read from the page and its server functions. */
@@ -105,7 +105,7 @@ describe('every tab opens for the role that is shown it', () => {
 });
 
 describe('badges', () => {
-  const nav = readFileSync(path.join(process.cwd(), 'src/server/mis/navigation.ts'), 'utf8');
+  const nav = readFileSync(path.join(process.cwd(), 'src/server/mis/navigation.ts'), 'utf8').replace(/\r\n/g, '\n');
   const start = nav.indexOf('export async function getNavBadges');
   const body = nav.slice(start);
 

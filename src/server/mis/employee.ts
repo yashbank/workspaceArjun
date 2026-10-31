@@ -39,6 +39,8 @@ export type EmployeeInput = {
   bankName?: string | null;
   bankAccountNo?: string | null;
   ifsc?: string | null;
+  /** R2-163. The worker's standard shift; `null` clears it, `undefined` leaves it unchanged. */
+  defaultShiftId?: string | null;
 };
 
 const BANK_KEYS = ['bankName', 'bankAccountNo', 'ifsc'] as const;
@@ -211,6 +213,13 @@ async function assertDepartmentUsable(departmentId: string | null | undefined) {
   if (!dept) throw new Error('Department not found');
 }
 
+/** R2-163: a default shift must name a live (active) shift; `null`/`undefined` mean "none". */
+async function assertShiftUsable(shiftId: string | null | undefined) {
+  if (!shiftId) return;
+  const shift = await db.misShift.findFirst({ where: { id: shiftId, isActive: true }, select: { id: true } });
+  if (!shift) throw new Error('Shift not found or not active');
+}
+
 const hasBankInput = (i: { bankName?: unknown; bankAccountNo?: unknown; ifsc?: unknown }) =>
   i.bankName !== undefined || i.bankAccountNo !== undefined || i.ifsc !== undefined;
 
@@ -219,6 +228,7 @@ export async function createEmployee(input: EmployeeInput) {
   assertMayAssignRole(actor, input.role);
   assertWageFieldsAllowed(actor, input, { wageTypeCode: null, payType: 'DAILY', sundayPaid: false });
   await assertDepartmentUsable(input.departmentId);
+  await assertShiftUsable(input.defaultShiftId);
   const bank = hasBankInput(input) ? normaliseBankDetails({ bankName: input.bankName ?? null, bankAccountNo: input.bankAccountNo ?? null, ifsc: input.ifsc ?? null }) : null;
   const created = await db.misEmployee.create({
     data: {
@@ -229,6 +239,7 @@ export async function createEmployee(input: EmployeeInput) {
       phone: input.phone?.trim() || null,
       role: input.role || 'WORKER',
       departmentId: input.departmentId || null,
+      defaultShiftId: input.defaultShiftId || null,
       wageTypeCode: input.wageTypeCode ?? null,
       ...(input.payType ? { payType: input.payType } : {}),
       ...(input.sundayPaid !== undefined ? { sundayPaid: input.sundayPaid } : {}),
@@ -236,6 +247,78 @@ export async function createEmployee(input: EmployeeInput) {
   });
   await logAuditEvent({ actorId: actor.userId, action: 'employee.create', entity: 'MisEmployee', entityId: created.id, after: auditSafeEmployee(created) });
   return created;
+}
+
+/** One row of the bulk-import CSV, before validation. `role` is raw text from the file's Role column. */
+export type EmployeeCsvRow = {
+  employeeCode: string;
+  name: string;
+  nameHi?: string;
+  phone?: string;
+  role?: string;
+};
+
+export type ImportEmployeesCsvResult = {
+  created: number;
+  /** `row` is 1-based over the data rows handed in — the header is not counted. */
+  errors: { row: number; message: string }[];
+};
+
+/** Above this many rows in one file, the whole request is refused rather than half-imported. */
+const IMPORT_ROW_LIMIT = 500;
+
+/**
+ * Bulk employee CSV import (Owner/Admin only, matching the "+ Add Employee" door).
+ *
+ * Every row goes through `createEmployee` itself — the same `employees.write` gate, the same
+ * `assertMayAssignRole` door for the Role column, and the same audit trail — so this never grows
+ * a second way to create an employee. A bad row (a missing field, an unknown or unassignable
+ * role, a duplicate code already on the roll or repeated within the file) is recorded as an error
+ * and the batch carries on; nothing here aborts the rows that already succeeded.
+ */
+export async function importEmployeesCsv(rows: EmployeeCsvRow[]): Promise<ImportEmployeesCsvResult> {
+  await requirePermission('employees.write');
+  if (rows.length > IMPORT_ROW_LIMIT) {
+    throw new Error(`Too many rows (${rows.length}). Import at most ${IMPORT_ROW_LIMIT} employees at a time.`);
+  }
+
+  const errors: ImportEmployeesCsvResult['errors'] = [];
+  const seenCodes = new Set<string>();
+  let created = 0;
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const employeeCode = row.employeeCode?.trim().toUpperCase() ?? '';
+    try {
+      if (!employeeCode) throw new Error('Employee code is required.');
+      if (!row.name?.trim()) throw new Error('Name is required.');
+      if (seenCodes.has(employeeCode)) throw new Error(`Duplicate employee code "${employeeCode}" in this file.`);
+
+      // The Role column carries text, not a typed value — createEmployee's own
+      // assertMayAssignRole (isMisRole + assignableRoles) is what actually accepts or
+      // refuses it, exactly as it does for the Add Employee form. Nothing here pre-filters it.
+      const roleText = row.role?.trim();
+      await createEmployee({
+        employeeCode,
+        name: row.name.trim(),
+        nameHi: row.nameHi?.trim() || undefined,
+        phone: row.phone?.trim() || undefined,
+        role: roleText ? (roleText.toUpperCase().replace(/[\s-]+/g, '_') as MisRoleName) : undefined,
+      });
+      seenCodes.add(employeeCode);
+      created += 1;
+    } catch (error) {
+      const isDbDuplicate = (error as { code?: unknown } | null)?.code === 'P2002';
+      errors.push({
+        row: i + 1,
+        message: isDbDuplicate
+          ? `Employee code "${employeeCode}" already exists.`
+          : error instanceof Error ? error.message : 'Could not import this row.',
+      });
+    }
+  }
+
+  return { created, errors };
 }
 
 export async function updateEmployee(id: string, patch: Partial<EmployeeInput>) {
@@ -248,6 +331,7 @@ export async function updateEmployee(id: string, patch: Partial<EmployeeInput>) 
   if (patch.role !== before.role) assertMayAssignRole(actor, patch.role);
 
   if (patch.departmentId !== undefined && patch.departmentId !== before.departmentId) await assertDepartmentUsable(patch.departmentId);
+  if (patch.defaultShiftId !== undefined && patch.defaultShiftId !== before.defaultShiftId) await assertShiftUsable(patch.defaultShiftId);
 
   if (patch.managerId) {
     if (await wouldCreateManagerCycle(id, patch.managerId)) {
@@ -275,11 +359,28 @@ export async function updateEmployee(id: string, patch: Partial<EmployeeInput>) 
     ...(patch.role ? { role: patch.role } : {}),
     ...(patch.managerId !== undefined ? { managerId: patch.managerId } : {}),
     ...(patch.departmentId !== undefined ? { departmentId: patch.departmentId || null } : {}),
+    ...(patch.defaultShiftId !== undefined ? { defaultShiftId: patch.defaultShiftId || null } : {}),
     ...(patch.wageTypeCode !== undefined ? { wageTypeCode: patch.wageTypeCode } : {}),
     ...(patch.payType ? { payType: patch.payType } : {}),
     ...(patch.sundayPaid !== undefined ? { sundayPaid: patch.sundayPaid } : {}),
   }});
   await logAuditEvent({ actorId: actor.userId, action: 'employee.update', entity: 'MisEmployee', entityId: id, before: auditSafeEmployee(before), after: auditSafeEmployee(after) });
+  return after;
+}
+
+/**
+ * R2-171: switch a person Active / Inactive WITHOUT deleting them. Inactive keeps the record, history and payroll
+ * rows; they simply drop off the punch rosters until switched back on. `deletedAt` is never touched here.
+ */
+export async function setEmployeeActive(id: string, isActive: boolean) {
+  const actor = await requirePermission('employees.write');
+  const before = await findVisibleEmployee(actor, id);
+  assertMayTouchTarget(actor, before);
+  if (before.deletedAt) throw new Error('This employee is deleted. Restore them first.');
+  if (!isActive && before.userProfileId && before.userProfileId === actor.userId) throw new Error('You cannot deactivate your own record');
+  if (before.isActive === isActive) return before;
+  const after = await db.misEmployee.update({ where: { id }, data: { isActive } });
+  await logAuditEvent({ actorId: actor.userId, action: isActive ? 'employee.activate' : 'employee.deactivate', entity: 'MisEmployee', entityId: id, before: auditSafeEmployee(before), after: auditSafeEmployee(after) });
   return after;
 }
 

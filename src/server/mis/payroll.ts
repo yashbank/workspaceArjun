@@ -1,14 +1,16 @@
 import { resolveAsOf } from '@/lib/mis/effective-dated';
-import { daysInMonth, extraPayMultiplierUnit, isSunday, otPayForDay, perDayRate, type WageRowForCalc } from '@/lib/mis/pay-basis';
+import { daysInMonth, extraPayMultiplierUnit, otPayForDay, perDayRate, type WageRowForCalc } from '@/lib/mis/pay-basis';
 import type { Prisma } from '@/generated/prisma/client';
 import { db } from '@/server/db';
 import { requirePermission } from '@/server/mis/auth';
+import type { PayrollPolicyRuleKey } from '@/lib/mis/rule-keys';
+import { buildPayrollPolicy, hraAfterRentPolicy, isWeekday, weeklyOffIsPaid, type PayrollPolicy } from '@/lib/mis/payroll-policy';
 import { getWageRuleHistory } from '@/server/mis/business-rules';
 import { DEFAULT_DAILY_WAGE_CODE, getWageTypeRowsForCodes } from '@/server/mis/wage-type';
 import { getPayComponentsForEmployees, type PayComponentMap } from '@/server/mis/pay-components';
 import { listApprovedExtraPayDaysForMonth, type ExtraPayDayRow } from '@/server/mis/extra-pay-days';
-import { isPaidLeaveDay } from '@/lib/mis/leave-pay';
-import { getLeavePayForMonth } from '@/server/mis/leave-pay';
+import { hasApprovedHalfDayLeave, isPaidLeaveDay } from '@/lib/mis/leave-pay';
+import { getLeavePayRulesForMonth } from '@/server/mis/leave-pay';
 
 /** Attendance statuses that earn a day's basic wage, and what fraction of it. */
 const DAY_FRACTION: Record<string, number> = { PRESENT: 1, HALF_DAY: 0.5 };
@@ -127,7 +129,7 @@ function computeEmployeeMonth(
   year: number,
   month: number,
   wageHistory: (WageRowForCalc & { effectiveFrom: Date })[] | undefined,
-  otMultiplierOn: (date: Date) => number,
+  policy: PayrollPolicy,
   latePenaltyOn: (date: Date) => number,
   fallbackDailyWageOn: (date: Date) => number,
   components: PayComponentMap,
@@ -135,7 +137,10 @@ function computeEmployeeMonth(
   workingDays: number,
   /** R2-102: true when this LEAVE day is covered by an approved leave of a type the Owner marked PAID. */
   paidLeaveOn: (date: Date) => boolean = () => false,
+  /** R2-167: true when this HALF_DAY row is an approved half-day leave and the Owner marked half-day leave PAID (its leave half is paid too). */
+  paidHalfDayOn: (date: Date) => boolean = () => false,
 ): PayrollRow {
+  const { otMultiplierOn } = policy;
   const payType: 'MONTHLY' | 'DAILY' = emp.payType === 'MONTHLY' ? 'MONTHLY' : 'DAILY';
   const monthEnd = new Date(Date.UTC(year, month, 0));
 
@@ -149,19 +154,38 @@ function computeEmployeeMonth(
 
   let present = 0, halfDay = 0, absent = 0, leave = 0, allowanceDays = 0;
   let totalLateMinutes = 0, totalOTMinutes = 0;
+  let workedDays = 0;
+  const statusByDay = new Map(records.map((r) => [r.date.toISOString().slice(0, 10), r.status]));
+
+  // R2-231: was this day worked (so it can hold up a weekly off beside it)? A day outside the month
+  // has no data here, so it gets the benefit of the doubt.
+  const workedOn = (date: Date): boolean => {
+    if (date.getUTCMonth() !== month - 1 || date.getUTCFullYear() !== year) return true;
+    const status = statusByDay.get(date.toISOString().slice(0, 10));
+    return status === 'PRESENT' || status === 'HALF_DAY' || (status === 'LEAVE' && paidLeaveOn(date));
+  };
+  const weeklyOffPaidOn = (date: Date): boolean => {
+    if (payType !== 'MONTHLY' || !isWeekday(date, policy.weeklyOffOn(date))) return false;
+    const before = new Date(date.getTime() - 86_400_000);
+    const after = new Date(date.getTime() + 86_400_000);
+    return weeklyOffIsPaid(policy.sandwichOn(date), workedOn(before), workedOn(after));
+  };
   let basicWage = 0, otPay = 0, latePenaltyTotal = 0;
 
   const priceDay = (date: Date, status: string, lateMinutes: number, otMinutes: number, synthetic: boolean) => {
-    const monthlySunday = payType === 'MONTHLY' && isSunday(date);
+    const monthlySunday = weeklyOffPaidOn(date);
     // R2-102: a PAID leave day earns a full day at the same day rate as a present day (same pay basis,
     // same wage code as of that day); an UNPAID one (LWP, Other, or a LEAVE mark with no approved
     // request behind it) earns nothing, as before.
     const paidLeave = !synthetic && status === 'LEAVE' && paidLeaveOn(date);
-    const fraction = monthlySunday || paidLeave ? 1 : (DAY_FRACTION[status] ?? 0);
+    const paidHalfDay = !synthetic && status === 'HALF_DAY' && paidHalfDayOn(date);
+    const fraction = monthlySunday || paidLeave || paidHalfDay ? 1 : (DAY_FRACTION[status] ?? 0);
     const dayRate = dayRateOn(date);
     const row = rowOn(date);
 
     if (monthlySunday) allowanceDays += 1;
+    // R2-232: a paid weekly off counts toward the HRA minimum only when the rule says so.
+    workedDays += monthlySunday && policy.rentCountHolidaysOn(date) ? 1 : synthetic ? 0 : (DAY_FRACTION[status] ?? 0);
     if (!synthetic) {
       // "present" counts both a full PRESENT day and a HALF_DAY (the original shape) — a
       // monthly-employee's paid-but-unmarked Sunday is not folded into it, since it is a pay
@@ -189,7 +213,7 @@ function computeEmployeeMonth(
   if (payType === 'MONTHLY') {
     for (let d = 1; d <= workingDays; d++) {
       const date = new Date(Date.UTC(year, month - 1, d));
-      if (isSunday(date) && !seenDates.has(date.toISOString().slice(0, 10))) {
+      if (!seenDates.has(date.toISOString().slice(0, 10)) && weeklyOffPaidOn(date)) {
         priceDay(date, 'PRESENT', 0, 0, true);
       }
     }
@@ -198,7 +222,9 @@ function computeEmployeeMonth(
   // 25.1: HRA/Allowance/Bonus are monthly entitlements on the wage code, not day-priced — resolved
   // once, as of the period's own last day, and zeroed by the per-employee toggle when off.
   const closingRow = rowOn(monthEnd);
-  const hra = components.HRA && closingRow?.hraAmount ? closingRow.hraAmount : 0;
+  const fullHra = components.HRA && closingRow?.hraAmount ? closingRow.hraAmount : 0;
+  // R2-232: HRA is forfeited when the month's worked days fall short of `salary.rent_min_days`.
+  const hra = hraAfterRentPolicy(fullHra, workedDays, policy.rentMinDaysOn(monthEnd));
   const allowance = components.ALLOWANCE && closingRow?.allowanceAmount ? closingRow.allowanceAmount : 0;
   const bonus = components.BONUS && closingRow?.bonusAmount ? closingRow.bonusAmount : 0;
 
@@ -299,6 +325,12 @@ export async function calculateEmployeePayroll(
   return rows.find((r) => r.employeeId === employeeId) ?? null;
 }
 
+/** R2-228/231/232: one payroll-policy rule's history. Not exported: only a `wages.read` caller reaches payroll. */
+async function policyRuleHistory(client: Prisma.TransactionClient, ruleKey: PayrollPolicyRuleKey) {
+  const rows = await client.misBusinessRule.findMany({ where: { ruleKey }, orderBy: { effectiveFrom: 'asc' } });
+  return rows.map((r) => ({ effectiveFrom: r.effectiveFrom, ruleValue: r.ruleValue }));
+}
+
 async function computePayroll(year: number, month: number, client: Prisma.TransactionClient, onlyEmployeeId: string | null): Promise<PayrollRow[]> {
   const scope = onlyEmployeeId ? { employeeId: onlyEmployeeId } : {};
   const period = await findPayrollPeriod(client, year, month);
@@ -307,13 +339,18 @@ async function computePayroll(year: number, month: number, client: Prisma.Transa
     return lines.map(snapshotToRow);
   }
 
-  const [dailyRule, otRule, lateRule] = await Promise.all([
+  const [dailyRule, otRule, lateRule, otRate, weeklyOff, sandwich, rentMinDays, rentCountHolidays] = await Promise.all([
     getWageRuleHistory('DAILY_WAGE_DEFAULT'),
     getWageRuleHistory('OT_MULTIPLIER'),
     getWageRuleHistory('LATE_PENALTY_PER_MIN'),
+    policyRuleHistory(client, 'attendance.ot_rate'),
+    policyRuleHistory(client, 'attendance.weekly_off'),
+    policyRuleHistory(client, 'sunday.paid_if_adjacent'),
+    policyRuleHistory(client, 'salary.rent_min_days'),
+    policyRuleHistory(client, 'salary.rent_count_holidays'),
   ]);
+  const policy = buildPayrollPolicy({ otRate, otMultiplier: otRule, weeklyOff, sandwich, rentMinDays, rentCountHolidays });
   const fallbackDailyWageOn = (date: Date): number => parseFloat(resolveAsOf(dailyRule, date)?.ruleValue ?? '500');
-  const otMultiplierOn = (date: Date): number => parseFloat(resolveAsOf(otRule, date)?.ruleValue ?? '1.5');
   const latePenaltyOn = (date: Date): number => parseFloat(resolveAsOf(lateRule, date)?.ruleValue ?? '0');
 
   const start = new Date(Date.UTC(year, month - 1, 1));
@@ -331,11 +368,12 @@ async function computePayroll(year: number, month: number, client: Prisma.Transa
 
   // R2-102: which LEAVE days are paid. Read only when the month has a LEAVE row in scope, so a month
   // without leave costs no extra query.
-  const leaveEmployeeIds = [...new Set(attendance.filter((a) => a.status === 'LEAVE' && a.employee).map((a) => a.employee!.id))];
+  const leaveEmployeeIds = [...new Set(attendance.filter((a) => (a.status === 'LEAVE' || a.status === 'HALF_DAY') && a.employee).map((a) => a.employee!.id))];
   let paidLeaveOn: (employeeId: string, date: Date) => boolean = () => false;
+  let paidHalfDayOn: (employeeId: string, date: Date) => boolean = () => false;
   if (leaveEmployeeIds.length > 0) {
-    const [leavePay, approvedLeaves] = await Promise.all([
-      getLeavePayForMonth(year, month, client),
+    const [{ pay: leavePay, halfDayPaid }, approvedLeaves] = await Promise.all([
+      getLeavePayRulesForMonth(year, month, client),
       client.misLeaveRequest.findMany({
         where: {
           status: 'APPROVED',
@@ -347,6 +385,7 @@ async function computePayroll(year: number, month: number, client: Prisma.Transa
       }),
     ]);
     paidLeaveOn = (employeeId, date) => isPaidLeaveDay(approvedLeaves, employeeId, date, leavePay);
+    paidHalfDayOn = (employeeId, date) => halfDayPaid && hasApprovedHalfDayLeave(approvedLeaves, employeeId, date);
   }
 
   const byEmployee: Record<string, AttendanceRow[]> = {};
@@ -389,13 +428,14 @@ async function computePayroll(year: number, month: number, client: Prisma.Transa
       year,
       month,
       wageHistories.get(code),
-      otMultiplierOn,
+      policy,
       latePenaltyOn,
       fallbackDailyWageOn,
       componentsByEmployee.get(emp.id) ?? defaultComponents,
       extraPayDays,
       workingDays,
       (date) => paidLeaveOn(emp.id, date),
+      (date) => paidHalfDayOn(emp.id, date),
     );
   });
 }

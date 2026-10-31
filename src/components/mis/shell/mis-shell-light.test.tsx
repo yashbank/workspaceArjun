@@ -36,7 +36,7 @@ describe('MisShell forced light scheme', () => {
 });
 
 describe('globals.css light scope', () => {
-  const css = readFileSync(join(process.cwd(), 'src/app/globals.css'), 'utf8');
+  const css = readFileSync(join(process.cwd(), 'src/app/globals.css'), 'utf8').replace(/\r\n/g, '\n');
 
   it('re-declares the light tokens for .mis-light and for html while MIS is mounted', () => {
     const light = css.match(/\.mis-light \{([\s\S]*?)\n\}/)?.[1] ?? '';

@@ -1,0 +1,21 @@
+-- Applied via `pnpm db:deploy`. Folder promoted from prisma/migrations-pending/ into
+-- prisma/migrations/ on 2026-10-26 to fix repo/DB drift (this migration was already
+-- live on production; the folder had just never been moved here).
+--
+-- R2-46 follow-up (docs/qa/R2_DECISIONS.md). Additive and idempotent: one NULL column.
+--
+--   1. mis_document_versions.snapshot JSONB NULL — the document's rendered data (order, QC checks /
+--      BOM, phases, crew, production totals) captured when a version is issued and frozen when it is
+--      approved. An APPROVED version prints from it, so a reprint is stable even if the order, QC or
+--      production data changes later. NULL = a version issued before this column (legacy): it prints
+--      live with a "no snapshot" note until an Admin/Owner uses "Update to latest".
+--
+-- ORDER OF OPERATIONS: apply 20261019000000_r2_batch2_schema (which creates mis_document_versions)
+-- and THIS one BEFORE deploying code built on the current schema.prisma: Prisma selects every scalar
+-- column by default, so a deploy before this column exists 500s the COA and job-card print pages.
+--
+-- ROLLBACK (only if you must undo; code that selects this column must be reverted first):
+--   ALTER TABLE mis_document_versions DROP COLUMN IF EXISTS snapshot;
+--   DELETE FROM _prisma_migrations WHERE migration_name = '20261020000001_r2_doc_version_snapshot';
+
+ALTER TABLE mis_document_versions ADD COLUMN IF NOT EXISTS snapshot JSONB;

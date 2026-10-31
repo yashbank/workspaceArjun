@@ -71,7 +71,9 @@ const TABLE: Entry[] = [
   { module: 'employee.ts', name: 'createEmployee', requires: 'employees.write', call: () => employee.createEmployee(EMPLOYEE_INPUT) },
   { module: 'employee.ts', name: 'updateEmployee', requires: 'employees.write', call: () => employee.updateEmployee('e1', {}) },
   { module: 'employee.ts', name: 'deleteEmployee', requires: 'employees.write', call: () => employee.deleteEmployee('e1') },
+  { module: 'employee.ts', name: 'setEmployeeActive', requires: 'employees.write', call: () => employee.setEmployeeActive('e1', false) },
   { module: 'employee.ts', name: 'restoreEmployee', requires: 'employees.write', call: () => employee.restoreEmployee('e1') },
+  { module: 'employee.ts', name: 'importEmployeesCsv', requires: 'employees.write', call: () => employee.importEmployeesCsv([{ employeeCode: 'E-9', name: 'X' }]) },
 
   { module: 'users.ts', name: 'listMisUsers', requires: 'employees.read', call: () => users.listMisUsers() },
   { module: 'users.ts', name: 'getMisSeatSummary', requires: 'employees.read', call: () => users.getMisSeatSummary() },
@@ -117,6 +119,7 @@ const TABLE: Entry[] = [
   { module: 'extra-pay-days.ts', name: 'proposeExtraPayDay', requires: 'attendance.write', call: () => extraPayDays.proposeExtraPayDay({ date: new Date('2026-01-01'), kind: 'FLAT_AMOUNT', value: 500, scope: 'ALL_PRESENT', reason: 'test' }) },
   { module: 'extra-pay-days.ts', name: 'listDepartmentOptions', requires: 'attendance.write', call: () => extraPayDays.listDepartmentOptions() },
   { module: 'extra-pay-days.ts', name: 'listExtraPayProposals', requires: 'attendance.write', call: () => extraPayDays.listExtraPayProposals() },
+  { module: 'extra-pay-days.ts', name: 'withdrawExtraPayProposal', requires: 'attendance.write', call: () => extraPayDays.withdrawExtraPayProposal('x1') },
   { module: 'extra-pay-days.ts', name: 'listExtraPayDays', requires: 'wages.read', call: () => extraPayDays.listExtraPayDays() },
   { module: 'extra-pay-days.ts', name: 'listApprovedExtraPayDaysForMonth', requires: 'wages.read', call: () => extraPayDays.listApprovedExtraPayDaysForMonth(2026, 1) },
   { module: 'extra-pay-days.ts', name: 'approveExtraPayDay', requires: 'wages.read', call: () => extraPayDays.approveExtraPayDay('x1') },
@@ -127,11 +130,13 @@ const TABLE: Entry[] = [
   { module: 'leave-pay.ts', name: 'getLeavePaySettings', requires: 'wages.read', call: () => leavePay.getLeavePaySettings() },
   { module: 'leave-pay.ts', name: 'setLeavePay', requires: 'wages.read', call: () => leavePay.setLeavePay({ leaveType: 'CL', paid: false }) },
   { module: 'leave-pay.ts', name: 'getLeavePayForMonth', requires: 'wages.read', call: () => leavePay.getLeavePayForMonth(2026, 1) },
+  { module: 'leave-pay.ts', name: 'getLeavePayRulesForMonth', requires: 'wages.read', call: () => leavePay.getLeavePayRulesForMonth(2026, 1) },
 
   // Phase 25 (D27's missing half) — the period-close/snapshot flow. Every door is wages.read.
   { module: 'payroll-period.ts', name: 'getPayrollPeriod', requires: 'wages.read', call: () => payrollPeriod.getPayrollPeriod(2026, 1) },
   { module: 'payroll-period.ts', name: 'getPayrollPreflight', requires: 'wages.read', call: () => payrollPeriod.getPayrollPreflight(2026, 1) },
   { module: 'payroll-period.ts', name: 'closePayrollPeriod', requires: 'wages.read', call: () => payrollPeriod.closePayrollPeriod(2026, 1) },
+  { module: 'payroll-period.ts', name: 'reopenPayrollPeriod', requires: 'wages.read', call: () => payrollPeriod.reopenPayrollPeriod(2026, 1, 'test') },
   { module: 'payroll-period.ts', name: 'recordPayrollCorrection', requires: 'wages.read', call: () => payrollPeriod.recordPayrollCorrection(2026, 1, 'test') },
   { module: 'payroll-period.ts', name: 'recordPayrollExport', requires: 'wages.read', call: () => payrollPeriod.recordPayrollExport(2026, 1) },
 
@@ -182,7 +187,7 @@ const NOT_A_DOOR: Record<string, string[]> = {
   'employee.ts': [],
   'users.ts': [],
   'wage-type.ts': [],
-  'business-rules.ts': ['getOfflineRules', 'getFactoryTimezone', 'getCorrectionWindowDays', 'getRuleValue', 'getLineClearanceRule', 'getAqlThresholds', 'getPoApprovalThreshold'],
+  'business-rules.ts': ['getOfflineRules', 'getFactoryTimezone', 'getCorrectionWindowDays', 'getLunchBreakMinutes', 'getRuleValue', 'getLineClearanceRule', 'getAqlThresholds', 'getPoApprovalThreshold'],
   'payroll.ts': [],
   'reports.ts': [],
   'pay-components.ts': [],

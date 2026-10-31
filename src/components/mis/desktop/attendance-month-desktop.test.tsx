@@ -34,9 +34,9 @@ const punch = (hhmmUtc: string) => new Date(`2026-08-04T${hhmmUtc}:00Z`);
 const view = (over: Partial<AttendanceMonthView> = {}): AttendanceMonthView => ({
   monthKey: '2026-08', running: false, prevKey: '2026-07', nextKey: '2026-09', currentKey: '2026-09',
   days: matrix.days, departments: [{ id: 'd1', name: 'Printing' }, { id: 'd2', name: 'Die cutting' }], departmentId: null, departmentName: null,
-  rows: matrix.rows.map((r) => ({ id: r.employee.id, name: r.employee.name, code: r.employee.code, department: r.employee.department, cells: r.cells, counts: r.counts })),
+  rows: matrix.rows.map((r) => ({ id: r.employee.id, name: r.employee.name, code: r.employee.code, department: r.employee.department, cells: r.cells, counts: r.counts, flags: [] })),
   totals: matrix.totals, identityHolds: matrix.identityHolds,
-  selected: { id: 'e1', name: 'Ramesh Kumar', code: 'BPP-014', month: { ...matrix.rows[0].counts, days: 31 }, dayKey: null, day: null, dayState: null },
+  selected: { id: 'e1', name: 'Ramesh Kumar', code: 'BPP-014', month: { ...matrix.rows[0].counts, days: 31 }, dayKey: null, day: null, dayState: null, dayFlags: [] },
   canPayroll: false,
   ...over,
 });
@@ -166,7 +166,7 @@ describe('the grid', () => {
     const noHalf = buildMonthMatrix([EMPLOYEES[0]], RECORDS.filter((r) => r.employeeId === 'e1'), [], '2026-08');
     const { container } = render(
       <AttendanceMonthDesktop
-        view={view({ rows: [{ id: 'e1', name: 'Ramesh Kumar', code: 'BPP-014', department: 'Printing', cells: noHalf.rows[0].cells, counts: noHalf.rows[0].counts }], totals: noHalf.totals })}
+        view={view({ rows: [{ id: 'e1', name: 'Ramesh Kumar', code: 'BPP-014', department: 'Printing', cells: noHalf.rows[0].cells, counts: noHalf.rows[0].counts, flags: [] }], totals: noHalf.totals })}
       />,
     );
     expect(container.querySelector('thead')!.textContent).not.toContain('½');
@@ -291,5 +291,13 @@ describe('the page and the source', () => {
   it('shows no money — attendance only', () => {
     const { container } = renderView({ canPayroll: true });
     expect(container.textContent).not.toMatch(/₹|rupee|hourly|wage|salary|gross/i);
+  });
+});
+
+describe('R2-184 horizontal scroll hint', () => {
+  it('tells the user the grid scrolls sideways and makes the scroll area keyboard-focusable', () => {
+    renderView();
+    expect(screen.getByText(/Scroll sideways/)).toBeTruthy();
+    expect(screen.getByTestId('month-grid-scroll').getAttribute('tabindex')).toBe('0');
   });
 });

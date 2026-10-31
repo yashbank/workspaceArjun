@@ -327,6 +327,8 @@ export type KioskDeviceRow = {
   queuedPunches: number | null;
   syncLevel: KioskHealthLevel;
   cacheLevel: KioskHealthLevel;
+  /** Tracker rows 161-176 follow-up: the most recent operator handover seen on this device. */
+  lastHandover: { fromOperatorName: string | null; toOperatorName: string; occurredAt: Date } | null;
 };
 
 /**
@@ -356,13 +358,40 @@ export async function listDevices(now: Date = new Date()): Promise<KioskDeviceRo
     orderBy: [{ status: 'asc' }, { name: 'asc' }],
     take: 100,
   });
-  return rows.map((r) => ({
-    ...r,
-    name: r.name ?? 'Unnamed',
-    status: r.status as KioskDeviceRow['status'],
-    syncLevel: syncLevel(r.lastSyncAt, now),
-    cacheLevel: cacheLevel(r.lastPullAt, now),
-  }));
+
+  // Most recent handover per device, resolved to operator names in two small lookups
+  // rather than a Prisma relation (mis_shift_handovers has soft references only, matching
+  // operatorId/deviceId on mis_attendance_punches above).
+  const handovers = await db.misShiftHandover.findMany({
+    where: { deviceId: { in: rows.map((r) => r.id) } },
+    orderBy: { occurredAt: 'desc' },
+    take: 500,
+  });
+  const latestByDevice = new Map<string, (typeof handovers)[number]>();
+  for (const h of handovers) if (!latestByDevice.has(h.deviceId)) latestByDevice.set(h.deviceId, h);
+  const operatorIds = [...new Set(handovers.flatMap((h) => [h.fromOperatorId, h.toOperatorId]).filter((v): v is string => !!v))];
+  const operators = operatorIds.length
+    ? await db.misEmployee.findMany({ where: { id: { in: operatorIds } }, select: { id: true, name: true } })
+    : [];
+  const nameById = new Map(operators.map((o) => [o.id, o.name]));
+
+  return rows.map((r) => {
+    const h = latestByDevice.get(r.id);
+    return {
+      ...r,
+      name: r.name ?? 'Unnamed',
+      status: r.status as KioskDeviceRow['status'],
+      syncLevel: syncLevel(r.lastSyncAt, now),
+      cacheLevel: cacheLevel(r.lastPullAt, now),
+      lastHandover: h
+        ? {
+            fromOperatorName: h.fromOperatorId ? nameById.get(h.fromOperatorId) ?? null : null,
+            toOperatorName: nameById.get(h.toOperatorId) ?? 'Unknown',
+            occurredAt: h.occurredAt,
+          }
+        : null,
+    };
+  });
 }
 
 export type KioskHealthSummary = {
