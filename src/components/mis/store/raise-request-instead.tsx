@@ -1,5 +1,7 @@
 import Link from 'next/link';
 
+import { PageBack } from '@/components/mis/common/page-back';
+
 import { HeaderCard, HomeStack, InfoCard, SectionLabel } from '../home/cards';
 
 /**
@@ -11,6 +13,8 @@ export const SUPERVISOR_CANNOT_ISSUE = 'Supervisors cannot issue stock. Raise a 
 export function RaiseRequestInstead({ header }: { header: { title: string; meta: string } }) {
   return (
     <HomeStack>
+      {/* R2-358: the screen is a redirect, not a dead end: a way back plus the one action that does the job. */}
+      <PageBack href="/mis" label="Home" />
       <HeaderCard title={header.title} meta={header.meta} />
       <InfoCard>
         <SectionLabel>You cannot issue stock</SectionLabel>
@@ -19,7 +23,7 @@ export function RaiseRequestInstead({ header }: { header: { title: string; meta:
           href="/mis/store/requests/new"
           className="mt-3 inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-indigo-600 px-4 text-base font-semibold text-white"
         >
-          Raise a request instead
+          Raise a Material Request
         </Link>
         <Link href="/mis/store/requests" className="mt-1 inline-flex min-h-11 items-center text-sm text-indigo-600 underline">
           See my requests

@@ -249,18 +249,18 @@ Batch C5
 - [x] R2-292 adjust/in/out idempotency
 - [x] R2-336 item delete guards (needs Q)
 Batch C6
-- [ ] R2-346 order combobox (Enhancement)
-- [ ] R2-347 department combobox (Enhancement)
-- [ ] R2-348 cost center combobox (Enhancement)
-- [ ] R2-349 cart as table (Enhancement)
-- [ ] R2-353 popover closes (Enhancement)
-- [ ] R2-354 keyboard Esc/Tab (Enhancement)
-- [ ] R2-356 barcode Enter (Enhancement)
-- [ ] R2-358 supervisor dead end
-- [ ] R2-360 scientific notation input
-- [ ] R2-362 clear cart (Enhancement)
-- [ ] R2-366 sort rows (Enhancement)
-- [ ] R2-368 focus after plus
+- [x] R2-346 order combobox (Enhancement)
+- [x] R2-347 department combobox (Enhancement)
+- [x] R2-348 cost center combobox (Enhancement)
+- [x] R2-349 cart as table (Enhancement)
+- [x] R2-353 popover closes (Enhancement)
+- [x] R2-354 keyboard Esc/Tab (Enhancement)
+- [x] R2-356 barcode Enter (Enhancement)
+- [x] R2-358 supervisor dead end
+- [x] R2-360 scientific notation input
+- [x] R2-362 clear cart (Enhancement)
+- [x] R2-366 sort rows (Enhancement)
+- [x] R2-368 focus after plus
 Batch C7
 - [ ] R2-372 night-shift wrap helper
 - [ ] R2-369 edit Clock Out prefill (needs Q, Enhancement)

@@ -7,10 +7,10 @@ import { useState } from 'react';
 import { commitIssueAction, getItemBalancesAction } from '@/app/(mis)/mis/store/actions';
 import { unwrap } from '@/lib/mis/action-result';
 import { resolveGeneralUse } from '@/lib/mis/general-use';
-import { cn } from '@/lib/utils';
 
 import { HeaderCard, HomeStack, InfoCard, Mono, OkCard, SectionLabel } from '../home/cards';
 import { EMPTY_GENERAL, GeneralUseFields, type GeneralFields } from './general-use-fields';
+import { Combobox } from '@/components/ui/combobox';
 import { ItemCart, type CartLine, type PickerItem } from './item-cart';
 
 /**
@@ -80,24 +80,29 @@ export function IssueScreen({ header, items, orders, departments, costCenters = 
         </OkCard>
       )}
 
-      <ItemCart items={items} mode="ISSUE" onCommit={commit} refreshBalances={refreshBalances} canOverride={canOverrideQuota}>
+      <ItemCart
+        items={items}
+        mode="ISSUE"
+        onCommit={commit}
+        refreshBalances={refreshBalances}
+        canOverride={canOverrideQuota}
+        // R2-349: the "Left on order" column, from this order's earmarks.
+        leftOnOrder={orderId ? Object.fromEntries((allocations[orderId] ?? []).map((a) => [a.itemId, a.remaining])) : undefined}
+      >
+        {/* R2-346/347/353: searchable pickers instead of a wall of chips; "None" is General / factory use. */}
         {departments.length > 0 && (
           <InfoCard>
             <SectionLabel>To which department</SectionLabel>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <TargetChip
-                active={departmentId === null}
-                onClick={() => setDepartmentId(null)}
-                label="No department"
+            <div className="mt-2">
+              <Combobox
+                label="Department"
+                hideLabel
+                clearable
+                value={departmentId}
+                options={departments.map((d) => ({ value: d.id, label: d.name }))}
+                onChange={(v) => setDepartmentId(v || null)}
+                placeholder="No department — type to search"
               />
-              {departments.map((dept) => (
-                <TargetChip
-                  key={dept.id}
-                  active={departmentId === dept.id}
-                  onClick={() => setDepartmentId(dept.id)}
-                  label={dept.name}
-                />
-              ))}
             </div>
           </InfoCard>
         )}
@@ -105,22 +110,16 @@ export function IssueScreen({ header, items, orders, departments, costCenters = 
         {orders.length > 0 && (
           <InfoCard>
             <SectionLabel>Against an order</SectionLabel>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <TargetChip
-                active={orderId === null}
-                onClick={() => setOrderId(null)}
-                label="No order — General / factory use"
+            <div className="mt-2">
+              <Combobox
+                label="Order"
+                hideLabel
+                clearable
+                value={orderId}
+                options={orders.map((o) => ({ value: o.id, label: o.orderNumber, hint: o.customerName ?? undefined }))}
+                onChange={(v) => setOrderId(v || null)}
+                placeholder="No order — General / factory use (type an order # or customer)"
               />
-              {orders.map((order) => (
-                <TargetChip
-                  key={order.id}
-                  active={orderId === order.id}
-                  onClick={() => setOrderId(order.id)}
-                  label={order.orderNumber}
-                  detail={order.customerName ?? undefined}
-                  mono
-                />
-              ))}
             </div>
             {orderId && (allocations[orderId]?.length ?? 0) > 0 && (
               <div className="mt-3 rounded-xl border border-indigo-100 bg-indigo-50/60 p-3">
@@ -165,39 +164,4 @@ export function IssueScreen({ header, items, orders, departments, costCenters = 
 /** R2-66: fresh balances for the cart, via the server action (unwrapped to a plain map). */
 async function refreshBalances(): Promise<Record<string, number>> {
   return unwrap(await getItemBalancesAction());
-}
-
-function TargetChip({
-  active,
-  onClick,
-  label,
-  detail,
-  mono,
-}: {
-  active: boolean;
-  onClick: () => void;
-  label: string;
-  detail?: string;
-  mono?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        'min-h-11 rounded-full border px-3 text-left text-sm font-semibold',
-        active
-          ? 'border-indigo-600 bg-indigo-600 text-white'
-          : 'border-slate-300 bg-white text-slate-700',
-      )}
-    >
-      <span className={cn(mono && 'font-mono')}>{label}</span>
-      {detail && (
-        <span className={cn('ml-1.5 font-normal', active ? 'text-indigo-100' : 'text-slate-500')}>
-          {detail}
-        </span>
-      )}
-    </button>
-  );
 }

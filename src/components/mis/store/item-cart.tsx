@@ -4,7 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 
 import { EmptyState } from '@/components/mis/kit/empty-state';
 import { SlideOver } from '@/components/mis/kit/slide-over';
-import { scanOutcome } from '@/lib/mis/scan-input';
+import { matchScannedItem, scanOutcome } from '@/lib/mis/scan-input';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import { cn } from '@/lib/utils';
 
 import { InfoCard, Mono, SectionLabel } from '../home/cards';
@@ -73,7 +74,12 @@ type Props = {
    * button, and just before Confirm, so a cart left open on a phone never trusts a stale number.
    */
   refreshBalances?: () => Promise<Record<string, number>>;
+  /** R2-349: ISSUE against an order — what is still earmarked per item id, for the "Left on order" column. */
+  leftOnOrder?: Record<string, number>;
 };
+
+/** R2-366: how the cart rows are ordered on screen; the lines themselves keep the order they were added. */
+type SortKey = 'added' | 'name' | 'balance';
 
 type DraftLine = {
   itemId: string;
@@ -95,6 +101,7 @@ export function ItemCart({
   canOverride = false,
   children,
   refreshBalances,
+  leftOnOrder,
 }: Props) {
   const [query, setQuery] = useState('');
   const [lines, setLines] = useState<DraftLine[]>([]);
@@ -106,6 +113,8 @@ export function ItemCart({
   const [live, setLive] = useState<Record<string, number> | null>(null);
   const [refreshedAt, setRefreshedAt] = useState<Date | null>(null);
   const [scanNote, setScanNote] = useState<string | null>(null);
+  const [sortKey, setSortKey] = useState<SortKey>('added');
+  const { confirm: askConfirm, confirmDialog } = useConfirm();
   // A fresh key after every success; the same key for a retry of the same cart.
   const commitKey = useRef<string>(newKey());
 
@@ -198,9 +207,15 @@ export function ItemCart({
           : line,
       ),
     );
+    // R2-368: the quantity field keeps the focus (and the phone's number pad) after a +/- tap.
+    window.setTimeout(() => qtyRefs.current.get(itemId)?.focus(), 0);
   }, []);
 
+  /** R2-360: a quantity is digits with up to two decimals — never "1e5", "+", "-" or letters. */
+  const QTY_SHAPE = /^\d*(?:\.\d{0,2})?$/;
+
   const patch = useCallback((itemId: string, field: 'qty' | 'rate', value: string) => {
+    if (field === 'qty' && !QTY_SHAPE.test(value)) return; // R2-360: ignore the keystroke
     setError(null);
     setLines((current) =>
       current.map((line) => (line.itemId === itemId ? { ...line, [field]: value } : line)),
@@ -225,6 +240,24 @@ export function ItemCart({
   const blankLines = lines.filter((line) => (Number(line.qty) || 0) <= 0);
   const canConfirm =
     lines.length > 0 && shortLines.length === 0 && blankLines.length === 0 && !busy;
+
+  // R2-366: a display order only; `lines` keeps the order the storekeeper added them.
+  const sortedLines = useMemo(() => {
+    if (sortKey === 'added') return lines;
+    const nameOf = (l: DraftLine) => byId.get(l.itemId)?.name ?? '';
+    const balOf = (l: DraftLine) => { const it = byId.get(l.itemId); return it ? balanceOf(it) : 0; };
+    return [...lines].sort((a, b) => (sortKey === 'name' ? nameOf(a).localeCompare(nameOf(b)) : balOf(b) - balOf(a)));
+  }, [lines, sortKey, byId, balanceOf]);
+
+  /** R2-362: empty the whole cart after a confirmation. */
+  const clearCart = async () => {
+    if (lines.length === 0) return;
+    if (!(await askConfirm({ title: 'Clear the cart?', message: `${lines.length} ${lines.length === 1 ? 'line' : 'lines'} will be removed. Nothing has been issued yet.`, confirmLabel: 'Clear', destructive: true }))) return;
+    qtyRefs.current.clear();
+    setLines([]);
+    setError(null);
+    searchRef.current?.focus();
+  };
 
   async function confirm(overReceiptReason?: string) {
     if (!canConfirm) return;
@@ -270,6 +303,13 @@ export function ItemCart({
               ref={searchRef}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
+              // R2-356: a scanner sends the code + Enter; an exact code / SKU match (or a single hit) goes straight into the cart.
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter') return;
+                event.preventDefault();
+                const exact = matchScannedItem(items, query) ?? (matches.length === 1 ? matches[0] : null);
+                if (exact) { addItem(exact.id); window.setTimeout(() => searchRef.current?.focus(), 0); }
+              }}
               inputMode="search"
               autoComplete="off"
               aria-label="Scan or search an item"
@@ -359,7 +399,7 @@ export function ItemCart({
 
       {children}
 
-      {/* Zone 2 — the pile. */}
+      {/* Zone 2 — the pile: cards on a phone, one table (header + grid rows) from md up (R2-349). */}
       {lines.length === 0 ? (
         <EmptyState
           title="Scan or search an item to start"
@@ -370,31 +410,69 @@ export function ItemCart({
           }
         />
       ) : (
-        lines.map((line) => {
+        <>
+          <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+            <label className="flex items-center gap-2 text-sm text-slate-600">
+              Sort
+              <select
+                value={sortKey}
+                onChange={(event) => setSortKey(event.target.value as SortKey)}
+                aria-label="Sort cart rows"
+                className="min-h-11 rounded-lg border border-slate-300 bg-white px-2 text-sm text-slate-900"
+              >
+                <option value="added">as added</option>
+                <option value="name">item name</option>
+                <option value="balance">stock balance</option>
+              </select>
+            </label>
+            <button
+              type="button"
+              onClick={() => void clearCart()}
+              disabled={busy}
+              className="min-h-11 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 active:bg-slate-100"
+            >
+              Clear cart
+            </button>
+          </div>
+          <div aria-label="Cart" className="flex flex-col gap-3 md:gap-0 md:overflow-hidden md:rounded-2xl md:border md:border-slate-200 md:bg-white">
+            <div className="hidden md:grid md:grid-cols-[7rem_1fr_7rem_7rem_12rem_4rem_3rem] md:items-center md:gap-2 md:border-b md:border-slate-200 md:bg-slate-50 md:px-3 md:py-2 md:text-xs md:font-semibold md:uppercase md:tracking-wide md:text-slate-500">
+              <span>Code</span>
+              <span>Item</span>
+              <span>Available</span>
+              <span>Left on order</span>
+              <span>{isReceive ? 'Receive qty' : 'Issue qty'}</span>
+              <span>UOM</span>
+              <span><span className="sr-only">Remove</span></span>
+            </div>
+        {sortedLines.map((line) => {
           const item = byId.get(line.itemId);
           if (!item) return null;
           const qty = Number(line.qty) || 0;
           const short = guardsStock && qty > balanceOf(item);
+          const left = leftOnOrder?.[item.id];
           return (
-            <InfoCard key={line.itemId} className={cn(short && 'border-red-200 bg-red-50')}>
-              <div className="flex items-start justify-between gap-2">
+            <InfoCard key={line.itemId} className={cn(short && 'border-red-200 bg-red-50', 'md:grid md:grid-cols-[7rem_1fr_7rem_7rem_12rem_4rem_3rem] md:items-center md:gap-2 md:rounded-none md:border-x-0 md:border-t-0 md:px-3 md:py-2 md:shadow-none')}>
+              <span className="hidden md:block"><Mono>{item.code}</Mono></span>
+              <div className="flex items-start justify-between gap-2 md:contents">
                 <div className="min-w-0">
                   <p className="truncate font-semibold text-slate-900">{item.name}</p>
-                  <Mono>
-                    {item.code} · {balanceOf(item)} {item.unit} in stock
-                  </Mono>
+                  <span className="md:hidden">
+                    <Mono>{item.code} · {balanceOf(item)} {item.unit} in stock{left !== undefined ? ` · ${left} left on order` : ''}</Mono>
+                  </span>
                 </div>
+                <span className="hidden text-sm text-slate-700 md:block">{balanceOf(item)}</span>
+                <span className="hidden text-sm text-slate-700 md:block">{left !== undefined ? left : '—'}</span>
                 <button
                   type="button"
                   onClick={() => remove(line.itemId)}
                   aria-label={`Remove ${item.name}`}
-                  className="-mr-1 -mt-1 shrink-0 rounded-full p-2 text-slate-400 active:bg-slate-100"
+                  className="-mr-1 -mt-1 shrink-0 rounded-full p-2 text-slate-400 active:bg-slate-100 md:order-last md:m-0"
                 >
                   <CrossIcon />
                 </button>
               </div>
 
-              <div className="mt-3 flex items-center gap-2">
+              <div className="mt-3 flex items-center gap-2 md:mt-0 md:contents">
                 <StepButton
                   onClick={() => step(line.itemId, -1)}
                   label={`One less ${item.name}`}
@@ -434,14 +512,17 @@ export function ItemCart({
               </div>
 
               {short && (
-                <p className="mt-2 text-sm font-medium text-red-700">
+                <p className="mt-2 text-sm font-medium text-red-700 md:col-span-full md:mt-0">
                   Only {balanceOf(item)} {item.unit} in stock.
                 </p>
               )}
             </InfoCard>
           );
-        })
+        })}
+          </div>
+        </>
       )}
+      {confirmDialog}
 
       {error && (
         <section className="rounded-2xl border border-red-200 bg-red-50 p-4">
@@ -534,6 +615,7 @@ function StepButton({
     <button
       type="button"
       onClick={onClick}
+      onMouseDown={(event) => event.preventDefault()} // R2-368: a tap must not take the focus off the quantity field
       aria-label={label}
       className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-slate-300 bg-white text-2xl font-semibold leading-none text-slate-700 active:bg-slate-100"
     >

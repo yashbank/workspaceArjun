@@ -108,3 +108,16 @@ R2-291 | DEV_DONE | - | confirmGRN(grnId, { idempotencyKey }) runs the confirm u
 R2-292 | DEV_DONE | - | adjustInventory(..., idempotencyKey?), createStoreIn/Out input.idempotencyKey via keyedWrite: a replay returns the first row and audits nothing; keyed-writes.test.ts; server-gates reviewed list names the two helpers
 R2-336 | DEV_DONE | - | deleteItem refuses while ledger balance > 0 or the item is a material of an APPROVED BOM; createItem with a code of a soft-deleted item restores it with the new details (audit item.restore); r3-mst-masters R2-336 tests; fixtures r3-mst-masters/material-money gain findFirst delegates
 GATE | C5 | - | tsc clean, eslint 0 errors (5 pre-existing warnings), vitest 430 files green (server-gates reviewed list updated after the full run; file rerun green)
+R2-346 | DEV_DONE | - | issue-screen: orders are a searchable Combobox (components/ui, R2-82) by order # or customer (hint), "None" = General / factory use; the TargetChip wall is gone; issue-screen.test.tsx
+R2-347 | DEV_DONE | - | departments: same Combobox, clearable ("None"); issue-screen.test
+R2-348 | DEV_DONE | - | general-use-fields: cost centre is a Combobox showing label + code hint, labelled "(required)"; issue-screen.test R2-353 asserts it appears
+R2-349 | DEV_DONE | - | item-cart: from md up the cart is one table (header Code / Item / Available / Left on order / Issue qty / UOM / remove, grid rows); phone keeps the cards; new leftOnOrder prop from the issue screen's allocations; item-cart.test.tsx. 390/1280 px browser check left to the PRO Mac (no Playwright here)
+R2-353 | DEV_DONE | - | Combobox pick (incl. the clearable None row) closes the list and clears the query; combobox.test R2-353
+R2-354 | DEV_DONE | - | Combobox closes on blur (Tab) as well as Escape; combobox.test R2-354
+R2-356 | DEV_DONE | - | item-cart search: Enter adds the exact code / SKU match (matchScannedItem) or the single hit, qty 1, box cleared and refocused; item-cart.test R2-356
+R2-358 | DEV_DONE | - | RaiseRequestInstead: PageBack to /mis + primary "Raise a Material Request" link to /mis/store/requests/new (link existed; wording + back added); raise-request-instead.test.tsx
+R2-360 | DEV_DONE | - | quantity input accepts digits with up to 2 decimals only (1e5 / + / - / letters ignored); totals already NaN-safe; item-cart.test R2-360
+R2-362 | DEV_DONE | - | "Clear cart" with useConfirm (components/ui) empties every line; item-cart.test R2-362
+R2-366 | DEV_DONE | - | "Sort" select: as added / item name / stock balance (display order only); item-cart.test R2-366
+R2-368 | DEV_DONE | - | +/- buttons preventDefault on mousedown and refocus the quantity field after the step; item-cart.test R2-368
+GATE | C6 | - | tsc clean, eslint 0 errors (6 warnings: 5 pre-existing + 1 new sonar hint), vitest 433 files / 7073 tests green
