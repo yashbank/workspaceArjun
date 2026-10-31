@@ -71,7 +71,8 @@ export async function resolveParkedWrite(key: string, note: string): Promise<Ide
       by: actor.userId,
       note: trimmed,
       skipTiming: reason === 'CLOCK_SKEW' || reason === 'TOO_OLD',
-      skipEmployeeChecks: reason === 'EMPLOYEE_INACTIVE' || reason === 'CORRECTION_WINDOW_CLOSED',
+      // R2-248: a TOO_OLD punch is by definition past the correction window too; the resolver's note vouches for both.
+      skipEmployeeChecks: reason === 'EMPLOYEE_INACTIVE' || reason === 'CORRECTION_WINDOW_CLOSED' || reason === 'TOO_OLD',
     };
   } else {
     // BADGE_UNKNOWN resolves only via the tablet's own Fix (K2, `correctsKey`) — never this

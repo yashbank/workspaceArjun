@@ -180,6 +180,22 @@ describe('the punch overrides — need attendance.write on top of queue.review',
     expect(fake.state.queued.get(key)!.resolvedById).toBe('resolver-1');
   });
 
+  // R2-248: a punch parked TOO_OLD (over the queue's age limit) is also past the correction window; one note covers both.
+  it('R2-248: applies a TOO_OLD punch for an attendance.write holder instead of re-parking it as CORRECTION_WINDOW_CLOSED', async () => {
+    fake.state.employees[0].isActive = true;
+    getMisRole.mockResolvedValue('SUPER_ATTENDANCE_OPERATOR');
+    const key = seedQueued({
+      kind: 'attendance.punch_in',
+      parkReason: 'TOO_OLD',
+      payload: { badgeCode: 'W1' },
+      clientRecordedAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000), // ten days ago: both too old and outside the window
+    });
+    const result = await resolveParkedWrite(key, 'tablet was offline for a week; punch confirmed with the supervisor');
+    expect(result.outcome).toBe('APPLIED');
+    expect(fake.state.punches).toHaveLength(1);
+    expect(fake.state.queued.get(key)!.resolvedById).toBe('resolver-1');
+  });
+
   it('applies a CLOCK_SKEW punch by skipping checkTiming entirely — a plain retry could never clear it', async () => {
     fake.state.employees[0].isActive = true;
     const key = seedQueued({

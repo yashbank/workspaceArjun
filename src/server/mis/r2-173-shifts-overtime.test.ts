@@ -12,8 +12,13 @@ const fakeDb: Row = {
   misAttendance: {
     findMany: async ({ where }: Row) => (where.date ? store.att.filter((r) => r.date.getTime() === where.date.getTime()) : []),
     update: async ({ where, data }: Row) => Object.assign(store.att.find((r) => r.id === where.id)!, data),
+    upsert: async ({ where, create }: Row) => {
+      const row = { id: `a-${store.att.length + 1}`, ...create, employeeId: where.employeeId_date.employeeId, date: where.employeeId_date.date };
+      store.att.push(row);
+      return row;
+    },
   },
-  misEmployee: { findMany: async ({ where }: Row) => (where.id?.in ? [{ id: 'e1' }] : [{ id: 'e1', name: 'Ramesh', employeeCode: 'E-01' }]) },
+  misEmployee: { findMany: async ({ where }: Row) => (where.id?.in ? [{ id: 'e1', defaultShiftId: 's2' }] : [{ id: 'e1', name: 'Ramesh', employeeCode: 'E-01' }]) },
   misShift: { findUnique: async ({ where }: Row) => store.shifts.find((s) => s.id === where.id) ?? null, findFirst: async () => null },
   misPayrollPeriod: { findUnique: async () => null },
   misWorkerAllocation: { findMany: (...a: unknown[]) => wa(...a) },
@@ -64,6 +69,21 @@ describe('R2-173 clock-out shift + overtime', () => {
     await att.bulkPunch('OUT', ['e1']);
     expect(store.att[0].otMinutes).toBe(0);
     expect(punchMinutes({ workDate: '2026-10-13', clockIn: null, clockOut: new Date('2026-10-13T07:00:00Z') }, S1, 'Asia/Kolkata').otMinutes).toBe(0);
+  });
+});
+
+describe('R2-251 bulk clock-in stores the shift', () => {
+  it('resolves the employee’s shift (default here) and writes shiftId, as single clockIn does', async () => {
+    store.att = [];
+    const { records, skipped } = await att.bulkPunch('IN', ['e1']);
+    expect(skipped).toEqual([]);
+    expect(records[0]).toMatchObject({ employeeId: 'e1', shiftId: 's2', status: 'PRESENT' });
+  });
+
+  it('a named shift wins over the default', async () => {
+    store.att = [];
+    const { records } = await att.bulkPunch('IN', ['e1'], { shiftId: 's1' });
+    expect(records[0].shiftId).toBe('s1');
   });
 });
 

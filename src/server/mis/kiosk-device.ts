@@ -8,6 +8,7 @@ import {
   type KioskHealthLevel,
 } from '@/lib/mis/kiosk-health';
 import { dateKeyToDbDate, factoryDateKey } from '@/lib/mis/factory-time';
+import { resolveShiftForDate } from '@/lib/mis/shift-roster';
 import { db } from '@/server/db';
 
 import { logAuditEvent } from './audit';
@@ -637,7 +638,8 @@ export type PullOperatorRole = 'OPERATOR' | 'SUPER_OPERATOR';
 
 export function operatorRoleOf(role: string | null | undefined): PullOperatorRole | null {
   if (role === 'ATTENDANCE_OPERATOR') return 'OPERATOR';
-  if (role === 'SUPER_ATTENDANCE_OPERATOR') return 'SUPER_OPERATOR';
+  // R2-253: Admin and Owner may run the gate tablet too; they get the senior label, never their raw role.
+  if (role === 'SUPER_ATTENDANCE_OPERATOR' || role === 'ADMIN' || role === 'OWNER') return 'SUPER_OPERATOR';
   return null;
 }
 
@@ -690,12 +692,14 @@ async function buildPullPayload(device: AuthenticatedDevice, now: Date): Promise
   // "Today" is the factory's today (D22), as a UTC-midnight `@db.Date` value. The server's
   // own midnight is 2.5 hours off the plant's, and on a UTC+8 host it names yesterday.
   const factoryTimezone = await getFactoryTimezone();
-  const today = dateKeyToDbDate(factoryDateKey(now, factoryTimezone));
+  const todayKey = factoryDateKey(now, factoryTimezone);
+  const today = dateKeyToDbDate(todayKey);
 
-  const [employees, shifts, allocations, attendance] = await Promise.all([
+  const [employees, shifts, allocations, attendance, roster] = await Promise.all([
     db.misEmployee.findMany({
       where: { isActive: true, deletedAt: null },
-      select: { id: true, employeeCode: true, name: true, photoUrl: true, role: true },
+      // R2-234: `defaultShiftId` is a shift reference, not a person's data; it never leaves as a key (see toPullEmployee).
+      select: { id: true, employeeCode: true, name: true, photoUrl: true, role: true, defaultShiftId: true },
       orderBy: { name: 'asc' },
     }),
     db.misShift.findMany({
@@ -710,12 +714,21 @@ async function buildPullPayload(device: AuthenticatedDevice, now: Date): Promise
       where: { date: today, shiftId: { not: null } },
       select: { employeeId: true, shiftId: true },
     }),
+    // R2-234: today's roster rows, so an unallocated worker still arrives with their shift (R2-214 order: roster, then default).
+    db.misShiftRoster.findMany({
+      where: { startDate: { lte: today }, endDate: { gte: today } },
+      select: { employeeId: true, shiftId: true, startDate: true, endDate: true },
+    }),
   ]);
 
-  // Allocation beats attendance: it is the plan; attendance is what already happened.
+  // Allocation beats attendance: it is the plan; attendance is what already happened. Neither -> roster, else default shift.
   const shiftOf = new Map<string, string>();
   for (const a of attendance) if (a.shiftId) shiftOf.set(a.employeeId, a.shiftId);
   for (const a of allocations) if (a.shiftId) shiftOf.set(a.employeeId, a.shiftId);
+  const rosterOf = new Map<string, typeof roster>();
+  for (const r of roster) rosterOf.set(r.employeeId, [...(rosterOf.get(r.employeeId) ?? []), r]);
+  const shiftIdFor = (e: { id: string; defaultShiftId: string | null }) =>
+    shiftOf.get(e.id) ?? resolveShiftForDate(e, todayKey, rosterOf.get(e.id) ?? []);
   const shiftById = new Map(shifts.map((s) => [s.id, s]));
 
   return {
@@ -725,7 +738,7 @@ async function buildPullPayload(device: AuthenticatedDevice, now: Date): Promise
     shifts: [...shifts]
       .sort((a, b) => a.startTime.localeCompare(b.startTime))
       .map((s) => ({ id: s.id, name: s.name, startTime: s.startTime, endTime: s.endTime })),
-    employees: employees.map((e) => toPullEmployee(e, shiftById.get(shiftOf.get(e.id) ?? '') ?? null)),
+    employees: employees.map((e) => toPullEmployee(e, shiftById.get(shiftIdFor(e) ?? '') ?? null)),
   };
 }
 

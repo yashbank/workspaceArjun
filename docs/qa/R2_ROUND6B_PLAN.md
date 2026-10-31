@@ -164,15 +164,15 @@ Row count check: every ID 234-283 appears in the checklist (246 twice: server an
 
 ## 5. PROGRESS checklist (other Mac ticks; tick = DEV_DONE + gate green, else write state)
 Batch B1
-- [ ] R2-234 shift null in kiosk pull
-- [ ] R2-247 (dup of 234)
-- [ ] R2-235 night-shift OT stale
-- [ ] R2-246 (dup of 235, server)
-- [ ] R2-248 parked TOO_OLD resolve
-- [ ] R2-251 bulk punch shiftId
-- [ ] R2-253 Admin/Owner kiosk operator
-- [ ] R2-252 regularization permission
-- [ ] R2-244 past-date Clock In (verify)
+- [x] R2-234 shift null in kiosk pull
+- [x] R2-247 (dup of 234)
+- [x] R2-235 night-shift OT stale
+- [x] R2-246 (dup of 235, server)
+- [x] R2-248 parked TOO_OLD resolve
+- [x] R2-251 bulk punch shiftId
+- [x] R2-253 Admin/Owner kiosk operator
+- [x] R2-252 regularization permission
+- [x] R2-244 past-date Clock In (verify)
 Batch B2
 - [ ] R2-246 Android WorkDate parity
 - [ ] R2-243 queue dismiss

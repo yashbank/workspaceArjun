@@ -27,6 +27,7 @@ vi.mock('@/server/db', () => ({
     misShift: { findMany: async () => [{ id: 's1', name: 'Day', startTime: '06:00', endTime: '14:00' }] },
     misWorkerAllocation: { findMany: async () => [] },
     misAttendance: { findMany: async () => [] },
+    misShiftRoster: { findMany: async () => [] }, // R2-234: the pull now reads today's roster (fixture delegate only)
   },
 }));
 vi.mock('@/server/mis/audit', () => ({ logAuditEvent: vi.fn() }));

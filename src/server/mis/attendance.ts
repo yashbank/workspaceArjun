@@ -451,8 +451,9 @@ export async function bulkPunch(kind: 'IN' | 'OUT', employeeIds: string[], opts:
   const at = time ? factoryTimeToInstant(key, time, timeZone) : new Date();
   if (at.getTime() > Date.now() + 60_000) throw new Error('That time is in the future');
 
-  const people = await db.misEmployee.findMany({ where: { id: { in: ids }, isActive: true, deletedAt: null }, select: { id: true } });
+  const people = await db.misEmployee.findMany({ where: { id: { in: ids }, isActive: true, deletedAt: null }, select: { id: true, defaultShiftId: true } });
   if (people.length !== ids.length) throw new Error('One or more employees were not found or are not active');
+  const defaultShiftOf = new Map(people.map((p) => [p.id, p.defaultShiftId ?? null]));
   const d = dateKeyToDbDate(key);
   const existing = await db.misAttendance.findMany({ where: { date: d, employeeId: { in: ids } }, include: { breaks: true } });
   const byEmp = new Map(existing.map((r) => [r.employeeId, r]));
@@ -483,11 +484,13 @@ export async function bulkPunch(kind: 'IN' | 'OUT', employeeIds: string[], opts:
     const out = [];
     for (const employeeId of toWrite) {
       if (kind === 'IN') {
+        // R2-251: store the shift like clockIn does (named, else roster, else default) so the clock-out can derive late/OT.
+        const shiftId = opts.shiftId ?? (await resolveEmployeeShiftId(employeeId, key, db, defaultShiftOf.get(employeeId))) ?? null;
         out.push(
           await tx.misAttendance.upsert({
             where: { employeeId_date: { employeeId, date: d } },
-            create: { employeeId, date: d, clockIn: at, status: 'PRESENT', ...stamp },
-            update: { clockIn: at, status: byEmp.get(employeeId)?.status === 'HALF_DAY' ? 'HALF_DAY' : 'PRESENT', ...stamp },
+            create: { employeeId, date: d, shiftId, clockIn: at, status: 'PRESENT', ...stamp },
+            update: { clockIn: at, status: byEmp.get(employeeId)?.status === 'HALF_DAY' ? 'HALF_DAY' : 'PRESENT', ...(shiftId ? { shiftId } : {}), ...stamp },
           }),
         );
       } else {
