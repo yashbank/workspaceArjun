@@ -435,7 +435,7 @@ export function ItemCart({
             </button>
           </div>
           <div aria-label="Cart" className="flex flex-col gap-3 md:gap-0 md:overflow-hidden md:rounded-2xl md:border md:border-slate-200 md:bg-white">
-            <div className="hidden md:grid md:grid-cols-[7rem_1fr_7rem_7rem_12rem_4rem_3rem] md:items-center md:gap-2 md:border-b md:border-slate-200 md:bg-slate-50 md:px-3 md:py-2 md:text-xs md:font-semibold md:uppercase md:tracking-wide md:text-slate-500">
+            <div className="hidden md:grid md:grid-cols-[5.5rem_minmax(8rem,1fr)_4.5rem_5rem_12rem_3.5rem_2.5rem] md:items-center md:gap-2 md:border-b md:border-slate-200 md:bg-slate-50 md:px-3 md:py-2 md:text-xs md:font-semibold md:uppercase md:tracking-wide md:text-slate-500">
               <span>Code</span>
               <span>Item</span>
               <span>Available</span>
@@ -451,7 +451,7 @@ export function ItemCart({
           const short = guardsStock && qty > balanceOf(item);
           const left = leftOnOrder?.[item.id];
           return (
-            <InfoCard key={line.itemId} className={cn(short && 'border-red-200 bg-red-50', 'md:grid md:grid-cols-[7rem_1fr_7rem_7rem_12rem_4rem_3rem] md:items-center md:gap-2 md:rounded-none md:border-x-0 md:border-t-0 md:px-3 md:py-2 md:shadow-none')}>
+            <InfoCard key={line.itemId} className={cn(short && 'border-red-200 bg-red-50', 'md:grid md:grid-cols-[5.5rem_minmax(8rem,1fr)_4.5rem_5rem_12rem_3.5rem_2.5rem] md:items-center md:gap-2 md:rounded-none md:border-x-0 md:border-t-0 md:px-3 md:py-2 md:shadow-none')}>
               <span className="hidden md:block"><Mono>{item.code}</Mono></span>
               <div className="flex items-start justify-between gap-2 md:contents">
                 <div className="min-w-0">
@@ -466,7 +466,7 @@ export function ItemCart({
                   type="button"
                   onClick={() => remove(line.itemId)}
                   aria-label={`Remove ${item.name}`}
-                  className="-mr-1 -mt-1 shrink-0 rounded-full p-2 text-slate-400 active:bg-slate-100 md:order-last md:m-0"
+                  className="-mr-1 -mt-1 shrink-0 rounded-full p-2 text-slate-400 active:bg-slate-100 md:order-1 md:m-0"
                 >
                   <CrossIcon />
                 </button>
@@ -514,7 +514,7 @@ export function ItemCart({
               </div>
 
               {short && (
-                <p className="mt-2 text-sm font-medium text-red-700 md:col-span-full md:mt-0">
+                <p className="mt-2 text-sm font-medium text-red-700 md:order-2 md:col-span-full md:mt-0">
                   Only {balanceOf(item)} {item.unit} in stock.
                 </p>
               )}
