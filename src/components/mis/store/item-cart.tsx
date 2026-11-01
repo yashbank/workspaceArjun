@@ -473,6 +473,7 @@ export function ItemCart({
               </div>
 
               <div className="mt-3 flex items-center gap-2 md:mt-0 md:contents">
+                <div data-testid="qty-stepper" className="flex items-center gap-2">
                 <StepButton
                   onClick={() => step(line.itemId, -1)}
                   label={`One less ${item.name}`}
@@ -494,6 +495,7 @@ export function ItemCart({
                   label={`One more ${item.name}`}
                   glyph="+"
                 />
+                </div>
                 <span className="text-sm font-medium text-slate-500">{item.unit}</span>
 
                 {isReceive && canSetRate && (

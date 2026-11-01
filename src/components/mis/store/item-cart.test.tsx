@@ -99,3 +99,14 @@ describe('R2-368 the + / − buttons keep the quantity field focused', () => {
     await waitFor(() => expect(document.activeElement).toBe(qty));
   });
 });
+
+describe('R2-349 desktop cart grid cell', () => {
+  it('the minus, quantity and plus controls share one grid cell so the 7 columns line up', () => {
+    cart();
+    fireEvent.change(search(), { target: { value: 'kraft-1' } });
+    fireEvent.keyDown(search(), { key: 'Enter' });
+    const stepper = screen.getByTestId('qty-stepper');
+    expect(stepper.querySelectorAll('button')).toHaveLength(2);
+    expect(stepper.contains(qtyOf('Kraft 120'))).toBe(true);
+  });
+});
