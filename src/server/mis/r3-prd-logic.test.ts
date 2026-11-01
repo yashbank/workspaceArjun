@@ -168,7 +168,8 @@ describe('B126 editProductionLog', () => {
   });
   it('validates like create: waste <= produced, finite, active operator, stage in BOM', async () => {
     fn.logFindUnique.mockResolvedValue(logAt(H));
-    await expect(editProductionLog('l', { reason: 'typo fix', qtyProduced: 5, qtyWaste: 9 }, NOW)).rejects.toThrow(/Waste/);
+    // R2-328: waste above produced is a make-ready run, allowed on edit as on create.
+    await expect(editProductionLog('l', { reason: 'typo fix', qtyProduced: 5, qtyWaste: 9 }, NOW)).resolves.toMatchObject({ qtyProduced: 5, qtyWaste: 9 });
     await expect(editProductionLog('l', { reason: 'typo fix', qtyProduced: Number.NaN }, NOW)).rejects.toThrow(/valid number/);
     fn.employeeFindUnique.mockResolvedValue({ isActive: false });
     await expect(editProductionLog('l', { reason: 'typo fix', employeeId: 'e' }, NOW)).rejects.toThrow('Operator not found.');

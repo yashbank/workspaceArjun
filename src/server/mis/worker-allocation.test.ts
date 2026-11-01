@@ -387,11 +387,11 @@ describe('getWorkerAvailability — availability is derived, one grouped set of 
     expect(where.id).toEqual({ in: ['e1'] });
   });
 
-  it('only offers WORKER and QC roles as candidates', async () => {
+  it('only offers WORKER, QC and SUPERVISOR roles as candidates', async () => { // R2-332: lead operators holding SUPERVISOR
     employeeFindMany.mockResolvedValue([]);
     await getWorkerAvailability('s1', DATE);
     const { where } = employeeFindMany.mock.calls[0][0];
-    expect(where.role).toEqual({ in: ['WORKER', 'QC'] });
+    expect(where.role).toEqual({ in: ['WORKER', 'QC', 'SUPERVISOR'] });
   });
 
   it('returns an empty list rather than throwing when the pool is empty', async () => {

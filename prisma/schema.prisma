@@ -397,6 +397,8 @@ model MisEmployee {
   @@index([managerId])
   @@index([departmentId])
   @@index([deletedAt])
+  advances      MisSalaryAdvance[] // R2-324
+
   @@index([wageTypeCode])
   @@index([defaultShiftId])
   @@map("mis_employees")
@@ -616,6 +618,7 @@ model MisMachine {
   allocations    MisMachineAllocation[]
   productionLogs MisProductionLog[]
   lineClearances MisLineClearance[]
+  qcChecks     MisQcCheck[] // R2-318
   @@map("mis_machines")
 }
 
@@ -794,6 +797,8 @@ model MisGrn {
   supplierInvoiceNo     String?   @map("supplier_invoice_no")
   invoiceDate           DateTime? @map("invoice_date") @db.Date
   supplierInvoiceAmount Decimal?  @map("supplier_invoice_amount") @db.Decimal(14, 2)
+  /// R2-325 (parked migration 20261101000000). GST % on the supplier's tax invoice; the 3-way match compares the amount excluding it.
+  supplierInvoiceGstPercent Decimal? @map("supplier_invoice_gst_percent") @db.Decimal(5, 2)
   lrNumber              String?   @map("lr_number")
   vehicleNumber         String?   @map("vehicle_number")
   transporterName       String?   @map("transporter_name")
@@ -1139,8 +1144,12 @@ model MisQcCheck {
   /// R2-17/34 (parked migration 20261014000001). Void pair, same CHECK as production log.
   voidedAt      DateTime?    @map("voided_at")
   voidReason    String?      @map("void_reason")
+  /// R2-318 (parked migration 20261101000004). The machine the inspection was taken at; the defect report attributes by it
+  /// and falls back to the booking at the check time for older rows.
+  machineId     String?      @map("machine_id") @db.Uuid
   order         MisOrder     @relation(fields: [orderId], references: [id])
   bomStage      MisBomStage? @relation(fields: [bomStageId], references: [id], onDelete: SetNull)
+  machine       MisMachine?  @relation(fields: [machineId], references: [id], onDelete: SetNull)
   template      MisQcTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
   @@map("mis_qc_checks")
 }
@@ -1804,6 +1813,13 @@ model MisPayrollSnapshotLine {
   extraPay      Decimal          @default(0) @db.Decimal(12, 2) @map("extra_pay")
   latePenalty   Decimal          @db.Decimal(12, 2) @map("late_penalty")
   grossPay      Decimal          @db.Decimal(12, 2) @map("gross_pay")
+  /// R2-324 (parked migration 20261101000001). Statutory deductions and the net pay frozen with the month.
+  /// NULL on lines closed before the migration: payroll recomputes them from the rules when read.
+  pf            Decimal?         @db.Decimal(12, 2)
+  esic          Decimal?         @db.Decimal(12, 2)
+  pt            Decimal?         @db.Decimal(12, 2)
+  advance       Decimal?         @db.Decimal(12, 2)
+  netPay        Decimal?         @db.Decimal(12, 2) @map("net_pay")
 
   wageTypeCode  String?          @map("wage_type_code")
   createdAt     DateTime         @default(now()) @map("created_at")
@@ -1815,6 +1831,26 @@ model MisPayrollSnapshotLine {
   @@map("mis_payroll_snapshot_lines")
 }
 
+/// R2-324 (parked migration 20261101000001). A salary advance to recover from one month's pay. Owner only (wages.read).
+/// shortcut: one row = the amount to deduct that month, no running balance; upgrade to a balance ledger when advances
+/// start to span months.
+model MisSalaryAdvance {
+  id          String   @id @default(uuid()) @db.Uuid
+  employeeId  String   @map("employee_id") @db.Uuid
+  year        Int
+  month       Int
+  amount      Decimal  @db.Decimal(12, 2)
+  notes       String?
+  createdById String?  @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  employee    MisEmployee @relation(fields: [employeeId], references: [id])
+
+  @@index([employeeId, year, month])
+  @@index([year, month])
+  @@map("mis_salary_advances")
+}
+
 /// V2 Epic 3 — a Material Issue Note. A Supervisor ASKS (`requestedQty`); the Store APPROVES and
 /// may issue less (`actualIssuedQty <= requestedQty`). Stock leaves the ledger only on approval,
 /// through `commitIssue`, so a pending note never moves a balance.
@@ -1822,6 +1858,8 @@ enum MisMaterialRequestStatus {
   PENDING
   APPROVED
   REJECTED
+  /// R2-286 (parked migration 20261101000002): approved and partly issued; the balance stays open for a later issue.
+  PARTIALLY_ISSUED
   @@map("mis_material_request_status")
 }
 
@@ -2037,6 +2075,10 @@ enum MisSupplierInvoiceStatus {
   DISCREPANCY_QTY
   DISCREPANCY_PRICE
   PENDING_REVIEW
+  /// R2-288 (parked migration 20261101000003): payment states after the match. Owner approves; Admin/Owner records the payment.
+  APPROVED_FOR_PAYMENT
+  PAID
+  REJECTED
   @@map("mis_supplier_invoice_status")
 }
 
@@ -2048,6 +2090,8 @@ model MisSupplierInvoice {
   invoiceNo     String           @map("invoice_no")
   invoiceDate   DateTime?        @map("invoice_date") @db.Date
   invoiceAmount Decimal?         @map("invoice_amount") @db.Decimal(14, 2)
+  /// R2-325 (parked migration 20261101000000). Optional GST %; `invoiceAmount` is the billed total including it.
+  gstPercent    Decimal?         @map("gst_percent") @db.Decimal(5, 2)
   notes         String?
   /// 3-way match result (`lib/mis/invoice-match.ts`). Set when a GRN confirms the invoice; recomputed by `reconcileSupplierInvoice`.
   status        MisSupplierInvoiceStatus @default(PENDING_REVIEW)
@@ -2055,6 +2099,14 @@ model MisSupplierInvoice {
   varianceSignedOffById String?   @map("variance_signed_off_by_id") @db.Uuid
   varianceSignedOffAt   DateTime? @map("variance_signed_off_at")
   varianceSignOffNote   String?   @map("variance_sign_off_note")
+  /// R2-288 (parked migration 20261101000003). Who approved payment / recorded it, the payment date and UTR / cheque no., or why it was rejected.
+  paymentApprovedById String?   @map("payment_approved_by_id") @db.Uuid
+  paymentApprovedAt   DateTime? @map("payment_approved_at")
+  paidById            String?   @map("paid_by_id") @db.Uuid
+  paidAt              DateTime? @map("paid_at")
+  paymentDate         DateTime? @map("payment_date") @db.Date
+  paymentRef          String?   @map("payment_ref")
+  rejectReason        String?   @map("reject_reason")
   createdAt     DateTime         @default(now()) @map("created_at")
   updatedAt     DateTime         @updatedAt @map("updated_at")
   po            MisPurchaseOrder @relation(fields: [poId], references: [id])

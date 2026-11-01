@@ -133,3 +133,46 @@ describe('R2-280 variance sign-off', () => {
     expect(update.mock.calls.at(-1)![0].data).toMatchObject({ varianceSignedOffAt: null, varianceSignedOffById: null, varianceSignOffNote: null });
   });
 });
+
+const { approveInvoiceForPayment, markInvoicePaid, rejectSupplierInvoice } = await import('./supplier-invoice');
+
+describe('R2-288 payment states', () => {
+  it('the Owner approves a MATCHED invoice for payment; audited by status only', async () => {
+    getMisRole.mockResolvedValue('OWNER');
+    findUnique.mockResolvedValue({ id: 'inv1', status: 'MATCHED', varianceSignedOffAt: null });
+    await expect(approveInvoiceForPayment('inv1')).resolves.toMatchObject({ status: 'APPROVED_FOR_PAYMENT' });
+    expect(update).toHaveBeenCalledWith({ where: { id: 'inv1' }, data: expect.objectContaining({ status: 'APPROVED_FOR_PAYMENT', paymentApprovedById: 'u1' }) });
+    expect(JSON.stringify(logAuditEvent.mock.calls.at(-1))).not.toMatch(/1100|amount/i);
+  });
+  it('a discrepancy needs the sign-off first; a pending-review invoice is refused; Admin may not approve', async () => {
+    getMisRole.mockResolvedValue('OWNER');
+    findUnique.mockResolvedValue({ id: 'inv1', status: 'DISCREPANCY_PRICE', varianceSignedOffAt: null });
+    await expect(approveInvoiceForPayment('inv1')).rejects.toThrow(/Sign off the variance/);
+    findUnique.mockResolvedValue({ id: 'inv1', status: 'DISCREPANCY_PRICE', varianceSignedOffAt: new Date() });
+    await expect(approveInvoiceForPayment('inv1')).resolves.toMatchObject({ status: 'APPROVED_FOR_PAYMENT' });
+    findUnique.mockResolvedValue({ id: 'inv1', status: 'PENDING_REVIEW', varianceSignedOffAt: null });
+    await expect(approveInvoiceForPayment('inv1')).rejects.toThrow(/not been matched/);
+    getMisRole.mockResolvedValue('ADMIN');
+    await expect(approveInvoiceForPayment('inv1')).rejects.toThrow(/Not permitted: wages\.read/);
+  });
+  it('Admin marks an approved invoice paid with a date and a UTR; both are required', async () => {
+    getMisRole.mockResolvedValue('ADMIN');
+    findUnique.mockResolvedValue({ id: 'inv1', status: 'APPROVED_FOR_PAYMENT' });
+    await expect(markInvoicePaid('inv1', { paymentDate: '2026-11-01', paymentRef: '' })).rejects.toThrow(/UTR/);
+    await expect(markInvoicePaid('inv1', { paymentDate: 'yesterday', paymentRef: 'UTR123' })).rejects.toThrow(/payment date/);
+    await expect(markInvoicePaid('inv1', { paymentDate: '2026-11-01', paymentRef: 'UTR123' })).resolves.toMatchObject({ status: 'PAID' });
+    expect(update).toHaveBeenLastCalledWith({ where: { id: 'inv1' }, data: expect.objectContaining({ status: 'PAID', paymentRef: 'UTR123', paidById: 'u1' }) });
+    findUnique.mockResolvedValue({ id: 'inv1', status: 'MATCHED' });
+    await expect(markInvoicePaid('inv1', { paymentDate: '2026-11-01', paymentRef: 'UTR123' })).rejects.toThrow(/approved for payment/);
+  });
+  it('reject needs a reason and never applies to a paid invoice; a settled invoice is not re-matched', async () => {
+    getMisRole.mockResolvedValue('ADMIN');
+    findUnique.mockResolvedValue({ id: 'inv1', status: 'MATCHED' });
+    await expect(rejectSupplierInvoice('inv1', ' ')).rejects.toThrow(/reason/);
+    await expect(rejectSupplierInvoice('inv1', 'duplicate of INV-0')).resolves.toMatchObject({ status: 'REJECTED' });
+    findUnique.mockResolvedValue({ id: 'inv1', status: 'PAID' });
+    await expect(rejectSupplierInvoice('inv1', 'oops')).rejects.toThrow(/paid invoice/);
+    findUnique.mockResolvedValue(invoice({ status: 'PAID' }));
+    await expect(reconcileSupplierInvoice('inv1')).rejects.toThrow(/no longer re-checked/);
+  });
+});

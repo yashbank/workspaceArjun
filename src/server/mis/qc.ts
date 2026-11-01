@@ -1,7 +1,8 @@
-import { evaluateAql, resolveAqlPlan, thresholdsFromPlan, type AqlResult } from '@/lib/mis/aql';
+import { evaluateAql, resolveAqlPlans, thresholdsFromPlan, type AqlResult } from '@/lib/mis/aql';
 import { correctionVerdict, requireCorrectionReason } from '@/lib/mis/entry-correction';
 import { addDaysToDateKey, dateKeyToDbDate, factoryDateKey, factoryMinuteOfDay } from '@/lib/mis/factory-time';
 import { isOrderClosed } from '@/lib/mis/order-status';
+import { latestChecks } from '@/lib/mis/qc-verdict';
 import { db } from '@/server/db';
 import { requirePermission } from '@/server/mis/auth';
 import { logAuditEvent } from '@/server/mis/audit';
@@ -156,6 +157,8 @@ export async function addQcCheck(
     /** V2 Epic 5: set when the check is a checklist tap (qc-template.ts). */
     templateId?: string;
     slotTime?: string;
+    /** R2-318: the machine the inspection was taken at (optional). */
+    machineId?: string;
   },
   /** Server-internal (the server action passes only `data`): the checklist's plain FAIL tap carries no reason. */
   options: { requireFailReason?: boolean } = {},
@@ -164,6 +167,10 @@ export async function addQcCheck(
   validateCheckFields(data, options.requireFailReason ?? true);
   await assertOrderOpen(data.orderId);
   if (data.bomStageId) await assertStageBelongsToOrder(data.orderId, data.bomStageId);
+  if (data.machineId) {
+    const machine = await db.misMachine.findFirst({ where: { id: data.machineId, isActive: true, deletedAt: null }, select: { id: true } });
+    if (!machine) throw new Error('That machine is not active. Pick another, or leave it empty.');
+  }
   const rec = await db.misQcCheck.create({
     data: { ...data, parameterName: data.parameterName ?? 'General', checkTime: new Date(), checkById: actor.userId },
   });
@@ -222,8 +229,9 @@ export async function recordAqlSample(input: {
     if (!Number.isFinite(line.qty) || line.qty < 0) throw new Error('Defect quantity must be 0 or more');
   }
   if (input.lotSize != null && (!Number.isInteger(input.lotSize) || input.lotSize < 1)) throw new Error('Lot size must be a whole number of at least 1');
-  const plan = input.lotSize != null ? await resolveAqlPlan((key) => getRuleValue(key), input.lotSize) : null;
-  const thresholds = plan ? thresholdsFromPlan(plan) : await getAqlThresholds();
+  // R2-314: major and minor defects follow their own acceptable-quality limits.
+  const plans = input.lotSize != null ? await resolveAqlPlans((key) => getRuleValue(key), input.lotSize) : null;
+  const thresholds = plans ? thresholdsFromPlan(plans.major, plans.minor) : await getAqlThresholds();
   if (input.sampleSize < thresholds.sampleSize) throw new Error(`Sample too small: inspect at least ${thresholds.sampleSize}`);
 
   const defectTypeIds = input.defects.map((d) => d.defectTypeId);
@@ -296,8 +304,9 @@ export async function getQcSummary(orderId: string) {
   const pass = checks.filter(c => c.result === 'PASS').length;
   const fail = checks.filter(c => c.result === 'FAIL').length;
   const na = checks.length - pass - fail;
-  /** Labelled "Defects (failed checks)" wherever shown: it sums the defect quantity of FAILED checks only. */
-  const totalDefectQty = checks.filter(c => c.result === 'FAIL').reduce((s, c) => s + Number(c.defectQty ?? 0), 0);
+  // R2-322: labelled "Defects (failed checks)": a FAIL re-passed later on the same stage + parameter
+  // (setup waste, since corrected) no longer counts. Same "latest check per key" rule as the order close gate.
+  const totalDefectQty = latestChecks(checks).filter(c => c.result === 'FAIL').reduce((s, c) => s + Number(c.defectQty ?? 0), 0);
   return { total: checks.length, pass, fail, na, totalDefectQty };
 }
 

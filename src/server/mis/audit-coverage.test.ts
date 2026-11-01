@@ -51,6 +51,7 @@ const REVIEWED_UNAUDITED: Record<string, string> = {
   'notifications.ts#notifyRoles': 'writes notification (inbox) rows after an audited mutation',
   'store-notices.ts#notifyRequestDecided': 'writes one notification (inbox) row after an audited request decision (R2-67)',
   'notifications.ts#markMisNotificationsRead': "marks the caller's own inbox rows read",
+  'business-rules.ts#getAqlLimitRules': 'R2-314: idempotent seed of the two AQL limit default rows (like ensureAqlDefaults); every change to them is audited via updateAqlThreshold',
 };
 
 describe('every database writer leaves an audit row', () => {

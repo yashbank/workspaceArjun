@@ -67,6 +67,8 @@ export type GridOrder = {
    * slot is due; an EMPTY list = it is booked, but not during this shift, so no slot is due.
    */
   runs?: { from: number; to: number }[];
+  /** R2-317: in production but booked on no machine at all; shown as "not on a machine", nothing is due. */
+  unbooked?: boolean;
 };
 
 export type GridCell = { state: SlotState; /** how many checks fell in this slot */ checks: number };
@@ -76,6 +78,8 @@ export type GridRow = {
   orderNumber: string;
   description: string | null;
   machines: string[];
+  /** R2-317: passthrough of GridOrder.unbooked. */
+  unbooked?: boolean;
   cells: GridCell[];
   /** Slots with a recorded check: pass + fail + make-ready. */
   taken: number;
@@ -152,6 +156,7 @@ export function buildQcGrid(input: {
         orderNumber: order.orderNumber,
         description: order.description,
         machines: order.machines,
+        ...(order.unbooked ? { unbooked: true } : {}),
         cells,
         taken: cells.filter((c) => c.state === 'pass' || c.state === 'fail' || c.state === 'makeready').length,
         failed: cells.filter((c) => c.state === 'fail').length,

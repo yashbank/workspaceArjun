@@ -268,3 +268,12 @@ describe('the missed list', () => {
     expect(g.missed).toEqual([]);
   });
 });
+
+describe('R2-317 an order in production but on no machine', () => {
+  it('is flagged unbooked and has nothing due (no false overdue hours)', () => {
+    const g = build([], { orders: [{ id: 'o9', orderNumber: 'ORD-9', description: null, machines: [], runs: [], unbooked: true }] });
+    expect(g.rows[0].unbooked).toBe(true);
+    expect(g.totals).toMatchObject({ never: 0, off: 9 });
+    expect(g.missed).toEqual([]);
+  });
+});

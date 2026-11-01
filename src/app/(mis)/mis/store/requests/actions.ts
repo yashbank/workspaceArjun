@@ -3,7 +3,7 @@ import { revalidatePath } from 'next/cache';
 
 import { asResult } from '@/lib/mis/action-result';
 
-import {
+import { issueMaterialRequestBalance,
   approveMaterialRequest,
   approveMaterialRequestForPicking,
   createMaterialRequest,
@@ -56,5 +56,16 @@ export async function rejectMaterialRequestAction(id: string, reason: string) {
   return asResult(async () => {
     await rejectMaterialRequest(id, reason);
     revalidate(id);
+  });
+}
+
+/** R2-286: issue the open balance of a partially issued request. */
+export async function issueMaterialRequestBalanceAction(id: string, decisions: ApproveLineInput[], note?: string | null) {
+  return asResult(async () => {
+    try {
+      return await issueMaterialRequestBalance(id, decisions, note);
+    } finally {
+      revalidate(id);
+    }
   });
 }

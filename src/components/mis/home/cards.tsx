@@ -25,8 +25,9 @@ const BASE = 'rounded-2xl p-4';
  * bottom bar — without the pb-24 the last card sits under it and cannot be
  * tapped.
  */
-export function HomeStack({ children }: { children: ReactNode }) {
-  return <div className="mx-auto flex w-full max-w-[420px] flex-col gap-3 pb-24">{children}</div>;
+/** `wide`: from md up the column widens so the R2-349 cart table fits (the phone column stays 420px). */
+export function HomeStack({ children, wide }: { children: ReactNode; wide?: boolean }) {
+  return <div className={cn('mx-auto flex w-full max-w-[420px] flex-col gap-3 pb-24', wide && 'md:max-w-5xl')}>{children}</div>;
 }
 
 function CardShell({

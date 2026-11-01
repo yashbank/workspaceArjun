@@ -89,6 +89,8 @@ export function SupervisorHome({ header, clearanceBlocker, blocker, machines, si
       <PrimaryButton href="/mis/production">+ Record production</PrimaryButton>
       {/* V2 Epic 3 — a material ask goes to the Store for approval; nothing moves until then. */}
       <SecondaryButton href="/mis/store/requests/new">Request material from the store</SecondaryButton>
+      {/* R2-342: the Supervisor now holds queue.review and resolves the floor's parked entries. */}
+      <SecondaryButton href="/mis/queue">Open the parked-entries inbox</SecondaryButton>
 
       {/* What is still on this device — the count belongs here, at the button that
           made the entry, as well as in the header (MIS-155). Empty renders nothing. */}

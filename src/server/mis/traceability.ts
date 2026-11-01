@@ -1,4 +1,5 @@
 import { withoutRates } from '@/lib/mis/bom-costing';
+import { sumByUnit } from '@/lib/mis/qty-by-unit';
 import { can } from '@/lib/mis/permissions';
 import { db } from '@/server/db';
 import { requirePermission } from '@/server/mis/auth';
@@ -56,8 +57,13 @@ export async function getOrderTrace(orderId: string) {
     orderNumber && can(actor.role, 'store.read') ? loadIssuedMaterials(orderId, orderNumber) : Promise.resolve(null),
   ]);
 
-  const totalProduced = productionLogs.reduce((s, l) => s + Number(l.qtyProduced), 0);
-  const totalWaste = productionLogs.reduce((s, l) => s + Number(l.qtyWaste ?? 0), 0);
+  // R2-290: never add 1,000 SHEETS to 10,000 PIECES. Per-unit totals are the truth; the flat totals
+  // are kept for one-unit orders only and are null when units are mixed.
+  const producedBy = sumByUnit(productionLogs.map((l) => ({ qty: Number(l.qtyProduced), unit: l.unit })));
+  const wasteBy = sumByUnit(productionLogs.map((l) => ({ qty: Number(l.qtyWaste ?? 0), unit: l.unit })));
+  const byUnit = producedBy.map((p) => ({ unit: p.unit, produced: p.qty, waste: wasteBy.find((w) => w.unit === p.unit)?.qty ?? 0 }));
+  const totalProduced = byUnit.length === 1 ? byUnit[0].produced : null;
+  const totalWaste = byUnit.length === 1 ? byUnit[0].waste : null;
   const passChecks = qcChecks.filter((q) => q.result === 'PASS').length;
   const failChecks = qcChecks.filter((q) => q.result === 'FAIL').length;
 
@@ -65,7 +71,7 @@ export async function getOrderTrace(orderId: string) {
   const visibleBom = bom && !can(actor.role, 'wages.read') ? withoutRates(bom) : bom;
 
   return {
-    order, bom: visibleBom, productionLogs, qcChecks, documents, totalProduced, totalWaste, passChecks, failChecks,
+    order, bom: visibleBom, productionLogs, qcChecks, documents, totalProduced, totalWaste, byUnit, passChecks, failChecks,
     // null = this role may not see that leg; [] = it may, and there is nothing behind it.
     purchaseOrders, issuedMaterials,
   };
@@ -75,7 +81,8 @@ export type TraceGrn = {
   grnNumber: string;
   status: string;
   receivedAt: Date | null;
-  lines: { itemName: string; unit: string | null; receivedQty: number }[];
+  /** R2-334: `batchNo` is the supplier's lot / reel number typed on the GRN line (null when none was). */
+  lines: { itemName: string; unit: string | null; receivedQty: number; batchNo: string | null }[];
 };
 export type TracePo = {
   poNumber: string;
@@ -101,7 +108,7 @@ async function loadPurchaseOrders(orderNumber: string, withGrns: boolean): Promi
           grnNumber: true,
           status: true,
           receivedAt: true,
-          items: { select: { receivedQty: true, poItem: { select: { description: true, item: { select: { name: true, unit: true } } } } } },
+          items: { select: { receivedQty: true, batchNo: true, poItem: { select: { description: true, item: { select: { name: true, unit: true } } } } } },
         },
       },
     },
@@ -115,7 +122,7 @@ async function loadPurchaseOrders(orderNumber: string, withGrns: boolean): Promi
           grnNumber: g.grnNumber,
           status: g.status,
           receivedAt: g.receivedAt,
-          lines: g.items.map((i) => ({ itemName: i.poItem.item?.name ?? i.poItem.description, unit: i.poItem.item?.unit ?? null, receivedQty: Number(i.receivedQty) })),
+          lines: g.items.map((i) => ({ itemName: i.poItem.item?.name ?? i.poItem.description, unit: i.poItem.item?.unit ?? null, receivedQty: Number(i.receivedQty), batchNo: i.batchNo ?? null })),
         }))
       : null,
   }));

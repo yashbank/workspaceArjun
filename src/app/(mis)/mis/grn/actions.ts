@@ -50,11 +50,11 @@ export async function discardGrnAction(grnId: string) {
   });
 }
 
-/** `overReceiptReason`: an Admin/Owner's reason to take more than the order + 2% (R3-STK B03). */
-export async function confirmGrnAction(grnId: string, overReceiptReason?: string | null) {
+/** `overReceiptReason`: an Admin/Owner's reason to take more than the order + 2% (R3-STK B03). `idempotencyKey` (R2-291): one per screen open. */
+export async function confirmGrnAction(grnId: string, overReceiptReason?: string | null, idempotencyKey?: string | null) {
   // "Already confirmed", "more than is outstanding" and "add at least one item" must reach the storekeeper as words.
   return asResult(async () => {
-    const confirmed = await confirmGRN(grnId, { overReceiptReason });
+    const confirmed = await confirmGRN(grnId, { overReceiptReason, idempotencyKey });
     revalidatePath(`/mis/grn/${grnId}`);
     revalidatePath('/mis/grn');
     revalidatePath('/mis/inventory');

@@ -86,7 +86,8 @@ export async function getProductionReport(range: ReportRange) {
   const waste = sumByUnit(logs.map((l) => ({ qty: Number(l.qtyWaste ?? 0), unit: l.unit })));
   const totals: ProductionTotal[] = produced.map((p) => {
     const w = waste.find((x) => x.unit === p.unit)?.qty ?? 0;
-    return { unit: p.unit, produced: p.qty, waste: w, wastePct: p.qty > 0 ? Math.round((w / p.qty) * 1000) / 10 : null };
+    // R2-343: waste as a share of total input (P + W), the formula getProductionSummary already uses; 0 produced + waste = 100%.
+    return { unit: p.unit, produced: p.qty, waste: w, wastePct: p.qty + w > 0 ? Math.round((w / (p.qty + w)) * 1000) / 10 : null };
   });
   return { rows: Object.values(byOrder), totals, raw: logs };
 }

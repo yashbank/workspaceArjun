@@ -18,8 +18,23 @@
  * PRICE outranks QTY (red beats amber) when both hold; both flags are still returned.
  */
 
-export const MATCH_STATUSES = ['MATCHED', 'DISCREPANCY_QTY', 'DISCREPANCY_PRICE', 'PENDING_REVIEW'] as const;
+/** R2-335: 'inv-9988 ' on the GRN and 'INV-9988' on the invoice are the same number. */
+export function sameInvoiceNo(a: string | null | undefined, b: string | null | undefined): boolean {
+  const norm = (s: string | null | undefined) => (s ?? '').trim().toUpperCase();
+  return norm(a) !== '' && norm(a) === norm(b);
+}
+
+export const MATCH_STATUSES =['MATCHED', 'DISCREPANCY_QTY', 'DISCREPANCY_PRICE', 'PENDING_REVIEW'] as const;
 export type MatchStatus = (typeof MATCH_STATUSES)[number];
+
+/** R2-288: the states after the match. Owner approves payment; Admin / Owner records it or rejects the invoice. */
+export const PAYMENT_STATUSES = ['APPROVED_FOR_PAYMENT', 'PAID', 'REJECTED'] as const;
+export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
+export type InvoiceStatus = MatchStatus | PaymentStatus;
+export const INVOICE_STATUSES: readonly InvoiceStatus[] = [...MATCH_STATUSES, ...PAYMENT_STATUSES];
+export function isPaymentStatus(status: string): status is PaymentStatus {
+  return (PAYMENT_STATUSES as readonly string[]).includes(status);
+}
 
 /** Units a challan and a receipt may differ by before it is a quantity discrepancy (rounding guard). */
 export const QTY_TOLERANCE = 0.01;
@@ -61,7 +76,17 @@ const toTenThousandths = (n: number) => Math.round(n * 100) * 100;
 const hundredthsTo2dp = (u: number) => Math.round(u) / 100;
 const tenThousandthsTo2dp = (u: number) => Math.round(u / 100) / 100;
 
-export function matchSupplierInvoice(lines: readonly InvoiceMatchLine[], invoiceAmount: number | null | undefined): InvoiceMatchResult {
+/** R2-325: the billed total less GST at `gstPercent` (118000 at 18% -> 100000), to 2 dp; no GST = the amount as typed. */
+export function amountExcludingGst(invoiceAmount: number, gstPercent: number | null | undefined): number {
+  const g = typeof gstPercent === 'number' && Number.isFinite(gstPercent) && gstPercent > 0 ? gstPercent : 0;
+  return Math.round((invoiceAmount / (1 + g / 100)) * 100) / 100;
+}
+
+/**
+ * `gstPercent` (R2-325): when the supplier's tax invoice carries GST, the comparison is made on the amount
+ * EXCLUDING it, since PO rates are ex-GST; `invoiceAmount` in the result is that ex-GST figure.
+ */
+export function matchSupplierInvoice(lines: readonly InvoiceMatchLine[], invoiceAmount: number | null | undefined, gstPercent?: number | null): InvoiceMatchResult {
   let received = 0;
   let billed = 0;
   let billedReceived = 0;
@@ -84,7 +109,7 @@ export function matchSupplierInvoice(lines: readonly InvoiceMatchLine[], invoice
   }
 
   const hasAmount = typeof invoiceAmount === 'number' && Number.isFinite(invoiceAmount);
-  const invoiced = hasAmount ? toTenThousandths(invoiceAmount as number) : 0;
+  const invoiced = hasAmount ? toTenThousandths(amountExcludingGst(invoiceAmount as number, gstPercent)) : 0;
   const variance = invoiced - expected;
   const tolerance = Math.max(toTenThousandths(PRICE_TOLERANCE_ABS), Math.round((expected * PRICE_TOLERANCE_PCT) / 100));
   const priceDiscrepancy = lines.length > 0 && hasAmount && Math.abs(variance) > tolerance;

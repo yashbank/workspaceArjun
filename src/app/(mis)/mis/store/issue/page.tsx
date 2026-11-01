@@ -3,6 +3,7 @@ import { getFactoryTimezone } from '@/server/mis/business-rules';
 import { IssueScreen } from '@/components/mis/store/issue-screen';
 import { RaiseRequestInstead } from '@/components/mis/store/raise-request-instead';
 import { checkPermission } from '@/server/mis/auth';
+import { getMisRole } from '@/server/mis/roles';
 import { requireMisAccess } from '@/server/mis/guard';
 import { listCostCenters, listIssueTargets, listPickerItems } from '@/server/mis/store';
 import { listOpenOrderAllocations, listOpenOrderBomMaterials } from '@/server/mis/order-allocation';
@@ -35,6 +36,7 @@ export default async function StoreIssuePage() {
       costCenters={costCenters}
       allocations={allocations}
       bomMaterials={bomMaterials}
+      canOverrideQuota={['OWNER', 'SUPERVISOR'].includes((await getMisRole(user.id)) ?? '')}
     />
   );
 }

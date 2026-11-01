@@ -33,3 +33,25 @@ describe('R2-82 Combobox', () => {
     expect(screen.queryByRole('listbox')).toBeNull();
   });
 });
+
+describe('R2-354 keyboard: Tab (blur) and Escape both close the list', () => {
+  it('blur closes the list and drops the half-typed query', () => {
+    render(<Combobox label="Department" value={null} options={options} onChange={vi.fn()} />);
+    const input = screen.getByRole('combobox', { name: 'Department' }) as HTMLInputElement;
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: 'pol' } });
+    expect(screen.getByRole('listbox')).toBeTruthy();
+    fireEvent.blur(input);
+    expect(screen.queryByRole('listbox')).toBeNull();
+    expect(input.value).toBe('');
+  });
+  it('the clearable "None" row calls onChange("") and closes (R2-353)', () => {
+    const onChange = vi.fn();
+    render(<Combobox label="Order" value="a" clearable options={options} onChange={onChange} />);
+    const input = screen.getByRole('combobox', { name: 'Order' });
+    fireEvent.focus(input);
+    fireEvent.mouseDown(screen.getByRole('option', { name: 'None' }));
+    expect(onChange).toHaveBeenCalledWith('');
+    expect(screen.queryByRole('listbox')).toBeNull();
+  });
+});

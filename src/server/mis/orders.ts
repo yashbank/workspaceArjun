@@ -208,7 +208,8 @@ async function computeCloseGates(orderId: string): Promise<CloseGate[]> {
   const [phases, qcChecks, productionCount, order] = await Promise.all([
     db.misJobPhase.findMany({ where: { orderId, deletedAt: null }, select: { status: true } }),
     db.misQcCheck.findMany({ where: { orderId, voidedAt: null }, select: { bomStageId: true, parameterName: true, result: true, checkTime: true } }),
-    db.misProductionLog.count({ where: { orderId, voidedAt: null } }),
+    // R2-327: a 0-quantity entry (stoppage, make-ready) is allowed but does not count as production.
+    db.misProductionLog.count({ where: { orderId, voidedAt: null, qtyProduced: { gt: 0 } } }),
     db.misOrder.findUnique({ where: { id: orderId }, select: { quantity: true, unit: true } }),
   ]);
   // R2-264: produced in the order's own unit only; an order with no target (pre-column rows) is not gated on it.

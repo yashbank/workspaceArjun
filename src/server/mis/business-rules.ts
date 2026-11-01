@@ -1,4 +1,4 @@
-import type { AqlThresholds } from '@/lib/mis/aql';
+import { AQL_MAJOR_LIMIT_KEY, AQL_MINOR_LIMIT_KEY, DEFAULT_AQL_MAJOR_LIMIT, DEFAULT_AQL_MINOR_LIMIT, type AqlThresholds } from '@/lib/mis/aql';
 import { can } from '@/lib/mis/permissions';
 import { isWageRuleKey, isPayrollPolicyRuleKey, type WageRuleKey } from '@/lib/mis/rule-keys';
 import { dbDateKey } from '@/lib/mis/attendance-month';
@@ -25,6 +25,14 @@ const AQL_DEFAULTS: Record<AqlRuleKey, { value: string; label: string; descripti
   AQL_MINOR_MAX: { value: '5', label: 'AQL minor defect max', description: 'Max allowed minor defects in a sample before it rejects.' },
 };
 
+/** R2-314: the Z1.4 acceptable-quality limits, Major and Minor, Owner-only like the thresholds above. */
+const AQL_LIMIT_KEYS = [AQL_MAJOR_LIMIT_KEY, AQL_MINOR_LIMIT_KEY] as const;
+const AQL_LIMIT_DEFAULTS: Record<(typeof AQL_LIMIT_KEYS)[number], { value: string; label: string; description: string }> = {
+  AQL_MAJOR_LIMIT: { value: String(DEFAULT_AQL_MAJOR_LIMIT), label: 'AQL limit — major defects', description: 'Z1.4 acceptable quality limit (%) for major defects when a lot size is given.' },
+  AQL_MINOR_LIMIT: { value: String(DEFAULT_AQL_MINOR_LIMIT), label: 'AQL limit — minor defects', description: 'Z1.4 acceptable quality limit (%) for minor (cosmetic) defects when a lot size is given.' },
+};
+const isAqlLimitKey = (ruleKey: string): ruleKey is (typeof AQL_LIMIT_KEYS)[number] => (AQL_LIMIT_KEYS as readonly string[]).includes(ruleKey);
+
 /** Creates each AQL rule's first row if it has never been set. Idempotent. */
 async function ensureAqlDefaults() {
   for (const ruleKey of AQL_RULE_KEYS) {
@@ -35,6 +43,20 @@ async function ensureAqlDefaults() {
       data: { ruleKey, ruleValue: value, valueType: 'number', label, description, effectiveFrom: new Date() },
     });
   }
+}
+
+/** R2-314: the two AQL limit rows (created on first read), for the Owner-only AQL screen. */
+export async function getAqlLimitRules() {
+  await requirePermission('aql.read');
+  for (const ruleKey of AQL_LIMIT_KEYS) {
+    const existing = await db.misBusinessRule.findFirst({ where: { ruleKey } });
+    if (existing) continue;
+    const { value, label, description } = AQL_LIMIT_DEFAULTS[ruleKey];
+    await db.misBusinessRule.create({ data: { ruleKey, ruleValue: value, valueType: 'number', label, description, effectiveFrom: new Date() } });
+  }
+  const rows = await db.misBusinessRule.findMany({ where: { ruleKey: { in: [...AQL_LIMIT_KEYS] } }, orderBy: [{ ruleKey: 'asc' }, { effectiveFrom: 'desc' }] });
+  const seen = new Set<string>();
+  return rows.filter((r) => { if (seen.has(r.ruleKey)) return false; seen.add(r.ruleKey); return true; });
 }
 
 /**
@@ -339,7 +361,7 @@ export async function getBusinessRules() {
   // those are edited from the Owner-only /mis/settings/aql screen instead.
   const seen = new Set<string>();
   return rows
-    .filter((r) => !isAqlRuleKey(r.ruleKey) && !HIDDEN_RULE_KEYS.includes(r.ruleKey))
+    .filter((r) => !isAqlRuleKey(r.ruleKey) && !isAqlLimitKey(r.ruleKey) && !HIDDEN_RULE_KEYS.includes(r.ruleKey))
     .filter((r) => mayReadWages || !(isWageRuleKey(r.ruleKey) || isPayrollPolicyRuleKey(r.ruleKey)))
     .filter(r => { if (seen.has(r.ruleKey)) return false; seen.add(r.ruleKey); return true; })
     .map((r) => (r.ruleKey === LATE_RULE_WORKERS_KEY ? { ...r, description: LATE_RULE_WORKERS_DESCRIPTION } : r));
@@ -351,7 +373,7 @@ export async function updateBusinessRule(ruleKey: string, ruleValue: string) {
   // gate: an AQL threshold needs aql.read (D6) and a wage rate needs wages.read (S9 / D24). Without
   // this an Admin could rewrite the rates and thresholds that the dedicated Owner-only screens
   // exist to protect (F-03).
-  if (isAqlRuleKey(ruleKey)) await requirePermission('aql.read', ruleKey);
+  if (isAqlRuleKey(ruleKey) || isAqlLimitKey(ruleKey)) await requirePermission('aql.read', ruleKey);
   else if (isWageRuleKey(ruleKey) || isPayrollPolicyRuleKey(ruleKey) || OWNER_ONLY_RULE_KEYS.includes(ruleKey)) await requirePermission('wages.read', ruleKey);
   // A timezone that is not a real IANA name would silently mis-file every punch from
   // now on, so it is refused here rather than discovered in a payroll dispute (D22).
@@ -418,7 +440,7 @@ export async function getAqlThresholdRules() {
 
 export async function updateAqlThreshold(ruleKey: string, ruleValue: string) {
   const actor = await requirePermission('aql.read');
-  if (!isAqlRuleKey(ruleKey)) throw new Error(`${ruleKey} is not an AQL threshold`);
+  if (!isAqlRuleKey(ruleKey) && !isAqlLimitKey(ruleKey)) throw new Error(`${ruleKey} is not an AQL threshold`);
   return createRuleRevision(ruleKey, ruleValue, actor.userId);
 }
 

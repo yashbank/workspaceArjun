@@ -1,5 +1,6 @@
 import type { MisWorkerAllocation } from '@/generated/prisma/client';
 import {
+  CREW_BACKDATE_DAYS,
   bookingIntersectsShift,
   instantAtAxisMinute,
   isDateKey,
@@ -33,7 +34,8 @@ import { resolveVisibleEmployeeWhere } from '@/server/mis/visibility';
  * attendance table stores for that day.
  */
 
-const WORKABLE_ROLES = ['WORKER', 'QC'] as const;
+// R2-332: a lead operator who holds SUPERVISOR for tablet access can still be booked as crew.
+const WORKABLE_ROLES = ['WORKER', 'QC', 'SUPERVISOR'] as const;
 
 /** Mirrors PRESENT_STATUSES in attendance.ts — small enough that importing it is not worth the coupling. */
 const PRESENT_STATUSES = ['PRESENT', 'HALF_DAY', 'LATE'];
@@ -85,6 +87,8 @@ export type AssignWorkersInput = {
   confirmWarnings?: boolean;
   /** ADMIN/OWNER only: create people who are BLOCKED (overlap, on leave), with a reason of 3+ characters. */
   override?: { reason: string };
+  /** R2-333: ADMIN/OWNER only: why a crew is booked on a past shift (up to 3 days back). */
+  backdateReason?: string;
   notes?: string;
 };
 
@@ -117,14 +121,23 @@ async function loadActiveShift(client: Pick<typeof db, 'misShift'>, shiftId: str
   return shift;
 }
 
-/** today <= date <= today+7; a night shift still running after midnight may be yesterday's (R3 B92). */
-function assertDateInRange(dateKey: string, shift: ShiftRow, now: Date, tz: string): void {
+
+/**
+ * today <= date <= today+7; a night shift still running after midnight may be yesterday's (R3 B92).
+ * R2-333: an ADMIN/OWNER may also pick up to CREW_BACKDATE_DAYS back, with `backdateReason` (3+ chars).
+ * Returns true when the date is a back-date (so the audit row says so).
+ */
+function assertDateInRange(dateKey: string, shift: ShiftRow, now: Date, tz: string, actor: MisActor, backdateReason?: string): boolean {
   if (!isDateKey(dateKey)) throw new Error('That date is not valid.');
   const today = factoryDateKey(now, tz);
   const earliest = shiftDateKeyFor(shift, now, tz) < today ? shiftDateKeyFor(shift, now, tz) : today;
-  if (dateKey < earliest || dateKey > addDaysToDateKey(today, 7)) {
-    throw new Error('Pick a date from today to 7 days ahead.');
+  if (dateKey > addDaysToDateKey(today, 7)) throw new Error('Pick a date from today to 7 days ahead.');
+  if (dateKey >= earliest) return false;
+  if (!OVERRIDE_ROLES.includes(actor.role) || dateKey < addDaysToDateKey(today, -CREW_BACKDATE_DAYS)) {
+    throw new Error(`Pick a date from today to 7 days ahead. An Admin or the Owner may book a past shift up to ${CREW_BACKDATE_DAYS} days back, with a reason.`);
   }
+  if ((backdateReason?.trim().length ?? 0) < 3) throw new Error('Booking a crew on a past shift needs a reason of at least 3 characters.');
+  return true;
 }
 
 /** Is `dateKey`'s shift happening now, so attendance and "ended" bookings are about right now? */
@@ -199,7 +212,7 @@ async function assignCore(actor: MisActor, input: AssignWorkersInput, now: Date)
   const tz = await getFactoryTimezone();
   const shift = await loadActiveShift(db, input.shiftId);
   const dateKey = input.allocationDate ?? factoryDateKey(now, tz);
-  assertDateInRange(dateKey, shift, now, tz);
+  const backdated = assertDateInRange(dateKey, shift, now, tz, actor, input.backdateReason);
   if (!bookingIntersectsShift(machineAllocation, dateKey, shift, tz)) {
     throw new Error('That booking does not run during this shift on this date.');
   }
@@ -346,6 +359,8 @@ async function assignCore(actor: MisActor, input: AssignWorkersInput, now: Date)
           shiftId: input.shiftId,
           dateKey,
           confirmedWarnings: conflicts.length > 0 && !overridden,
+          // R2-333: a past-shift booking says so and carries its reason.
+          ...(backdated ? { backdated: true, backdateReason: input.backdateReason?.trim() } : {}),
         },
       });
       if (overridden) {

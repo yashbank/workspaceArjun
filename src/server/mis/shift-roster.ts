@@ -2,7 +2,7 @@ import { db } from '@/server/db';
 import { requirePermission } from '@/server/mis/auth';
 import { logAuditEvent } from '@/server/mis/audit';
 import { dateKeyToDbDate } from '@/lib/mis/factory-time';
-import { resolveShiftForDate, rosterRangesOverlap } from '@/lib/mis/shift-roster';
+import { cutRosterRange, resolveShiftForDate, rosterRangesOverlap } from '@/lib/mis/shift-roster';
 
 /** R2-214: dated shift roster. Read = attendance.read, write = attendance.write (same gate as shift management). */
 
@@ -30,7 +30,18 @@ export async function listRosterEmployees() {
   });
 }
 
-export async function assignRoster(input: { employeeIds: string[]; shiftId: string; startDate: string; endDate: string }) {
+export type AssignRosterResult = {
+  count: number;
+  /** R2-337: set (and count = 0) when existing entries overlap and `replaceOverlaps` was not given: the screen confirms first. */
+  overlaps?: string[];
+};
+
+/**
+ * R2-337: with `replaceOverlaps`, an existing entry that overlaps the new range is cut around it
+ * (its earlier days and later days survive as their own entries; a fully covered entry goes),
+ * so history is kept and nobody has to delete a month to change one week.
+ */
+export async function assignRoster(input: { employeeIds: string[]; shiftId: string; startDate: string; endDate: string; replaceOverlaps?: boolean }): Promise<AssignRosterResult> {
   const actor = await requirePermission('roster.write'); // R2-263: Supervisor too
   const employeeIds = [...new Set(input.employeeIds ?? [])];
   if (employeeIds.length === 0) throw new Error('Pick at least one employee');
@@ -43,19 +54,42 @@ export async function assignRoster(input: { employeeIds: string[]; shiftId: stri
   const people = await db.misEmployee.findMany({ where: { id: { in: employeeIds }, deletedAt: null, isActive: true }, select: { id: true, name: true } });
   if (people.length !== employeeIds.length) throw new Error('One of the selected employees is not active');
 
-  const existing = await db.misShiftRoster.findMany({ where: { employeeId: { in: employeeIds } }, select: { employeeId: true, startDate: true, endDate: true } });
-  const clashing = people.filter((p) => existing.some((r) => r.employeeId === p.id && rosterRangesOverlap(r, input)));
-  if (clashing.length > 0) {
-    throw new Error(`Already rostered in that range: ${clashing.map((p) => p.name).join(', ')}. Remove the old entry first.`);
+  const existing = await db.misShiftRoster.findMany({ where: { employeeId: { in: employeeIds } }, select: { id: true, employeeId: true, shiftId: true, startDate: true, endDate: true } });
+  const overlapping = existing.filter((r) => rosterRangesOverlap(r, input));
+  const clashing = people.filter((p) => overlapping.some((r) => r.employeeId === p.id));
+  if (clashing.length > 0 && !input.replaceOverlaps) {
+    // R2-337: not an error any more; the screen asks "cut the old entries?" and calls again with replaceOverlaps.
+    return { count: 0, overlaps: clashing.map((p) => p.name) };
   }
 
-  const created = await db.$transaction(
-    employeeIds.map((employeeId) =>
+  // R2-337: cut each overlapping entry around the new range; the surviving head/tail keep the old shift.
+  const cuts = overlapping.flatMap((r) => {
+    const { head, tail } = cutRosterRange(r, input);
+    const keep = (range: { startDate: string; endDate: string }) => ({ employeeId: r.employeeId, shiftId: r.shiftId, startDate: dateKeyToDbDate(range.startDate), endDate: dateKeyToDbDate(range.endDate), createdBy: actor.userId });
+    return [
+      head ? db.misShiftRoster.update({ where: { id: r.id }, data: { startDate: keep(head).startDate, endDate: keep(head).endDate } }) : db.misShiftRoster.delete({ where: { id: r.id } }),
+      ...(tail ? [db.misShiftRoster.create({ data: keep(tail) })] : []),
+    ];
+  });
+  const written = await db.$transaction([
+    ...cuts,
+    ...employeeIds.map((employeeId) =>
       db.misShiftRoster.create({
         data: { employeeId, shiftId: input.shiftId, startDate: dateKeyToDbDate(input.startDate), endDate: dateKeyToDbDate(input.endDate), createdBy: actor.userId },
       }),
     ),
-  );
+  ]);
+  const created = written.slice(cuts.length) as Array<{ id: string; employeeId: string; shiftId: string }>;
+  for (const r of overlapping) {
+    await logAuditEvent({
+      actorId: actor.userId,
+      action: 'CUT_SHIFT_ROSTER',
+      entity: 'MisShiftRoster',
+      entityId: r.id,
+      before: { employeeId: r.employeeId, shiftId: r.shiftId, startDate: keyOf(r.startDate), endDate: keyOf(r.endDate) },
+      after: { ...cutRosterRange(r, input), replacedBy: { shiftId: input.shiftId, startDate: input.startDate, endDate: input.endDate } },
+    });
+  }
   for (const r of created) {
     await logAuditEvent({
       actorId: actor.userId,

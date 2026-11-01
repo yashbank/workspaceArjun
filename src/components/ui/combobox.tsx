@@ -74,6 +74,8 @@ export function Combobox({ label, value, options, onChange, placeholder = 'Type 
         onClick={() => setOpen(true)}
         onChange={(e) => { setQuery(e.target.value); setOpen(true); setActive(0); }}
         onKeyDown={onKey}
+        // R2-354: Tab (or any focus move) closes the list; option rows use onMouseDown + preventDefault, so a click never blurs first.
+        onBlur={() => { setOpen(false); setQuery(''); }}
         className={cn(
           'min-h-12 w-full rounded-lg border bg-white px-3 text-base text-slate-900 placeholder:text-slate-500',
           error ? 'border-red-500' : 'border-slate-300',

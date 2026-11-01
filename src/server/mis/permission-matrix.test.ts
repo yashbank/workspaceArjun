@@ -42,6 +42,7 @@ const employee = await import('./employee');
 const users = await import('./users');
 const wageType = await import('./wage-type');
 const rules = await import('./business-rules');
+const advances = await import('./salary-advance'); // R2-324
 const payroll = await import('./payroll');
 const reports = await import('./reports');
 const payComponents = await import('./pay-components');
@@ -96,6 +97,11 @@ const TABLE: Entry[] = [
   { module: 'business-rules.ts', name: 'updateBusinessRule', requires: 'settings.write', call: () => rules.updateBusinessRule('k', 'v') },
   { module: 'business-rules.ts', name: 'getWageRuleHistory', requires: 'wages.read', call: () => rules.getWageRuleHistory('DAILY_WAGE_DEFAULT') },
   { module: 'business-rules.ts', name: 'getAqlThresholdRules', requires: 'aql.read', call: () => rules.getAqlThresholdRules() },
+  { module: 'business-rules.ts', name: 'getAqlLimitRules', requires: 'aql.read', call: () => rules.getAqlLimitRules() }, // R2-314
+  // R2-324: salary advances are pay figures: Owner only.
+  { module: 'salary-advance.ts', name: 'listSalaryAdvances', requires: 'wages.read', call: () => advances.listSalaryAdvances(2026, 1) },
+  { module: 'salary-advance.ts', name: 'recordSalaryAdvance', requires: 'wages.read', call: () => advances.recordSalaryAdvance({ employeeId: 'e1', year: 2026, month: 1, amount: 100 }) },
+  { module: 'salary-advance.ts', name: 'deleteSalaryAdvance', requires: 'wages.read', call: () => advances.deleteSalaryAdvance('a1') },
   { module: 'business-rules.ts', name: 'updateAqlThreshold', requires: 'aql.read', call: () => rules.updateAqlThreshold('AQL_MAJOR_MAX', '1') },
   // D12: scheduling a change to ANY rule is the Owner's (wages.read is the Owner marker, D24/D25).
   { module: 'business-rules.ts', name: 'scheduleBusinessRule', requires: 'wages.read', call: () => rules.scheduleBusinessRule({ ruleKey: 'k', ruleValue: '1', effectiveFrom: '2099-01-01', reason: 'For the test' }) },
@@ -155,6 +161,10 @@ const TABLE: Entry[] = [
   { module: 'supplier-invoice.ts', name: 'reconcilePO', requires: 'po.read', call: () => supplierInvoice.reconcilePO('po1') },
   { module: 'supplier-invoice.ts', name: 'listSupplierInvoices', requires: 'supplier_invoice.read', call: () => supplierInvoice.listSupplierInvoices() },
   { module: 'supplier-invoice.ts', name: 'listSupplierInvoicesPage', requires: 'supplier_invoice.read', call: () => supplierInvoice.listSupplierInvoicesPage() },
+  // R2-288: payment states — the Owner approves, Admin/Owner records or rejects.
+  { module: 'supplier-invoice.ts', name: 'approveInvoiceForPayment', requires: 'wages.read', call: () => supplierInvoice.approveInvoiceForPayment('inv1') },
+  { module: 'supplier-invoice.ts', name: 'markInvoicePaid', requires: 'supplier_invoice.write', call: () => supplierInvoice.markInvoicePaid('inv1', { paymentDate: '2026-11-01', paymentRef: 'UTR1' }) },
+  { module: 'supplier-invoice.ts', name: 'rejectSupplierInvoice', requires: 'supplier_invoice.write', call: () => supplierInvoice.rejectSupplierInvoice('inv1', 'duplicate') },
   // R2-37 — QC may VIEW PO / GRN read-only: po.view / grn.view (QC holds neither po.read nor any write).
   { module: 'grn.ts', name: 'listGRNs', requires: 'grn.view', call: () => grn.listGRNs() },
   { module: 'grn.ts', name: 'listGRNsPage', requires: 'grn.view', call: () => grn.listGRNsPage({}) },
@@ -170,6 +180,7 @@ const TABLE: Entry[] = [
   { module: 'material-request.ts', name: 'createMaterialRequest', requires: 'store.read', call: () => materialRequest.createMaterialRequest([{ itemId: 'i1', qty: 1 }], { general: { reason: 'grease', costCenter: 'Press' } }) },
   { module: 'material-request.ts', name: 'approveMaterialRequest', requires: 'store.write', call: () => materialRequest.approveMaterialRequest('r1', []) },
   { module: 'material-request.ts', name: 'approveMaterialRequestForPicking', requires: 'store.write', call: () => materialRequest.approveMaterialRequestForPicking('r1', []) },
+  { module: 'material-request.ts', name: 'issueMaterialRequestBalance', requires: 'store.write', call: () => materialRequest.issueMaterialRequestBalance('r1', []) }, // R2-286
   { module: 'material-request.ts', name: 'rejectMaterialRequest', requires: 'store.write', call: () => materialRequest.rejectMaterialRequest('r1', 'no') },
   { module: 'pick-list.ts', name: 'listPickLists', requires: 'store.read', call: () => pickList.listPickLists() },
   { module: 'pick-list.ts', name: 'getPickList', requires: 'store.read', call: () => pickList.getPickList('p1') },

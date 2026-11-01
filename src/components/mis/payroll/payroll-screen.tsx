@@ -260,6 +260,13 @@ export function PayrollScreen({ rows: payroll, year, month, period, preflight, r
       >
         Download wage ledger (amounts) — {MONTHS[month - 1]}
       </a>
+      {/* R2-324: advances to recover this month live on their own Owner-only page (this screen carries no money, W9). */}
+      <Link
+        href={`/mis/payroll/advances?year=${year}&month=${month}`}
+        className="inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+      >
+        Salary advances to recover — {MONTHS[month - 1]}
+      </Link>
       {/* R2-110: the bank transfer file (account no., IFSC, amount) — also streamed by the server, Owner only. */}
       <a
         href={`/api/mis/payroll/bank-transfer?year=${year}&month=${month}`}

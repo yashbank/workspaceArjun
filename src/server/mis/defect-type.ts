@@ -26,15 +26,22 @@ export async function getDefectType(id: string) {
 
 export async function createDefectType(input: DefectTypeInput) {
   const actor = await requirePermission('masters.write');
-  const created = await db.misDefectType.create({
-    data: {
-      code: input.code.trim().toUpperCase(),
-      name: input.name.trim(),
-      nameHi: input.nameHi?.trim() || null,
-      severity: input.severity,
-      sortOrder: input.sortOrder ?? 0,
-    },
-  });
+  const data = {
+    code: input.code.trim().toUpperCase(),
+    name: input.name.trim(),
+    nameHi: input.nameHi?.trim() || null,
+    severity: input.severity,
+    sortOrder: input.sortOrder ?? 0,
+  };
+  // R2-313: the code is unique across soft-deleted rows too, so re-creating a deleted code restores
+  // that row with the new details instead of tripping the unique constraint.
+  const deleted = await db.misDefectType.findFirst({ where: { code: data.code, deletedAt: { not: null } } });
+  if (deleted) {
+    const after = await db.misDefectType.update({ where: { id: deleted.id }, data: { ...data, deletedAt: null, isActive: true } });
+    await logAuditEvent({ actorId: actor.userId, action: 'defectType.restore', entity: 'MisDefectType', entityId: deleted.id, before: deleted, after });
+    return after;
+  }
+  const created = await db.misDefectType.create({ data });
   await logAuditEvent({ actorId: actor.userId, action: 'defectType.create', entity: 'MisDefectType', entityId: created.id, after: created });
   return created;
 }

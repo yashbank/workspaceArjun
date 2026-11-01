@@ -44,7 +44,7 @@ export function RequestScreen({ header, items, orders, departments, costCenters 
   }
 
   return (
-    <HomeStack>
+    <HomeStack wide>
       <HeaderCard title={header.title} meta={header.meta} />
       {done && (
         <OkCard>

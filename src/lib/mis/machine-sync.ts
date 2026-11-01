@@ -65,7 +65,12 @@ export type SyncDecision =
   | { kind: 'COVERED'; booking: SyncBooking }
   | { kind: 'CONFLICT'; booking: SyncBooking }
   | { kind: 'SCHEDULED_OTHER'; booking: SyncBooking }
+  /** R2-339: the same order's booking ended just before the log (press ran late): extend it to the log, no second block. */
+  | { kind: 'EXTEND'; booking: SyncBooking }
   | { kind: 'CREATE' };
+
+/** R2-339: a log this soon after a same-order booking ended extends that booking instead of opening a duplicate. */
+export const LATE_ENTRY_GRACE_MS = 60 * 60 * 1000;
 
 export function decideMachineSync(
   log: { machineId: string; orderId: string; at: Date },
@@ -80,6 +85,10 @@ export function decideMachineSync(
   const running = covering.find((b) => b.source === 'PRODUCTION_LOG');
   if (running) return { kind: 'CONFLICT', booking: running };
   if (covering.length > 0) return { kind: 'SCHEDULED_OTHER', booking: covering[0] };
+  const justEnded = bookings
+    .filter((b) => b.machineId === log.machineId && !b.releasedAt && b.orderId === log.orderId && b.endsAt.getTime() < t && t - b.endsAt.getTime() <= LATE_ENTRY_GRACE_MS)
+    .sort((a, b) => b.endsAt.getTime() - a.endsAt.getTime())[0];
+  if (justEnded) return { kind: 'EXTEND', booking: justEnded };
   return { kind: 'CREATE' };
 }
 

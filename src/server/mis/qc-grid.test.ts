@@ -162,7 +162,9 @@ describe('lines, machines and cells', () => {
     const v = await getQcHourlyGrid({}, NOW);
     expect(v.grid!.rows.map((r) => r.orderNumber)).toEqual(['ORD-099', 'ORD-117', 'ORD-118']);
     const idle = v.grid!.rows.find((r) => r.orderNumber === 'ORD-117')!;
-    expect(idle.cells.every((c) => c.state === 'never')).toBe(true); // running, never checked: nine missed hours, said plainly
+    // R2-317: in production but on no machine: "not on a machine", nothing due (was nine false missed hours).
+    expect(idle.unbooked).toBe(true);
+    expect(idle.cells.every((c) => c.state === 'off')).toBe(true);
   });
 
   it('a line booked mid-shift has its earlier hours NOT RUNNING, from the booking', async () => {
@@ -172,8 +174,8 @@ describe('lines, machines and cells', () => {
     const v = await getQcHourlyGrid({}, NOW);
     const row = v.grid!.rows.find((r) => r.orderNumber === 'ORD-118')!;
     expect(row.cells.map((c) => c.state)).toEqual(['off', 'off', 'off', 'off', 'off', 'off', 'off', 'off', 'never']);
-    // ORD-117 has no booking: its run window is unknown, so every hour is due.
-    expect(v.grid!.rows.find((r) => r.orderNumber === 'ORD-117')!.cells.every((c) => c.state === 'never')).toBe(true);
+    // ORD-117 has no booking: R2-317 — not on a machine, nothing due.
+    expect(v.grid!.rows.find((r) => r.orderNumber === 'ORD-117')!.cells.every((c) => c.state === 'off')).toBe(true);
   });
 
   it('an order in production but booked ONLY on another shift has nothing due in this one', async () => {
@@ -183,9 +185,9 @@ describe('lines, machines and cells', () => {
     world.allocations = [{ orderId: 'o1', startsAt: ist('08:00'), endsAt: ist('12:00'), machine: { name: 'Heidelberg SM 74' } }]; // day shift only
     const v = await getQcHourlyGrid({ shiftId: 's2', date: '2026-09-05' }, ist('01:00', '2026-09-06')); // the night shift is running
     expect(v.grid!.rows.find((r) => r.orderNumber === 'ORD-118')!.cells.every((c) => c.state === 'off')).toBe(true);
-    const unknown = v.grid!.rows.find((r) => r.orderNumber === 'ORD-117')!.cells.map((c) => c.state); // never booked: unknown window, every hour due
-    expect(unknown.slice(0, 3)).toEqual(['never', 'never', 'never']); // 22:00, 23:00, 00:00 have ended
-    expect(unknown).not.toContain('off');
+    const unbooked = v.grid!.rows.find((r) => r.orderNumber === 'ORD-117')!; // never booked: R2-317 — not on a machine, nothing due
+    expect(unbooked.unbooked).toBe(true);
+    expect(unbooked.cells.every((c) => c.state === 'off')).toBe(true);
   });
 
   it('looking BACK: a finished order booked that day is a line; an order in production TODAY with no booking is not', async () => {

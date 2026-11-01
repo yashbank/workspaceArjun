@@ -161,6 +161,9 @@ export async function approveMaterialRequest(id: string, decisions: ApproveLineI
   });
   const cart: CartLineInput[] = issued.filter((l) => l.qty > 0).map((l) => ({ itemId: l.itemId, qty: l.qty }));
   if (cart.length === 0) throw new Error('Nothing to issue — set at least one quantity above zero, or reject the request.');
+  // R2-286: issuing less than asked keeps the balance open as PARTIALLY_ISSUED; the Store issues the rest later.
+  const partial = req.lines.some((line) => (issued.find((l) => l.lineId === line.id)?.qty ?? 0) < line.requestedQty.toNumber());
+  const nextStatus = partial ? 'PARTIALLY_ISSUED' : 'APPROVED';
 
   // B20 — the PENDING -> APPROVED claim, the stock movement and the per-line quantities are ONE transaction (the issue's
   // own). If the issue fails (short stock, a closed order) nothing is claimed: the note stays PENDING and no audit row
@@ -175,7 +178,7 @@ export async function approveMaterialRequest(id: string, decisions: ApproveLineI
     inTransaction: async (tx) => {
       const claimed = await tx.misMaterialRequest.updateMany({
         where: { id, status: 'PENDING' },
-        data: { status: 'APPROVED', decidedById: actor.userId, decidedAt: new Date(), decisionNote: note?.trim() || null },
+        data: { status: nextStatus, decidedById: actor.userId, decidedAt: new Date(), decisionNote: note?.trim() || null },
       });
       if (claimed.count !== 1) throw new Error('Request was decided by someone else just now.');
       for (const l of issued) {
@@ -189,7 +192,7 @@ export async function approveMaterialRequest(id: string, decisions: ApproveLineI
     entity: 'MisMaterialRequest',
     entityId: id,
     before: { status: 'PENDING' },
-    after: { status: 'APPROVED', reference: result.reference, lineCount: result.lineCount, totalQty: String(result.totalQty) },
+    after: { status: nextStatus, reference: result.reference, lineCount: result.lineCount, totalQty: String(result.totalQty) },
   });
   // R2-67: the Supervisor who asked hears the decision; R2-80: Owner + Admin hear about an approved General-use issue.
   await notifyRequestDecided(req.requestedById, { requestId: id, requestNumber: req.requestNumber, decision: 'APPROVED', note: note?.trim() || null });
@@ -262,4 +265,51 @@ export async function approveMaterialRequestForPicking(id: string, decisions: Ap
   await notifyRequestDecided(req.requestedById, { requestId: id, requestNumber: req.requestNumber, decision: 'APPROVED', note: note?.trim() || null, pickList: true });
   await notifyGeneralUse(actor.userId, generalFromRow(req), { reference: req.requestNumber, kind: 'request', requestId: id });
   return { pickListId: list.id };
+}
+
+/**
+ * R2-286: issue (some of) the balance of a PARTIALLY_ISSUED request. Each line may take up to what is still owed
+ * (requested - issued so far); the request turns APPROVED once every line is fully issued, else stays partial.
+ * Same transaction shape as the first approval: the stock movement and the per-line bookkeeping commit together.
+ */
+export async function issueMaterialRequestBalance(id: string, decisions: ApproveLineInput[], note?: string | null) {
+  const actor = await requirePermission('store.write');
+  const req = await db.misMaterialRequest.findUnique({ where: { id }, include: { lines: true } });
+  if (!req) throw new Error('Request not found');
+  if (req.status !== 'PARTIALLY_ISSUED') throw new Error(`Request is ${req.status.toLowerCase().replace(/_/g, ' ')}; only a partially issued request has a balance to issue.`);
+  const byLine = new Map(decisions.map((d) => [d.lineId, d.actualIssuedQty]));
+  const plan = req.lines.map((line) => {
+    const owed = roundQty(line.requestedQty.toNumber() - Number(line.actualIssuedQty ?? 0));
+    const qty = cappedIssueQty(owed, roundQty(Number(byLine.get(line.id) ?? 0)));
+    return { lineId: line.id, itemId: line.itemId, qty, owed, issuedBefore: Number(line.actualIssuedQty ?? 0) };
+  });
+  const cart: CartLineInput[] = plan.filter((l) => l.qty > 0).map((l) => ({ itemId: l.itemId, qty: l.qty }));
+  if (cart.length === 0) throw new Error('Nothing to issue — set at least one balance quantity above zero.');
+  const fullyIssued = plan.every((l) => l.qty >= l.owed);
+  const nextStatus = fullyIssued ? 'APPROVED' : 'PARTIALLY_ISSUED';
+  const result = await commitIssue(cart, {
+    orderId: req.orderId,
+    departmentId: req.departmentId,
+    general: generalOf(req),
+    materialRequestId: id,
+    skipGeneralNotice: true,
+    notes: `${req.requestNumber} · balance${note?.trim() ? ` · ${note.trim()}` : ''}`,
+    inTransaction: async (tx) => {
+      const claimed = await tx.misMaterialRequest.updateMany({ where: { id, status: 'PARTIALLY_ISSUED' }, data: { status: nextStatus } });
+      if (claimed.count !== 1) throw new Error('This request was changed by someone else just now.');
+      for (const l of plan) {
+        if (l.qty > 0) await tx.misMaterialRequestLine.update({ where: { id: l.lineId }, data: { actualIssuedQty: roundQty(l.issuedBefore + l.qty) } });
+      }
+    },
+  });
+  await logAuditEvent({
+    actorId: actor.userId,
+    action: 'material_request.issue_balance',
+    entity: 'MisMaterialRequest',
+    entityId: id,
+    before: { status: 'PARTIALLY_ISSUED' },
+    after: { status: nextStatus, reference: result.reference, lineCount: result.lineCount, totalQty: String(result.totalQty) },
+  });
+  await notifyRequestDecided(req.requestedById, { requestId: id, requestNumber: req.requestNumber, decision: 'APPROVED', note: fullyIssued ? 'Balance issued' : 'Part of the balance issued' });
+  return result;
 }

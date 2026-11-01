@@ -20,8 +20,8 @@ type Row = Record<string, any>;
 const D = (n: number) => ({ toNumber: () => n });
 const tick = () => new Promise<void>((r) => setTimeout(r, 0));
 
-const state: { ledger: Row[]; txns: Row[]; allocations: Row[]; order: Row | null; items: Row[]; stamp: number } = {
-  ledger: [], txns: [], allocations: [], order: null, items: [], stamp: 0,
+const state: { ledger: Row[]; txns: Row[]; allocations: Row[]; order: Row | null; items: Row[]; stamp: number; staged: Row[] } = {
+  ledger: [], txns: [], allocations: [], order: null, items: [], stamp: 0, staged: [],
 };
 const kraft = { id: 'i1', name: 'Kraft', code: 'K1', unit: 'KG', category: 'RAW_MATERIAL', isActive: true, deletedAt: null };
 const die = { id: 'i2', name: 'Die', code: 'D1', unit: 'NOS', category: 'EQUIPMENT', isActive: true, deletedAt: null };
@@ -73,6 +73,10 @@ function makeDb(): Row {
       create: async ({ data }: Row) => { await tick(); state.txns.push(data); return data; },
     },
   };
+  // R2-287 plumbing: STAGED pick-list lines hold stock; `state.staged` rows are { pickListId, itemId, pickedQty }.
+  base.misPickListLine = {
+    findMany: async ({ where }: Row) => state.staged.filter((l) => where.itemId.in.includes(l.itemId) && (!where.pickList?.id?.not || l.pickListId !== where.pickList.id.not)).map((l) => ({ itemId: l.itemId, pickedQty: l.pickedQty })),
+  };
   return base;
 }
 
@@ -111,7 +115,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mutex.clear();
   Object.assign(state, {
-    ledger: [], txns: [], allocations: [], stamp: 0,
+    ledger: [], txns: [], allocations: [], stamp: 0, staged: [],
     order: { orderNumber: 'ORD-202610-00001', status: 'IN_PRODUCTION' },
     items: [kraft, die],
   });
@@ -242,5 +246,57 @@ describe('G. the issue can run the caller’s own writes inside its transaction'
     expect(typeof (seen[0].tx as Row).$queryRaw).toBe('function'); // the tx, not the bare db
     expect(seen[0].ledgerRows).toBe(2);
     await expect(commitIssue([{ itemId: 'i1', qty: 1 }], { departmentId: 'd1', general: G, inTransaction: async () => { throw new Error('line write failed'); } })).rejects.toThrow(/line write failed/);
+  });
+});
+
+describe('R2-326 / R2-350 duplicate cart lines are merged before the stock check', () => {
+  it('50 + 60 of an item with 100 in stock is one line of 110 and is refused; nothing is written', async () => {
+    stock('i1', 100);
+    await expect(commitIssue([{ itemId: 'i1', qty: 50 }, { itemId: 'i1', qty: 60 }], { departmentId: 'd1', general: G })).rejects.toThrow(/stock balance \(100 available\)/);
+    expect(state.ledger.filter((l) => l.source === 'STORE_ISSUE')).toHaveLength(0);
+  });
+  it('30 + 40 with 100 in stock books ONE ledger row of 70 and the balance is 30', async () => {
+    stock('i1', 100);
+    const out = await commitIssue([{ itemId: 'i1', qty: 30 }, { itemId: 'i1', qty: 40 }], { departmentId: 'd1', general: G });
+    expect(out).toMatchObject({ lineCount: 1, totalQty: 70 });
+    expect(state.ledger.filter((l) => l.source === 'STORE_ISSUE').map((l) => l.changeQty)).toEqual([-70]);
+    expect(balance('i1')).toBe(30);
+  });
+});
+
+describe('R2-351 zero and negative quantities are refused before anything is written', () => {
+  it.each([0, -5, Number.NaN])('qty %s', async (qty) => {
+    stock('i1', 10);
+    await expect(commitIssue([{ itemId: 'i1', qty }], { departmentId: 'd1', general: G })).rejects.toThrow(/greater than zero/);
+    expect(state.ledger).toHaveLength(1);
+  });
+});
+
+describe('R2-352 issuing past the order allocation needs an OWNER / SUPERVISOR reason', () => {
+  it('the Storekeeper is blocked even with a reason', async () => {
+    stock('i1', 1000);
+    allocate(500);
+    await expect(commitIssue([{ itemId: 'i1', qty: 800 }], { orderId: 'o1', quotaOverride: { reason: 'press needs it' } })).rejects.toThrow(/only 500 of the 500 allocated/);
+    expect(state.ledger.filter((l) => l.source === 'STORE_ISSUE')).toHaveLength(0);
+  });
+  it('the OWNER without a reason is blocked; with a reason the issue goes through and the audit says so', async () => {
+    getMisRole.mockResolvedValue('OWNER');
+    stock('i1', 1000);
+    allocate(500);
+    await expect(commitIssue([{ itemId: 'i1', qty: 800 }], { orderId: 'o1' })).rejects.toThrow(/only 500 of the 500 allocated/);
+    await expect(commitIssue([{ itemId: 'i1', qty: 800 }], { orderId: 'o1', quotaOverride: { reason: 'customer approved extra run' } })).resolves.toMatchObject({ totalQty: 800 });
+    expect(balance('i1')).toBe(200);
+  });
+});
+
+describe('R2-287 / R2-365 a STAGED pick list holds its stock', () => {
+  it('a direct issue cannot take what is staged for another request; the handover of that list itself still can', async () => {
+    stock('i1', 100);
+    state.staged.push({ pickListId: 'pl1', itemId: 'i1', pickedQty: 60 });
+    await expect(commitIssue([{ itemId: 'i1', qty: 50 }], { departmentId: 'd1', general: G })).rejects.toThrow(/stock balance \(40 available\)/);
+    await commitIssue([{ itemId: 'i1', qty: 40 }], { departmentId: 'd1', general: G });
+    // the staged list hands over its own 60: its hold does not count against it
+    await commitIssue([{ itemId: 'i1', qty: 60 }], { departmentId: 'd1', general: G, releasesPickListId: 'pl1' });
+    expect(balance('i1')).toBe(0);
   });
 });

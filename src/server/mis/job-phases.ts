@@ -68,6 +68,7 @@ export type JobPhaseRefusal =
   | 'NO_PRODUCTION_RECORDED'
   | 'WASTE_REASON_MISSING'
   | 'QC_FAILURE_UNACKNOWLEDGED'
+  | 'HANDOVER_NOTE_REQUIRED'
   | 'PRODUCTION_ALREADY_RECORDED'
   | 'LATER_PHASE_STARTED'
   | 'REASON_REQUIRED'
@@ -226,6 +227,11 @@ function isInCharge(phase: PhaseWithRefs, actor: MisActor): boolean {
   return phase.inCharge?.userProfileId != null && phase.inCharge.userProfileId === actor.userId;
 }
 
+/** R2-330: who may sign a phase off on the in-charge's behalf (with a reason). */
+function canSignOnBehalf(actor: MisActor): boolean {
+  return actor.role === 'OWNER' || actor.role === 'ADMIN';
+}
+
 async function employeeForActor(actor: MisActor) {
   return db.misEmployee.findUnique({
     where: { userProfileId: actor.userId },
@@ -366,24 +372,50 @@ async function unacknowledgedFailures(phase: { orderId: string; bomStageId: stri
  * The timestamp is the server's, always. No argument carries one, and Phase 11
  * must stamp a replayed sign-off when it replays, not when it was queued.
  */
-export async function signOffPhase(phaseId: string, input?: { notes?: string }) {
+export async function signOffPhase(phaseId: string, input?: { notes?: string; reason?: string }) {
   const actor = await requirePermission('phase.write');
   const phase = await loadPhase(phaseId);
   assertTransition(phase.status, 'SIGNED_OFF', 'signOffPhase');
 
-  if (!isInCharge(phase, actor)) {
-    throw new JobPhaseError(
-      'NOT_THE_IN_CHARGE',
-      phase.inCharge
-        ? `Only ${phase.inCharge.name} can sign off ${phase.process.name}. Ask an admin to re-assign it if they are unavailable.`
-        : `${phase.process.name} has no in-charge, so nobody can sign it off yet. An admin must assign one.`,
-      { phaseId, inCharge: phase.inCharge?.name ?? null },
-    );
+  // R2-330: an Admin or the Owner may sign on the in-charge's behalf, with a reason that goes to the audit trail.
+  const onBehalfReason = input?.reason?.trim() ?? '';
+  const signsOnBehalf = !isInCharge(phase, actor);
+  if (signsOnBehalf) {
+    if (!canSignOnBehalf(actor)) {
+      throw new JobPhaseError(
+        'NOT_THE_IN_CHARGE',
+        phase.inCharge
+          ? `Only ${phase.inCharge.name} can sign off ${phase.process.name}. Ask an admin to re-assign it if they are unavailable.`
+          : `${phase.process.name} has no in-charge, so nobody can sign it off yet. An admin must assign one.`,
+        { phaseId, inCharge: phase.inCharge?.name ?? null },
+      );
+    }
+    if (onBehalfReason.length < 3) {
+      throw new JobPhaseError(
+        'REASON_REQUIRED',
+        `You are not the in-charge of ${phase.process.name}. Give a reason (3+ characters) to sign it off on their behalf.`,
+        { phaseId, inCharge: phase.inCharge?.name ?? null },
+      );
+    }
   }
 
   const blockers = await collectSignOffBlockers(phase);
   const first = blockers[0];
   if (first) throw refusalForBlocker(phase, first, blockers);
+
+  // R2-295: a skipped upstream stage must be explained in the handover, not left to the audit reader to guess.
+  if (!input?.notes?.trim()) {
+    const skipped = await db.misJobPhase.count({
+      where: { orderId: phase.orderId, deletedAt: null, sequence: { lt: phase.sequence }, status: 'NOT_APPLICABLE' },
+    });
+    if (skipped > 0) {
+      throw new JobPhaseError(
+        'HANDOVER_NOTE_REQUIRED',
+        `${skipped === 1 ? 'An earlier phase was' : `${skipped} earlier phases were`} marked not applicable. Write a handover note saying why before signing off ${phase.process.name}.`,
+        { phaseId, skipped },
+      );
+    }
+  }
 
   const signedOffAt = new Date();
   const next = await nextApplicablePhase(phase.orderId, phase.sequence);
@@ -454,6 +486,8 @@ export async function signOffPhase(phaseId: string, input?: { notes?: string }) 
       orderId: rec.orderId,
       sequence: rec.sequence,
       notifiedPhaseId: next?.id ?? null,
+      // R2-330: who the signature was applied for, and why, when it was not the in-charge's own.
+      ...(signsOnBehalf ? { signedOnBehalfOf: phase.inCharge?.name ?? null, reason: onBehalfReason } : {}),
     },
   });
   return rec;
@@ -602,7 +636,7 @@ export async function restorePhase(phaseId: string, reason: string) {
 }
 
 /**
- * Withdraw a signature. **OWNER only** (`phase.reopen`).
+ * Withdraw a signature. **Owner or Admin** (`phase.reopen`; Admin since R2-331), with a reason.
  *
  * Downstream phases are *flagged*, never cascaded: rewriting the status of
  * phases people have already acted on would destroy their records to tidy up
@@ -708,7 +742,8 @@ export async function reassignInCharge(phaseId: string, employeeId: string) {
  * stored (MIS-163).
  */
 export async function acknowledgeQcFailure(checkId: string, note?: string) {
-  const actor = await requirePermission('phase.write');
+  // R2-311: its own action, so the QC role may acknowledge / waive without holding phase.write.
+  const actor = await requirePermission('qc.acknowledge');
   const check = await db.misQcCheck.findUnique({ where: { id: checkId } });
   // R2-34: a voided (deleted) check is gone for every purpose, acknowledging included.
   if (!check || check.voidedAt) throw new JobPhaseError('PHASE_NOT_FOUND', 'That check no longer exists.', { checkId });
@@ -728,11 +763,14 @@ export async function acknowledgeQcFailure(checkId: string, note?: string) {
   }
 
   // R3 B116 — only the in-charge of the check's phase may acknowledge; OWNER/ADMIN may too,
-  // with a written note (>= 3 chars) so the override is accountable.
+  // with a written note (>= 3 chars) so the override is accountable. R2-311: so may the QC role.
   const trimmedNote = note?.trim() || '';
-  const privileged = actor.role === 'OWNER' || actor.role === 'ADMIN';
+  const privileged = actor.role === 'OWNER' || actor.role === 'ADMIN' || actor.role === 'QC';
+  // R2-310: a check logged without a stage belongs to the order, so the in-charge of any ACTIVE phase on it may acknowledge.
   const phases = await db.misJobPhase.findMany({
-    where: { orderId: check.orderId, deletedAt: null, bomStageId: check.bomStageId },
+    where: check.bomStageId
+      ? { orderId: check.orderId, deletedAt: null, bomStageId: check.bomStageId }
+      : { orderId: check.orderId, deletedAt: null, status: { in: ACTIVE_STATUSES } },
     include: phaseInclude,
   });
   const isPhaseInCharge = phases.some((p) => isInCharge(p, actor));
@@ -809,6 +847,8 @@ export type SignOffSummary = {
   status: MisJobPhaseStatus;
   inChargeName: string | null;
   canSign: boolean;
+  /** R2-330: true when `canSign` holds only because the viewer is an Admin/Owner, so a reason is required. */
+  signsOnBehalf: boolean;
   output: number;
   waste: number;
   wastePercent: number | null;
@@ -879,7 +919,9 @@ export async function getSignOffSummary(phaseId: string): Promise<SignOffSummary
     orderNumber: phase.order.orderNumber,
     status: phase.status,
     inChargeName: phase.inCharge?.name ?? null,
-    canSign: isInCharge(phase, actor) && blockers.length === 0 && isActiveStatus(phase.status),
+    canSign: (isInCharge(phase, actor) || canSignOnBehalf(actor)) && blockers.length === 0 && isActiveStatus(phase.status),
+    // R2-330: the screen asks for a reason when the signer is not the in-charge.
+    signsOnBehalf: !isInCharge(phase, actor) && canSignOnBehalf(actor),
     output,
     waste,
     wastePercent: first.wastePercent,

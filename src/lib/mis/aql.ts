@@ -161,14 +161,44 @@ export function aqlPlan(lotSize: number, level: InspectionLevel, aql: number): A
   return { level, codeLetter, usedLetter, aql: aqlValue, sampleSize: Math.min(CODE_LETTER_SAMPLE_SIZE[usedLetter], Math.max(1, Math.floor(lotSize))), accept, reject };
 }
 
-/** The thresholds `evaluateAql` scores against for a Z1.4 plan: no critical defect, Ac for major and minor. */
-export function thresholdsFromPlan(plan: AqlPlan): AqlThresholds {
-  return { sampleSize: plan.sampleSize, criticalMax: 0, majorMax: plan.accept, minorMax: plan.accept };
+/**
+ * The thresholds `evaluateAql` scores against for a Z1.4 plan: no critical defect, Ac for major and minor.
+ * R2-314: minor defects follow their own (looser) plan when one is given; the sample is the larger of the two.
+ */
+export function thresholdsFromPlan(plan: AqlPlan, minorPlan: AqlPlan = plan): AqlThresholds {
+  return { sampleSize: Math.max(plan.sampleSize, minorPlan.sampleSize), criticalMax: 0, majorMax: plan.accept, minorMax: minorPlan.accept };
 }
 
 export const AQL_LEVEL_KEY = 'qc.aql_level';
 export const AQL_LIMIT_KEY = 'qc.acceptable_quality_limit';
 const DEFAULT_AQL_LIMIT = 2.5;
+/** R2-314: separate acceptable-quality limits for major and minor defects (Settings > AQL). */
+export const AQL_MAJOR_LIMIT_KEY = 'AQL_MAJOR_LIMIT';
+export const AQL_MINOR_LIMIT_KEY = 'AQL_MINOR_LIMIT';
+export const DEFAULT_AQL_MAJOR_LIMIT = 1.5;
+export const DEFAULT_AQL_MINOR_LIMIT = 4.0;
+
+const positive = (raw: string | null | undefined): number | null => {
+  const n = Number.parseFloat(raw ?? '');
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
+
+/**
+ * R2-314: the Z1.4 plans for a lot — one at the Major limit, one at the Minor limit (each falling back to the
+ * legacy single limit, then to 1.5 / 4.0). null = no level set (or unreadable): keep the stored thresholds.
+ */
+export async function resolveAqlPlans(read: (key: string) => Promise<string | null>, lotSize: number): Promise<{ major: AqlPlan; minor: AqlPlan } | null> {
+  try {
+    const level = parseInspectionLevel(await read(AQL_LEVEL_KEY));
+    if (!level) return null;
+    const legacy = positive(await read(AQL_LIMIT_KEY));
+    const major = positive(await read(AQL_MAJOR_LIMIT_KEY)) ?? legacy ?? DEFAULT_AQL_MAJOR_LIMIT;
+    const minor = positive(await read(AQL_MINOR_LIMIT_KEY)) ?? legacy ?? DEFAULT_AQL_MINOR_LIMIT;
+    return { major: aqlPlan(lotSize, level, major), minor: aqlPlan(lotSize, level, minor) };
+  } catch {
+    return null;
+  }
+}
 
 /**
  * The Z1.4 plan for a lot under the saved level (`qc.aql_level`) and acceptable quality limit

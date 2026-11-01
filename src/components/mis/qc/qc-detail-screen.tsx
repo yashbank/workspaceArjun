@@ -10,6 +10,7 @@ import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { AqlBreakdown } from '@/components/mis/qc/aql-breakdown';
 import { addQcCheckAction, editQcCheckAction, recordAqlSampleAction } from '@/app/(mis)/mis/qc/actions';
 import { voidQcCheckAction } from '@/app/(mis)/mis/qc/correction-actions';
+import { acknowledgeQcFailureAction } from '@/app/(mis)/mis/production/sign-off/[phaseId]/actions';
 import type { AqlResult } from '@/lib/mis/aql';
 import type { QcTemplateRow } from '@/server/mis/qc-template';
 import { QcChecklist } from '@/components/mis/qc/qc-checklist';
@@ -31,6 +32,8 @@ type Check = {
   editable?: boolean;
   /** Server-computed (R2-34): may this viewer delete (void) the check. */
   deletable?: boolean;
+  /** R2-311: set once the failure has been acknowledged / waived. */
+  acknowledgedAt?: Date | string | null;
 };
 
 type Summary = { total: number; pass: number; fail: number; na?: number; totalDefectQty: number };
@@ -43,13 +46,17 @@ interface Props {
   checks: Check[];
   summary: Summary;
   canWrite: boolean;
+  /** R2-311: `qc.acknowledge` holders (QC, Supervisor, Admin, Owner) may acknowledge a FAIL here; the server still checks who. */
+  canAcknowledge?: boolean;
   defectTypes: DefectTypeOption[];
   /** Stages of this order's BOM (#33); empty when it has none. */
   stages?: SelectOption[];
+  /** R2-318: active machines, so a check can say where it was taken. */
+  machines?: SelectOption[];
   /** V2 Epic 5 — the paper forms; empty until the templates migration is applied. */
   templates?: QcTemplateRow[];
   /** The factory day the checklist shows (server-computed), so another day's taps never fill today's cells. */
-  checklistDay?: { dateKey: string; timeZone: string };
+  checklistDay?: { dateKey: string; timeZone: string; shift?: { startTime: string; endTime: string } | null };
 }
 
 const resultOptions: SelectOption[] = [
@@ -76,10 +83,25 @@ const defectTypeOptions = (types: DefectTypeOption[]): SelectOption[] =>
 // defect that is not yet classified must still be recordable, as free text (F-19/D14).
 const OTHER_DEFECT = '';
 
-export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes, stages = [], templates = [], checklistDay }: Props) {
+export function QcDetailScreen({ order, checks, summary, canWrite, canAcknowledge = false, defectTypes, stages = [], machines = [], templates = [], checklistDay }: Props) {
   const [open, setOpen] = useState(false);
+  // R2-311: acknowledge / waive a failed check from the QC screen.
+  const [acking, setAcking] = useState<Check | null>(null);
+  const [ackNote, setAckNote] = useState('');
+  const [ackError, setAckError] = useState<string | null>(null);
+  const [ackPending, startAckTransition] = useTransition();
+  const handleAcknowledge = () => {
+    if (!acking) return;
+    startAckTransition(async () => {
+      setAckError(null);
+      const outcome = await acknowledgeQcFailureAction(acking.id, ackNote.trim(), '');
+      if (!outcome.ok) setAckError(outcome.detail);
+      else setAcking(null);
+    });
+  };
   const [result, setResult] = useState<'PASS' | 'FAIL' | 'NA'>('PASS');
   const [stageId, setStageId] = useState<string | null>(null);
+  const [machineId, setMachineId] = useState<string | null>(null); // R2-318
   const [parameterName, setParameterName] = useState('');
   const [defectTypeCode, setDefectTypeCode] = useState(OTHER_DEFECT);
   const [defectTypeOther, setDefectTypeOther] = useState('');
@@ -88,6 +110,7 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes, 
   const [isPending, startTransition] = useTransition();
 
   const [aqlOpen, setAqlOpen] = useState(false);
+  const [aqlStageId, setAqlStageId] = useState<string | null>(null); // R2-320
   const [aqlSampleSize, setAqlSampleSize] = useState('32');
   const [aqlLotSize, setAqlLotSize] = useState('');
   const [aqlLines, setAqlLines] = useState<AqlLine[]>([{ defectTypeId: '', qty: '1' }]);
@@ -123,6 +146,7 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes, 
       orderId: order.id,
       result,
       bomStageId: stageId ?? undefined,
+      machineId: machineId ?? undefined, // R2-318
       parameterName: parameterName || undefined,
       defectType: (defectTypeCode || defectTypeOther.trim()) || undefined,
       defectQty: defectQty ? parseFloat(defectQty) : undefined,
@@ -147,6 +171,7 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes, 
       .map((l) => ({ defectTypeId: l.defectTypeId, qty: Number(l.qty) }));
     const outcome = await recordAqlSampleAction({
       orderId: order.id,
+      bomStageId: aqlStageId ?? undefined, // R2-320
       sampleSize: Number(aqlSampleSize),
       ...(aqlLotSize.trim() !== '' ? { lotSize: Number(aqlLotSize) } : {}),
       defects,
@@ -313,6 +338,9 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes, 
                   {canWrite && (
                     <td className="px-5 py-3 whitespace-nowrap">
                       {c.editable && <Button variant="ghost" onClick={() => openEdit(c)}>Edit</Button>}
+                      {canAcknowledge && c.result === 'FAIL' && !c.acknowledgedAt && (
+                        <Button variant="ghost" onClick={() => { setAcking(c); setAckNote(''); setAckError(null); }}>Acknowledge</Button>
+                      )}
                       {c.deletable && (
                         <Button variant="ghost" onClick={() => { setDeleting(c); setDeleteReason(''); setEditError(null); }}>
                           Delete
@@ -337,6 +365,9 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes, 
           <Select label="Result" value={result} options={resultOptions} onChange={(v) => setResult(v as 'PASS' | 'FAIL' | 'NA')} />
           {stages.length > 0 && (
             <Select label="Process / BOM stage (optional)" value={stageId} options={stages} onChange={setStageId} placeholder="Select a stage…" />
+          )}
+          {machines.length > 0 && (
+            <Select label="Machine (optional)" value={machineId} options={machines} onChange={setMachineId} placeholder="Where was it checked?" />
           )}
           <Input label="Parameter Name" value={parameterName} onChange={(e) => setParameterName(e.target.value)} />
           {result === 'FAIL' && (
@@ -391,12 +422,32 @@ export function QcDetailScreen({ order, checks, summary, canWrite, defectTypes, 
         </div>
       </SlideOver>
 
+      {/* R2-311: acknowledge / waive a failed check. Acknowledged is not resolved: the check stays FAIL. */}
+      <SlideOver open={acking !== null} onClose={() => setAcking(null)} title="Acknowledge QC failure">
+        <div className="flex flex-col gap-4 p-4">
+          {acking && (
+            <p className="text-sm text-gray-600">
+              {fmt(acking.checkTime)} · {acking.parameterName ?? 'General'} · FAIL. The check stays FAIL; this records that it was reviewed and the job may go on.
+            </p>
+          )}
+          <Input label="Note (why it is accepted)" value={ackNote} onChange={(e) => setAckNote(e.target.value)} />
+          {ackError && <p role="alert" className="text-sm text-red-700">{ackError}</p>}
+          <div className="flex gap-2 pt-2">
+            <Button onClick={handleAcknowledge} disabled={ackPending || ackNote.trim().length < 3}>Acknowledge</Button>
+            <Button variant="ghost" onClick={() => setAcking(null)}>Cancel</Button>
+          </div>
+        </div>
+      </SlideOver>
+
       {/* Run AQL sample slide-over */}
       <SlideOver open={aqlOpen} onClose={closeAql} title="Run AQL Sample">
         <div className="flex flex-col gap-4 p-4">
           <div className="text-sm text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
             Order: <span className="font-medium text-gray-800">{order.orderNumber}</span>
           </div>
+          {stages.length > 0 && (
+            <Select label="Process / BOM stage (optional)" value={aqlStageId} options={stages} onChange={setAqlStageId} placeholder="Whole order" />
+          )}
           <NumberInput label="Lot size (optional)" value={aqlLotSize} onChange={(e) => setAqlLotSize(e.target.value)} />
           <p className="text-xs text-gray-500 -mt-2">When the AQL level is set in Settings, the lot size decides the required sample size and the accept limit.</p>
           <NumberInput label="Sample Size" value={aqlSampleSize} onChange={(e) => setAqlSampleSize(e.target.value)} />

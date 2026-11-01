@@ -205,8 +205,9 @@ export async function approveDocumentVersion(versionId: string) {
     // Judged on the fresh capture (what the approver sees and what gets frozen); latestVerdict is the
     // same rule the print page uses, so a failure fixed by a later PASS on the same stage + parameter is fine.
     const coa = snapshot as unknown as { order: { status?: string }; qcLogs: VerdictCheck[] };
-    if (coa.order.status !== 'COMPLETED' && coa.order.status !== 'DELIVERED') {
-      throw new Error('This certificate cannot be approved yet: the order is not finished. Complete the order first.');
+    // R2-338: approval is allowed from IN_PRODUCTION on (the truck must not leave with a draft); earlier statuses are refused.
+    if (!['IN_PRODUCTION', 'COMPLETED', 'DELIVERED'].includes(coa.order.status ?? '')) {
+      throw new Error('This certificate cannot be approved yet: the order is not in production. Start production first.');
     }
     if (latestVerdict(coa.qcLogs ?? []).overall === 'FAIL') {
       throw new Error('This certificate cannot be approved: a failed quality check has not been re-inspected and passed.');

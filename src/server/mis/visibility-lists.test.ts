@@ -109,10 +109,11 @@ describe('D4 — the people lists on the supervisor home (crew and availability)
   const today = new Date('2026-09-20T00:00:00Z');
 
   it.each([
-    ['u-own', 'OWNER', 5], // w1 w2 w3 e-qc e-orphan — the WORKER/QC pool of the whole factory
-    ['u-adm', 'ADMIN', 4], // w1 w2 w3 e-qc
-    ['u-supA', 'SUPERVISOR', 2], // w1 w2
-    ['u-supB', 'SUPERVISOR', 1], // w3
+    // R2-332: SUPERVISOR employees (lead operators) are bookable crew too, so e-supA / e-supB join the pool.
+    ['u-own', 'OWNER', 7], // w1 w2 w3 e-qc e-orphan e-supA e-supB — the WORKER/QC/SUPERVISOR pool of the whole factory
+    ['u-adm', 'ADMIN', 6], // w1 w2 w3 e-qc e-supA e-supB
+    ['u-supA', 'SUPERVISOR', 3], // w1 w2 e-supA
+    ['u-supB', 'SUPERVISOR', 2], // w3 e-supB
   ] as const)('getCrewSummary for %s (%s) counts %i people', async (user, _role, headcount) => {
     login(user);
     expect((await getCrewSummary(today)).headcount).toBe(headcount);
@@ -120,9 +121,9 @@ describe('D4 — the people lists on the supervisor home (crew and availability)
 
   it('getWorkerAvailability lists exactly the same pool, by id', async () => {
     login('u-supA');
-    expect((await getWorkerAvailability('shift-1', '2026-09-20') /* R3 B88: date key */).map((r) => r.employeeId).sort()).toEqual(['w1', 'w2']);
+    expect((await getWorkerAvailability('shift-1', '2026-09-20') /* R3 B88: date key */).map((r) => r.employeeId).sort()).toEqual(['e-supA', 'w1', 'w2']); // R2-332
     login('u-supB');
-    expect((await getWorkerAvailability('shift-1', '2026-09-20') /* R3 B88: date key */).map((r) => r.employeeId)).toEqual(['w3']);
+    expect((await getWorkerAvailability('shift-1', '2026-09-20') /* R3 B88: date key */).map((r) => r.employeeId).sort()).toEqual(['e-supB', 'w3']); // R2-332
   });
 
   it('a Supervisor never receives another Supervisor\'s worker in the picker (the leak the tree exists to stop)', async () => {

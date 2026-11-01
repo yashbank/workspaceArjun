@@ -102,7 +102,7 @@ describe('approve', () => {
   it('issues the capped quantities through commitIssue and records each line', async () => {
     await approveMaterialRequest('r1', [{ lineId: 'l1', actualIssuedQty: 7 }, { lineId: 'l2', actualIssuedQty: 0 }]);
     expect(commitIssue).toHaveBeenCalledWith([{ itemId: 'i-kraft', qty: 7 }], expect.objectContaining({ orderId: 'o1' }));
-    expect(state.request?.status).toBe('APPROVED');
+    expect(state.request?.status).toBe('PARTIALLY_ISSUED'); // R2-286: 7 of 10 (and 0 of the second line) leaves the balance open
     expect(state.lineUpdates.map((u) => (u as { data: Row }).data.actualIssuedQty)).toEqual([7, 0]);
   });
 

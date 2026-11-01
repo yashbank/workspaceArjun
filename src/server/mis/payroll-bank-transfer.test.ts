@@ -47,19 +47,26 @@ describe('buildBankTransferCsv', () => {
     expect(filename).toBe('bank-transfer-2026-01.csv');
     expect(state.attendanceWhere).toHaveLength(1);
     expect(payableCount).toBe(1);
+    // R2-324: the amount is the NET pay (2270 gross less PF 12% of basic and ESIC 0.75% of gross; PT starts at 10,000).
+    const { calculateMonthlyPayroll } = await import('./payroll');
+    const asha = (await calculateMonthlyPayroll(2026, 1)).find((r) => r.employeeId === EMP.id)!;
+    expect(asha.grossPay).toBe(2270);
+    expect(asha.netPay).toBeLessThan(asha.grossPay);
     expect(csv).toBe(
       'Beneficiary Name,Account Number,IFSC,Bank Name,Amount,Employee Code,Narration\r\n' +
-        'Asha,123456789012,SBIN0001234,SBI,2270.00,E-001,Salary Jan 2026\r\n',
+        `Asha,123456789012,SBIN0001234,SBI,${asha.netPay.toFixed(2)},E-001,Salary Jan 2026\r\n`,
     );
     expect(skipped).toEqual([{ employeeId: 'e2', employeeCode: 'E-002', employeeName: 'Bala', reason: 'No bank account or IFSC on file' }]);
   });
 
-  it('the amount equals the payroll gross pay the payslip prints (same run)', async () => {
+  it('the amount equals the payroll NET pay the payslip prints (same run) — R2-324', async () => {
     const { calculateMonthlyPayroll } = await import('./payroll');
-    const gross = (await calculateMonthlyPayroll(2026, 1)).find((r) => r.employeeId === EMP.id)!.grossPay;
+    const row = (await calculateMonthlyPayroll(2026, 1)).find((r) => r.employeeId === EMP.id)!;
     const { csv } = await buildBankTransferCsv(2026, 1);
-    expect(gross).toBe(2270);
-    expect(csv).toContain(`,${gross.toFixed(2)},`);
+    expect(row.grossPay).toBe(2270);
+    expect(row.netPay).toBe(row.grossPay - row.pf - row.esic - row.pt - row.advance);
+    expect(csv).toContain(`,${row.netPay.toFixed(2)},`);
+    expect(csv).not.toContain(',2270.00,');
   });
 
   it('audits who / which month / counts — no amount, no account number, no IFSC', async () => {

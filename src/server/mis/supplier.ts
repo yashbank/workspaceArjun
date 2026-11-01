@@ -80,7 +80,8 @@ export async function updateSupplier(id: string, patch: Partial<SupplierInput>) 
 }
 
 /** POs that still need this supplier (R3-MST B29). */
-const OPEN_PO_STATUSES: MisPoStatus[] = ['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'PARTIAL'];
+// R2-289: a PO still receiving goods (damaged first delivery, replacement due) needs its supplier.
+const OPEN_PO_STATUSES: MisPoStatus[] = ['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'PARTIAL', 'RECEIVING'];
 
 export async function deleteSupplier(id: string) {
   const actor = await requirePermission('po.write');

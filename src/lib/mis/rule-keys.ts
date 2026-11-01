@@ -34,6 +34,12 @@ export const PAYROLL_POLICY_RULE_KEYS = [
   'sunday.paid_if_adjacent',
   'salary.rent_min_days',
   'salary.rent_count_holidays',
+  // R2-324: statutory deductions, Owner-only like every payroll rule.
+  'salary.pf_percent',
+  'salary.esic_percent',
+  'salary.esic_ceiling',
+  'salary.pt_monthly',
+  'salary.pt_min_gross',
 ] as const;
 
 export type PayrollPolicyRuleKey = (typeof PAYROLL_POLICY_RULE_KEYS)[number];

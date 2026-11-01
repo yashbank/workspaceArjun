@@ -1,6 +1,6 @@
 /**
  * R2-110 — the month-end BANK TRANSFER file, laid out from rows the server already computed. Pure:
- * no Prisma, no React. The amount per line is the payroll row's gross pay as-is (payroll already
+ * no Prisma, no React. The amount per line is the payroll row's NET pay as-is (R2-324; payroll already
  * rounds it to whole rupees); this only writes it with two decimals, the way bank bulk-upload
  * sheets expect, and adds totals in whole paise so a long list never drifts by a rounding error.
  *
@@ -11,7 +11,8 @@
 import { normaliseBankDetails } from './bank-details';
 import type { Cell } from './wastage-csv';
 
-export type BankTransferPay = { employeeId: string; employeeCode: string; employeeName: string; grossPay: number };
+/** R2-324: the amount transferred is the NET pay (gross less PF, ESIC, PT and advances). */
+export type BankTransferPay = { employeeId: string; employeeCode: string; employeeName: string; netPay: number };
 export type BankTransferAccount = { id: string; bankName: string | null; bankAccountNo: string | null; ifsc: string | null };
 export type BankTransferSkip = { employeeId: string; employeeCode: string; employeeName: string; reason: string };
 
@@ -42,7 +43,7 @@ export type BankTransferFile = {
   payableCount: number;
   totalPaise: number;
   skipped: BankTransferSkip[];
-  /** Employees with nothing to pay this month (gross 0) — left out of the file, not an error. */
+  /** Employees with nothing to pay this month (net 0) — left out of the file, not an error. */
   zeroPayCount: number;
 };
 
@@ -54,7 +55,7 @@ export function buildBankTransfer(pay: readonly BankTransferPay[], accounts: Rea
   let zeroPayCount = 0;
 
   for (const p of sorted) {
-    const paise = toPaise(p.grossPay);
+    const paise = toPaise(p.netPay);
     if (paise <= 0) {
       zeroPayCount += 1;
       continue;

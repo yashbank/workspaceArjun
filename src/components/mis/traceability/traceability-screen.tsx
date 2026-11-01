@@ -36,7 +36,7 @@ type TraceQcCheck = {
 };
 type TraceDocument = { id: string; name: string; filePath: string };
 // null = this role may not see the leg (no po.read / store.read); [] = may see it, nothing behind it.
-type TraceGrn = { grnNumber: string; status: string; receivedAt: string | null; lines: { itemName: string; unit: string | null; receivedQty: number }[] };
+type TraceGrn = { grnNumber: string; status: string; receivedAt: string | null; lines: { itemName: string; unit: string | null; receivedQty: number; batchNo?: string | null }[] };
 type TracePo = { poNumber: string; status: string; supplierName: string | null; grns: TraceGrn[] | null };
 type TraceIssued = { itemName: string; unit: string; qty: number; issuedAt: string };
 type TraceResult = {
@@ -47,8 +47,10 @@ type TraceResult = {
   productionLogs: TraceProductionLog[];
   qcChecks: TraceQcCheck[];
   documents: TraceDocument[];
-  totalProduced: number;
-  totalWaste: number;
+  /** R2-290: null when the logs mix units; `byUnit` always has every unit. */
+  totalProduced: number | null;
+  totalWaste: number | null;
+  byUnit: { unit: string; produced: number; waste: number }[];
   passChecks: number;
   failChecks: number;
 };
@@ -90,9 +92,13 @@ export function TraceabilityScreen({ orders }: { orders: Order[] }) {
     ...orders.map(o => ({ value: o.id, label: `${o.orderNumber}${o.description ? ` — ${o.description}` : ''}` })),
   ];
 
-  const yieldPct = trace && trace.totalProduced > 0
+  // R2-290: one unit only; a mixed-unit order has no single yield figure.
+  const yieldPct = trace && trace.totalProduced != null && trace.totalWaste != null && trace.totalProduced > 0
     ? (((trace.totalProduced - trace.totalWaste) / trace.totalProduced) * 100).toFixed(1)
     : null;
+  const producedLabel = trace && trace.byUnit.length > 0
+    ? trace.byUnit.map((u) => `${u.produced.toLocaleString('en-IN')} ${u.unit}`).join(' · ')
+    : '—';
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
@@ -116,7 +122,7 @@ export function TraceabilityScreen({ orders }: { orders: Order[] }) {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
               <div><span className="text-slate-500">Customer</span><p className="font-medium">{trace.order.customer?.name ?? '—'}</p></div>
               <div><span className="text-slate-500">Delivery</span><p className="font-medium">{trace.order.deliveryDate ? new Date(trace.order.deliveryDate).toLocaleDateString('en-IN') : '—'}</p></div>
-              <div><span className="text-slate-500">Produced</span><p className="font-medium">{Number(trace.totalProduced).toLocaleString('en-IN')} kg</p></div>
+              <div><span className="text-slate-500">Produced</span><p className="font-medium">{producedLabel}</p></div>
               <div><span className="text-slate-500">Yield</span><p className="font-medium">{yieldPct ? `${yieldPct}%` : '—'}</p></div>
             </div>
           </div>
@@ -162,7 +168,7 @@ export function TraceabilityScreen({ orders }: { orders: Order[] }) {
                                 <span className="text-slate-500">{g.receivedAt ? fmtDate(g.receivedAt) : 'not received'}</span>
                               </p>
                               <ul className="mt-1 text-slate-600">
-                                {g.lines.map((l, i) => <li key={i}>{l.itemName}: {Number(l.receivedQty).toLocaleString('en-IN')} {l.unit ?? ''}</li>)}
+                                {g.lines.map((l, i) => <li key={i}>{l.itemName}: {Number(l.receivedQty).toLocaleString('en-IN')} {l.unit ?? ''}{l.batchNo ? <span className="ml-1 font-mono text-xs text-slate-500">· Lot {l.batchNo}</span> : null}</li>)}
                               </ul>
                             </li>
                           ))}

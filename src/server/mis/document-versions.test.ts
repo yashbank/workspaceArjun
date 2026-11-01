@@ -148,13 +148,22 @@ describe('R2-156 / R2-157 — one pending version, newest only', () => {
 
 describe('R2-159 — a COA is not approved for an unfinished order or an unresolved QC failure', () => {
   const chk = (result: string, checkTime: string) => ({ bomStageId: null, parameterName: 'Shade', result, checkTime });
-  it.each(['CONFIRMED', 'IN_PRODUCTION'])('refuses a COA for an order that is %s, in words, and leaves it PREPARED', async (status) => {
+  // R2-338: approval is allowed from IN_PRODUCTION on; DRAFT and CONFIRMED are still refused.
+  it.each(['DRAFT', 'CONFIRMED'])('refuses a COA for an order that is %s, in words, and leaves it PREPARED', async (status) => {
     as('QC', 'qc1');
     const v1 = await prepareDocumentVersion('COA', 'o1');
     captured.status = status;
     as('ADMIN', 'adm');
-    await expect(approveDocumentVersion(v1.id)).rejects.toThrow(/order is not finished/i);
+    await expect(approveDocumentVersion(v1.id)).rejects.toThrow(/order is not in production/i); // R2-338
     expect(rows[0].status).toBe('PREPARED');
+  });
+  it('approves a COA while the order is IN_PRODUCTION (R2-338: the truck must not leave with a draft)', async () => {
+    as('QC', 'qc1');
+    const v1 = await prepareDocumentVersion('COA', 'o1');
+    captured.status = 'IN_PRODUCTION';
+    as('ADMIN', 'adm');
+    await approveDocumentVersion(v1.id);
+    expect(rows[0].status).toBe('APPROVED');
   });
   it('refuses a COA when a QC check still has result FAIL', async () => {
     as('QC', 'qc1');

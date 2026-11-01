@@ -9,6 +9,7 @@ import { DateInput, Input, TimeInput } from '@/components/mis/kit/input';
 import { clockInAction, clockOutAction, approveClockOutAction, editAttendanceAction, markAbsentBulkAction, bulkPunchAction, punchBreakAction, listPunchesForDayAction, addAttendanceNoteAction } from '@/app/(mis)/mis/attendance/actions';
 import { useToast } from '@/components/ui/toast';
 import { addDaysToDateKey, formatFactoryTime, zonedParts } from '@/lib/mis/factory-time';
+import { expectedClockOut } from '@/lib/mis/shift-clock';
 import type { ActionResult } from '@/lib/mis/action-result';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -28,7 +29,7 @@ type SummaryRec = { employee: { id: string; name: string; employeeCode: string }
 type Unrecorded = { id: string; name: string; employeeCode: string; role: string };
 
 type Props = {
-  records: AttendanceRec[]; unrecorded?: Unrecorded[]; todayKey?: string; summary: SummaryRec[]; shifts: { id: string; name: string }[];
+  records: AttendanceRec[]; unrecorded?: Unrecorded[]; todayKey?: string; summary: SummaryRec[]; shifts: { id: string; name: string; startTime?: string; endTime?: string }[];
   canWrite: boolean; canNote?: boolean; canRegularize?: boolean; view: string; monthKey: string; date?: string; timeZone: string;
 };
 
@@ -85,13 +86,38 @@ export function AttendanceScreen({ records, unrecorded = [], todayKey, summary, 
   const [punchTime, setPunchTime] = useState('');
   const [mountedAt] = useState(() => Date.now()); // fallback date, read once (render must stay pure)
   const [punchShift, setPunchShift] = useState('');
+  // R2-371: the time was filled from the shift end, not typed; a typed time is never overwritten.
+  const [punchTimeAuto, setPunchTimeAuto] = useState(false);
+  const shiftWindowOf = (id: string) => { const sh = shifts.find((s) => s.id === id); return sh?.startTime && sh?.endTime ? { startTime: sh.startTime, endTime: sh.endTime } : null; };
+  const pickPunchShift = (id: string) => {
+    setPunchShift(id);
+    const w = shiftWindowOf(id);
+    if (punchKind === 'OUT' && w && (punchTimeAuto || punchTime === '')) { setPunchTime(expectedClockOut(w)); setPunchTimeAuto(true); }
+  };
   const openPunch = (kind: 'IN' | 'OUT', ids: string[]) => {
-    setPunchKind(kind); setPunchIds(ids); setPunchTime('');
+    setPunchKind(kind); setPunchIds(ids); setPunchTime(''); setPunchTimeAuto(false);
     // R2-173: clock-out shift is prefilled with the (first) person's clock-in shift.
     const shiftName = records.find((r) => r.employee && ids.includes(r.employee.id))?.shift?.name;
-    setPunchShift(shifts.find((sh) => sh.name === shiftName)?.id ?? '');
+    const shiftId = shifts.find((sh) => sh.name === shiftName)?.id ?? '';
+    setPunchShift(shiftId);
+    const w = shiftWindowOf(shiftId);
+    if (kind === 'OUT' && w) { setPunchTime(expectedClockOut(w)); setPunchTimeAuto(true); } // R2-371
     setPunchOpen(true);
   };
+  /** R2-373: one tap records the shift's start as Clock In and its end as Clock Out for every selected person. */
+  const submitStandardShift = () => startTransition(async () => {
+    const w = shiftWindowOf(punchShift);
+    if (!w) return;
+    const inRes = await bulkPunchAction('IN', punchIds, { date, time: w.startTime, shiftId: null });
+    if (!settle(inRes)) return;
+    const outRes = await bulkPunchAction('OUT', punchIds, { date, time: w.endTime, shiftId: punchShift });
+    if (!settle(outRes)) return;
+    const skipped = [...(inRes.ok ? inRes.value.skipped : []), ...(outRes.ok ? outRes.value.skipped : [])];
+    if (skipped.length > 0) toast('info', `${skipped.length} skipped: ${[...new Set(skipped.map((s) => s.reason))].join(', ')}`);
+    setPunchOpen(false);
+    setSelected(new Set());
+    router.refresh();
+  });
   const submitPunch = () => startTransition(async () => {
     const res = await bulkPunchAction(punchKind, punchIds, { date, time: punchTime || null, shiftId: punchKind === 'OUT' && punchShift ? punchShift : null });
     if (!settle(res)) return;
@@ -129,11 +155,26 @@ export function AttendanceScreen({ records, unrecorded = [], todayKey, summary, 
   const [editReason, setEditReason] = useState('');
   const [editIn, setEditIn] = useState('');
   const [editOut, setEditOut] = useState('');
+  // R2-369/370: Clock Out was pre-filled (shift end / clock-in + shift length) and follows Clock In until the person types it.
+  const [editOutAuto, setEditOutAuto] = useState(false);
+  const changeEditIn = (value: string) => {
+    setEditIn(value);
+    if (editOutAuto && editRec?.shift) setEditOut(expectedClockOut(editRec.shift, value));
+  };
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteRec, setNoteRec] = useState<AttendanceRec | null>(null);
   const [noteText, setNoteText] = useState('');
 
-  const openEdit = (r: AttendanceRec) => { setEditRec(r); setEditStatus(r.status); setEditNotes(r.notes ?? ''); setEditReason(''); setEditIn(toTimeInput(r.clockIn, timeZone)); setEditOut(toTimeInput(r.clockOut, timeZone)); setEditOpen(true); };
+  const openEdit = (r: AttendanceRec) => {
+    setEditRec(r); setEditStatus(r.status); setEditNotes(r.notes ?? ''); setEditReason('');
+    const inTime = toTimeInput(r.clockIn, timeZone);
+    setEditIn(inTime);
+    // R2-369: an empty Clock Out is offered the shift end (clock-in + shift length when a clock-in exists); still editable.
+    const auto = !r.clockOut && !!r.shift;
+    setEditOut(r.clockOut ? toTimeInput(r.clockOut, timeZone) : r.shift ? expectedClockOut(r.shift, inTime || null) : '');
+    setEditOutAuto(auto);
+    setEditOpen(true);
+  };
   const openNote = (r: AttendanceRec) => { setNoteRec(r); setNoteText(''); setNoteOpen(true); };
 
   const [punchesOpen, setPunchesOpen] = useState(false);
@@ -272,9 +313,10 @@ export function AttendanceScreen({ records, unrecorded = [], todayKey, summary, 
             </select>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <TimeInput label="Clock In" value={editIn} onChange={e => setEditIn(e.target.value)} />
-            <TimeInput label="Clock Out" value={editOut} onChange={e => setEditOut(e.target.value)} />
+            <TimeInput label="Clock In" value={editIn} onChange={e => changeEditIn(e.target.value)} />
+            <TimeInput label="Clock Out" value={editOut} onChange={e => { setEditOut(e.target.value); setEditOutAuto(false); }} />
           </div>
+          {editOutAuto && editRec?.shift && <p className="text-xs text-slate-500">Clock Out is pre-filled from the {editRec.shift.name} shift; it is saved as a real punch unless you change it.</p>}
           <Input label="Notes" value={editNotes} onChange={e => setEditNotes(e.target.value)} />
           <Input label="Reason (only for a closed month; Owner)" value={editReason} onChange={e => setEditReason(e.target.value)} />
           <div className="flex gap-2 pt-2">
@@ -287,15 +329,22 @@ export function AttendanceScreen({ records, unrecorded = [], todayKey, summary, 
       <SlideOver open={punchOpen} onClose={() => setPunchOpen(false)} title={punchKind === 'IN' ? 'Clock In' : 'Clock Out'}>
         <div className="flex flex-col gap-4 p-4">
           <p className="text-sm text-slate-600">{punchIds.length} employee{punchIds.length === 1 ? '' : 's'} · {date ?? todayKey}</p>
-          <TimeInput label={isToday ? 'Time (leave blank for now)' : 'Time (required for a past day)'} value={punchTime} onChange={(e) => setPunchTime(e.target.value)} />
-          {punchKind === 'OUT' && (
+          <TimeInput label={isToday ? 'Time (leave blank for now)' : 'Time (required for a past day)'} value={punchTime} onChange={(e) => { setPunchTime(e.target.value); setPunchTimeAuto(false); }} />
+          {punchKind === 'OUT' && punchTimeAuto && <p className="text-xs text-slate-500">Time pre-filled from the shift end; change it if the person left at another time.</p>}
+          {(punchKind === 'OUT' || !isToday) && (
             <div>
               <label className="text-sm font-medium text-slate-700">Shift</label>
-              <select className="mt-1 w-full min-h-12 rounded border border-slate-300 bg-white px-3 text-base text-slate-900" value={punchShift} onChange={(e) => setPunchShift(e.target.value)}>
-                <option value="">Keep the clock-in shift</option>
-                {shifts.map((sh) => <option key={sh.id} value={sh.id}>{sh.name}</option>)}
+              <select aria-label="Shift" className="mt-1 w-full min-h-12 rounded border border-slate-300 bg-white px-3 text-base text-slate-900" value={punchShift} onChange={(e) => pickPunchShift(e.target.value)}>
+                <option value="">{punchKind === 'OUT' ? 'Keep the clock-in shift' : 'Pick a shift for a one-tap standard day'}</option>
+                {shifts.map((sh) => <option key={sh.id} value={sh.id}>{sh.name}{sh.startTime && sh.endTime ? ` (${sh.startTime} – ${sh.endTime})` : ''}</option>)}
               </select>
             </div>
+          )}
+          {punchKind === 'IN' && !isToday && shiftWindowOf(punchShift) && (
+            // R2-373: both punches of a standard shift in one tap on a past day.
+            <Button variant="secondary" onClick={submitStandardShift} disabled={isPending}>
+              {`Standard shift (${shiftWindowOf(punchShift)!.startTime} – ${shiftWindowOf(punchShift)!.endTime}): clock in and out`}
+            </Button>
           )}
           <div className="flex gap-2 pt-2">
             <Button onClick={submitPunch} disabled={isPending || (!isToday && !punchTime)}>{isPending ? 'Saving…' : 'Save'}</Button>

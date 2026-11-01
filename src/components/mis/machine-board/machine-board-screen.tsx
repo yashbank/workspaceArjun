@@ -21,6 +21,8 @@ type Machine = {
     /** R2-41: PRODUCTION_LOG = added automatically when a production log was saved with no booking. */
     source?: 'SCHEDULED' | 'PRODUCTION_LOG';
   } | null;
+  /** R2-339: other bookings live on this machine at the same time. */
+  otherAllocations?: { id: string; orderNumber: string | null; endsAt: Date; source?: 'SCHEDULED' | 'PRODUCTION_LOG' | null }[];
   /** Today's last production log and whether it agrees with the booking (R3 B99, warn only). */
   lastLog?: { orderNumber: string | null; at: Date } | null;
   syncFlag?: SyncFlag | null;
@@ -92,6 +94,13 @@ function MachineCard({ machine, canWrite, orders, crewLink, timeZone }: { machin
           {machine.currentAllocation.source === 'PRODUCTION_LOG' && <span data-testid="auto-block"> · from production log</span>}
         </div>
       )}
+      {/* R2-339: every concurrent booking is shown, never only the last one loaded. */}
+      {machine.otherAllocations?.map((o) => (
+        <div key={o.id} data-testid="other-allocation" className="rounded-lg bg-amber-50 px-2 py-1 font-mono text-xs text-amber-900">
+          also {o.orderNumber ?? 'Unknown job'} · until {formatFactoryTime(new Date(o.endsAt), timeZone)}
+          {o.source === 'PRODUCTION_LOG' && <span> · from production log</span>}
+        </div>
+      ))}
       {machine.syncFlag && machine.syncFlag !== 'OK' && (
         <div data-testid="sync-chip" className="rounded-lg bg-amber-100 px-2 py-1 text-xs font-medium text-amber-900">
           {SYNC_TEXT[machine.syncFlag]}

@@ -1,6 +1,6 @@
 import { DEFAULT_FACTORY_TIMEZONE, factoryDateKey } from '@/lib/mis/factory-time';
 import { shortQuantity, withoutInvoiceMoney } from '@/lib/mis/grn-match';
-import { matchSupplierInvoice } from '@/lib/mis/invoice-match';
+import { isPaymentStatus, matchSupplierInvoice } from '@/lib/mis/invoice-match';
 import { bomNumberFromRef, orderNumberFromRef } from '@/lib/mis/order-allocation';
 import { roundQty } from '@/lib/mis/quantity';
 import {
@@ -26,6 +26,7 @@ import { allocateFromReceipt } from './order-allocation';
 import { notifyGrnConfirmed } from './grn-alerts';
 import { itemLockKey, poItemLockKey } from '@/lib/mis/stock-lock-keys';
 import { lockStockKeys } from './stock-lock';
+import { runOnce } from './keyed-once';
 import { lastLedgerBalance, lastTxnBalance, nextTxnSeq, round2, storeFactoryZone, STXN_SEQ_KEY, txnNumberOf } from './store-books';
 
 /** V2 Epic 1 — the delivery's paperwork. `supplierInvoiceAmount` is money: Owner-only to write and to read. */
@@ -34,6 +35,8 @@ export type GrnHeaderInput = {
   /** ISO date `YYYY-MM-DD`. */
   invoiceDate?: string | null;
   supplierInvoiceAmount?: number | null;
+  /** R2-325: GST % on the supplier's tax invoice (0-100); the 3-way match compares the amount excluding it. */
+  supplierInvoiceGstPercent?: number | null;
   lrNumber?: string | null;
   vehicleNumber?: string | null;
   transporterName?: string | null;
@@ -65,6 +68,13 @@ function parseInvoiceDate(value: string | null | undefined): Date | null {
   return date;
 }
 
+/** R2-325: a percentage, not money: anyone who edits the paperwork may type it. */
+function parseGstPercent(value: number | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  if (!Number.isFinite(value) || value < 0 || value > 100) throw new Error('GST % must be between 0 and 100.');
+  return Math.round(value * 100) / 100;
+}
+
 function headerData(role: MisRoleName, input: GrnHeaderInput, mode: 'create' | 'patch') {
   const has = (k: keyof GrnHeaderInput) => mode === 'create' || input[k] !== undefined;
   if (input.supplierInvoiceAmount !== undefined && input.supplierInvoiceAmount !== null && !can(role, 'wages.read')) {
@@ -74,6 +84,7 @@ function headerData(role: MisRoleName, input: GrnHeaderInput, mode: 'create' | '
     ...(has('supplierInvoiceNo') ? { supplierInvoiceNo: text(input.supplierInvoiceNo) } : {}),
     ...(has('invoiceDate') ? { invoiceDate: parseInvoiceDate(input.invoiceDate) } : {}),
     ...(has('supplierInvoiceAmount') && can(role, 'wages.read') ? { supplierInvoiceAmount: input.supplierInvoiceAmount ?? null } : {}),
+    ...(has('supplierInvoiceGstPercent') ? { supplierInvoiceGstPercent: parseGstPercent(input.supplierInvoiceGstPercent) } : {}),
     ...(has('lrNumber') ? { lrNumber: text(input.lrNumber) } : {}),
     ...(has('vehicleNumber') ? { vehicleNumber: text(input.vehicleNumber) } : {}),
     ...(has('transporterName') ? { transporterName: text(input.transporterName) } : {}),
@@ -527,11 +538,14 @@ export function auditOverReceipt(
   });
 }
 
-export async function confirmGRN(grnId: string, opts: { overReceiptReason?: string | null } = {}) {
+/** `idempotencyKey` (R2-291): one UUID per GRN screen open; a second tap or a retried request returns the first result. */
+export async function confirmGRN(grnId: string, opts: { overReceiptReason?: string | null; idempotencyKey?: string | null } = {}) {
   const actor = await requirePermission('grn.write');
   const grn = await db.misGrn.findUnique({ where: { id: grnId }, include: { po: { select: { bomRef: true, supplierId: true } }, items: { include: { poItem: { include: { item: true } } } } } });
   if (!grn) throw new Error(`GRN ${grnId} not found`);
-  if (grn.status === 'CONFIRMED') throw new GrnStateError('GRN already confirmed');
+  // R2-291: with a key, a replay must reach the key table instead of this check; the DRAFT -> CONFIRMED claim inside
+  // the transaction still refuses a second confirm under a different key with the same words.
+  if (grn.status === 'CONFIRMED' && !opts.idempotencyKey) throw new GrnStateError('GRN already confirmed');
   assertConfirmable(grn.items);
   assertPaperwork(grn);
   const zone = await storeFactoryZone(); // read before the transaction: the runtime pool is one connection wide
@@ -542,7 +556,7 @@ export async function confirmGRN(grnId: string, opts: { overReceiptReason?: stri
   let overrideReason = '';
 
   // Confirm GRN and update inventory in one transaction
-  await db.$transaction(async (tx) => {
+  const applyConfirm = async (tx: Prisma.TransactionClient) => {
     // Serialise with every other writer of these items' ledgers, these PO lines' counters and the daily
     // transaction sequence, so the cap below is checked on figures nobody else can change until we commit.
     await lockStockKeys(tx, [...[...lockedItems].map(itemLockKey), ...[...lockedPoItems].map(poItemLockKey), STXN_SEQ_KEY]);
@@ -608,15 +622,20 @@ export async function confirmGRN(grnId: string, opts: { overReceiptReason?: stri
         dcQuantity: i.dcQuantity?.toNumber() ?? null,
       }));
       // A later GRN naming the same invoice without a date/amount must not blank the Owner's figures.
-      const { status } = matchSupplierInvoice(matchItems, fresh.supplierInvoiceAmount?.toNumber() ?? null);
+      const gst = fresh.supplierInvoiceGstPercent?.toNumber() ?? null; // R2-325
+      const { status } = matchSupplierInvoice(matchItems, fresh.supplierInvoiceAmount?.toNumber() ?? null, gst);
       const known = {
         ...(fresh.invoiceDate ? { invoiceDate: fresh.invoiceDate } : {}),
+        ...(gst !== null ? { gstPercent: gst } : {}),
         ...(fresh.supplierInvoiceAmount !== null ? { invoiceAmount: fresh.supplierInvoiceAmount, status } : {}),
       };
+      // R2-288: an invoice already approved for payment / paid / rejected keeps that state; only the figures are refreshed.
+      const existingInvoice = await tx.misSupplierInvoice.findUnique({ where: { poId_invoiceNo: { poId: fresh.poId, invoiceNo: fresh.supplierInvoiceNo } }, select: { status: true } });
+      const { status: _matched, ...knownNoStatus } = known as typeof known & { status?: unknown };
       await tx.misSupplierInvoice.upsert({
         where: { poId_invoiceNo: { poId: fresh.poId, invoiceNo: fresh.supplierInvoiceNo } },
         create: { poId: fresh.poId, invoiceNo: fresh.supplierInvoiceNo, grnId, supplierId: fresh.po.supplierId, status, ...known },
-        update: { grnId, supplierId: fresh.po.supplierId, ...known },
+        update: { grnId, supplierId: fresh.po.supplierId, ...(existingInvoice && isPaymentStatus(existingInvoice.status) ? knownNoStatus : known) },
       });
     }
 
@@ -691,7 +710,17 @@ export async function confirmGRN(grnId: string, opts: { overReceiptReason?: stri
       ) ?? (fresh.po.status === 'APPROVED' ? 'RECEIVING' : null);
       if (status && status !== fresh.po.status) await tx.misPurchaseOrder.update({ where: { id: fresh.poId }, data: { status } });
     }
-  });
+  };
+  if (opts.idempotencyKey) {
+    // R2-291: the key row and the stock rows commit together; a replay returns the GRN as it is and books nothing.
+    const keyed = await runOnce<{ grnId: string }>('GRN_CONFIRM', opts.idempotencyKey, actor.userId, { grnId }, 'MisGrn', async (tx) => {
+      await applyConfirm(tx);
+      return { entityId: grnId, result: { grnId } };
+    });
+    if (keyed.replay) return { ...(await db.misGrn.findUnique({ where: { id: grnId } })), warnings: [] as string[] };
+  } else {
+    await db.$transaction(applyConfirm);
+  }
 
   await logAuditEvent({ actorId: actor.userId, action: 'grn.confirm', entity: 'MisGrn', entityId: grnId });
   if (overrides.length > 0) await auditOverReceipt(actor.userId, grnId, overrides, overrideReason);
@@ -800,10 +829,11 @@ export async function reverseGRN(grnId: string, reason: string) {
         select: { items: { select: { receivedQty: true, dcQuantity: true, poItem: { select: { ratePerUnit: true } } } } },
       });
       const invoice = await tx.misSupplierInvoice.findUnique({ where: { poId_invoiceNo: { poId: grn.poId, invoiceNo: grn.supplierInvoiceNo } } });
-      if (invoice) {
+      if (invoice && !isPaymentStatus(invoice.status)) { // R2-288: a settled invoice is not re-matched
         const { status } = matchSupplierInvoice(
           remaining.flatMap((g) => g.items).map((i) => ({ receivedQty: i.receivedQty.toNumber(), ratePerUnit: i.poItem.ratePerUnit.toNumber(), dcQuantity: i.dcQuantity?.toNumber() ?? null })),
           invoice.invoiceAmount?.toNumber() ?? null,
+          invoice.gstPercent?.toNumber() ?? null, // R2-325
         );
         await tx.misSupplierInvoice.update({
           where: { id: invoice.id },

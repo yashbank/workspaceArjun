@@ -102,6 +102,8 @@ const db: Row = {
     create: async ({ data }: Row) => { const row = { id: `t${state.txns.length + 1}`, createdAt: stamp(), ...data, quantity: n(data.quantity) }; state.txns.push(row); return row; },
   },
   misSupplierInvoice: {
+    // R2-288 plumbing: the confirm reads the invoice's current state so a paid one keeps it.
+    findUnique: async ({ where }: Row) => { const hit = state.invoices.find((i) => i.create.poId === where.poId_invoiceNo?.poId && i.create.invoiceNo === where.poId_invoiceNo?.invoiceNo); return hit ? { status: hit.create.status } : null; },
     upsert: async (args: Row) => { state.invoices.push(args); return null; },
     findFirst: async ({ where }: Row) => {
       const hit = state.invoices.find((i) => i.create.supplierId === where.supplierId && i.create.invoiceNo === where.invoiceNo && i.create.poId !== where.poId.not);
@@ -527,5 +529,36 @@ describe('R2-278 quarantine', () => {
     await expect(returnQuarantineToSupplier(quarantine[0].id, 'sent back with the driver')).resolves.toMatchObject({ status: 'RETURNED' });
     expect(quarantine[0]).toMatchObject({ status: 'RETURNED', returnNote: 'sent back with the driver', returnedById: 'u1' });
     await expect(returnQuarantineToSupplier(quarantine[0].id)).rejects.toThrow(/already returned/);
+  });
+});
+
+describe('R2-291 confirmGRN takes an idempotency key', () => {
+  const KEY = '7a1d7c52-8f55-4f7e-9d57-1a2b3c4d5e6f';
+  it('the same key twice confirms once: one set of ledger rows, one audit, and the second call returns the GRN without throwing', async () => {
+    state.poItems = [state.poItems[0]];
+    const grn = await createGRN({ poId: 'po1', dcNumber: 'DC-1' });
+    await addGRNItem(grn.id, { poItemId: state.poItems[0].id, receivedQty: 40, dcQuantity: 40 });
+    const first = await confirmGRN(grn.id, { idempotencyKey: KEY });
+    const second = await confirmGRN(grn.id, { idempotencyKey: KEY });
+    expect(first.status).toBe('CONFIRMED');
+    expect(second.status).toBe('CONFIRMED');
+    expect(state.ledger.filter((l) => l.source === 'GRN')).toHaveLength(1);
+    expect(state.audits.filter((a) => a.action === 'grn.confirm')).toHaveLength(1);
+  });
+  it('without a key a second confirm is still refused in words (unchanged)', async () => {
+    state.poItems = [state.poItems[0]];
+    const grn = await createGRN({ poId: 'po1', dcNumber: 'DC-1' });
+    await addGRNItem(grn.id, { poItemId: state.poItems[0].id, receivedQty: 40, dcQuantity: 40 });
+    await confirmGRN(grn.id);
+    await expect(confirmGRN(grn.id)).rejects.toThrow(/already confirmed/);
+  });
+});
+
+describe('R2-325 the GST % on the delivery paperwork', () => {
+  it('is stored on the GRN header by any grn.write holder (it is a percentage, not money) and bounded 0-100', async () => {
+    const grn = await createGRN({ poId: 'po1', dcNumber: 'DC-1' });
+    const header = await updateGRNHeader(grn.id, { supplierInvoiceGstPercent: 18 });
+    expect(Number(header.supplierInvoiceGstPercent)).toBe(18);
+    await expect(updateGRNHeader(grn.id, { supplierInvoiceGstPercent: 150 })).rejects.toThrow(/between 0 and 100/);
   });
 });

@@ -4,6 +4,7 @@ import { pageQuery, parseSearch, type Paged } from '@/lib/mis/pagination';
 import { db } from '@/server/db';
 import { logAuditEvent } from './audit';
 import { requirePermission } from './auth';
+import { keyedWrite } from './keyed-once';
 import { lockStockKeys } from './stock-lock';
 import { lastLedgerBalance, lastTxnBalance, nextTxnSeq, storeFactoryZone, STXN_SEQ_KEY, txnNumberOf } from './store-books';
 
@@ -94,7 +95,8 @@ export async function getInventoryPage(
   return { rows, total, outOfStock: Number(zero[0]?.n ?? 0) };
 }
 
-export async function adjustInventory(itemId: string, changeQty: number, notes?: string) {
+/** `idempotencyKey` (R2-292): optional; the same key twice writes one adjustment. */
+export async function adjustInventory(itemId: string, changeQty: number, notes?: string, idempotencyKey?: string | null) {
   const actor = await requirePermission('inventory.write');
   // B07 — a hand adjustment to stock always says why.
   const why = notes?.trim() ?? '';
@@ -106,7 +108,7 @@ export async function adjustInventory(itemId: string, changeQty: number, notes?:
   // D2: stock never goes negative. The balance reads, the check and the writes are one read-modify-write, so they run
   // under the item lock like every other writer of these books. Both books move together (as a count reconcile does):
   // an adjustment only the ledger heard of would be refused later against a storekeeper's book that never saw it.
-  const { row, current, newBalance, txnNumber } = await db.$transaction(async (tx) => {
+  const keyed = await keyedWrite('STOCK_ADJUST', idempotencyKey, actor.userId, { itemId, change, why }, async (tx) => {
     await lockStockKeys(tx, [itemLockKey(itemId), STXN_SEQ_KEY]);
     const current = await lastLedgerBalance(tx, itemId);
     const txnBalance = await lastTxnBalance(tx, itemId);
@@ -138,6 +140,8 @@ export async function adjustInventory(itemId: string, changeQty: number, notes?:
     });
     return { row, current, newBalance, txnNumber: txn?.txnNumber ?? null };
   });
+  const { row, current, newBalance, txnNumber } = keyed.value;
+  if (keyed.replay) return newBalance; // R2-292: the first call already wrote and audited it
   // V2 Epic 6: a hand adjustment to stock was the one ledger write with no audit row.
   await logAuditEvent({
     actorId: actor.userId,

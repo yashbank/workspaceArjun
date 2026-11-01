@@ -6,7 +6,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import { HeaderCard } from './cards';
+import { HeaderCard, HomeStack } from './cards';
 
 describe('HeaderCard — the home greeting card\'s language toggle', () => {
   it('each language option is at least a 44px square hit area', () => {
@@ -24,5 +24,16 @@ describe('HeaderCard — the home greeting card\'s language toggle', () => {
     render(<HeaderCard title="Good morning" meta="Monday, 7 September · 07:12" />);
     const group = screen.getByRole('group', { name: /language/i });
     expect(Array.from(group.querySelectorAll('button')).map((b) => b.textContent)).toEqual(['A', 'अ']);
+  });
+});
+
+describe('HomeStack wide (R2-349: the desktop cart table needs more than 420px)', () => {
+  it('stays 420px on a phone and widens from md up only when asked', () => {
+    const { container, rerender } = render(<HomeStack>x</HomeStack>);
+    expect((container.firstChild as HTMLElement).className).not.toContain('md:max-w-5xl');
+    rerender(<HomeStack wide>x</HomeStack>);
+    const cls = (container.firstChild as HTMLElement).className;
+    expect(cls).toContain('max-w-[420px]');
+    expect(cls).toContain('md:max-w-5xl');
   });
 });

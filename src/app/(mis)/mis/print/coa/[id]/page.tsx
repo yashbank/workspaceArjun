@@ -7,6 +7,8 @@ import { docFileName } from '@/lib/mis/document-version';
 import { coaSnapshotFrom, docDataSource, parseVersionParam, SnapshotUnreadableError, type CoaSnapshot, type QcInput } from '@/lib/mis/document-snapshot';
 import { getDocumentVersionSnapshot, getDocumentVersionView } from '@/server/mis/document-versions';
 import { getOrder } from '@/server/mis/orders';
+import { getLastProductionAt } from '@/server/mis/production';
+import { formatOrderQuantity } from '@/lib/mis/order-quantity';
 import { getQcForOrder } from '@/server/mis/qc';
 import { getFactoryTimezone } from '@/server/mis/business-rules';
 import { formatFactoryDate, formatFactoryDateTime } from '@/lib/mis/factory-time';
@@ -37,7 +39,12 @@ export default async function CoaPrintPage({
   const docVersions = await getDocumentVersionView('COA', id);
   // R2-46 follow-up: `?v=N` picks a version (default the newest). An APPROVED one prints its frozen
   // snapshot; a PREPARED one, an unissued doc and a legacy approved row with no snapshot print live.
-  const selected = (requestedVersion != null ? docVersions.versions.find((v) => v.version === requestedVersion) : undefined) ?? docVersions.latest;
+  // R2-294: with no ?v=, the newest APPROVED version is the one that prints (live, unapproved checks never reach a
+  // customer certificate by default); only when nothing is approved does the newest version (or live data) print.
+  const selected =
+    (requestedVersion != null ? docVersions.versions.find((v) => v.version === requestedVersion) : undefined) ??
+    docVersions.versions.find((v) => v.status === 'APPROVED') ??
+    docVersions.latest;
   const dataSource = docDataSource(selected);
   let frozen: CoaSnapshot | null = null;
   if (dataSource === 'SNAPSHOT' && selected) {
@@ -50,18 +57,20 @@ export default async function CoaPrintPage({
       return unreadableSnapshotView({ orderId: id, bar: { view: docVersions, selected, dataSource, fileName } });
     }
   }
-  const doc: CoaSnapshot = frozen ?? coaSnapshotFrom(order, liveQc, new Date());
+  // R2-316: the manufacturing date is when production finished (the last production entry); frozen copies carry their own.
+  const doc: CoaSnapshot = frozen ?? coaSnapshotFrom(order, liveQc, new Date(), { mfgDate: frozen ? null : await getLastProductionAt(id) });
   const qcLogs = doc.qcLogs;
 
   // A frozen copy carries the date it was frozen, so its reprint is identical.
   const printDate = formatFactoryDate(new Date(doc.capturedAt), timeZone);
   const passCount = qcLogs.filter(q => q.result === 'PASS').length;
-  const failCount = qcLogs.filter(q => q.result === 'FAIL').length;
   // B74: only the LATEST check per stage + parameter counts, so a failure fixed by a later pass is resolved.
-  const verdict = latestVerdict(qcLogs).overall;
+  // R2-315: the summary reports unresolved failures only; a setup FAIL re-passed later is not a batch failure.
+  const { overall: verdict, unresolvedFailures } = latestVerdict(qcLogs);
   const overallResult = qcLogs.length === 0 ? 'N/A — no checks recorded' : verdict === 'NA' ? 'N/A' : verdict;
-  // B81: a certificate for an order that is not finished is a draft, and says so in red.
-  const isDraft = doc.order.status !== 'COMPLETED' && doc.order.status !== 'DELIVERED';
+  // B81: a certificate for an order that has not started production is a draft, and says so in red.
+  // R2-338: a CoA may be approved from IN_PRODUCTION on, so that status is no longer a draft.
+  const isDraft = !['IN_PRODUCTION', 'COMPLETED', 'DELIVERED'].includes(doc.order.status ?? '');
 
   return (
     <div className="p-8 max-w-[794px] mx-auto font-sans text-sm text-gray-900">
@@ -113,6 +122,19 @@ export default async function CoaPrintPage({
             {doc.order.deliveryDate ? formatFactoryDate(new Date(doc.order.deliveryDate), timeZone) : '—'}
           </p>
         </div>
+        {/* R2-316: lot = the order number; manufacturing date = when production finished; the certified quantity. */}
+        <div>
+          <span className="text-xs text-gray-500 uppercase">Batch / Lot No.</span>
+          <p className="font-medium mt-0.5 font-mono">{doc.order.orderNumber}</p>
+        </div>
+        <div>
+          <span className="text-xs text-gray-500 uppercase">Manufacturing Date</span>
+          <p className="font-medium mt-0.5">{doc.mfgDate ? formatFactoryDate(new Date(doc.mfgDate), timeZone) : '—'}</p>
+        </div>
+        <div>
+          <span className="text-xs text-gray-500 uppercase">Quantity</span>
+          <p className="font-medium mt-0.5">{doc.order.quantity != null ? formatOrderQuantity(doc.order.quantity, doc.order.unit) : '—'}</p>
+        </div>
         <div>
           <span className="text-xs text-gray-500 uppercase">Overall Result</span>
           <p className={`font-bold mt-0.5 text-lg ${verdict === 'PASS' && qcLogs.length > 0 ? 'text-green-700' : verdict === 'FAIL' ? 'text-red-700' : 'text-gray-500'}`}>
@@ -161,7 +183,7 @@ export default async function CoaPrintPage({
       <div className="flex gap-6 mt-6 mb-10">
         <span className="text-sm text-gray-500">Total checks: <strong>{qcLogs.length}</strong></span>
         <span className="text-sm text-green-700">Pass: <strong>{passCount}</strong></span>
-        <span className="text-sm text-red-700">Fail: <strong>{failCount}</strong></span>
+        <span className="text-sm text-red-700">Unresolved failures: <strong>{unresolvedFailures.length}</strong></span>
       </div>
 
       {/* Signature */}

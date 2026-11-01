@@ -27,7 +27,7 @@ const resetLive = () => {
 vi.mock('@/server/mis/orders', () => ({ getOrder: async (id: string) => (id === 'o1' ? structuredClone(live.order) : null) }));
 vi.mock('@/server/mis/qc', () => ({ getQcForOrder: async () => structuredClone(live.qc) }));
 vi.mock('@/server/mis/bom', () => ({ getBom: async () => structuredClone(live.bom) }));
-vi.mock('@/server/mis/production', () => ({ getProductionSummary: async () => structuredClone(live.production) }));
+vi.mock('@/server/mis/production', () => ({ getProductionSummary: async () => structuredClone(live.production), getLastProductionAt: async () => null /* R2-316 plumbing */ }));
 vi.mock('@/server/mis/job-phases', () => ({ getPhasesForOrder: async () => structuredClone(live.phases) }));
 vi.mock('@/server/mis/worker-allocation', () => ({ getCrewForOrder: async () => structuredClone(live.crew) }));
 

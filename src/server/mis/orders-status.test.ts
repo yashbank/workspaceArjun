@@ -238,3 +238,17 @@ describe('close gate reads', () => {
     expect(await getOrderCloseOverride('o1')).toBeNull();
   });
 });
+
+describe('R2-327 a zero-quantity entry does not satisfy the production gate', () => {
+  it('counts only logs with qtyProduced > 0', async () => {
+    orderFindUnique.mockResolvedValue({ quantity: null, unit: null });
+    await getOrderCloseGates('o1');
+    expect(productionCount).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ qtyProduced: { gt: 0 } }) }));
+  });
+  it('reads as unmet when every log is a 0-quantity placeholder', async () => {
+    orderFindUnique.mockResolvedValue({ quantity: null, unit: null });
+    productionCount.mockResolvedValue(0);
+    const gates = await getOrderCloseGates('o1');
+    expect(gates.find((g) => g.key === 'PRODUCTION_LOGGED')).toMatchObject({ passed: false, detail: 'No production has been logged' });
+  });
+});

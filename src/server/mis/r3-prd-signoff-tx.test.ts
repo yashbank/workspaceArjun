@@ -21,7 +21,7 @@ const PHASE = {
   order: { id: 'o1', orderNumber: 'ORD-1' },
 };
 const read = {
-  misJobPhase: { findFirst: async () => PHASE, findMany: async () => [], update: async ({ data }: { data: Row }) => ({ id: 'ph-1', orderId: 'o1', sequence: 1, ...data }) },
+  misJobPhase: { findFirst: async () => PHASE, findMany: async () => [], count: async () => 0 /* R2-295 plumbing */, update: async ({ data }: { data: Row }) => ({ id: 'ph-1', orderId: 'o1', sequence: 1, ...data }) },
   misProductionLog: { findMany: async () => [{ id: 'l', qtyProduced: 5, qtyWaste: 0, wasteReason: null, loggedAt: new Date(), unit: 'KG' }] },
   misQcCheck: { findMany: async () => [] },
   notification: { create: async () => ({}) },

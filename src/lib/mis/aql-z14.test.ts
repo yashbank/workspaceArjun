@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aqlPlan, parseInspectionLevel, sampleSizeCodeLetter, thresholdsFromPlan } from './aql';
+import { aqlPlan, parseInspectionLevel, resolveAqlPlans, sampleSizeCodeLetter, thresholdsFromPlan } from './aql';
 
 describe('Z1.4 code letters (Table I)', () => {
   it.each([
@@ -50,5 +50,25 @@ describe('resolveAqlPlan', async () => {
   });
   it('limit unset -> 2.5', async () => {
     expect(await resolveAqlPlan(async (k) => (k === 'qc.aql_level' ? 'II' : null), 400)).toMatchObject({ aql: 2.5, accept: 3 });
+  });
+});
+
+describe('R2-314 separate Major and Minor acceptable-quality limits', () => {
+  it('thresholdsFromPlan takes the minor plan for minorMax and the larger sample', () => {
+    const major = aqlPlan(800, 'II', 1.5);
+    const minor = aqlPlan(800, 'II', 4.0);
+    expect(minor.accept).toBeGreaterThan(major.accept);
+    expect(thresholdsFromPlan(major, minor)).toEqual({ sampleSize: Math.max(major.sampleSize, minor.sampleSize), criticalMax: 0, majorMax: major.accept, minorMax: minor.accept });
+    expect(thresholdsFromPlan(major)).toMatchObject({ minorMax: major.accept });
+  });
+  it('resolveAqlPlans reads AQL_MAJOR_LIMIT / AQL_MINOR_LIMIT, falls back to the legacy single limit, then 1.5 / 4.0', async () => {
+    const read = (rules: Record<string, string>) => async (key: string) => rules[key] ?? null;
+    const both = await resolveAqlPlans(read({ 'qc.aql_level': 'II', AQL_MAJOR_LIMIT: '1.0', AQL_MINOR_LIMIT: '6.5' }), 800);
+    expect(both).toMatchObject({ major: { aql: 1.0 }, minor: { aql: 6.5 } });
+    const legacy = await resolveAqlPlans(read({ 'qc.aql_level': 'II', 'qc.acceptable_quality_limit': '2.5' }), 800);
+    expect(legacy).toMatchObject({ major: { aql: 2.5 }, minor: { aql: 2.5 } });
+    const defaults = await resolveAqlPlans(read({ 'qc.aql_level': 'II' }), 800);
+    expect(defaults).toMatchObject({ major: { aql: 1.5 }, minor: { aql: 4.0 } });
+    expect(await resolveAqlPlans(read({}), 800)).toBeNull();
   });
 });

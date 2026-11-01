@@ -76,12 +76,15 @@ export async function getMachineBoard() {
       workerAllocations: { where: { releasedAt: null, deletedAt: null }, select: { employee: { select: { name: true } } } },
     },
   });
-  const allocMap = new Map<string, (typeof allocations)[number]>(
-    allocations.map((a) => [a.machineId, a]),
-  );
+  // R2-339: a machine can hold several live bookings at once; keep them all (earliest start first) instead of
+  // letting a Map overwrite all but the last one.
+  const allocMap = new Map<string, (typeof allocations)[number][]>();
+  for (const a of [...allocations].sort((x, y) => x.startsAt.getTime() - y.startsAt.getTime())) {
+    allocMap.set(a.machineId, [...(allocMap.get(a.machineId) ?? []), a]);
+  }
   const sync = await boardSync(machines.map((m) => m.id), now);
   return machines.map(m => {
-    const alloc = allocMap.get(m.id);
+    const [alloc, ...others] = allocMap.get(m.id) ?? [];
     const { workerAllocations, ...rest } = (alloc ?? {}) as Partial<(typeof allocations)[number]>;
     return {
       ...m,
@@ -90,6 +93,8 @@ export async function getMachineBoard() {
       currentAllocation: alloc
         ? { ...(rest as Omit<(typeof allocations)[number], 'workerAllocations'>), crewNames: (workerAllocations ?? []).map((w) => w.employee.name) }
         : null,
+      /** R2-339: the other bookings live on this machine right now (concurrent), for the board to list. */
+      otherAllocations: others.map((o) => ({ id: o.id, orderNumber: o.order?.orderNumber ?? null, endsAt: o.endsAt, source: o.source })),
       lastLog: sync.get(m.id)?.lastLog ?? null,
       syncFlag: sync.get(m.id)?.syncFlag ?? null,
     };

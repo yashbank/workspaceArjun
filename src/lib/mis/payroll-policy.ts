@@ -16,6 +16,7 @@
  * Pure: no Prisma, no React.
  */
 import { resolveAsOf } from './effective-dated';
+import { deductionPolicyFrom, type DeductionPolicy } from './payroll-deductions';
 
 export type RuleHistory = readonly { effectiveFrom: Date; ruleValue: string }[];
 
@@ -79,6 +80,8 @@ export type PayrollPolicy = {
   sandwichOn: (date: Date) => boolean;
   rentMinDaysOn: (date: Date) => number;
   rentCountHolidaysOn: (date: Date) => boolean;
+  /** R2-324: PF / ESIC / PT rules as of a date (defaults when unset). */
+  deductionsOn: (date: Date) => DeductionPolicy;
 };
 
 export type PayrollPolicyHistories = {
@@ -88,6 +91,12 @@ export type PayrollPolicyHistories = {
   sandwich: RuleHistory;
   rentMinDays: RuleHistory;
   rentCountHolidays: RuleHistory;
+  /** R2-324: optional so older callers and fixtures keep the defaults. */
+  pfPercent?: RuleHistory;
+  esicPercent?: RuleHistory;
+  esicCeiling?: RuleHistory;
+  ptMonthly?: RuleHistory;
+  ptMinGross?: RuleHistory;
 };
 
 /** Binds the rule histories to "as of this day" lookups (a rate change never moves a past day). */
@@ -99,5 +108,9 @@ export function buildPayrollPolicy(h: PayrollPolicyHistories): PayrollPolicy {
     sandwichOn: (d) => parseBoolRule(at(h.sandwich, d), false),
     rentMinDaysOn: (d) => parseMinDays(at(h.rentMinDays, d)),
     rentCountHolidaysOn: (d) => parseBoolRule(at(h.rentCountHolidays, d), true),
+    deductionsOn: (d) => deductionPolicyFrom({
+      pfPercent: at(h.pfPercent ?? [], d), esicPercent: at(h.esicPercent ?? [], d), esicCeiling: at(h.esicCeiling ?? [], d),
+      ptMonthly: at(h.ptMonthly ?? [], d), ptMinGross: at(h.ptMinGross ?? [], d),
+    }),
   };
 }

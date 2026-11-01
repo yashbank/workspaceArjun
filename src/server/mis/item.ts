@@ -4,6 +4,7 @@ import { db } from '@/server/db';
 import { requirePermission } from './auth';
 import { logAuditEvent } from './audit';
 import { createWithItemCode } from './item-code';
+import { lastLedgerBalance } from './store-books';
 
 const MAX_NAME = 120;
 const MAX_CODE = 40;
@@ -77,6 +78,16 @@ export async function createItem(input: ItemInput) {
     coating: input.coating?.trim() || null,
     unit,
   };
+  // R2-336: a typed code that belongs to a soft-deleted item restores that item (its history, ledger and BOM links
+  // intact) with the new details, instead of tripping the unique constraint on `code`.
+  if (input.code?.trim()) {
+    const deleted = await db.misItem.findFirst({ where: { code: cleanCode(input.code), deletedAt: { not: null } } });
+    if (deleted) {
+      const after = await db.misItem.update({ where: { id: deleted.id }, data: { ...data, deletedAt: null, isActive: true } });
+      await logAuditEvent({ actorId: actor.userId, action: 'item.restore', entity: 'MisItem', entityId: deleted.id, before: deleted, after });
+      return forRole(actor.role, after);
+    }
+  }
   // A blank code is allocated (next ITM-NNNN, deleted items counted); a typed one is used as given.
   const created = input.code?.trim()
     ? await db.misItem.create({ data: { code: cleanCode(input.code), ...data } })
@@ -106,6 +117,13 @@ export async function deleteItem(id: string) {
   const actor = await requirePermission('masters.write');
   const before = await db.misItem.findUnique({ where: { id } });
   if (!before) throw new Error(`Item ${id} not found`);
+  // R2-336: stock on hand or a place in an approved BOM means the item is still in use.
+  const [balance, inBom] = await Promise.all([
+    lastLedgerBalance(db, id),
+    db.misBomMaterial.findFirst({ where: { itemId: id, stage: { bom: { status: 'APPROVED' } } }, select: { id: true } }),
+  ]);
+  if (balance > 0) throw new Error(`${before.name} still has ${balance} in stock. Issue or adjust it to zero before deleting.`);
+  if (inBom) throw new Error(`${before.name} is a material in an approved BOM. Remove it from the BOM first.`);
   const after = await db.misItem.update({ where: { id }, data: { deletedAt: new Date(), isActive: false } });
   await logAuditEvent({ actorId: actor.userId, action: 'item.delete', entity: 'MisItem', entityId: id, before, after });
   return forRole(actor.role, after);

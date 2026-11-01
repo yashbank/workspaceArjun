@@ -32,6 +32,7 @@ const dbMock = {
   misJobPhase: {
     findFirst: (...a: unknown[]) => phaseFindFirst(...a),
     findMany: async () => [],
+    count: async () => 0, // R2-295 plumbing: no skipped upstream phase in this suite
     update: (...a: unknown[]) => phaseUpdate(...a),
   },
   misProductionLog: {

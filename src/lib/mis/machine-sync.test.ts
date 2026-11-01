@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { classifyLogAgainstBookings, worstFlag, type BookingWindow } from './machine-sync';
+import { classifyLogAgainstBookings, decideMachineSync, LATE_ENTRY_GRACE_MS, worstFlag, type BookingWindow } from './machine-sync';
 
 const at = new Date('2026-10-13T06:00:00Z');
 const booking = (over: Partial<BookingWindow> = {}): BookingWindow => ({
@@ -32,5 +32,24 @@ describe('classifyLogAgainstBookings (R3 B99)', () => {
     expect(worstFlag(['OK', 'OTHER_ORDER', 'NO_BOOKING'])).toBe('NO_BOOKING');
     expect(worstFlag(['OK', 'OTHER_ORDER'])).toBe('OTHER_ORDER');
     expect(worstFlag([])).toBeNull();
+  });
+});
+
+describe('R2-339 decideMachineSync extends a same-order booking that just ended', () => {
+  const ended = (minutesAgo: number, over: Record<string, unknown> = {}) => ({
+    id: 'b1', machineId: 'm1', orderId: 'o1', releasedAt: null, source: 'SCHEDULED' as const,
+    startsAt: new Date(at.getTime() - 8 * 60 * 60 * 1000), endsAt: new Date(at.getTime() - minutesAgo * 60 * 1000), ...over,
+  });
+  it('EXTEND when the booking ended 15 minutes before the log', () => {
+    expect(decideMachineSync({ machineId: 'm1', orderId: 'o1', at }, [ended(15)])).toMatchObject({ kind: 'EXTEND', booking: { id: 'b1' } });
+  });
+  it('CREATE once the grace window has passed, for another order, or when released', () => {
+    expect(decideMachineSync({ machineId: 'm1', orderId: 'o1', at }, [ended(LATE_ENTRY_GRACE_MS / 60000 + 1)]).kind).toBe('CREATE');
+    expect(decideMachineSync({ machineId: 'm1', orderId: 'o2', at }, [ended(15)]).kind).toBe('CREATE');
+    expect(decideMachineSync({ machineId: 'm1', orderId: 'o1', at }, [ended(15, { releasedAt: new Date() })]).kind).toBe('CREATE');
+  });
+  it('a covering booking still wins over a just-ended one', () => {
+    const covering = { ...ended(0), id: 'b2', startsAt: new Date(at.getTime() - 60_000), endsAt: new Date(at.getTime() + 60_000) };
+    expect(decideMachineSync({ machineId: 'm1', orderId: 'o1', at }, [ended(15), covering])).toMatchObject({ kind: 'COVERED', booking: { id: 'b2' } });
   });
 });

@@ -21,7 +21,7 @@ const TONE: Record<ChecklistStatus, string> = {
 };
 const SHORT: Record<ChecklistStatus, string> = { PASS: 'P', FAIL: 'F', MAKE_READY: 'MR', PLATE_ERR: 'PE' };
 
-export function QcChecklist({ orderId, templates, checks, canWrite, day }: { orderId: string; templates: QcTemplateRow[]; checks: (ChecklistCheck & { templateId?: string | null })[]; canWrite: boolean; day?: { dateKey: string; timeZone: string } }) {
+export function QcChecklist({ orderId, templates, checks, canWrite, day }: { orderId: string; templates: QcTemplateRow[]; checks: (ChecklistCheck & { templateId?: string | null })[]; canWrite: boolean; day?: { dateKey: string; timeZone: string; shift?: { startTime: string; endTime: string } | null } }) {
   const router = useRouter();
   const [templateId, setTemplateId] = useState(templates[0]?.id ?? '');
   const [active, setActive] = useState<{ parameter: string; slot: string } | null>(null);
@@ -29,8 +29,10 @@ export function QcChecklist({ orderId, templates, checks, canWrite, day }: { ord
   const [error, setError] = useState<string | null>(null);
   const template = templates.find((t) => t.id === templateId);
   if (!template) return null;
+  // R2-323: an archived form stays readable for its recorded checks; new taps go on an active form only.
+  const mayTap = canWrite && template.isActive;
 
-  const todays = day ? filterChecksToFactoryDay(checks, day.dateKey, day.timeZone) : checks;
+  const todays = day ? filterChecksToFactoryDay(checks, day.dateKey, day.timeZone, day.shift) : checks; // R2-312: shift day, not calendar day
   const rows = buildChecklist(template.parameters, template.slots, todays.filter((c) => c.templateId === template.id));
 
   const tap = (status: ChecklistStatus) => {
@@ -50,7 +52,7 @@ export function QcChecklist({ orderId, templates, checks, canWrite, day }: { ord
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-5 py-3">
         <div className="font-medium text-gray-700">Checklist{day && <span className="ml-2 text-sm font-normal text-gray-500">{day.dateKey.slice(8, 10)}/{day.dateKey.slice(5, 7)}/{day.dateKey.slice(0, 4)}</span>}</div>
         <div className="flex items-center gap-2">
-          <div className="w-56"><Select label="Form" value={templateId} onChange={setTemplateId} options={templates.map((t) => ({ value: t.id, label: t.name }))} /></div>
+          <div className="w-56"><Select label="Form" value={templateId} onChange={setTemplateId} options={templates.map((t) => ({ value: t.id, label: t.isActive ? t.name : `${t.name} (archived)` }))} /></div>
           <a href={`/mis/print/qc-checklist/${orderId}?template=${template.id}`} target="_blank" className="inline-flex min-h-11 items-center text-sm text-blue-600 hover:underline">🖨 A4</a>
         </div>
       </div>
@@ -72,7 +74,7 @@ export function QcChecklist({ orderId, templates, checks, canWrite, day }: { ord
                     <td key={cell.slot} className="px-0.5 py-1 text-center">
                       <button
                         type="button"
-                        disabled={!canWrite || isPending}
+                        disabled={!mayTap || isPending}
                         aria-label={`${row.parameter} at ${cell.slot}: ${cell.status ? CHECKLIST_LABELS[cell.status] : 'not checked'}`}
                         aria-pressed={isActive}
                         onClick={() => setActive(isActive ? null : { parameter: row.parameter, slot: cell.slot })}
@@ -89,7 +91,7 @@ export function QcChecklist({ orderId, templates, checks, canWrite, day }: { ord
         </table>
       </div>
       {error && <p role="alert" className="border-t border-gray-100 px-5 py-2 text-sm text-red-600">{error}</p>}
-      {active && canWrite && (
+      {active && mayTap && (
         <div className="flex flex-wrap items-center gap-2 border-t border-gray-100 px-5 py-3">
           <span className="text-sm text-gray-600">{active.parameter} · {active.slot}:</span>
           {CHECKLIST_STATUSES.map((s) => (

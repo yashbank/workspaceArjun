@@ -149,6 +149,7 @@ export function QcGridDesktop({ view, denied = false }: { view: QcGridView | nul
                         <th scope="row" className="pr-3 text-left font-normal">
                           <span className="block text-sm font-semibold text-slate-900">{row.machines.length > 0 ? row.machines.join(', ') : row.orderNumber}</span>
                           <span className="block font-mono text-[10px] text-slate-500">{row.machines.length > 0 ? `${row.orderNumber} · ` : ''}{row.description ?? '—'}</span>
+                          {row.unbooked && <span className="block text-[10px] font-medium text-amber-700">not on a machine</span>}
                         </th>
                         {row.cells.map((cell, i) => (
                           <td key={i} className="p-0">

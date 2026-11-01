@@ -5,44 +5,57 @@ import Link from 'next/link';
 import { HiddenParams, Pagination } from '@/components/mis/kit/pagination';
 import { pageHref } from '@/lib/mis/pagination';
 
-import { reconcileSupplierInvoiceAction, signOffInvoiceVarianceAction } from '@/app/(mis)/mis/supplier-invoices/actions';
+import { approveInvoiceForPaymentAction, markInvoicePaidAction, reconcileSupplierInvoiceAction, rejectSupplierInvoiceAction, signOffInvoiceVarianceAction } from '@/app/(mis)/mis/supplier-invoices/actions';
 import { Button } from '@/components/mis/kit/button';
 import { unwrap } from '@/lib/mis/action-result';
-import { MATCH_STATUSES, type MatchStatus } from '@/lib/mis/invoice-match';
+import { INVOICE_STATUSES, isPaymentStatus, type InvoiceStatus } from '@/lib/mis/invoice-match';
 import type { SupplierInvoiceRow } from '@/server/mis/supplier-invoice';
 
-const LABEL: Record<MatchStatus, string> = {
+const LABEL: Record<InvoiceStatus, string> = {
   MATCHED: 'Matched',
   DISCREPANCY_QTY: 'Quantity differs',
   DISCREPANCY_PRICE: 'Price differs',
   PENDING_REVIEW: 'Pending review',
+  // R2-288
+  APPROVED_FOR_PAYMENT: 'Approved for payment',
+  PAID: 'Paid',
+  REJECTED: 'Rejected',
 };
 
 /** Green matched, amber quantity, red price, neutral pending (MIS_UI_SPEC §4.2). */
-const CARD: Record<MatchStatus, string> = {
+const CARD: Record<InvoiceStatus, string> = {
   MATCHED: 'bg-green-50 border-green-200',
   DISCREPANCY_QTY: 'bg-amber-50 border-amber-200',
   DISCREPANCY_PRICE: 'bg-red-50 border-red-200',
   PENDING_REVIEW: 'bg-white border-slate-200',
+  APPROVED_FOR_PAYMENT: 'bg-indigo-50 border-indigo-200',
+  PAID: 'bg-slate-50 border-slate-200',
+  REJECTED: 'bg-slate-100 border-slate-300',
 };
-const PILL: Record<MatchStatus, string> = {
+const PILL: Record<InvoiceStatus, string> = {
   MATCHED: 'bg-emerald-50 text-emerald-800 ring-emerald-200',
   DISCREPANCY_QTY: 'bg-amber-50 text-amber-900 ring-amber-200',
   DISCREPANCY_PRICE: 'bg-red-50 text-red-800 ring-red-200',
   PENDING_REVIEW: 'bg-slate-100 text-slate-700 ring-slate-200',
+  APPROVED_FOR_PAYMENT: 'bg-indigo-50 text-indigo-800 ring-indigo-200',
+  PAID: 'bg-slate-200 text-slate-800 ring-slate-300',
+  REJECTED: 'bg-slate-200 text-slate-600 ring-slate-300',
 };
-const ROW_TINT: Record<MatchStatus, string> = {
+const ROW_TINT: Record<InvoiceStatus, string> = {
   MATCHED: '',
   DISCREPANCY_QTY: 'bg-amber-50',
   DISCREPANCY_PRICE: 'bg-red-50',
   PENDING_REVIEW: '',
+  APPROVED_FOR_PAYMENT: 'bg-indigo-50',
+  PAID: '',
+  REJECTED: 'bg-slate-100',
 };
 
 const fmtDate = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 10) : '—');
 const fmtPct = (p: number | null | undefined) => (p === null || p === undefined ? '—' : `${p > 0 ? '+' : ''}${p}%`);
 const fmtQty = (q: number | null | undefined) => (q === null || q === undefined ? '—' : String(q));
 
-function Pill({ status }: { status: MatchStatus }) {
+function Pill({ status }: { status: InvoiceStatus }) {
   return <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-sm font-medium ring-1 ring-inset ${PILL[status]}`}>{LABEL[status]}</span>;
 }
 
@@ -50,7 +63,7 @@ type Props = {
   rows: SupplierInvoiceRow[];
   canReconcile: boolean;
   /** R2-83: the server-side page — the status filter and search are URL params, `counts` is per status over the search. */
-  paging?: { total: number; page: number; status: MatchStatus | ''; q: string; counts: Record<MatchStatus, number> };
+  paging?: { total: number; page: number; status: InvoiceStatus | ''; q: string; counts: Record<InvoiceStatus, number> };
   /** R2-280: the Owner may sign off a discrepancy invoice's variance. */
   canSignOff?: boolean;
 };
@@ -59,12 +72,12 @@ export function SupplierInvoicesScreen({ rows, canReconcile, paging, canSignOff 
   const [busy, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
-  const filter: MatchStatus | 'ALL' = paging ? (paging.status || 'ALL') : 'ALL';
+  const filter: InvoiceStatus | 'ALL' = paging ? (paging.status || 'ALL') : 'ALL';
   const shown = rows;
-  const count = (s: MatchStatus) => (paging ? paging.counts[s] : rows.filter((r) => r.status === s).length);
-  const allCount = paging ? MATCH_STATUSES.reduce((n, s) => n + paging.counts[s], 0) : rows.length;
+  const count = (s: InvoiceStatus) => (paging ? paging.counts[s] : rows.filter((r) => r.status === s).length);
+  const allCount = paging ? INVOICE_STATUSES.reduce((n, s) => n + paging.counts[s], 0) : rows.length;
   const q = paging?.q ?? '';
-  const chipHref = (s: MatchStatus | '') => pageHref('/mis/supplier-invoices', { q, status: s }, 1);
+  const chipHref = (s: InvoiceStatus | '') => pageHref('/mis/supplier-invoices', { q, status: s }, 1);
   const hasFigures = rows.some((r) => r.figures);
   const hasMoney = rows.some((r) => r.money);
 
@@ -89,6 +102,38 @@ export function SupplierInvoicesScreen({ rows, canReconcile, paging, canSignOff 
         <p className="text-xs text-amber-900">Not to be paid until the Owner signs off the variance.</p>
       )
     ) : null;
+  // R2-288: the Owner approves payment (a matched invoice, or a signed-off discrepancy); Admin / Owner records the payment or rejects.
+  const [payDate, setPayDate] = useState('');
+  const [payRef, setPayRef] = useState('');
+  const [rejectReason, setRejectReason] = useState('');
+  const act = (fn: () => Promise<unknown>) =>
+    startTransition(async () => {
+      setError(null);
+      try { await fn(); } catch (e) { setError(e instanceof Error ? e.message : 'That did not save.'); }
+    });
+  const paymentControl = (r: SupplierInvoiceRow) => {
+    if (r.status === 'PAID') return <p className="text-xs text-slate-700">Paid {r.payment?.paymentDate ? fmtDate(r.payment.paymentDate) : ''}{r.payment?.paymentRef ? ` · Ref ${r.payment.paymentRef}` : ''}</p>;
+    if (r.status === 'REJECTED') return <p className="text-xs text-slate-700">Rejected{r.payment?.rejectReason ? ` · ${r.payment.rejectReason}` : ''}</p>;
+    const mayApprove = canSignOff && (r.status === 'MATCHED' || (isDiscrepancy(r) && !!r.signedOff));
+    return (
+      <span className="mt-1 flex flex-wrap items-center gap-2">
+        {mayApprove && <Button variant="secondary" disabled={busy} onClick={() => act(async () => unwrap(await approveInvoiceForPaymentAction(r.id)))}>Approve for payment</Button>}
+        {r.status === 'APPROVED_FOR_PAYMENT' && canReconcile && (
+          <>
+            <input aria-label="Payment date" type="date" className="min-h-11 rounded-lg border border-slate-300 px-3 text-base" value={payDate} onChange={(e) => setPayDate(e.target.value)} />
+            <input aria-label="UTR / cheque number" className="min-h-11 rounded-lg border border-slate-300 px-3 text-base" placeholder="UTR / cheque no." value={payRef} onChange={(e) => setPayRef(e.target.value)} />
+            <Button disabled={busy || !payDate || payRef.trim().length < 3} onClick={() => act(async () => { unwrap(await markInvoicePaidAction(r.id, { paymentDate: payDate, paymentRef: payRef.trim() })); setPayDate(''); setPayRef(''); })}>Mark paid</Button>
+          </>
+        )}
+        {canReconcile && !isPaymentStatus(r.status) && (
+          <>
+            <input aria-label="Reject reason" className="min-h-11 rounded-lg border border-slate-300 px-3 text-base" placeholder="Reason to reject" value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} />
+            <Button variant="secondary" disabled={busy || rejectReason.trim().length < 3} onClick={() => act(async () => { unwrap(await rejectSupplierInvoiceAction(r.id, rejectReason.trim())); setRejectReason(''); })}>Reject</Button>
+          </>
+        )}
+      </span>
+    );
+  };
   const reconcile = (id: string) =>
     startTransition(async () => {
       setError(null);
@@ -108,7 +153,7 @@ export function SupplierInvoicesScreen({ rows, canReconcile, paging, canSignOff 
 
       <div className="flex flex-wrap gap-2" role="group" aria-label="Filter by match status">
         <FilterChip active={filter === 'ALL'} href={chipHref('')}>All ({allCount})</FilterChip>
-        {MATCH_STATUSES.map((s) => (
+        {INVOICE_STATUSES.map((s) => (
           <FilterChip key={s} active={filter === s} href={chipHref(s)}>{LABEL[s]} ({count(s)})</FilterChip>
         ))}
       </div>
@@ -153,8 +198,8 @@ export function SupplierInvoicesScreen({ rows, canReconcile, paging, canSignOff 
                     Expected {r.money.expected} · Invoice {r.money.invoiced ?? '—'} · Difference {r.money.variance ?? '—'}
                   </p>
                 )}
-                <div className="mt-2">{signOffControl(r)}</div>
-                {canReconcile && (
+                <div className="mt-2">{signOffControl(r)}{paymentControl(r)}</div>
+                {canReconcile && !isPaymentStatus(r.status) && (
                   <Button variant="secondary" className="mt-3" block disabled={busy} onClick={() => reconcile(r.id)}>Re-check match</Button>
                 )}
               </li>
@@ -183,7 +228,7 @@ export function SupplierInvoicesScreen({ rows, canReconcile, paging, canSignOff 
                     <td className="p-3 font-mono text-xs text-slate-700">{r.poNumber}{r.grnNumber ? ` · ${r.grnNumber}` : ''}</td>
                     <td className="p-3">{r.supplierName ?? '—'}</td>
                     <td className="p-3">{fmtDate(r.invoiceDate)}</td>
-                    <td className="p-3"><Pill status={r.status} /><div className="mt-1">{signOffControl(r)}</div></td>
+                    <td className="p-3"><Pill status={r.status} /><div className="mt-1">{signOffControl(r)}{paymentControl(r)}</div></td>
                     {hasFigures && <>
                       <td className="p-3 text-right">{fmtQty(r.figures?.billedQty)}</td>
                       <td className="p-3 text-right">{fmtQty(r.figures?.receivedQty)}</td>
@@ -194,7 +239,7 @@ export function SupplierInvoicesScreen({ rows, canReconcile, paging, canSignOff 
                       <td className="p-3 text-right">{r.money?.invoiced ?? '—'}</td>
                       <td className="p-3 text-right">{r.money?.variance ?? '—'}</td>
                     </>}
-                    {canReconcile && <td className="p-3 text-right"><Button variant="secondary" disabled={busy} onClick={() => reconcile(r.id)}>Re-check</Button></td>}
+                    {canReconcile && <td className="p-3 text-right">{!isPaymentStatus(r.status) && <Button variant="secondary" disabled={busy} onClick={() => reconcile(r.id)}>Re-check</Button>}</td>}
                   </tr>
                 ))}
               </tbody>

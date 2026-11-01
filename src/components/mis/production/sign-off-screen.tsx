@@ -25,6 +25,8 @@ export type SignOffScreenProps = {
   status: string;
   inChargeName: string | null;
   canSign: boolean;
+  /** R2-330: the viewer is an Admin/Owner signing for the in-charge; a reason is required. */
+  signsOnBehalf?: boolean;
   output: number;
   waste: number;
   wastePercent: number | null;
@@ -51,6 +53,8 @@ export function SignOffScreen(props: SignOffScreenProps) {
   const t = useT();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [notes, setNotes] = useState('');
+  const [reason, setReason] = useState('');
 
   const wasteBlockers = props.blockers.filter((b) => b.kind === 'WASTE_REASON');
   const qcBlockers = props.blockers.filter((b) => b.kind === 'QC_FAILURE');
@@ -189,14 +193,41 @@ export function SignOffScreen(props: SignOffScreenProps) {
 
       {/* ---- The confirm action. Below the numbers, always. ---- */}
       {props.canSign ? (
+        <>
+          {/* R2-295: optional, but the server insists on it when an earlier phase was skipped. */}
+          <label className="block rounded-2xl border border-slate-200 bg-white p-4">
+            <span className="text-sm font-semibold text-slate-700">{t('phase.signOff.handoverNote')}</span>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={2}
+              placeholder={t('phase.signOff.handoverNoteHint')}
+              className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-3 text-base"
+            />
+          </label>
+          {props.signsOnBehalf && (
+            // R2-330: an Admin/Owner signs for the in-charge only with a reason; the server refuses without one.
+            <label className="block rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <span className="text-sm font-semibold text-amber-900">
+                {t('phase.signOff.onBehalfReason')}{props.inChargeName ? ` (${props.inChargeName})` : ''}
+              </span>
+              <textarea
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                rows={2}
+                className="mt-2 w-full rounded-xl border border-amber-300 px-3 py-3 text-base"
+              />
+            </label>
+          )}
         <button
           type="button"
-          disabled={isPending}
-          onClick={() => run(() => signOffPhaseAction(props.phaseId, props.orderId))}
+          disabled={isPending || (props.signsOnBehalf && reason.trim().length < 3)}
+          onClick={() => run(() => signOffPhaseAction(props.phaseId, props.orderId, notes, props.signsOnBehalf ? reason : undefined))}
           className="w-full rounded-xl bg-indigo-600 py-3.5 text-base font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
         >
           {isPending ? t('phase.signOff.signing') : t('phase.signOff.confirm')}
         </button>
+        </>
       ) : (
         <section className="rounded-2xl border border-slate-200 bg-white p-4">
           <p className="text-sm text-slate-600">

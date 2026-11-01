@@ -4,7 +4,7 @@ import { requirePermission } from '@/server/mis/auth';
 import { getBom } from '@/server/mis/bom';
 import { getPhasesForOrder } from '@/server/mis/job-phases';
 import { getOrder } from '@/server/mis/orders';
-import { getProductionSummary } from '@/server/mis/production';
+import { getLastProductionAt, getProductionSummary } from '@/server/mis/production';
 import { getQcForOrder } from '@/server/mis/qc';
 import { getCrewForOrder } from '@/server/mis/worker-allocation';
 
@@ -20,9 +20,9 @@ export async function captureDocumentSnapshot(docType: DocVersionType, refId: st
   await requirePermission('orders.read');
   const at = new Date();
   if (docType === 'COA') {
-    const [order, qcLogs] = await Promise.all([getOrder(refId), getQcForOrder(refId)]);
+    const [order, qcLogs, mfgDate] = await Promise.all([getOrder(refId), getQcForOrder(refId), getLastProductionAt(refId)]);
     if (!order) throw new Error('Order not found.');
-    return coaSnapshotFrom(order, qcLogs as unknown as QcInput[], at);
+    return coaSnapshotFrom(order, qcLogs as unknown as QcInput[], at, { mfgDate }); // R2-316
   }
   const [order, bom, production, phases, crew] = await Promise.all([
     getOrder(refId),

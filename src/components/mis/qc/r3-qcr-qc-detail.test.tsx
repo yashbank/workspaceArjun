@@ -96,3 +96,15 @@ describe('B84 Edit action', () => {
     await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('can no longer be edited'));
   });
 });
+
+describe('R2-320 the AQL sample names its process stage', () => {
+  it('a stage picked in the dialog is sent as bomStageId', async () => {
+    // A refusal keeps the dialog open (no AqlBreakdown render); the point is the payload the action receives.
+    recordAqlSampleAction.mockResolvedValue({ ok: false, detail: 'Sample too small: inspect at least 32' });
+    render(<QcDetailScreen {...props({ stages: [{ value: 's1', label: 'Printing' }, { value: 's2', label: 'Lamination' }] })} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Run AQL Sample' }));
+    fireEvent.change(screen.getByLabelText('Process / BOM stage (optional)'), { target: { value: 's2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Evaluate' }));
+    await waitFor(() => expect(recordAqlSampleAction).toHaveBeenCalledWith(expect.objectContaining({ orderId: 'o1', bomStageId: 's2', sampleSize: 32 })));
+  });
+});

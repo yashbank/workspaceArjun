@@ -209,3 +209,13 @@ describe('the punch overrides — need attendance.write on top of queue.review',
     expect(fake.state.punches).toHaveLength(1);
   });
 });
+
+describe('R2-342 a SUPERVISOR resolves a parked floor entry (queue.review + clearance.write + production.read)', () => {
+  it('applies a CLEARANCE_MISSING park', async () => {
+    const key = seedQueued({ parkReason: 'CLEARANCE_MISSING' });
+    fake.state.orders.get(ORDER_ID)!.status = 'IN_PROGRESS';
+    getMisRole.mockResolvedValue('SUPERVISOR');
+    const result = await resolveParkedWrite(key, 'the line was cleared at 10:00, log kept on paper');
+    expect(result.outcome).toBe('APPLIED');
+  });
+});

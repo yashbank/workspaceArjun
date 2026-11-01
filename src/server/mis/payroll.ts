@@ -11,6 +11,7 @@ import { getPayComponentsForEmployees, type PayComponentMap } from '@/server/mis
 import { listApprovedExtraPayDaysForMonth, type ExtraPayDayRow } from '@/server/mis/extra-pay-days';
 import { hasApprovedHalfDayLeave, isPaidLeaveDay } from '@/lib/mis/leave-pay';
 import { getLeavePayRulesForMonth } from '@/server/mis/leave-pay';
+import { deductionsFor, type Deductions } from '@/lib/mis/payroll-deductions';
 
 /** Attendance statuses that earn a day's basic wage, and what fraction of it. */
 const DAY_FRACTION: Record<string, number> = { PRESENT: 1, HALF_DAY: 0.5 };
@@ -36,6 +37,12 @@ export type PayrollRow = {
   extraPay: number;
   latePenalty: number;
   grossPay: number;
+  /** R2-324: statutory deductions, the advance recovered this month and what is actually paid out. */
+  pf: number;
+  esic: number;
+  pt: number;
+  advance: number;
+  netPay: number;
   wageTypeCode: string | null;
   /** Set on a live (OPEN period) row when no wage code could be resolved at all — 25.1's data-health finding. */
   needsPayCode?: boolean;
@@ -87,9 +94,14 @@ function snapshotToRow(line: {
   workingDays: number; present: number; halfDay: number; absent: number; leave: number;
   otMinutes: number; lateMinutes: number; allowanceDays: number;
   basicWage: unknown; hra: unknown; allowance: unknown; otPay: unknown; bonus: unknown; extraPay: unknown; latePenalty: unknown; grossPay: unknown;
+  pf?: unknown; esic?: unknown; pt?: unknown; advance?: unknown; netPay?: unknown;
   wageTypeCode: string | null;
-}): PayrollRow {
+}, deductionsNow: (pay: { basicWage: number; grossPay: number }) => Deductions): PayrollRow {
   const n = (v: unknown) => Number(v);
+  // R2-324: a line frozen before the deduction columns existed is completed from today's rules.
+  const frozen: Deductions = line.netPay == null
+    ? deductionsNow({ basicWage: n(line.basicWage), grossPay: n(line.grossPay) })
+    : { pf: n(line.pf ?? 0), esic: n(line.esic ?? 0), pt: n(line.pt ?? 0), advance: n(line.advance ?? 0), netPay: n(line.netPay) };
   return {
     employeeId: line.employeeId,
     employeeName: line.employeeName,
@@ -111,6 +123,7 @@ function snapshotToRow(line: {
     extraPay: n(line.extraPay),
     latePenalty: n(line.latePenalty),
     grossPay: n(line.grossPay),
+    ...frozen,
     wageTypeCode: line.wageTypeCode,
   };
 }
@@ -139,7 +152,7 @@ function computeEmployeeMonth(
   paidLeaveOn: (date: Date) => boolean = () => false,
   /** R2-167: true when this HALF_DAY row is an approved half-day leave and the Owner marked half-day leave PAID (its leave half is paid too). */
   paidHalfDayOn: (date: Date) => boolean = () => false,
-): PayrollRow {
+): Omit<PayrollRow, 'pf' | 'esic' | 'pt' | 'advance' | 'netPay'> {
   const { otMultiplierOn } = policy;
   const payType: 'MONTHLY' | 'DAILY' = emp.payType === 'MONTHLY' ? 'MONTHLY' : 'DAILY';
   // R2-236 / R2-245: a DAILY worker the Owner marked `sundayPaid` earns the weekly off exactly like a MONTHLY one
@@ -337,12 +350,28 @@ async function policyRuleHistory(client: Prisma.TransactionClient, ruleKey: Payr
 async function computePayroll(year: number, month: number, client: Prisma.TransactionClient, onlyEmployeeId: string | null): Promise<PayrollRow[]> {
   const scope = onlyEmployeeId ? { employeeId: onlyEmployeeId } : {};
   const period = await findPayrollPeriod(client, year, month);
+  const monthEnd = new Date(Date.UTC(year, month, 0));
+  // R2-324: the deduction rules, as of the month's last day.
+  const deductionHistories = async () => {
+    const [pfPercent, esicPercent, esicCeiling, ptMonthly, ptMinGross] = await Promise.all([
+      policyRuleHistory(client, 'salary.pf_percent'),
+      policyRuleHistory(client, 'salary.esic_percent'),
+      policyRuleHistory(client, 'salary.esic_ceiling'),
+      policyRuleHistory(client, 'salary.pt_monthly'),
+      policyRuleHistory(client, 'salary.pt_min_gross'),
+    ]);
+    return { pfPercent, esicPercent, esicCeiling, ptMonthly, ptMinGross };
+  };
   if (period?.status === 'CLOSED') {
-    const lines = await client.misPayrollSnapshotLine.findMany({ where: { periodId: period.id, ...scope }, orderBy: { employeeName: 'asc' } });
-    return lines.map(snapshotToRow);
+    const [lines, ded] = await Promise.all([
+      client.misPayrollSnapshotLine.findMany({ where: { periodId: period.id, ...scope }, orderBy: { employeeName: 'asc' } }),
+      deductionHistories(),
+    ]);
+    const frozenPolicy = buildPayrollPolicy({ otRate: [], otMultiplier: [], weeklyOff: [], sandwich: [], rentMinDays: [], rentCountHolidays: [], ...ded });
+    return lines.map((line) => snapshotToRow(line, (pay) => deductionsFor(pay, frozenPolicy.deductionsOn(monthEnd))));
   }
 
-  const [dailyRule, otRule, lateRule, otRate, weeklyOff, sandwich, rentMinDays, rentCountHolidays] = await Promise.all([
+  const [dailyRule, otRule, lateRule, otRate, weeklyOff, sandwich, rentMinDays, rentCountHolidays, ded, advances] = await Promise.all([
     getWageRuleHistory('DAILY_WAGE_DEFAULT'),
     getWageRuleHistory('OT_MULTIPLIER'),
     getWageRuleHistory('LATE_PENALTY_PER_MIN'),
@@ -351,8 +380,11 @@ async function computePayroll(year: number, month: number, client: Prisma.Transa
     policyRuleHistory(client, 'sunday.paid_if_adjacent'),
     policyRuleHistory(client, 'salary.rent_min_days'),
     policyRuleHistory(client, 'salary.rent_count_holidays'),
+    deductionHistories(),
+    salaryAdvancesFor(client, year, month, onlyEmployeeId),
   ]);
-  const policy = buildPayrollPolicy({ otRate, otMultiplier: otRule, weeklyOff, sandwich, rentMinDays, rentCountHolidays });
+  const policy = buildPayrollPolicy({ otRate, otMultiplier: otRule, weeklyOff, sandwich, rentMinDays, rentCountHolidays, ...ded });
+  const deductionPolicy = policy.deductionsOn(monthEnd);
   const fallbackDailyWageOn = (date: Date): number => parseFloat(resolveAsOf(dailyRule, date)?.ruleValue ?? '500');
   const latePenaltyOn = (date: Date): number => parseFloat(resolveAsOf(lateRule, date)?.ruleValue ?? '0');
 
@@ -425,7 +457,7 @@ async function computePayroll(year: number, month: number, client: Prisma.Transa
 
   return lines.map(({ emp, records }) => {
     const code = emp.wageTypeCode || DEFAULT_DAILY_WAGE_CODE;
-    return computeEmployeeMonth(
+    const row = computeEmployeeMonth(
       emp,
       records,
       year,
@@ -440,7 +472,21 @@ async function computePayroll(year: number, month: number, client: Prisma.Transa
       (date) => paidLeaveOn(emp.id, date),
       (date) => paidHalfDayOn(emp.id, date),
     );
+    // R2-324: PF / ESIC / PT from the rules, the Owner's advance for this month, and the net that is paid out.
+    return { ...row, ...deductionsFor(row, deductionPolicy, advances.get(emp.id) ?? 0) };
   });
+}
+
+/**
+ * R2-324: the advances the Owner recorded for recovery in this month, per employee. Optional call: narrow hand-built
+ * test doubles carry no advance delegate; a real client always does.
+ */
+async function salaryAdvancesFor(client: Prisma.TransactionClient, year: number, month: number, onlyEmployeeId: string | null): Promise<Map<string, number>> {
+  const delegate = (client as unknown as { misSalaryAdvance?: { findMany: (args: { where: object; select: object }) => Promise<{ employeeId: string; amount: unknown }[]> } }).misSalaryAdvance;
+  const rows = (typeof delegate?.findMany === 'function' ? await delegate.findMany({ where: { year, month, ...(onlyEmployeeId ? { employeeId: onlyEmployeeId } : {}) }, select: { employeeId: true, amount: true } }) : null) ?? [];
+  const out = new Map<string, number>();
+  for (const r of rows) out.set(r.employeeId, (out.get(r.employeeId) ?? 0) + Number(r.amount));
+  return out;
 }
 
 export type MonthWageBill = {

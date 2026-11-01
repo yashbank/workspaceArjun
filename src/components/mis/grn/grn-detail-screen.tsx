@@ -42,6 +42,8 @@ type Grn = {
   invoiceDate?: Date | string | null;
   /** Money: present only for the Owner (the server strips it for everyone else). */
   supplierInvoiceAmount?: number | null;
+  /** R2-325: GST % on the tax invoice (not money). */
+  supplierInvoiceGstPercent?: number | null;
   lrNumber?: string | null;
   vehicleNumber?: string | null;
   transporterName?: string | null;
@@ -80,6 +82,7 @@ export function GrnDetailScreen({ grn, canWrite, orders = [], canOverride = fals
     supplierInvoiceNo: grn.supplierInvoiceNo ?? '',
     invoiceDate: isoDate(grn.invoiceDate),
     supplierInvoiceAmount: grn.supplierInvoiceAmount != null ? String(grn.supplierInvoiceAmount) : '',
+    supplierInvoiceGstPercent: grn.supplierInvoiceGstPercent != null ? String(grn.supplierInvoiceGstPercent) : '',
     lrNumber: grn.lrNumber ?? '',
     vehicleNumber: grn.vehicleNumber ?? '',
     transporterName: grn.transporterName ?? '',
@@ -128,6 +131,7 @@ export function GrnDetailScreen({ grn, canWrite, orders = [], canOverride = fals
         supplierInvoiceNo: header.supplierInvoiceNo || null,
         invoiceDate: header.invoiceDate || null,
         ...(canSeeMoney ? { supplierInvoiceAmount: amount } : {}),
+        supplierInvoiceGstPercent: header.supplierInvoiceGstPercent.trim() === '' ? null : Number(header.supplierInvoiceGstPercent), // R2-325
         lrNumber: header.lrNumber || null,
         vehicleNumber: header.vehicleNumber || null,
         transporterName: header.transporterName || null,
@@ -280,11 +284,14 @@ export function GrnDetailScreen({ grn, canWrite, orders = [], canOverride = fals
     });
   };
 
+  // R2-291: one key per screen open; a double tap or a retried request books once. Rotated after a success.
+  const confirmKey = useRef(newKey());
   const runConfirm = (reason?: string) => {
     setConfirmError(null);
     startTransition(async () => {
       try {
-        const done = unwrap(await confirmGrnAction(grn.id, reason ?? (overReason || null)));
+        const done = unwrap(await confirmGrnAction(grn.id, reason ?? (overReason || null), confirmKey.current));
+        confirmKey.current = newKey();
         setWarnings(done?.warnings ?? []);
       } catch (e) {
         const message = e instanceof Error ? e.message : 'That did not save.';
@@ -402,6 +409,8 @@ export function GrnDetailScreen({ grn, canWrite, orders = [], canOverride = fals
             <Input label="Supplier Invoice No" value={header.supplierInvoiceNo} onChange={setH('supplierInvoiceNo')} />
             <DateInput label="Invoice Date" value={header.invoiceDate} onChange={setH('invoiceDate')} />
             {canSeeMoney && <NumberInput label="Supplier Invoice Amount (₹)" value={header.supplierInvoiceAmount} onChange={setH('supplierInvoiceAmount')} />}
+            {/* R2-325: the amount above includes GST; the match compares the amount without it. */}
+            <NumberInput label="GST % on the invoice (optional)" value={header.supplierInvoiceGstPercent} onChange={setH('supplierInvoiceGstPercent')} />
             <Input label="DC Number" value={header.dcNumber} onChange={setH('dcNumber')} />
             <Input label="LR Number" value={header.lrNumber} onChange={setH('lrNumber')} />
             <Input label="Vehicle Number" value={header.vehicleNumber} onChange={setH('vehicleNumber')} />
@@ -525,4 +534,8 @@ export function GrnDetailScreen({ grn, canWrite, orders = [], canOverride = fals
       </SlideOver>
     </div>
   );
+}
+
+function newKey(): string {
+  return typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
 }

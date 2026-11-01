@@ -32,6 +32,9 @@ export class LineClearanceBlockedError extends Error {
   }
 }
 
+/** R2-308: a SHIFT clearance made outside any shift lasts this long (decision: 8 hours). */
+export const SHIFT_FALLBACK_MINUTES = 8 * 60;
+
 /** Is `now` still inside the same shift window the clearance was granted in? */
 async function isGrantingShiftStillActive(shiftId: string, clearedAt: Date): Promise<boolean> {
   const shift = await db.misShift.findUnique({ where: { id: shiftId } });
@@ -84,6 +87,8 @@ export async function assertLineCleared(machineId: string, orderId?: string): Pr
   }
 
   if (latest.mode === 'JOB') {
+    // R2-309: a JOB clearance with no order (made before any booking) covers nothing; clearLine now refuses it.
+    if (!latest.orderId) throw new LineClearanceBlockedError(machineId, machineName, 'NOT_CLEARED');
     // R3 B121 - a JOB clearance covers one order. When the caller names the log's order, a
     // clearance for another order is not valid, whether or not the machine has a booking.
     if (orderId && latest.orderId && latest.orderId !== orderId) {
@@ -95,10 +100,16 @@ export async function assertLineCleared(machineId: string, orderId?: string): Pr
     }
   }
 
-  if (latest.mode === 'SHIFT' && latest.shiftId) {
-    const stillActive = await isGrantingShiftStillActive(latest.shiftId, latest.clearedAt);
-    if (!stillActive) {
-      throw new LineClearanceBlockedError(machineId, machineName, 'EXPIRED', latest.clearedAt, timeZone);
+  if (latest.mode === 'SHIFT') {
+    if (latest.shiftId) {
+      const stillActive = await isGrantingShiftStillActive(latest.shiftId, latest.clearedAt);
+      if (!stillActive) {
+        throw new LineClearanceBlockedError(machineId, machineName, 'EXPIRED', latest.clearedAt, timeZone);
+      }
+    } else {
+      // R2-308: cleared outside any shift (pre-shift buffer): it lasts SHIFT_FALLBACK_MINUTES, never for ever.
+      const until = new Date(latest.clearedAt.getTime() + SHIFT_FALLBACK_MINUTES * 60000);
+      if (until <= now) throw new LineClearanceBlockedError(machineId, machineName, 'EXPIRED', until, timeZone);
     }
   }
 }
@@ -133,11 +144,19 @@ export async function clearLine(input: {
 
   const clearedAt = new Date();
   const orderId = input.orderId ?? (await currentOrderIdForMachine(input.machineId));
+  // R2-309: a JOB clearance covers one order; with none booked it would cover every later order.
+  if (mode === 'JOB' && !orderId) {
+    throw new Error('No order is booked on this machine right now, so a JOB line clearance has nothing to cover. Book the order on the machine board first, or set the line-clearance rule to SHIFT mode.');
+  }
   const shiftId = await resolveShiftIdAt(clearedAt);
 
   // For MINUTES mode the cap IS the duration; for JOB/SHIFT it is an optional
-  // ceiling on top of the mode's own event-based expiry (D7).
-  const validityMinutes = mode === 'MINUTES' ? (maxMinutes ?? 120) : maxMinutes;
+  // ceiling on top of the mode's own event-based expiry (D7). R2-308: a SHIFT clearance made
+  // outside any shift has no shift end to expire at, so it gets the 8-hour fallback.
+  const validityMinutes =
+    mode === 'MINUTES' ? (maxMinutes ?? 120)
+    : mode === 'SHIFT' && !shiftId ? Math.min(maxMinutes ?? SHIFT_FALLBACK_MINUTES, SHIFT_FALLBACK_MINUTES)
+    : maxMinutes;
   const expiresAt = validityMinutes != null ? new Date(clearedAt.getTime() + validityMinutes * 60000) : null;
 
   const rec = await db.misLineClearance.create({

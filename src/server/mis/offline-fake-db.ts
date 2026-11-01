@@ -251,6 +251,12 @@ export function createFakeDb() {
       // Where-clauses are not evaluated: a test that needs a covering booking sets `allocations`
       // (or overrides findMany) with exactly the rows that cover.
       findMany: async () => state.allocations.map((a) => ({ ...a })),
+      // R2-339 plumbing: a late log extends the booking that just ended.
+      update: async ({ where, data }: { where: { id: string }; data: Row }) => {
+        const rec = state.allocations.find((a) => a.id === where.id);
+        if (rec) Object.assign(rec, data);
+        return rec ? { ...rec } : null;
+      },
       create: async ({ data }: { data: Row }) => {
         const order = state.orders.get(String(data.orderId));
         // `order` rides along as the select in production.ts would return it.

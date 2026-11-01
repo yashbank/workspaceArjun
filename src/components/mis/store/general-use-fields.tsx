@@ -1,7 +1,7 @@
 'use client';
 
 import { GENERAL_REASON_MIN, NOT_LINKED_TO_ORDER } from '@/lib/mis/general-use';
-import { cn } from '@/lib/utils';
+import { Combobox } from '@/components/ui/combobox';
 
 import { InfoCard, SectionLabel } from '../home/cards';
 
@@ -39,23 +39,19 @@ export function GeneralUseFields({
       {value.reason.trim().length > 0 && value.reason.trim().length < GENERAL_REASON_MIN && (
         <p className="mt-1 text-xs text-red-700">At least {GENERAL_REASON_MIN} characters.</p>
       )}
-      <p className="mt-3 text-sm font-medium text-slate-700">Cost centre</p>
-      <div className="mt-2 flex flex-wrap gap-2">
-        {costCenters.length === 0 && <p className="text-sm text-slate-500">No cost centres are set up yet — ask an Admin to add them under Masters.</p>}
-        {costCenters.map((c) => (
-          <button
-            key={c.value}
-            type="button"
-            aria-pressed={value.costCenter === c.value}
-            onClick={() => onChange({ ...value, costCenter: c.value })}
-            className={cn(
-              'min-h-11 rounded-full border px-3 text-sm font-semibold',
-              value.costCenter === c.value ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-300 bg-white text-slate-700',
-            )}
-          >
-            {c.label}
-          </button>
-        ))}
+      <div className="mt-3">
+        {costCenters.length === 0 ? (
+          <p className="text-sm text-slate-500">No cost centres are set up yet — ask an Admin to add them under Masters.</p>
+        ) : (
+          // R2-348: searchable, code + label; required before Confirm (the server refuses without it).
+          <Combobox
+            label="Cost centre (required)"
+            value={value.costCenter || null}
+            options={costCenters.map((c) => ({ value: c.value, label: c.label, hint: c.value !== c.label ? c.value : undefined }))}
+            onChange={(v) => onChange({ ...value, costCenter: v })}
+            placeholder="Type a cost centre code or name"
+          />
+        )}
       </div>
     </InfoCard>
   );

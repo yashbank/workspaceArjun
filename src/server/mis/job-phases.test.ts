@@ -152,8 +152,14 @@ describe('permission gates', () => {
     await expect(signOffPhase('ph-2')).rejects.toThrow(/Not permitted: phase\.write/);
   });
 
-  it('reopenPhase is OWNER-only — ADMIN is refused', async () => {
+  it('reopenPhase is allowed for ADMIN too, with a reason (R2-331); SUPERVISOR is refused', async () => { // R2-331
     getMisRole.mockResolvedValue('ADMIN');
+    phaseFindFirst.mockResolvedValue(phase({ status: 'SIGNED_OFF', signedOffAt: new Date() }));
+    phaseUpdate.mockResolvedValue({ id: 'ph-2', orderId: 'ord-1', status: 'REOPENED', sequence: 2 });
+    phaseUpdateMany.mockResolvedValue({ count: 1 });
+    await expect(reopenPhase('ph-2', 'wrong shade')).resolves.toMatchObject({ status: 'REOPENED' });
+    expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({ action: 'REOPEN_PHASE', after: expect.objectContaining({ reason: 'wrong shade' }) }));
+    getMisRole.mockResolvedValue('SUPERVISOR');
     await expect(reopenPhase('ph-2', 'wrong shade')).rejects.toThrow(/Not permitted: phase\.reopen/);
   });
 
@@ -322,18 +328,32 @@ describe('the sequential gate', () => {
 });
 
 describe('only the in-charge signs (D12)', () => {
-  it('refuses an ADMIN who is not the in-charge', async () => {
+  it('refuses an ADMIN who is not the in-charge unless they give a reason', async () => { // R2-330
     readyToSign();
     getMisRole.mockResolvedValue('ADMIN');
     getCurrentUser.mockResolvedValue({ id: 'user-admin' });
-    await expect(signOffPhase('ph-2')).rejects.toMatchObject({ reason: 'NOT_THE_IN_CHARGE' });
+    await expect(signOffPhase('ph-2')).rejects.toMatchObject({ reason: 'REASON_REQUIRED' });
+    await expect(signOffPhase('ph-2', { reason: 'ok' })).rejects.toMatchObject({ reason: 'REASON_REQUIRED' });
+    expect(phaseUpdate).not.toHaveBeenCalled();
   });
 
-  it('refuses the OWNER too — a signature someone else can apply is not a signature', async () => {
+  it('the OWNER too: a reason is required, and the audit row names who it was signed for', async () => { // R2-330
     readyToSign();
     getMisRole.mockResolvedValue('OWNER');
     getCurrentUser.mockResolvedValue({ id: 'user-owner' });
-    await expect(signOffPhase('ph-2')).rejects.toMatchObject({ reason: 'NOT_THE_IN_CHARGE' });
+    await expect(signOffPhase('ph-2')).rejects.toMatchObject({ reason: 'REASON_REQUIRED' });
+    await expect(signOffPhase('ph-2', { reason: 'Vali went home; output checked by me' })).resolves.toMatchObject({ status: 'SIGNED_OFF' });
+    expect(phaseUpdate.mock.calls[0][0].data.signedOffById).toBe('user-owner');
+    expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'SIGN_OFF_PHASE',
+      after: expect.objectContaining({ signedOnBehalfOf: 'Vali Sah', reason: 'Vali went home; output checked by me' }),
+    }));
+  });
+
+  it('a SUPERVISOR who is not the in-charge is still refused, reason or not', async () => { // R2-330
+    readyToSign();
+    getCurrentUser.mockResolvedValue({ id: 'someone-else' });
+    await expect(signOffPhase('ph-2', { reason: 'I checked it' })).rejects.toMatchObject({ reason: 'NOT_THE_IN_CHARGE' });
   });
 
   it('names who can sign in the refusal', async () => {
@@ -745,5 +765,64 @@ describe('the sign-off summary (MIS-164)', () => {
     expect(summary.entries).toBe(EXPECTED.entries);
     expect(summary.unit).toBe(EXPECTED.unit);
     expect(summary.handedOver).toEqual(EXPECTED.handedOver);
+  });
+});
+
+describe('R2-295 a skipped upstream phase needs a handover note', () => {
+  it('refuses a blank note when an earlier phase is NOT_APPLICABLE', async () => {
+    readyToSign();
+    phaseCount.mockResolvedValue(1);
+    await expect(signOffPhase('ph-2')).rejects.toMatchObject({ reason: 'HANDOVER_NOTE_REQUIRED' });
+    await expect(signOffPhase('ph-2', { notes: '   ' })).rejects.toMatchObject({ reason: 'HANDOVER_NOTE_REQUIRED' });
+    expect(phaseUpdate).not.toHaveBeenCalled();
+    expect(phaseCount).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ status: 'NOT_APPLICABLE', sequence: { lt: 2 } }) }));
+  });
+  it('signs off with a note, and without one when nothing upstream was skipped', async () => {
+    readyToSign();
+    phaseCount.mockResolvedValue(1);
+    await expect(signOffPhase('ph-2', { notes: 'Lamination skipped: customer wants uncoated board' })).resolves.toMatchObject({ status: 'SIGNED_OFF' });
+    phaseCount.mockResolvedValue(0);
+    await expect(signOffPhase('ph-2')).resolves.toMatchObject({ status: 'SIGNED_OFF' });
+  });
+});
+
+describe('R2-311 the QC role acknowledges a failed check (with a note), and only that', () => {
+  const failed = { id: 'qc-1', orderId: 'ord-1', bomStageId: 'stage-1', result: 'FAIL', acknowledgedAt: null };
+  beforeEach(() => {
+    qcFindUnique.mockResolvedValue(failed);
+    phaseFindMany.mockResolvedValue([phase({ bomStageId: 'stage-1', inCharge: { ...phase().inCharge, userProfileId: 'someone-else' } })]);
+    qcUpdate.mockImplementation(({ data }: { data: Record<string, unknown> }) => ({ id: 'qc-1', orderId: 'ord-1', result: 'FAIL', ...data }));
+    getMisRole.mockResolvedValue('QC');
+    getCurrentUser.mockResolvedValue({ id: 'user-qc' });
+  });
+  it('QC with a note is allowed; without one is refused', async () => {
+    await expect(acknowledgeQcFailure('qc-1', 'x')).rejects.toMatchObject({ reason: 'REASON_REQUIRED' });
+    await expect(acknowledgeQcFailure('qc-1', 'within customer tolerance, waiver recorded')).resolves.toMatchObject({ acknowledgedById: 'user-qc' });
+  });
+  it('QC still cannot start or sign off a phase', async () => {
+    await expect(startPhase('ph-2')).rejects.toThrow(/Not permitted: phase\.write/);
+    await expect(signOffPhase('ph-2')).rejects.toThrow(/Not permitted: phase\.write/);
+  });
+  it.each(['ATTENDANCE_OPERATOR', 'STORE_GUY', 'WORKER'])('%s is refused outright', async (role) => {
+    getMisRole.mockResolvedValue(role);
+    await expect(acknowledgeQcFailure('qc-1', 'note')).rejects.toThrow(/Not permitted: qc\.acknowledge/);
+  });
+});
+
+describe('R2-310 a check with no stage is acknowledged by the in-charge of any active phase on the order', () => {
+  it('queries the active phases of the order, not phases with bomStageId null', async () => {
+    qcFindUnique.mockResolvedValue({ id: 'qc-1', orderId: 'ord-1', bomStageId: null, result: 'FAIL', acknowledgedAt: null });
+    phaseFindMany.mockResolvedValue([phase({ bomStageId: 'stage-2', status: 'IN_PROGRESS' })]);
+    qcUpdate.mockImplementation(({ data }: { data: Record<string, unknown> }) => ({ id: 'qc-1', orderId: 'ord-1', result: 'FAIL', ...data }));
+    await expect(acknowledgeQcFailure('qc-1')).resolves.toMatchObject({ acknowledgedById: IN_CHARGE_USER });
+    const where = phaseFindMany.mock.calls[0][0].where;
+    expect(where).toMatchObject({ orderId: 'ord-1', status: { in: ['IN_PROGRESS', 'REOPENED'] } });
+    expect('bomStageId' in where).toBe(false);
+  });
+  it('a staged check still looks only at that stage\u2019s phases', async () => {
+    qcFindUnique.mockResolvedValue({ id: 'qc-1', orderId: 'ord-1', bomStageId: 'stage-1', result: 'FAIL', acknowledgedAt: null });
+    phaseFindMany.mockResolvedValue([]);
+    await expect(acknowledgeQcFailure('qc-1')).rejects.toMatchObject({ reason: 'NOT_THE_IN_CHARGE' });
+    expect(phaseFindMany.mock.calls[0][0].where).toMatchObject({ bomStageId: 'stage-1' });
   });
 });
