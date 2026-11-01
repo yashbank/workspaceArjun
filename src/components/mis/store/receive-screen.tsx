@@ -84,7 +84,7 @@ export function ReceiveScreen({ header, items, suppliers, openPos, canSetRate = 
   }
 
   return (
-    <HomeStack>
+    <HomeStack wide>
       <PageBack href="/mis/store/dashboard" label="Store overview" />
       <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-1.5 text-sm text-slate-500">
         <Link href="/mis/store/dashboard" className="inline-flex min-h-11 items-center hover:text-slate-900">Store</Link>
