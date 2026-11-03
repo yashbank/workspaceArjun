@@ -111,8 +111,8 @@ fun QrScannerView(
                                     imageProxy.close()
                                     return@setAnalyzer
                                 }
-                                val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
                                 try {
+                                    val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
                                     scanner.process(image)
                                         .addOnSuccessListener { barcodes ->
                                             barcodes.firstOrNull()?.rawValue?.let { onCodeScannedState.value(it) }

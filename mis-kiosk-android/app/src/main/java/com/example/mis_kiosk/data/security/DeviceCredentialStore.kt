@@ -31,27 +31,44 @@ data class ActiveDevice(
 class DeviceCredentialStore(context: Context) {
 
     private val prefs: SharedPreferences by lazy {
-        val masterKey = MasterKey.Builder(context.applicationContext)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
         val appContext = context.applicationContext
-        fun open() = EncryptedSharedPreferences.create(
-            appContext,
-            PREFS_FILE_NAME,
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-        )
+        fun open(): SharedPreferences {
+            val masterKey = MasterKey.Builder(appContext)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            return EncryptedSharedPreferences.create(
+                appContext,
+                PREFS_FILE_NAME,
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+            )
+        }
+        fun wipe() {
+            // R2-380: the stored data is unreadable for good once the Keystore key is invalidated
+            // (backup restore, lock-screen change). Drop the file and the stale master key so the
+            // rebuild gets a fresh key and the app lands on Pairing instead of crash-looping.
+            appContext.deleteSharedPreferences(PREFS_FILE_NAME)
+            try {
+                java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+                    .deleteEntry(MasterKey.DEFAULT_MASTER_KEY_ALIAS)
+            } catch (_: Exception) {
+                // nothing more to clean; the rebuild below surfaces any real failure
+            }
+        }
         try {
             open()
         } catch (e: GeneralSecurityException) {
-            // R2-380: Keystore key invalidated (backup restore, lock-screen change) - the stored data is
-            // unreadable for good. Wipe and recreate so the app lands on Pairing instead of crash-looping.
-            appContext.deleteSharedPreferences(PREFS_FILE_NAME)
+            wipe()
             open()
         } catch (e: IOException) {
-            appContext.deleteSharedPreferences(PREFS_FILE_NAME)
-            open()
+            // One plain retry first so a transient I/O hiccup does not wipe a valid pairing.
+            try {
+                open()
+            } catch (_: Exception) {
+                wipe()
+                open()
+            }
         }
     }
 
