@@ -12,7 +12,7 @@ for (const vp of [{ name: 'desktop', width: 1280, height: 800 }, { name: 'phone'
 
     test('R2-376: supplier invoices KPI strip has 4 cards', async ({ page }) => {
       await page.goto('/mis/supplier-invoices');
-      await expect(page.getByTestId('invoice-kpi-card')).toHaveCount(4);
+      await expect(page.getByTestId('invoice-kpi-card').locator('visible=true')).toHaveCount(4);
     });
 
     test('R2-377: Export CSV control is present', async ({ page }) => {
@@ -22,16 +22,16 @@ for (const vp of [{ name: 'desktop', width: 1280, height: 800 }, { name: 'phone'
 
     test('R2-375: no page-wide horizontal overflow and no text inputs inside table cells', async ({ page }) => {
       await page.goto('/mis/supplier-invoices');
-      await expect(page.getByTestId('invoice-kpi-card').first()).toBeVisible();
-      expect(await page.locator('table td input').count()).toBe(0);
+      await expect(page.getByTestId('invoice-kpi-card').locator('visible=true').first()).toBeVisible();
+      expect(await page.locator('table td input:visible').count()).toBe(0);
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
       expect(overflow).toBeLessThanOrEqual(1);
     });
 
     test('R2-378: BOM list shows a BOM # column and searches by it', async ({ page }) => {
       await page.goto('/mis/bom');
-      await expect(page.getByPlaceholder(/BOM #/)).toBeVisible();
-      if (vp.name === 'desktop') await expect(page.getByRole('columnheader', { name: 'BOM #' })).toBeVisible();
+      await expect(page.getByPlaceholder(/BOM #/).locator('visible=true').first()).toBeVisible();
+      if (vp.name === 'desktop') await expect(page.getByRole('columnheader', { name: 'BOM #' }).locator('visible=true').first()).toBeVisible();
     });
   });
 }

@@ -170,7 +170,7 @@ export function SupplierInvoicesScreen({ rows, canReconcile, paging, canSignOff 
           </ul>
 
           {/* Desktop: table */}
-          <div className="hidden md:block overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+          <div className="hidden md:block w-full min-w-0 max-w-full overflow-x-auto rounded-2xl border border-slate-200 bg-white [contain:inline-size]">
             <table className="w-full text-sm text-left text-slate-900">
               <thead className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 border-b border-slate-200">
                 <tr>
