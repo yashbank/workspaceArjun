@@ -61,6 +61,7 @@ object WorkDate {
     internal fun isMinuteInShiftWindow(minuteOfDay: Int, shift: ShiftWindow): Boolean {
         val start = timeToMinutes(shift.startTime)
         val end = timeToMinutes(shift.endTime)
+        if (start == end) return false // R2-384: zero-length window must not match all 1440 minutes
         return if (end > start) minuteOfDay in start until end else minuteOfDay >= start || minuteOfDay < end
     }
 }

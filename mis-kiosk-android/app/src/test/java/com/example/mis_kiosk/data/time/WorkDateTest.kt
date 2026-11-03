@@ -90,4 +90,10 @@ class WorkDateTest {
         // start == end == 0 -> treated as wrapping the whole day; must simply not crash.
         assertEquals("2026-09-20", wd(20, 6, 4, list = broken).workDate)
     }
+
+    @Test // R2-384: a start == end shift is a zero-length window, not "all day"
+    fun zeroLengthShiftMatchesNoMinute() {
+        val zero = ShiftWindow("z", "08:00", "08:00")
+        for (m in listOf(0, 479, 480, 481, 1439)) assertEquals(false, WorkDate.isMinuteInShiftWindow(m, zero))
+    }
 }

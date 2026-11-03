@@ -11,6 +11,7 @@ import com.example.mis_kiosk.data.network.dto.PunchRequest
 import com.example.mis_kiosk.data.network.dto.PunchResponse
 import android.graphics.BitmapFactory
 import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -117,7 +118,10 @@ class KioskApi(
                         ApiResult.HttpError(response.code, error)
                     }
                 }
-            } catch (e: IOException) {
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // R2-381b: IOException plus SecurityException / IllegalStateException must not crash workers.
                 ApiResult.NetworkError
             }
         }

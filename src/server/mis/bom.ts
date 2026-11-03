@@ -142,6 +142,8 @@ export type BomOverviewRow = {
   orderId: string;
   orderNumber: string;
   orderStatus: string;
+  /** R2-378/379: `BOM-YYYYMM-nnnnn`; null for legacy BOMs and orders with no BOM. Optional so older fixtures still type-check. */
+  bomNumber?: string | null;
   customerName: string | null;
   description: string | null;
   /** R2-139: promised delivery date, `YYYY-MM-DD`, or null. (MisOrder has no quantity/unit column.) */
@@ -178,6 +180,7 @@ export async function listBomOverviewPage(opts: { q?: string; page?: number | st
           OR: [
             { orderNumber: { contains: q, mode: 'insensitive' as const } },
             { description: { contains: q, mode: 'insensitive' as const } },
+            { bom: { bomNumber: { contains: q, mode: 'insensitive' as const } } },
             { customer: { name: { contains: q, mode: 'insensitive' as const } } },
           ],
         }
@@ -189,7 +192,7 @@ export async function listBomOverviewPage(opts: { q?: string; page?: number | st
       where,
       include: {
         customer: { select: { name: true } },
-        bom: { select: { status: true, stages: { select: { id: true, materials: { select: { id: true, quantity: true, ratePerUnit: true } } } } } },
+        bom: { select: { status: true, bomNumber: true, stages: { select: { id: true, materials: { select: { id: true, quantity: true, ratePerUnit: true } } } } } },
       },
       orderBy: { createdAt: 'desc' },
       skip,
@@ -212,6 +215,7 @@ export async function listBomOverviewPage(opts: { q?: string; page?: number | st
       orderId: order.id,
       orderNumber: order.orderNumber,
       orderStatus: order.status,
+      bomNumber: order.bom?.bomNumber ?? null,
       customerName: order.customer?.name ?? null,
       description: order.description,
       deliveryDate: order.deliveryDate ? order.deliveryDate.toISOString().slice(0, 10) : null,

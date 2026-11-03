@@ -5,9 +5,12 @@ import Link from 'next/link';
 import { HiddenParams, Pagination } from '@/components/mis/kit/pagination';
 import { pageHref } from '@/lib/mis/pagination';
 
-import { approveInvoiceForPaymentAction, markInvoicePaidAction, reconcileSupplierInvoiceAction, rejectSupplierInvoiceAction, signOffInvoiceVarianceAction } from '@/app/(mis)/mis/supplier-invoices/actions';
+import { reconcileSupplierInvoiceAction } from '@/app/(mis)/mis/supplier-invoices/actions';
 import { Button } from '@/components/mis/kit/button';
 import { unwrap } from '@/lib/mis/action-result';
+import { InvoiceActionDialog, InvoiceActions, hasInvoiceActions } from './invoice-action-dialog';
+import { downloadInvoiceCsv } from './invoice-export';
+import { InvoiceKpiStrip } from './invoice-kpi-strip';
 import { INVOICE_STATUSES, isPaymentStatus, type InvoiceStatus } from '@/lib/mis/invoice-match';
 import type { SupplierInvoiceRow } from '@/server/mis/supplier-invoice';
 
@@ -81,59 +84,15 @@ export function SupplierInvoicesScreen({ rows, canReconcile, paging, canSignOff 
   const hasFigures = rows.some((r) => r.figures);
   const hasMoney = rows.some((r) => r.money);
 
-  // R2-280: a discrepancy invoice is not paid until the Owner has signed its variance off, on the record.
-  const [signNote, setSignNote] = useState('');
-  const isDiscrepancy = (r: SupplierInvoiceRow) => r.status === 'DISCREPANCY_QTY' || r.status === 'DISCREPANCY_PRICE';
-  const signOff = (id: string) =>
-    startTransition(async () => {
-      setError(null);
-      try { unwrap(await signOffInvoiceVarianceAction(id, signNote || null)); setSignNote(''); } catch (e) { setError(e instanceof Error ? e.message : 'That did not save.'); }
-    });
-  const signOffControl = (r: SupplierInvoiceRow) =>
-    r.signedOff ? (
-      <p className="text-xs text-emerald-800">Variance signed off by the Owner · {fmtDate(r.signedOff.at)}{r.signedOff.note ? ` · ${r.signedOff.note}` : ''}</p>
-    ) : isDiscrepancy(r) ? (
-      canSignOff ? (
-        <span className="flex flex-wrap items-center gap-2">
-          <input aria-label="Sign-off note" className="min-h-11 rounded-lg border border-slate-300 px-3 text-base" placeholder="Note (optional)" value={signNote} onChange={(e) => setSignNote(e.target.value)} />
-          <Button variant="secondary" disabled={busy} onClick={() => signOff(r.id)}>Sign off variance</Button>
-        </span>
-      ) : (
-        <p className="text-xs text-amber-900">Not to be paid until the Owner signs off the variance.</p>
-      )
-    ) : null;
-  // R2-288: the Owner approves payment (a matched invoice, or a signed-off discrepancy); Admin / Owner records the payment or rejects.
-  const [payDate, setPayDate] = useState('');
-  const [payRef, setPayRef] = useState('');
-  const [rejectReason, setRejectReason] = useState('');
-  const act = (fn: () => Promise<unknown>) =>
-    startTransition(async () => {
-      setError(null);
-      try { await fn(); } catch (e) { setError(e instanceof Error ? e.message : 'That did not save.'); }
-    });
-  const paymentControl = (r: SupplierInvoiceRow) => {
-    if (r.status === 'PAID') return <p className="text-xs text-slate-700">Paid {r.payment?.paymentDate ? fmtDate(r.payment.paymentDate) : ''}{r.payment?.paymentRef ? ` · Ref ${r.payment.paymentRef}` : ''}</p>;
-    if (r.status === 'REJECTED') return <p className="text-xs text-slate-700">Rejected{r.payment?.rejectReason ? ` · ${r.payment.rejectReason}` : ''}</p>;
-    const mayApprove = canSignOff && (r.status === 'MATCHED' || (isDiscrepancy(r) && !!r.signedOff));
-    return (
-      <span className="mt-1 flex flex-wrap items-center gap-2">
-        {mayApprove && <Button variant="secondary" disabled={busy} onClick={() => act(async () => unwrap(await approveInvoiceForPaymentAction(r.id)))}>Approve for payment</Button>}
-        {r.status === 'APPROVED_FOR_PAYMENT' && canReconcile && (
-          <>
-            <input aria-label="Payment date" type="date" className="min-h-11 rounded-lg border border-slate-300 px-3 text-base" value={payDate} onChange={(e) => setPayDate(e.target.value)} />
-            <input aria-label="UTR / cheque number" className="min-h-11 rounded-lg border border-slate-300 px-3 text-base" placeholder="UTR / cheque no." value={payRef} onChange={(e) => setPayRef(e.target.value)} />
-            <Button disabled={busy || !payDate || payRef.trim().length < 3} onClick={() => act(async () => { unwrap(await markInvoicePaidAction(r.id, { paymentDate: payDate, paymentRef: payRef.trim() })); setPayDate(''); setPayRef(''); })}>Mark paid</Button>
-          </>
-        )}
-        {canReconcile && !isPaymentStatus(r.status) && (
-          <>
-            <input aria-label="Reject reason" className="min-h-11 rounded-lg border border-slate-300 px-3 text-base" placeholder="Reason to reject" value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} />
-            <Button variant="secondary" disabled={busy || rejectReason.trim().length < 3} onClick={() => act(async () => { unwrap(await rejectSupplierInvoiceAction(r.id, rejectReason.trim())); setRejectReason(''); })}>Reject</Button>
-          </>
-        )}
-      </span>
-    );
+  const [voucher, setVoucher] = useState<SupplierInvoiceRow | null>(null);
+  // R2-377: print one invoice's voucher (the print stylesheet shows only [data-voucher]).
+  const printVoucher = (r: SupplierInvoiceRow) => {
+    setVoucher(r);
+    setTimeout(() => window.print(), 0);
   };
+  const kpis = paging
+    ? { total: allCount, matched: paging.counts.MATCHED, discrepancies: paging.counts.DISCREPANCY_QTY + paging.counts.DISCREPANCY_PRICE, approved: paging.counts.APPROVED_FOR_PAYMENT }
+    : { total: rows.length, matched: count('MATCHED'), discrepancies: count('DISCREPANCY_QTY') + count('DISCREPANCY_PRICE'), approved: count('APPROVED_FOR_PAYMENT') };
   const reconcile = (id: string) =>
     startTransition(async () => {
       setError(null);
@@ -150,6 +109,8 @@ export function SupplierInvoicesScreen({ rows, canReconcile, paging, canSignOff 
         <h1 className="text-2xl font-bold text-slate-900">Supplier invoices</h1>
         <p className="text-sm text-slate-600 mt-1">Each invoice checked against the purchase order rate and what the store actually received.</p>
       </div>
+
+      <InvoiceKpiStrip kpis={kpis} />
 
       <div className="flex flex-wrap gap-2" role="group" aria-label="Filter by match status">
         <FilterChip active={filter === 'ALL'} href={chipHref('')}>All ({allCount})</FilterChip>
@@ -168,6 +129,7 @@ export function SupplierInvoicesScreen({ rows, canReconcile, paging, canSignOff 
           className="w-full max-w-sm min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500"
         />
         <Button type="submit" variant="secondary">Search</Button>
+        <Button type="button" variant="secondary" disabled={shown.length === 0} onClick={() => downloadInvoiceCsv(shown)}>Export CSV</Button>
       </form>
 
       {error && <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-800">{error}</div>}
@@ -198,7 +160,8 @@ export function SupplierInvoicesScreen({ rows, canReconcile, paging, canSignOff 
                     Expected {r.money.expected} · Invoice {r.money.invoiced ?? '—'} · Difference {r.money.variance ?? '—'}
                   </p>
                 )}
-                <div className="mt-2">{signOffControl(r)}{paymentControl(r)}</div>
+                <div className="mt-2"><InvoiceActions row={r} canReconcile={canReconcile} canSignOff={canSignOff} /></div>
+                <Button variant="secondary" className="mt-3" block onClick={() => printVoucher(r)}>Print Voucher</Button>
                 {canReconcile && !isPaymentStatus(r.status) && (
                   <Button variant="secondary" className="mt-3" block disabled={busy} onClick={() => reconcile(r.id)}>Re-check match</Button>
                 )}
@@ -207,7 +170,7 @@ export function SupplierInvoicesScreen({ rows, canReconcile, paging, canSignOff 
           </ul>
 
           {/* Desktop: table */}
-          <div className="hidden md:block overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+          <div className="relative hidden md:block w-full min-w-0 max-w-full overflow-x-auto rounded-2xl border border-slate-200 bg-white">
             <table className="w-full text-sm text-left text-slate-900">
               <thead className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 border-b border-slate-200">
                 <tr>
@@ -218,7 +181,7 @@ export function SupplierInvoicesScreen({ rows, canReconcile, paging, canSignOff 
                   <th className="p-3">Status</th>
                   {hasFigures && <><th className="p-3 text-right">Billed qty</th><th className="p-3 text-right">Received</th><th className="p-3 text-right">Amount off</th></>}
                   {hasMoney && <><th className="p-3 text-right">Expected</th><th className="p-3 text-right">Invoice</th><th className="p-3 text-right">Difference</th></>}
-                  {canReconcile && <th className="p-3"><span className="sr-only">Actions</span></th>}
+                  <th className="p-3"><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -228,7 +191,7 @@ export function SupplierInvoicesScreen({ rows, canReconcile, paging, canSignOff 
                     <td className="p-3 font-mono text-xs text-slate-700">{r.poNumber}{r.grnNumber ? ` · ${r.grnNumber}` : ''}</td>
                     <td className="p-3">{r.supplierName ?? '—'}</td>
                     <td className="p-3">{fmtDate(r.invoiceDate)}</td>
-                    <td className="p-3"><Pill status={r.status} /><div className="mt-1">{signOffControl(r)}{paymentControl(r)}</div></td>
+                    <td className="p-3"><Pill status={r.status} /></td>
                     {hasFigures && <>
                       <td className="p-3 text-right">{fmtQty(r.figures?.billedQty)}</td>
                       <td className="p-3 text-right">{fmtQty(r.figures?.receivedQty)}</td>
@@ -239,13 +202,31 @@ export function SupplierInvoicesScreen({ rows, canReconcile, paging, canSignOff 
                       <td className="p-3 text-right">{r.money?.invoiced ?? '—'}</td>
                       <td className="p-3 text-right">{r.money?.variance ?? '—'}</td>
                     </>}
-                    {canReconcile && <td className="p-3 text-right">{!isPaymentStatus(r.status) && <Button variant="secondary" disabled={busy} onClick={() => reconcile(r.id)}>Re-check</Button>}</td>}
+                    <td className="p-3 text-right">
+                      <span className="inline-flex flex-wrap justify-end gap-2">
+                        {hasInvoiceActions(r, canReconcile, canSignOff) && <InvoiceActionDialog row={r} canReconcile={canReconcile} canSignOff={canSignOff} />}
+                        {canReconcile && !isPaymentStatus(r.status) && <Button variant="secondary" disabled={busy} onClick={() => reconcile(r.id)}>Re-check</Button>}
+                        <Button variant="secondary" onClick={() => printVoucher(r)}>Print Voucher</Button>
+                      </span>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         </>
+      )}
+      <style>{`[data-voucher]{display:none}@media print{body *{visibility:hidden}[data-voucher],[data-voucher] *{visibility:visible}[data-voucher]{display:block;position:absolute;left:0;top:0;padding:24px}}`}</style>
+      {voucher && (
+        <div data-voucher aria-hidden="true">
+          <h2 className="text-xl font-bold">Supplier invoice voucher</h2>
+          <p>Invoice {voucher.invoiceNo} · {fmtDate(voucher.invoiceDate)}</p>
+          <p>PO {voucher.poNumber}{voucher.grnNumber ? ` · GRN ${voucher.grnNumber}` : ''}</p>
+          <p>Supplier: {voucher.supplierName ?? '—'}</p>
+          <p>Status: {LABEL[voucher.status]}</p>
+          {voucher.figures && <p>Billed {fmtQty(voucher.figures.billedQty)} · Received {fmtQty(voucher.figures.receivedQty)} · Amount off {fmtPct(voucher.figures.variancePct)}</p>}
+          {voucher.money && <p>Expected {voucher.money.expected} · Invoice {voucher.money.invoiced ?? '—'} · Difference {voucher.money.variance ?? '—'}</p>}
+        </div>
       )}
       {paging && <Pagination basePath="/mis/supplier-invoices" params={{ q, status: paging.status }} page={paging.page} total={paging.total} />}
     </div>

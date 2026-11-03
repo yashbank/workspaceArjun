@@ -2,6 +2,8 @@ package com.example.mis_kiosk.data.security
 
 import android.content.Context
 import android.content.SharedPreferences
+import java.io.IOException
+import java.security.GeneralSecurityException
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 
@@ -29,16 +31,45 @@ data class ActiveDevice(
 class DeviceCredentialStore(context: Context) {
 
     private val prefs: SharedPreferences by lazy {
-        val masterKey = MasterKey.Builder(context.applicationContext)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        EncryptedSharedPreferences.create(
-            context.applicationContext,
-            PREFS_FILE_NAME,
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-        )
+        val appContext = context.applicationContext
+        fun open(): SharedPreferences {
+            val masterKey = MasterKey.Builder(appContext)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            return EncryptedSharedPreferences.create(
+                appContext,
+                PREFS_FILE_NAME,
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+            )
+        }
+        fun wipe() {
+            // R2-380: the stored data is unreadable for good once the Keystore key is invalidated
+            // (backup restore, lock-screen change). Drop the file and the stale master key so the
+            // rebuild gets a fresh key and the app lands on Pairing instead of crash-looping.
+            appContext.deleteSharedPreferences(PREFS_FILE_NAME)
+            try {
+                java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+                    .deleteEntry(MasterKey.DEFAULT_MASTER_KEY_ALIAS)
+            } catch (_: Exception) {
+                // nothing more to clean; the rebuild below surfaces any real failure
+            }
+        }
+        try {
+            open()
+        } catch (e: GeneralSecurityException) {
+            wipe()
+            open()
+        } catch (e: IOException) {
+            // One plain retry first so a transient I/O hiccup does not wipe a valid pairing.
+            try {
+                open()
+            } catch (_: Exception) {
+                wipe()
+                open()
+            }
+        }
     }
 
     val activeDevice: ActiveDevice?

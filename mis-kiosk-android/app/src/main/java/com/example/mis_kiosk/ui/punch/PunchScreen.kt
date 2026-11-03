@@ -44,6 +44,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -104,6 +105,18 @@ fun PunchScreen(
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED,
         )
+    }
+    // R2-383: permission granted/revoked in system Settings must be picked up when the app resumes.
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                hasCameraPermission =
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         hasCameraPermission = granted
@@ -895,7 +908,7 @@ private fun ManualEntryContent(
             colors = ButtonDefaults.buttonColors(containerColor = KioskColors.Green, contentColor = KioskColors.GreenOn),
             modifier = Modifier.fillMaxWidth().height(64.dp),
         ) {
-            Text("Confirm & punch in", style = MaterialTheme.typography.titleMedium)
+            Text("Confirm punch", style = MaterialTheme.typography.titleMedium)
         }
     }
 }

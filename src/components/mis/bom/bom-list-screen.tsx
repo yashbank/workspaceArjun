@@ -52,6 +52,7 @@ export function BomListScreen({ rows, paging, counts }: { rows: BomOverviewRow[]
       header: 'Order',
       render: (r) => <Link href={`/mis/bom/${r.orderId}`} className="font-mono text-sm font-bold text-indigo-700 hover:underline whitespace-nowrap">{r.orderNumber}</Link>,
     },
+    { key: 'bomNumber', header: 'BOM #', render: (r) => <span className="font-mono text-sm text-slate-700 whitespace-nowrap">{r.bomNumber ?? '—'}</span> },
     { key: 'customer', header: 'Customer', render: (r) => <span className="text-slate-700">{r.customerName ?? 'No customer'}</span> },
     {
       key: 'description',
@@ -116,7 +117,7 @@ export function BomListScreen({ rows, paging, counts }: { rows: BomOverviewRow[]
         {paging && <HiddenParams params={paging.params} />}
         <input
           type="search"
-          placeholder="Search orders…"
+          placeholder="Search orders or BOM #…"
           name="q"
           defaultValue={search}
           className="w-full max-w-sm min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500"
