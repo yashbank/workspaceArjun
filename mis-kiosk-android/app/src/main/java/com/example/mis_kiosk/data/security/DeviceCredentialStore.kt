@@ -2,6 +2,8 @@ package com.example.mis_kiosk.data.security
 
 import android.content.Context
 import android.content.SharedPreferences
+import java.io.IOException
+import java.security.GeneralSecurityException
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 
@@ -32,13 +34,25 @@ class DeviceCredentialStore(context: Context) {
         val masterKey = MasterKey.Builder(context.applicationContext)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
             .build()
-        EncryptedSharedPreferences.create(
-            context.applicationContext,
+        val appContext = context.applicationContext
+        fun open() = EncryptedSharedPreferences.create(
+            appContext,
             PREFS_FILE_NAME,
             masterKey,
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
         )
+        try {
+            open()
+        } catch (e: GeneralSecurityException) {
+            // R2-380: Keystore key invalidated (backup restore, lock-screen change) - the stored data is
+            // unreadable for good. Wipe and recreate so the app lands on Pairing instead of crash-looping.
+            appContext.deleteSharedPreferences(PREFS_FILE_NAME)
+            open()
+        } catch (e: IOException) {
+            appContext.deleteSharedPreferences(PREFS_FILE_NAME)
+            open()
+        }
     }
 
     val activeDevice: ActiveDevice?

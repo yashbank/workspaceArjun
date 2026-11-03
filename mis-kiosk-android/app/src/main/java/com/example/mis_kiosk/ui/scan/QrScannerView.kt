@@ -112,12 +112,18 @@ fun QrScannerView(
                                     return@setAnalyzer
                                 }
                                 val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
-                                scanner.process(image)
-                                    .addOnSuccessListener { barcodes ->
-                                        barcodes.firstOrNull()?.rawValue?.let { onCodeScannedState.value(it) }
-                                    }
-                                    .addOnFailureListener { e -> Log.w(TAG, "Barcode decode failed", e) }
-                                    .addOnCompleteListener { imageProxy.close() }
+                                try {
+                                    scanner.process(image)
+                                        .addOnSuccessListener { barcodes ->
+                                            barcodes.firstOrNull()?.rawValue?.let { onCodeScannedState.value(it) }
+                                        }
+                                        .addOnFailureListener { e -> Log.w(TAG, "Barcode decode failed", e) }
+                                        .addOnCompleteListener { imageProxy.close() }
+                                } catch (e: Exception) {
+                                    // R2-381a: a synchronous throw would skip the complete listener and freeze the camera.
+                                    Log.w(TAG, "Barcode scan failed to start", e)
+                                    imageProxy.close()
+                                }
                             }
                             try {
                                 cameraProvider.unbindAll()
