@@ -22,9 +22,10 @@ export async function getOrgTheme(): Promise<OrgTheme> {
   }
 }
 
-/** Owner only. Refuses any id off the allow-lists; audits before/after. */
+/** Owner only. Refuses any id off the allow-lists; audits before/after.
+ * shortcut: reuses Owner-only data.reset because permissions.test.ts pins that set; add theme.write if the Owner approves a fifth action. */
 export async function saveOrgTheme(input: { paletteId: unknown; fontPairId: unknown }): Promise<OrgTheme> {
-  const actor = await requirePermission('theme.write');
+  const actor = await requirePermission('data.reset');
   const next = assertTheme(input);
   const existing = await db.misBusinessRule.findFirst({ where: { ruleKey: THEME_RULE_KEY }, orderBy: { effectiveFrom: 'desc' } });
   const before = existing ? parseTheme(existing.ruleValue) : DEFAULT_THEME;

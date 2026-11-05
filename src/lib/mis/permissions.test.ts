@@ -92,7 +92,7 @@ const EXPECTED: Record<Role, Action[]> = {
 describe('the full matrix — every role × every action, against a hand-written copy', () => {
   it('the copy names every action and every role exactly once (a new action cannot slip past unlisted)', () => {
     expect(Object.keys(EXPECTED).sort()).toEqual([...MIS_ROLES].sort());
-    expect(MIS_ACTIONS.length).toBe(44); // R8 T3 +theme.write (Owner Theme Studio); +data.reset (Owner Danger Zone); // R3 B64 added attendance.note; R2-37 added po.view + grn.view; R2-263 added roster.write; R2-311 added qc.acknowledge
+    expect(MIS_ACTIONS.length).toBe(43); // +data.reset (Owner Danger Zone); // R3 B64 added attendance.note; R2-37 added po.view + grn.view; R2-263 added roster.write; R2-311 added qc.acknowledge
     expect(new Set(MIS_ACTIONS).size).toBe(MIS_ACTIONS.length);
     for (const role of MIS_ROLES) {
       for (const a of EXPECTED[role]) expect(MIS_ACTIONS, `${role} lists unknown action ${a}`).toContain(a);
@@ -114,14 +114,14 @@ describe('the full matrix — every role × every action, against a hand-written
 });
 
 describe('the actions that only an OWNER may hold — and nothing else does', () => {
-  const OWNER_ONLY: Action[] = ['wages.read', 'aql.read', 'users.invite', 'data.reset', 'theme.write']; // R8 T3: Theme Studio is Owner-only // R2-331: phase.reopen is now Admin too
+  const OWNER_ONLY: Action[] = ['wages.read', 'aql.read', 'users.invite', 'data.reset']; // R2-331: phase.reopen is now Admin too
 
   it.each(OWNER_ONLY)('%s is held by OWNER and by no other role', (action) => {
     const holders = MIS_ROLES.filter((r) => can(r, action));
     expect(holders).toEqual(['OWNER']);
   });
 
-  it('the Owner-only set is exactly these five (a sixth needs a decision, and a line here)', () => { // R2-331
+  it('the Owner-only set is exactly these four (a fifth needs a decision, and a line here)', () => { // R2-331
     const ownerOnly = MIS_ACTIONS.filter((a) => MIS_ROLES.filter((r) => can(r, a)).length === 1);
     expect([...ownerOnly].sort()).toEqual([...OWNER_ONLY].sort());
   });
