@@ -1,4 +1,8 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { PassThrough } from 'node:stream';
+
+// @ts-expect-error — archiver v8 is pure ESM; @types/archiver lags behind the new named exports
+import { ZipArchive } from 'archiver';
 
 import type { Prisma } from '@/generated/prisma/client';
 import {
@@ -6,13 +10,16 @@ import {
   CONFIRM_DELETE_WORD,
   CONFIRM_RESTORE_WORD,
   EMPLOYEE_KEEP_WHERE,
-  PROTECTED_TABLES,
   RESET_GROUPS,
+  backupName,
+  cascadeRows,
   checkBackupCoversDelete,
+  deleteSetFor,
   expandGroups,
   isResetGroupId,
   isSafeTableName,
   orderParentsFirst,
+  tableToCsv,
   tablesForGroups,
   totalRows,
   type FkEdge,
@@ -20,7 +27,7 @@ import {
 } from '@/lib/mis/data-reset-groups';
 import { isUuid } from '@/lib/mis/ids';
 import { db } from '@/server/db';
-import { getObject, getStorageDriverName, putObject } from '@/server/storage';
+import { createPresignedGetUrl, getObject, getStorageDriverName, putObject } from '@/server/storage';
 
 import { logAuditEvent } from './audit';
 import { requirePermission } from './auth';
@@ -30,9 +37,10 @@ import { requirePermission } from './auth';
  *
  * SAFETY RULES (each one is pinned by data-reset.test.ts):
  *   1. Every exported function opens with requirePermission('data.reset'), which only OWNER holds.
- *   2. Nothing is deleted without a backup taken in the last hour, and nothing is deleted if a selected table has MORE
- *      rows now than the backup has (that would mean data the backup does not hold).
- *   3. The delete runs in ONE transaction with the tables locked. If the database refuses any step, nothing is deleted.
+ *   2. Nothing is deleted without a backup taken in the last hour whose files all still match their checksums, and
+ *      nothing is deleted if a selected table has MORE rows now than the backup has (data the backup does not hold).
+ *   3. The delete walks every foreign key from the selected tables, set-null links included, so nothing is orphaned. It
+ *      runs children first in ONE transaction with the tables locked. If any step is refused, nothing is deleted.
  *   4. Sign-in accounts, Owner/Admin employees, the audit log, paired tablets and settings/masters are never deleted.
  *   5. A restore only ADDS back rows that are missing (ON CONFLICT DO NOTHING) and refills links that were blanked by
  *      the delete. It never overwrites or removes anything, so it is safe to run twice.
@@ -52,12 +60,15 @@ const PREFIX = 'data-reset';
 const INDEX_KEY = `${PREFIX}/index.json`;
 const JSON_TYPE = 'application/json';
 
-export type BackupSummary = { id: string; createdAt: string; createdBy: string; totalRows: number };
-type Manifest = BackupSummary & { counts: Record<string, number> };
+export type BackupSummary = { id: string; name: string; createdAt: string; createdBy: string; totalRows: number };
+/** `checksums` maps each file in the backup folder to its SHA-256. */
+type Manifest = BackupSummary & { counts: Record<string, number>; checksums: Record<string, string> };
 
 const q = (t: string) => `"${t}"`;
 const enc = (s: string) => new TextEncoder().encode(s);
 const dec = (b: Uint8Array) => new TextDecoder().decode(b);
+const sha256 = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
+const backupKey = (id: string, file: string) => `${PREFIX}/backups/${id}/${file}`;
 
 // ---------------------------------------------------------------------------
 // helpers (not exported: every exported function below is gated)
@@ -77,10 +88,9 @@ async function dataTables(tx: Tx): Promise<string[]> {
   return rows.map((r) => r.relname).filter((t) => isSafeTableName(t) && !BACKUP_EXCLUDED_TABLES.includes(t));
 }
 
-type FkRow = { child: string; parent: string; del: string };
-async function foreignKeys(tx: Tx): Promise<FkRow[]> {
-  return tx.$queryRawUnsafe<FkRow[]>(
-    `SELECT cl.relname AS child, pl.relname AS parent, c.confdeltype::text AS del
+async function foreignKeys(tx: Tx): Promise<FkEdge[]> {
+  return tx.$queryRawUnsafe<FkEdge[]>(
+    `SELECT cl.relname AS child, pl.relname AS parent
      FROM pg_constraint c
      JOIN pg_class cl ON cl.oid = c.conrelid
      JOIN pg_class pl ON pl.oid = c.confrelid
@@ -88,8 +98,6 @@ async function foreignKeys(tx: Tx): Promise<FkRow[]> {
      WHERE c.contype = 'f' AND n.nspname = 'public'`,
   );
 }
-
-const edgesOf = (fks: FkRow[]): FkEdge[] => fks.map((f) => ({ child: f.child, parent: f.parent }));
 
 async function count(tx: Tx, table: string): Promise<number> {
   const rows = await tx.$queryRawUnsafe<{ n: number }[]>(`SELECT count(*)::int AS n FROM ${q(table)}`);
@@ -102,34 +110,18 @@ async function countsFor(tx: Tx, tables: readonly string[]): Promise<Record<stri
   return out;
 }
 
-/** The selected tables plus every table whose rows would block (or be removed with) them. Children come first. */
+/**
+ * The selected tables plus every table that depends on them, children first. The live catalog is the source: it is the
+ * compiled form of prisma/schema.prisma, and data-reset-groups.test.ts proves the same walk against the schema file.
+ * A selected table not in this database (a pending migration) holds no rows, so it is skipped.
+ */
 async function planDelete(tx: Tx, groupIds: readonly ResetGroupId[]) {
   const present = new Set(await dataTables(tx));
-  const roots = tablesForGroups(groupIds);
-  for (const t of roots) {
-    if (!present.has(t)) throw new DataResetError(`Table ${t} was not found in the database. Nothing was changed.`);
-  }
+  const roots = tablesForGroups(groupIds).filter((t) => present.has(t));
   const fks = await foreignKeys(tx);
-  const set = new Set(roots);
-  let grew = true;
-  while (grew) {
-    grew = false;
-    for (const f of fks) {
-      // a = no action, r = restrict, c = cascade: the child must go too. n = set null: the child stays.
-      if (!['a', 'r', 'c'].includes(f.del)) continue;
-      if (set.has(f.parent) && !set.has(f.child) && f.child !== f.parent) {
-        set.add(f.child);
-        grew = true;
-      }
-    }
-  }
-  for (const t of set) {
-    if (!t.startsWith('mis_') || PROTECTED_TABLES.includes(t) || !isSafeTableName(t)) {
-      throw new DataResetError(`Clearing this would also touch ${t}, which is protected. Nothing was changed.`);
-    }
-  }
-  const parentsFirst = orderParentsFirst([...set], edgesOf(fks));
-  return { tables: parentsFirst.reverse(), roots }; // children first
+  const { tables, refused } = deleteSetFor(roots, fks);
+  if (refused) throw new DataResetError(`Clearing this would also touch ${refused}, which is protected. Nothing was changed.`);
+  return { tables: tables.filter((t) => present.has(t)), roots, fks };
 }
 
 async function readIndex(): Promise<BackupSummary[]> {
@@ -141,10 +133,39 @@ async function readIndex(): Promise<BackupSummary[]> {
   }
 }
 
+/** Read every file of the backup back from storage and compare it with its checksum. */
+async function verifyBackup(manifest: Manifest) {
+  if (!manifest.checksums) throw new DataResetError('That backup has no checksums. Take a fresh backup.');
+  for (const [file, expected] of Object.entries(manifest.checksums)) {
+    const { bytes } = await getObject(backupKey(manifest.id, file));
+    if (sha256(bytes) !== expected) throw new DataResetError(`The backup could not be verified (${file}). Nothing was changed. Take a fresh backup.`);
+  }
+}
+
+async function zipCsv(tables: Record<string, string>): Promise<Buffer> {
+  const archive = new ZipArchive({ zlib: { level: 5 } });
+  const out = new PassThrough();
+  const chunks: Buffer[] = [];
+  out.on('data', (c: Buffer) => chunks.push(c));
+  const done = new Promise<void>((resolve, reject) => {
+    out.on('end', resolve);
+    archive.on('error', reject);
+  });
+  archive.pipe(out);
+  for (const [t, json] of Object.entries(tables)) {
+    // Parsed for reading in a spreadsheet only: restores use the raw JSON, so a float here can never reach the data.
+    const csv = tableToCsv(JSON.parse(json) as Record<string, unknown>[]);
+    if (csv) archive.append(Buffer.from(csv), { name: `${t}.csv` });
+  }
+  await archive.finalize();
+  await done;
+  return Buffer.concat(chunks);
+}
+
 async function readManifest(id: string): Promise<Manifest> {
   if (!isUuid(id)) throw new DataResetError('That is not a valid backup.');
   try {
-    const { bytes } = await getObject(`${PREFIX}/backups/${id}/manifest.json`);
+    const { bytes } = await getObject(backupKey(id, 'manifest.json'));
     return JSON.parse(dec(bytes)) as Manifest;
   } catch {
     throw new DataResetError('That backup could not be found.');
@@ -157,7 +178,10 @@ async function readManifest(id: string): Promise<Manifest> {
 
 export async function getDangerZoneOverview() {
   await requirePermission('data.reset');
-  const counts = await db.$transaction((tx) => countsFor(tx, tablesForGroups(RESET_GROUPS.map((g) => g.id))));
+  const counts = await db.$transaction(async (tx) => {
+    const present = new Set(await dataTables(tx));
+    return countsFor(tx, tablesForGroups(RESET_GROUPS.map((g) => g.id)).filter((t) => present.has(t)));
+  });
   const groups = RESET_GROUPS.map((g) => ({
     id: g.id,
     label: g.label,
@@ -179,18 +203,18 @@ export async function previewDelete(input: { groupIds: string[] }) {
   return db.$transaction(async (tx) => {
     const plan = await planDelete(tx, expandGroups(ids));
     const counts = await countsFor(tx, plan.tables);
-    return {
-      groups: expandGroups(ids),
-      tables: plan.tables.map((name) => ({ name, rows: counts[name] ?? 0 })).filter((t) => t.rows > 0),
-    };
+    return { groups: expandGroups(ids), tree: cascadeRows(plan.roots, plan.fks, counts) };
   });
 }
 
-export async function createBackup() {
+/** Always copies every table: `groupIds` only names the file after what is about to be cleared. */
+export async function createBackup(input: { groupIds?: string[] } = {}) {
   const actor = await requirePermission('data.reset');
   assertStorageIsSafe();
   const id = randomUUID();
-  const createdAt = new Date().toISOString();
+  const now = new Date();
+  const createdAt = now.toISOString();
+  const name = backupName(expandGroups((input.groupIds ?? []).filter(isResetGroupId)), now);
 
   // One consistent snapshot: every table is read inside a single repeatable-read transaction.
   const snapshot = await db.$transaction(
@@ -208,23 +232,45 @@ export async function createBackup() {
   );
 
   // Raw JSON text is stored as is, never parsed, so money and dates come back exactly as they went in.
-  for (const [t, v] of Object.entries(snapshot)) {
-    await putObject(`${PREFIX}/backups/${id}/${t}.json`, enc(v.json), JSON_TYPE);
-  }
+  const tablesJson = Object.fromEntries(Object.entries(snapshot).map(([t, v]) => [t, v.json]));
+  const bundle = `{"format":"mis-backup-v1","id":"${id}","createdAt":"${createdAt}","tables":{${Object.entries(tablesJson)
+    .map(([t, json]) => `${JSON.stringify(t)}:${json}`)
+    .join(',')}}}`;
+  const files: [string, Uint8Array, string][] = [
+    ...Object.entries(tablesJson).map(([t, json]): [string, Uint8Array, string] => [`${t}.json`, enc(json), JSON_TYPE]),
+    [`${name}.json`, enc(bundle), JSON_TYPE],
+    [`${name}.csv.zip`, await zipCsv(tablesJson), 'application/zip'],
+  ];
+  for (const [file, bytes, type] of files) await putObject(backupKey(id, file), bytes, type);
+
   const counts = Object.fromEntries(Object.entries(snapshot).map(([t, v]) => [t, v.n]));
-  const manifest: Manifest = { id, createdAt, createdBy: actor.userId, totalRows: totalRows(counts), counts };
-  await putObject(`${PREFIX}/backups/${id}/manifest.json`, enc(JSON.stringify(manifest)), JSON_TYPE);
+  const checksums = Object.fromEntries(files.map(([file, bytes]) => [file, sha256(bytes)]));
+  const manifest: Manifest = { id, name, createdAt, createdBy: actor.userId, totalRows: totalRows(counts), counts, checksums };
+  await putObject(backupKey(id, 'manifest.json'), enc(JSON.stringify(manifest)), JSON_TYPE);
 
-  // Prove it: read every file back and compare it with what was written.
-  for (const [t, v] of Object.entries(snapshot)) {
-    const back = dec((await getObject(`${PREFIX}/backups/${id}/${t}.json`)).bytes);
-    if (back !== v.json) throw new DataResetError(`The backup could not be verified (${t}). Nothing was deleted. Try again.`);
-  }
+  // Prove it: read every file back from storage before the backup is offered.
+  await verifyBackup(manifest);
 
-  const summary: BackupSummary = { id, createdAt, createdBy: actor.userId, totalRows: manifest.totalRows };
+  const summary: BackupSummary = { id, name, createdAt, createdBy: actor.userId, totalRows: manifest.totalRows };
   await putObject(INDEX_KEY, enc(JSON.stringify([...(await readIndex()), summary])), JSON_TYPE);
-  await logAuditEvent({ actorId: actor.userId, action: 'data.backup', entity: 'data-reset', entityId: id, after: { totalRows: manifest.totalRows, tables: Object.keys(counts).length } });
+  await logAuditEvent({ actorId: actor.userId, action: 'data.backup', entity: 'data-reset', entityId: id, after: { name, totalRows: manifest.totalRows, tables: Object.keys(counts).length } });
   return summary;
+}
+
+/** The JSON or CSV zip for the browser. On object storage this is a short-lived link, so size is not capped by the server. */
+export async function getBackupDownload(input: {
+  backupId: string;
+  kind: string;
+}): Promise<{ url: string } | { fileName: string; bytes: Uint8Array; contentType: string | undefined }> {
+  const actor = await requirePermission('data.reset');
+  if (input.kind !== 'json' && input.kind !== 'csv') throw new DataResetError('That is not a valid backup.');
+  const manifest = await readManifest(input.backupId);
+  const fileName = `${manifest.name}${input.kind === 'csv' ? '.csv.zip' : '.json'}`;
+  if (!manifest.checksums?.[fileName]) throw new DataResetError('That backup has no download. Take a fresh backup.');
+  const key = backupKey(manifest.id, fileName);
+  await logAuditEvent({ actorId: actor.userId, action: 'data.backup.download', entity: 'data-reset', entityId: manifest.id, after: { fileName } });
+  if (getStorageDriverName() === 's3') return { url: await createPresignedGetUrl(key, fileName) };
+  return { fileName, ...(await getObject(key)) };
 }
 
 export async function deleteSelectedData(input: { groupIds: string[]; backupId: string; confirm: string }) {
@@ -233,6 +279,7 @@ export async function deleteSelectedData(input: { groupIds: string[]; backupId: 
   const ids = input.groupIds.filter(isResetGroupId);
   if (ids.length === 0) throw new DataResetError('Choose at least one kind of data.');
   const manifest = await readManifest(input.backupId);
+  await verifyBackup(manifest);
 
   const deleted = await db.$transaction(
     async (tx) => {
@@ -273,13 +320,14 @@ export async function restoreBackup(input: { backupId: string; confirm: string }
   const actor = await requirePermission('data.reset');
   if (input.confirm !== CONFIRM_RESTORE_WORD) throw new DataResetError(`Type ${CONFIRM_RESTORE_WORD} to confirm.`);
   const manifest = await readManifest(input.backupId);
+  await verifyBackup(manifest);
 
   // Read every table file first, so a missing file stops us before anything changes.
   const files: Record<string, string> = {};
   for (const t of Object.keys(manifest.counts)) {
     if (!isSafeTableName(t) || BACKUP_EXCLUDED_TABLES.includes(t)) continue;
     if (manifest.counts[t] === 0) continue;
-    files[t] = dec((await getObject(`${PREFIX}/backups/${manifest.id}/${t}.json`)).bytes);
+    files[t] = dec((await getObject(backupKey(manifest.id, `${t}.json`))).bytes);
   }
 
   const inserted = await db.$transaction(
@@ -288,7 +336,7 @@ export async function restoreBackup(input: { backupId: string; confirm: string }
       const tables = Object.keys(files).filter((t) => present.has(t));
       const fks = await foreignKeys(tx);
       const added: Record<string, number> = {};
-      for (const t of orderParentsFirst(tables, edgesOf(fks))) {
+      for (const t of orderParentsFirst(tables, fks)) {
         added[t] = await tx.$executeRawUnsafe(
           `INSERT INTO ${q(t)} SELECT * FROM jsonb_populate_recordset(NULL::${q(t)}, $1::jsonb) ON CONFLICT DO NOTHING`,
           files[t],

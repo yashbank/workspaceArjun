@@ -1,14 +1,21 @@
+import { readFileSync } from 'node:fs';
+
 import { describe, expect, it } from 'vitest';
 
 import {
   BACKUP_MAX_AGE_MS,
   PROTECTED_TABLES,
   RESET_GROUPS,
+  backupName,
+  cascadeRows,
   checkBackupCoversDelete,
+  deleteSetFor,
   expandGroups,
   isSafeTableName,
   orderParentsFirst,
+  tableToCsv,
   tablesForGroups,
+  type FkEdge,
 } from './data-reset-groups';
 
 describe('reset groups', () => {
@@ -79,5 +86,84 @@ describe('checkBackupCoversDelete', () => {
   });
   it('refuses a backup dated in the future', () => {
     expect(checkBackupCoversDelete({ ...base, backupCreatedAt: new Date(now.getTime() + 60_000) }).ok).toBe(false);
+  });
+});
+
+/** Every foreign key in prisma/schema.prisma, so these tests follow the schema instead of a hand list. */
+function schemaEdges(): FkEdge[] {
+  const schema = readFileSync('prisma/schema.prisma', 'utf8');
+  const models = new Map<string, { table: string; body: string }>();
+  for (const m of schema.matchAll(/^model (\w+) \{([\s\S]*?)^\}/gm)) {
+    models.set(m[1], { table: m[2].match(/@@map\("([^"]+)"\)/)?.[1] ?? m[1], body: m[2] });
+  }
+  const edges: FkEdge[] = [];
+  for (const { table, body } of models.values()) {
+    for (const line of body.split('\n')) {
+      const rel = line.match(/^\s*\w+\s+(\w+)\??\s+@relation\(.*fields:/);
+      const parent = rel && models.get(rel[1]);
+      if (parent) edges.push({ child: table, parent: parent.table });
+    }
+  }
+  return edges;
+}
+
+describe('delete set, derived from prisma/schema.prisma', () => {
+  const edges = schemaEdges();
+
+  it('the schema parser finds the foreign keys', () => {
+    expect(edges.length).toBeGreaterThan(90);
+    expect(edges).toContainEqual({ child: 'mis_orders', parent: 'mis_customers' });
+  });
+
+  it.each(RESET_GROUPS.map((g) => g.id))('%s: every FK child of a deleted table is deleted too, children first', (id) => {
+    const { tables, refused } = deleteSetFor(tablesForGroups([id]), edges);
+    expect(refused).toBeNull();
+    for (const e of edges) {
+      if (e.child === e.parent || !tables.includes(e.parent)) continue;
+      expect(tables, `${e.child} points at ${e.parent}`).toContain(e.child);
+      expect(tables.indexOf(e.child), `${e.child} before ${e.parent}`).toBeLessThan(tables.indexOf(e.parent));
+    }
+  });
+
+  it('clear-all has a safe order and touches no protected table', () => {
+    const { tables, refused } = deleteSetFor(tablesForGroups(RESET_GROUPS.map((g) => g.id)), edges);
+    expect(refused).toBeNull();
+    for (const t of PROTECTED_TABLES) expect(tables).not.toContain(t);
+  });
+
+  it('selecting customers pulls in the whole order chain (the owner\'s localhost bug)', () => {
+    const { tables } = deleteSetFor(['mis_customers'], edges);
+    for (const t of ['mis_orders', 'mis_bom', 'mis_bom_stages', 'mis_production_log', 'mis_job_phases', 'mis_machine_allocations', 'mis_qc_checks', 'mis_documents', 'mis_document_versions']) {
+      expect(tables).toContain(t);
+    }
+  });
+
+  it('refuses when the walk reaches a protected or non-MIS table', () => {
+    expect(deleteSetFor(['mis_a'], [{ child: 'mis_audit_logs', parent: 'mis_a' }])).toEqual({ tables: [], refused: 'mis_audit_logs' });
+    expect(deleteSetFor(['mis_a'], [{ child: 'user_profiles', parent: 'mis_a' }]).refused).toBe('user_profiles');
+  });
+
+  it('the cascade tree shows every table once, with its count', () => {
+    const roots = ['mis_customers'];
+    const { tables } = deleteSetFor(roots, edges);
+    const rows = cascadeRows(roots, edges, Object.fromEntries(tables.map((t) => [t, 2])));
+    expect(rows.map((r) => r.name).sort()).toEqual([...tables].sort());
+    expect(rows[0]).toEqual({ name: 'mis_customers', rows: 2, depth: 0 });
+    expect(rows.find((r) => r.name === 'mis_orders')?.depth).toBe(1);
+  });
+});
+
+describe('backup files', () => {
+  const at = new Date('2026-11-06T20:00:05Z');
+
+  it('names the file in factory time', () => {
+    expect(backupName(['customers', 'machine_allocation'], at)).toBe('bpp-backup-customers-machine-allocation-2026-11-07_01-30-05');
+    expect(backupName([], at)).toBe('bpp-backup-all-2026-11-07_01-30-05');
+    expect(backupName(RESET_GROUPS.map((g) => g.id), at)).toBe('bpp-backup-all-2026-11-07_01-30-05');
+  });
+
+  it('writes a table as CSV without rounding numbers', () => {
+    expect(tableToCsv([{ a: 1.2345, b: null, c: { x: 1 } }])).toBe('a,b,c\r\n1.2345,,"{""x"":1}"\r\n');
+    expect(tableToCsv([])).toBe('');
   });
 });

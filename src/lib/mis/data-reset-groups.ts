@@ -13,6 +13,8 @@
  * row somewhere still points at the data), the whole thing rolls back and nothing is deleted.
  */
 
+import { toCsv, type Cell } from './wastage-csv';
+
 export const CONFIRM_DELETE_WORD = 'DELETE';
 export const CONFIRM_RESTORE_WORD = 'RESTORE';
 /** A delete needs a backup taken within this window. */
@@ -21,6 +23,9 @@ export const BACKUP_MAX_AGE_MS = 60 * 60 * 1000;
 export type ResetGroupId =
   | 'customers'
   | 'orders'
+  | 'production'
+  | 'stages'
+  | 'machine_allocation'
   | 'purchasing'
   | 'inventory'
   | 'attendance'
@@ -41,7 +46,7 @@ export const RESET_GROUPS: readonly ResetGroup[] = [
   {
     id: 'customers',
     label: 'Customers',
-    description: 'The customer list. Orders stay, but lose their customer link.',
+    description: 'The customer list, and every order and record that hangs off those orders.',
     tables: ['mis_customers'],
     requires: [],
   },
@@ -50,6 +55,27 @@ export const RESET_GROUPS: readonly ResetGroup[] = [
     label: 'Orders and production',
     description: 'Orders, bills of materials, production logs, QC checks, job phases and order documents.',
     tables: ['mis_order_stock_allocations', 'mis_qc_checks', 'mis_production_log', 'mis_bom', 'mis_orders'],
+    requires: [],
+  },
+  {
+    id: 'production',
+    label: 'Production logs',
+    description: 'Production log entries, and anything that points at them.',
+    tables: ['mis_production_log'],
+    requires: [],
+  },
+  {
+    id: 'stages',
+    label: 'Stages',
+    description: 'Job phases and the BOM stage lists.',
+    tables: ['mis_job_phases', 'mis_bom_stages'],
+    requires: [],
+  },
+  {
+    id: 'machine_allocation',
+    label: 'Machine and worker allocation',
+    description: 'Which machines and workers are allocated to which jobs.',
+    tables: ['mis_machine_allocations', 'mis_worker_allocations'],
     requires: [],
   },
   {
@@ -190,6 +216,69 @@ export function isSafeTableName(name: string): boolean {
 }
 
 export type FkEdge = { child: string; parent: string };
+
+/**
+ * Links the database cannot see: the column holds a parent's id with no foreign key. Clearing the parent would leave
+ * these rows pointing at nothing, so they are walked like real foreign keys. Polymorphic `source_id` / `entity_id`
+ * columns are left out on purpose: one parent table does not own them.
+ */
+export const LOOSE_LINKS: readonly FkEdge[] = [
+  { child: 'mis_document_versions', parent: 'mis_orders' }, // ref_id: COA and JOB_CARD both belong to an order
+  { child: 'mis_quarantine_stock', parent: 'mis_grn_items' }, // grn_item_id
+];
+
+/**
+ * What a delete of `roots` really touches: the roots plus every table that points at them, however indirectly.
+ * ON DELETE SET NULL links count too, because a blanked link is an orphan. Children come first, ready to delete.
+ * `refused` names the first table the walk reached that must never be cleared; the caller then deletes nothing.
+ */
+export function deleteSetFor(roots: readonly string[], edges: readonly FkEdge[]): { tables: string[]; refused: string | null } {
+  const all = [...edges, ...LOOSE_LINKS];
+  const set = new Set(roots);
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const e of all) {
+      if (set.has(e.parent) && !set.has(e.child)) {
+        set.add(e.child);
+        grew = true;
+      }
+    }
+  }
+  const refused = [...set].find((t) => !isSafeTableName(t) || PROTECTED_TABLES.includes(t)) ?? null;
+  return { tables: refused ? [] : orderParentsFirst([...set], all).reverse(), refused };
+}
+
+export type CascadeRow = { name: string; rows: number; depth: number };
+
+/** The delete set as an indented tree for the screen. A table reached twice is shown once, under its first parent. */
+export function cascadeRows(roots: readonly string[], edges: readonly FkEdge[], counts: Record<string, number>): CascadeRow[] {
+  const all = [...edges, ...LOOSE_LINKS];
+  const seen = new Set<string>();
+  const out: CascadeRow[] = [];
+  const visit = (t: string, depth: number) => {
+    if (seen.has(t) || !(t in counts)) return;
+    seen.add(t);
+    out.push({ name: t, rows: counts[t], depth });
+    for (const c of [...new Set(all.filter((e) => e.parent === t).map((e) => e.child))].sort()) visit(c, depth + 1);
+  };
+  [...roots].sort().forEach((r) => visit(r, 0));
+  return out;
+}
+
+/** `bpp-backup-<scope>-YYYY-MM-DD_HH-mm-ss`, in factory time (IST has no daylight saving, so a fixed offset is exact). */
+export function backupName(ids: readonly ResetGroupId[], at: Date): string {
+  const scope = ids.length === 0 || ids.length === RESET_GROUPS.length ? 'all' : ids.join('-').replaceAll('_', '-');
+  const ist = new Date(at.getTime() + 330 * 60_000).toISOString();
+  return `bpp-backup-${scope}-${ist.slice(0, 10)}_${ist.slice(11, 19).replaceAll(':', '-')}`;
+}
+
+/** One table as CSV for reading in a spreadsheet. Restores use the JSON, never this. */
+export function tableToCsv(rows: readonly Record<string, unknown>[]): string {
+  if (rows.length === 0) return '';
+  const columns = Object.keys(rows[0]);
+  const text = (v: unknown): Cell => (v === null || v === undefined ? null : typeof v === 'object' ? JSON.stringify(v) : String(v));
+  return toCsv([columns, ...rows.map((r) => columns.map((c) => text(r[c])))]);
+}
 
 /**
  * Parents first. Self-references and links to tables outside the set are ignored.

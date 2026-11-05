@@ -33,8 +33,8 @@ export async function previewDeleteAction(groupIds: string[]) {
   return outcome(() => previewDelete({ groupIds }));
 }
 
-export async function createBackupAction() {
-  return outcome(async () => ({ backup: await createBackup() }));
+export async function createBackupAction(groupIds: string[]) {
+  return outcome(async () => ({ backup: await createBackup({ groupIds }) }));
 }
 
 export async function deleteDataAction(groupIds: string[], backupId: string, confirm: string) {

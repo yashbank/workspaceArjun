@@ -4,6 +4,7 @@ import {
   CompleteMultipartUploadCommand,
   AbortMultipartUploadCommand,
   PutObjectCommand,
+  GetObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { getDriver, getS3Client, getBucket } from '@/server/storage/driver';
@@ -18,6 +19,16 @@ export function requiresDirectUpload(): boolean {
 
 export function shouldUseMultipart(sizeBytes: number): boolean {
   return sizeBytes >= MULTIPART_THRESHOLD_BYTES;
+}
+
+/** Presigned GET that saves as `fileName` in the browser. */
+export async function createPresignedGetUrl(key: string, fileName: string, expiresIn = 300): Promise<string> {
+  const command = new GetObjectCommand({
+    Bucket: getBucket(),
+    Key: key,
+    ResponseContentDisposition: `attachment; filename="${encodeURIComponent(fileName)}"`,
+  });
+  return getSignedUrl(getS3Client(), command, { expiresIn });
 }
 
 /**

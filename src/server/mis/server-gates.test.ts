@@ -212,6 +212,7 @@ describe('money and access functions are gated on the RIGHT action, not merely o
     ['data-reset.ts#getDangerZoneOverview', 'data.reset'],
     ['data-reset.ts#previewDelete', 'data.reset'],
     ['data-reset.ts#createBackup', 'data.reset'],
+    ['data-reset.ts#getBackupDownload', 'data.reset'], // R8 T0
     ['data-reset.ts#deleteSelectedData', 'data.reset'],
     ['data-reset.ts#restoreBackup', 'data.reset'],
     ['business-rules.ts#updateBusinessRule', 'settings.write'],
