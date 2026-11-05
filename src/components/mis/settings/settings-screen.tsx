@@ -65,6 +65,7 @@ export function SettingsScreen({
   canManageKiosk,
   canSeeRules = false,
   canResetData = false,
+  canManageTheme = false,
 }: {
   rules: Rule[];
   canWrite: boolean;
@@ -75,6 +76,8 @@ export function SettingsScreen({
   canSeeRules?: boolean;
   /** Owner Danger Zone link. Absent for everyone else, never greyed. */
   canResetData?: boolean;
+  /** R8 T3: Owner Theme Studio link. Absent for everyone else. */
+  canManageTheme?: boolean;
 }) {
   return (
     <div className="mx-auto max-w-3xl flex flex-col gap-4">
@@ -183,6 +186,19 @@ export function SettingsScreen({
           <div>
             <div className="font-semibold text-slate-900">Gate tablets</div>
             <div className="text-sm text-slate-600">Pair a new tablet, retire a lost one, and see how each is syncing.</div>
+          </div>
+          <span aria-hidden="true" className="text-slate-400">→</span>
+        </Link>
+      )}
+
+      {canManageTheme && (
+        <Link
+          href="/mis/settings/theme"
+          className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-4 hover:bg-slate-50"
+        >
+          <div>
+            <div className="font-semibold text-slate-900">Theme Studio</div>
+            <div className="text-sm text-slate-600">Palette and fonts for every screen, printout and badge.</div>
           </div>
           <span aria-hidden="true" className="text-slate-400">→</span>
         </Link>

@@ -270,7 +270,7 @@ const RULE_RANGES: Record<string, [number, number]> = {
 };
 
 /** R2-241: legacy seeded rows no code reads (shifts live in MisShift). Hidden from Settings, never deleted. */
-const HIDDEN_RULE_KEYS = ['shift.start_time', 'shift.end_time'];
+const HIDDEN_RULE_KEYS = ['shift.start_time', 'shift.end_time', 'ui.theme']; // ui.theme: R8 T3 Theme Studio JSON, edited only on its own screen
 const LATE_RULE_WORKERS_KEY = LATE_RULE_KEYS[1];
 /** R2-242: the stored description once suggested values the code never read; the screen shows this instead. */
 const LATE_RULE_WORKERS_DESCRIPTION = 'Who the late rule applies to, by pay type: ALL, DAILY or MONTHLY.';

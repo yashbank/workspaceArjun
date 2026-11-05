@@ -4,6 +4,8 @@ import { MisShell } from '@/components/mis/shell/mis-shell';
 import { getNavBadges, getNavigationFor, navigationForRole } from '@/server/mis/navigation';
 import { getLocale } from '@/server/mis/preferences';
 import { getMisRole } from '@/server/mis/roles';
+import { themeCss } from '@/lib/mis/theme';
+import { getOrgTheme } from '@/server/mis/theme';
 import { requireMisAccess } from '@/server/mis/guard';
 
 import { setLocaleAction } from '../actions';
@@ -21,16 +23,22 @@ import { setLocaleAction } from '../actions';
 export default async function MisLayout({ children }: { children: ReactNode }) {
   const user = await requireMisAccess();
 
-  const [role, locale, nav] = await Promise.all([
+  const [role, locale, nav, theme] = await Promise.all([
     getMisRole(user.id),
     getLocale(user.id),
     getNavigationFor(user.id),
+    getOrgTheme(),
   ]);
 
   // Computed once, here, so no individual screen has to remember to do it.
   const navBadges = await getNavBadges(user.id, role);
 
+  // R8 T3: org-wide theme. '' for the default theme, so an unthemed site renders as before. html:has covers portals.
+  const css = themeCss(theme, 'html:has(.mis-light),.mis-light');
+
   return (
+    <>
+      {css && <style>{css}</style>}
     <MisShell
       factoryName="Bhaskar Paper Products"
       userId={user.id}
@@ -44,5 +52,6 @@ export default async function MisLayout({ children }: { children: ReactNode }) {
     >
       {children}
     </MisShell>
+    </>
   );
 }
