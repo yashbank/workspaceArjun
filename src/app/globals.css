@@ -315,6 +315,7 @@ html:has(.mis-light) :is(.text-slate-400, .text-gray-400, .text-gray-300):not(
   );
 }
 .animate-shimmer {
+  background-size: 200% 100%;
   animation: shimmer 1.8s ease-in-out infinite;
 }
 
@@ -325,6 +326,14 @@ html:has(.mis-light) :is(.text-slate-400, .text-gray-400, .text-gray-300):not(
 .shadow-card { box-shadow: var(--shadow-card); }
 .shadow-elevated { box-shadow: var(--shadow-elevated); }
 .shadow-float { box-shadow: var(--shadow-float); }
+
+/* Card hover motion: lift + elevated shadow. Opt in with .hover-lift on any clickable card. */
+.hover-lift { transition: transform 150ms ease-out, box-shadow 150ms ease-out; }
+.hover-lift:hover { transform: translateY(-2px); box-shadow: var(--shadow-elevated); }
+@media (prefers-reduced-motion: reduce) {
+  .hover-lift, .hover-lift:hover { transition: none; transform: none; }
+  .animate-shimmer { animation: none; }
+}
 
 /* BPP paper surfaces */
 @layer components {
