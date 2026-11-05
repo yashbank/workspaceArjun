@@ -34,6 +34,8 @@ export type DashboardData = {
   production: { produced: number; waste: number; machinesRun: number; entries: number } | null;
   series: { date: string; produced: number; waste: number }[];
   plan: number | null;
+  /** R8 T4: the shared range the output, wastage, QC and on-time widgets cover, e.g. "Q4 2026". */
+  rangeLabel?: string;
   machines: { free: number; running: number; down: number; total: number } | null;
   attendance: { headcount: number; present: number; late: number; onLeave: number; absent: number } | null;
   crew: { present: number; headcount: number; absent: number; onLeave: number; recorded: boolean } | null;
@@ -108,7 +110,7 @@ export function WidgetBody({ widgetKey, data }: { widgetKey: string; data: Dashb
       const series = data.series.map((d) => d.produced);
       return (
         <>
-          <Stat value={num(data.production.produced)} unit="Nos" />
+          <Stat value={num(data.production.produced)} unit="Nos" note={data.rangeLabel} />
           <Sparkline values={series} hue={SERIES_HUES[0]} />
         </>
       );
@@ -118,7 +120,7 @@ export function WidgetBody({ widgetKey, data }: { widgetKey: string; data: Dashb
       if (!data.production || data.production.entries === 0) return <Empty messageKey="empty.noProduction" />;
       return (
         <>
-          <Stat value={num(data.production.waste)} unit="Kg" />
+          <Stat value={num(data.production.waste)} unit="Kg" note={data.rangeLabel} />
           <Sparkline values={data.series.map((d) => d.waste)} hue={SERIES_HUES[1]} />
         </>
       );
@@ -144,7 +146,7 @@ export function WidgetBody({ widgetKey, data }: { widgetKey: string; data: Dashb
           value={`${pct}`}
           unit="%"
           chip={<Chip tone={pct >= target ? 'good' : 'warn'}>{`target ${target}%`}</Chip>}
-          note={`${despatched} of ${total} orders · the marker is target`}
+          note={`${despatched} of ${total} orders${data.rangeLabel ? ` due ${data.rangeLabel}` : ''} · the marker is target`}
         />
       );
     }
@@ -274,6 +276,7 @@ export function WidgetBody({ widgetKey, data }: { widgetKey: string; data: Dashb
       ];
       return (
         <div className="flex h-full flex-col justify-center gap-1.5">
+          {data.rangeLabel ? <p className="text-xs text-slate-500">{data.rangeLabel}</p> : null}
           {rows.map((row) => (
             <div key={row.label} className="flex items-center justify-between gap-2 text-sm">
               <span className="text-slate-600">{row.label}</span>

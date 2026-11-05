@@ -4,7 +4,9 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { StatusBadge, type BadgeTone } from '@/components/mis/kit/status-badge';
+import { RangeTabs } from '@/components/mis/kit/range-tabs';
 import { formatQty } from '@/lib/mis/qty-by-unit';
+import type { KeyRange } from '@/lib/mis/report-range';
 
 type ProductionData = {
   rows: { orderNumber: string; description: string | null; unit: string; produced: number; waste: number; entries: number }[];
@@ -56,6 +58,8 @@ type Props = {
   canSeeWages: boolean;
   isOwner: boolean;
   rangeLabel: string;
+  /** R8 T4: the shared day/week/month/quarter/year range; without it the screen keeps the old month arrows. */
+  range?: KeyRange;
   year: number;
   month: number;
 };
@@ -84,7 +88,7 @@ function downloadCsv(filename: string, rows: string[][], headers: string[]) {
   URL.revokeObjectURL(url);
 }
 
-export function ReportsScreen({ production, attendance, qc, orders, store, machines, canSeeWages: _canSeeWages, isOwner, rangeLabel, year, month, failed = {}, legacyIssuesHref }: Props) {
+export function ReportsScreen({ production, attendance, qc, orders, store, machines, canSeeWages: _canSeeWages, isOwner, rangeLabel, range, year, month, failed = {}, legacyIssuesHref }: Props) {
   const [tab, setTab] = useState<Tab>('production');
   const router = useRouter();
 
@@ -196,7 +200,7 @@ export function ReportsScreen({ production, attendance, qc, orders, store, machi
   ];
 
   function handleExport() {
-    const filename = `report-${year}-${String(month).padStart(2, '0')}-${tab}.csv`;
+    const filename = range ? `report-${range.freq}-${range.fromKey}-${tab}.csv` : `report-${year}-${String(month).padStart(2, '0')}-${tab}.csv`;
     if (tab === 'production') {
       const headers = ['Order', 'Description', 'Unit', 'Produced', 'Waste', 'Log Entries', 'Yield %'];
       const rows = production.rows.map(r => [
@@ -248,9 +252,15 @@ export function ReportsScreen({ production, attendance, qc, orders, store, machi
             (5 controls, min-w-[120px] label alone) — wraps onto a second row instead of
             pushing the page wider. */}
         <div className="flex flex-wrap items-center gap-3">
-          <button onClick={prevMonth} aria-label="Previous month" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500 text-lg">←</button>
-          <span className="font-medium text-slate-700 min-w-[120px] text-center">{rangeLabel}</span>
-          <button onClick={nextMonth} aria-label="Next month" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500 text-lg">→</button>
+          {range ? (
+            <RangeTabs basePath="/mis/reports" range={range} />
+          ) : (
+            <>
+              <button onClick={prevMonth} aria-label="Previous month" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500 text-lg">←</button>
+              <span className="font-medium text-slate-700 min-w-[120px] text-center">{rangeLabel}</span>
+              <button onClick={nextMonth} aria-label="Next month" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500 text-lg">→</button>
+            </>
+          )}
           <button
             onClick={handleExport}
             className="ml-2 inline-flex min-h-11 items-center rounded-lg border border-slate-200 px-3 text-sm text-slate-700 hover:bg-slate-50"
@@ -298,12 +308,12 @@ export function ReportsScreen({ production, attendance, qc, orders, store, machi
         <div className="bg-white border border-slate-200 rounded-lg p-4">
           <p className="text-xs text-slate-500 uppercase tracking-wide">Store IN</p>
           <p className="text-2xl font-bold mt-1 text-green-600">{formatQty(totStoreIn)}</p>
-          <p className="text-xs text-slate-400">units received this month</p>
+          <p className="text-xs text-slate-400">units received in this range</p>
         </div>
         <div className="bg-white border border-slate-200 rounded-lg p-4">
           <p className="text-xs text-slate-500 uppercase tracking-wide">Store OUT</p>
           <p className="text-2xl font-bold mt-1 text-amber-600">{formatQty(totStoreOut)}</p>
-          <p className="text-xs text-slate-400">units issued this month</p>
+          <p className="text-xs text-slate-400">units issued in this range</p>
         </div>
         {isOwner && totStoreValue !== null && (
           <div className="bg-white border border-slate-200 rounded-lg p-4">

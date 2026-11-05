@@ -27,3 +27,4 @@ export { ToastProvider, useToast } from '@/components/ui/toast';
 export { useConfirm, type ConfirmOptions } from '@/components/ui/confirm-dialog';
 export { Pagination, HiddenParams } from './pagination';
 export { ListToolbar, useListNav } from './list-toolbar';
+export { RangeTabs } from './range-tabs';

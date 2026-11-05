@@ -2,6 +2,8 @@
 
 import { useMemo, useState, useTransition } from 'react';
 
+import { RangeTabs } from '@/components/mis/kit/range-tabs';
+import type { KeyRange } from '@/lib/mis/report-range';
 import { GRID_SLOTS, flowLayout, widgetByKey, type PlacedWidget, type WidgetGroupListing } from '@/lib/mis/widgets';
 import type { MisRoleName } from '@/lib/mis/roles';
 import { cn } from '@/lib/utils';
@@ -33,9 +35,11 @@ export type DashboardScreenProps = {
   /** "Good morning / Monday, 7 September · 07:12" (D1) — optional so a test can render the
    *  screen without it and every OTHER desktop page (which has no greeting) is unaffected. */
   header?: { title: string; meta: string };
+  /** R8 T4: the shared range; the frequency tabs show only when this is passed. */
+  range?: KeyRange;
 };
 
-export function DashboardScreen({ role, initialLayout, catalogue, data, onSave, onReset, header }: DashboardScreenProps) {
+export function DashboardScreen({ role, initialLayout, catalogue, data, onSave, onReset, header, range }: DashboardScreenProps) {
   const t = useT();
   const [customising, setCustomising] = useState(false);
   const [order, setOrder] = useState<string[]>(() => initialLayout.map((p) => p.widgetKey));
@@ -88,6 +92,11 @@ export function DashboardScreen({ role, initialLayout, catalogue, data, onSave, 
         <div className="mb-4">
           <h1 className="text-2xl font-bold text-slate-900">{header.title}</h1>
           <p className="mt-0.5 text-sm text-slate-500">{header.meta}</p>
+        </div>
+      )}
+      {range && (
+        <div className="mb-4">
+          <RangeTabs basePath="/mis/dashboard" range={range} />
         </div>
       )}
 
