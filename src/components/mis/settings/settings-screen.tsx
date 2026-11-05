@@ -64,6 +64,7 @@ export function SettingsScreen({
   canSeeAql,
   canManageKiosk,
   canSeeRules = false,
+  canResetData = false,
 }: {
   rules: Rule[];
   canWrite: boolean;
@@ -72,6 +73,8 @@ export function SettingsScreen({
   canManageKiosk: boolean;
   /** D12: the Owner's change-history screen. Absent for everyone else, never greyed. */
   canSeeRules?: boolean;
+  /** Owner Danger Zone link. Absent for everyone else, never greyed. */
+  canResetData?: boolean;
 }) {
   return (
     <div className="mx-auto max-w-3xl flex flex-col gap-4">
@@ -182,6 +185,22 @@ export function SettingsScreen({
             <div className="text-sm text-slate-600">Pair a new tablet, retire a lost one, and see how each is syncing.</div>
           </div>
           <span aria-hidden="true" className="text-slate-400">→</span>
+        </Link>
+      )}
+
+      {canResetData && (
+        <Link
+          href="/mis/settings/danger-zone"
+          className="flex items-center justify-between rounded-2xl border border-red-200 bg-red-50 p-4 hover:bg-red-100"
+        >
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-red-700">
+              🔒 Visible to you only
+            </div>
+            <div className="mt-1 font-semibold text-slate-900">Danger Zone</div>
+            <div className="text-sm text-slate-600">Back up, clear test data, and restore a backup.</div>
+          </div>
+          <span aria-hidden="true" className="text-red-600">→</span>
         </Link>
       )}
 

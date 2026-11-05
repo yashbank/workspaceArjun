@@ -209,6 +209,11 @@ describe('money and access functions are gated on the RIGHT action, not merely o
     ['kiosk-device.ts#approveEnrolment', 'kiosk.manage'],
     ['kiosk-device.ts#revokeDevice', 'kiosk.manage'],
     ['kiosk-device.ts#renameDevice', 'kiosk.manage'],
+    ['data-reset.ts#getDangerZoneOverview', 'data.reset'],
+    ['data-reset.ts#previewDelete', 'data.reset'],
+    ['data-reset.ts#createBackup', 'data.reset'],
+    ['data-reset.ts#deleteSelectedData', 'data.reset'],
+    ['data-reset.ts#restoreBackup', 'data.reset'],
     ['business-rules.ts#updateBusinessRule', 'settings.write'],
     // D12 — scheduling a change to any rule, and reading the ledger, are the Owner's.
     ['business-rules.ts#scheduleBusinessRule', 'wages.read'],

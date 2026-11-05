@@ -73,6 +73,8 @@ export const MIS_ACTIONS = [
   // Gate tablets (D18): pair, rename and retire a device. Owner and Admin only.
   // Seeing kiosk health on the attendance home needs only attendance.read.
   'kiosk.manage',
+  // Owner Danger Zone: back up, clear and restore data. Owner ONLY (not in the Admin list below).
+  'data.reset',
   // Phase 23 — the parked-writes inbox (Appendix B §B.7). This is the DOOR into
   // the inbox at all; which ROWS a holder actually sees is filtered again, per
   // kind, by that kind's own read permission (production.read / attendance.read)
