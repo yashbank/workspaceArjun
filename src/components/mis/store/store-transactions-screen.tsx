@@ -10,7 +10,9 @@ import { Input, NumberInput } from '@/components/mis/kit/input';
 import { storeInAction, storeOutAction } from '@/app/(mis)/mis/store/actions';
 import { unwrap } from '@/lib/mis/action-result';
 import type { StoreTxnRow, StoreItemRow } from '@/server/mis/store';
-import { Pagination, HiddenParams } from '@/components/mis/kit/pagination';
+import { Pagination } from '@/components/mis/kit/pagination';
+import { ListToolbar } from '@/components/mis/kit/list-toolbar';
+import { parseView } from '@/lib/mis/pagination';
 import { fmtDate as fmtFactoryDate, fmtTime as fmtFactoryTime } from '@/lib/mis/client-dates';
 
 type IssueTargets = {
@@ -75,6 +77,7 @@ export function StoreTransactionsScreen({ txns, items, canWrite, targets = { ord
   const itemFilter = urlParams.itemId ?? '';
   const fromDate = urlParams.from ?? '';
   const toDate = urlParams.to ?? '';
+  const view = parseView(urlParams.view);
 
   const [isPending, startTransition] = useTransition();
   const [inOpen, setInOpen] = useState(false);
@@ -274,63 +277,59 @@ export function StoreTransactionsScreen({ txns, items, canWrite, targets = { ord
         </div>
       )}
 
-      {/* Filters: a GET form, so search, filters and page live in the URL (R2-83). */}
-      <form method="get" className="flex flex-wrap gap-3 items-end">
-        <input
-          type="search"
-          name="q"
-          placeholder="Search by txn no., item, ref…"
-          defaultValue={search}
-          className="w-full max-w-xs min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500"
-        />
-        <select
-          name="type"
-          defaultValue={typeFilter}
-          className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400"
-        >
-          <option value="">All Types</option>
-          <option value="IN">IN only</option>
-          <option value="OUT">OUT only</option>
-        </select>
-        <select
-          name="itemId"
-          defaultValue={itemFilter}
-          className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400 max-w-[200px]"
-        >
-          <option value="">All Items</option>
-          {items.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.code} — {item.name}
-            </option>
-          ))}
-        </select>
-        <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500">
-          <span>From</span>
-          <input
-            type="date"
-            name="from"
-            defaultValue={fromDate}
-            className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400"
-          />
-          <span>To</span>
-          <input
-            type="date"
-            name="to"
-            defaultValue={toDate}
-            className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400"
-          />
-        </div>
-        <Button type="submit" variant="secondary">Apply</Button>
-        {(search || typeFilter || itemFilter || fromDate || toDate) && (
-          <a href="/mis/store/transactions" className="inline-flex min-h-11 items-center text-sm text-slate-600 underline">
-            Clear filters
-          </a>
+      {/* Filters: the shared toolbar; each change rewrites the URL params, so search, filters and page live in the URL (R2-83). */}
+      <ListToolbar basePath="/mis/store/transactions" params={urlParams} searchLabel="Search by txn no., item, ref…" view={view}>
+        {(go) => (
+          <>
+            <select
+              aria-label="Type"
+              value={typeFilter}
+              onChange={(e) => go({ type: e.target.value || undefined })}
+              className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400"
+            >
+              <option value="">All Types</option>
+              <option value="IN">IN only</option>
+              <option value="OUT">OUT only</option>
+            </select>
+            <select
+              aria-label="Item"
+              value={itemFilter}
+              onChange={(e) => go({ itemId: e.target.value || undefined })}
+              className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400 max-w-[200px]"
+            >
+              <option value="">All Items</option>
+              {items.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.code} — {item.name}
+                </option>
+              ))}
+            </select>
+            <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500">
+              <span>From</span>
+              <input
+                type="date"
+                aria-label="From date"
+                value={fromDate}
+                onChange={(e) => go({ from: e.target.value || undefined })}
+                className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400"
+              />
+              <span>To</span>
+              <input
+                type="date"
+                aria-label="To date"
+                value={toDate}
+                onChange={(e) => go({ to: e.target.value || undefined })}
+                className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400"
+              />
+            </div>
+          </>
         )}
-      </form>
+      </ListToolbar>
 
       <DataTable
         columns={columns}
         rows={filtered}
+        view={view}
         rowKey={(r) => r.id}
         emptyTitle="No transactions found"
         emptyBody={

@@ -27,7 +27,7 @@ export default async function SettingsPage() {
       canManageKiosk={canManageKiosk}
       canSeeRules={can(role, 'wages.read')}
       canResetData={can(role, 'data.reset')}
-      canManageTheme={can(role, 'data.reset')}
+      canManageTheme={can(role, 'theme.write')}
     />
   );
 }

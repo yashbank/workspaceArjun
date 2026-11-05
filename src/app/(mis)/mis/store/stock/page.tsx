@@ -3,9 +3,9 @@ import { getMisRole } from '@/server/mis/roles';
 import { listStockSummary, listStockSummaryPage } from '@/server/mis/store';
 import { formatMoney } from '@/server/mis/po';
 import { StoreStockScreen } from '@/components/mis/store/store-stock-screen';
-import { clampPage, parsePage, parseSearch } from '@/lib/mis/pagination';
+import { clampPage, parsePage, parseSearch, parseView } from '@/lib/mis/pagination';
 
-export default async function StoreStockPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string }> }) {
+export default async function StoreStockPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string; view?: string }> }) {
   const user = await requireMisAccess();
   const role = await getMisRole(user.id);
   const isOwner = role === 'OWNER';
@@ -19,7 +19,7 @@ export default async function StoreStockPage({ searchParams }: { searchParams: P
       rows={paged.rows}
       isOwner={isOwner}
       totalValueLabel={totalValueLabel}
-      paging={{ total: paged.total, page: clampPage(parsePage(sp.page), paged.total), params: { q } }}
+      paging={{ total: paged.total, page: clampPage(parsePage(sp.page), paged.total), params: { q, view: parseView(sp.view) } }}
     />
   );
 }

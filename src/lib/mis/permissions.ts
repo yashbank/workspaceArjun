@@ -75,6 +75,8 @@ export const MIS_ACTIONS = [
   'kiosk.manage',
   // Owner Danger Zone: back up, clear and restore data. Owner ONLY (not in the Admin list below).
   'data.reset',
+  // Theme Studio (R8 follow-up): Owner ONLY, its own action so it is not tied to the Danger Zone.
+  'theme.write',
   // Phase 23 — the parked-writes inbox (Appendix B §B.7). This is the DOOR into
   // the inbox at all; which ROWS a holder actually sees is filtered again, per
   // kind, by that kind's own read permission (production.read / attendance.read)

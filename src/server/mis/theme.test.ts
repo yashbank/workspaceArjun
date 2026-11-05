@@ -25,9 +25,9 @@ describe('Theme Studio server', () => {
     expect(await getOrgTheme()).toEqual({ paletteId: 'indigo', fontPairId: 'inter' });
   });
 
-  it('saves behind data.reset, audits, and reads back', async () => {
+  it('saves behind theme.write, audits, and reads back', async () => {
     await saveOrgTheme({ paletteId: 'teal', fontPairId: 'system' });
-    expect(requirePermission).toHaveBeenCalledWith('data.reset');
+    expect(requirePermission).toHaveBeenCalledWith('theme.write');
     expect(logAuditEvent).toHaveBeenCalledWith(expect.objectContaining({ action: 'UPDATE_THEME', after: { paletteId: 'teal', fontPairId: 'system' } }));
     expect(await getOrgTheme()).toEqual({ paletteId: 'teal', fontPairId: 'system' });
   });

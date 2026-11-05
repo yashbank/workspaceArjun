@@ -2,9 +2,9 @@ import { requireMisAccess } from '@/server/mis/guard';
 import { getInventoryPage } from '@/server/mis/inventory';
 import { checkPermission } from '@/server/mis/auth';
 import { InventoryScreen } from '@/components/mis/inventory/inventory-screen';
-import { clampPage, parsePage, parseSearch } from '@/lib/mis/pagination';
+import { clampPage, parsePage, parseSearch, parseView } from '@/lib/mis/pagination';
 
-export default async function InventoryPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string }> }) {
+export default async function InventoryPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string; view?: string }> }) {
   await requireMisAccess();
   const sp = await searchParams;
   const q = parseSearch(sp.q);
@@ -18,7 +18,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
       summary={paged.rows}
       canWrite={canWrite}
       canPrice={canPrice}
-      paging={{ total: paged.total, page: clampPage(parsePage(sp.page), paged.total), params: { q }, outOfStock: paged.outOfStock }}
+      paging={{ total: paged.total, page: clampPage(parsePage(sp.page), paged.total), params: { q, view: parseView(sp.view) }, outOfStock: paged.outOfStock }}
     />
   );
 }
