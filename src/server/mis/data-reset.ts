@@ -11,6 +11,8 @@ import {
   CONFIRM_RESTORE_WORD,
   EMPLOYEE_KEEP_WHERE,
   RESET_GROUPS,
+  SOURCE_LINKS,
+  TRUNCATE_TABLES,
   backupName,
   cascadeRows,
   checkBackupCoversDelete,
@@ -41,9 +43,11 @@ import { requirePermission } from './auth';
  *      nothing is deleted if a selected table has MORE rows now than the backup has (data the backup does not hold).
  *   3. The delete walks every foreign key from the selected tables, set-null links included, so nothing is orphaned. It
  *      runs children first in ONE transaction with the tables locked. If any step is refused, nothing is deleted.
+ *      A surviving row's `source_id` into a cleared table is blanked (SOURCE_LINKS), so no id is left dangling.
  *   4. Sign-in accounts, Owner/Admin employees, the audit log, paired tablets and settings/masters are never deleted.
  *   5. A restore only ADDS back rows that are missing (ON CONFLICT DO NOTHING) and refills links that were blanked by
- *      the delete. It never overwrites or removes anything, so it is safe to run twice.
+ *      the delete. It never overwrites or removes anything, so it is safe to run twice. A JSON `null` stored in a jsonb
+ *      column comes back as SQL NULL: to_jsonb cannot tell them apart, and the app never writes a JSON null.
  *   6. In production, backups must go to real object storage; the local-disk driver is refused there.
  */
 
@@ -59,6 +63,12 @@ type Tx = Prisma.TransactionClient;
 const PREFIX = 'data-reset';
 const INDEX_KEY = `${PREFIX}/index.json`;
 const JSON_TYPE = 'application/json';
+/**
+ * The start gate on mis_job_phases judges each insert as a fresh start, so it would refuse a state it once allowed (a
+ * running phase after its earlier phase was reopened). Last phase first leaves it no earlier phase to object to. A
+ * BEFORE trigger also fires on a row ON CONFLICT would skip, so rows already here are left out by hand.
+ */
+const PHASE_RESTORE_ORDER = ' WHERE NOT EXISTS (SELECT 1 FROM mis_job_phases p WHERE p.id = x.id) ORDER BY x.sequence DESC';
 
 export type BackupSummary = { id: string; name: string; createdAt: string; createdBy: string; totalRows: number };
 /** `checksums` maps each file in the backup folder to its SHA-256. */
@@ -99,14 +109,23 @@ async function foreignKeys(tx: Tx): Promise<FkEdge[]> {
   );
 }
 
-async function count(tx: Tx, table: string): Promise<number> {
-  const rows = await tx.$queryRawUnsafe<{ n: number }[]>(`SELECT count(*)::int AS n FROM ${q(table)}`);
+const keepWhere = (t: string) => (t === 'mis_employees' ? ` WHERE ${EMPLOYEE_KEEP_WHERE}` : '');
+
+async function count(tx: Tx, table: string, where = ''): Promise<number> {
+  const rows = await tx.$queryRawUnsafe<{ n: number }[]>(`SELECT count(*)::int AS n FROM ${q(table)}${where}`);
   return rows[0]?.n ?? 0;
 }
 
 async function countsFor(tx: Tx, tables: readonly string[]): Promise<Record<string, number>> {
   const out: Record<string, number> = {};
   for (const t of tables) out[t] = await count(tx, t);
+  return out;
+}
+
+/** What a clear would really remove, which is what the Owner must be shown: the kept Owner and Admin rows do not count. */
+async function clearableCountsFor(tx: Tx, tables: readonly string[]): Promise<Record<string, number>> {
+  const out: Record<string, number> = {};
+  for (const t of tables) out[t] = await count(tx, t, keepWhere(t));
   return out;
 }
 
@@ -137,8 +156,8 @@ async function readIndex(): Promise<BackupSummary[]> {
 async function verifyBackup(manifest: Manifest) {
   if (!manifest.checksums) throw new DataResetError('That backup has no checksums. Take a fresh backup.');
   for (const [file, expected] of Object.entries(manifest.checksums)) {
-    const { bytes } = await getObject(backupKey(manifest.id, file));
-    if (sha256(bytes) !== expected) throw new DataResetError(`The backup could not be verified (${file}). Nothing was changed. Take a fresh backup.`);
+    const stored = await getObject(backupKey(manifest.id, file)).catch(() => null);
+    if (!stored || sha256(stored.bytes) !== expected) throw new DataResetError(`The backup could not be verified (${file}). Nothing was changed. Take a fresh backup.`);
   }
 }
 
@@ -180,7 +199,7 @@ export async function getDangerZoneOverview() {
   await requirePermission('data.reset');
   const counts = await db.$transaction(async (tx) => {
     const present = new Set(await dataTables(tx));
-    return countsFor(tx, tablesForGroups(RESET_GROUPS.map((g) => g.id)).filter((t) => present.has(t)));
+    return clearableCountsFor(tx, tablesForGroups(RESET_GROUPS.map((g) => g.id)).filter((t) => present.has(t)));
   });
   const groups = RESET_GROUPS.map((g) => ({
     id: g.id,
@@ -202,7 +221,7 @@ export async function previewDelete(input: { groupIds: string[] }) {
   if (ids.length === 0) throw new DataResetError('Choose at least one kind of data.');
   return db.$transaction(async (tx) => {
     const plan = await planDelete(tx, expandGroups(ids));
-    const counts = await countsFor(tx, plan.tables);
+    const counts = await clearableCountsFor(tx, plan.tables);
     return { groups: expandGroups(ids), tree: cascadeRows(plan.roots, plan.fks, counts) };
   });
 }
@@ -222,7 +241,8 @@ export async function createBackup(input: { groupIds?: string[] } = {}) {
       const out: Record<string, { json: string; n: number }> = {};
       for (const t of await dataTables(tx)) {
         const rows = await tx.$queryRawUnsafe<{ j: string; n: number }[]>(
-          `SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb)::text AS j, count(*)::int AS n FROM ${q(t)} x`,
+          // The alias must not match a column: mis_dashboard_widgets has an `x`, and to_jsonb(x) would then copy only that column.
+          `SELECT COALESCE(jsonb_agg(to_jsonb(backup_row)), '[]'::jsonb)::text AS j, count(*)::int AS n FROM ${q(t)} backup_row`,
         );
         out[t] = { json: rows[0].j, n: rows[0].n };
       }
@@ -297,8 +317,16 @@ export async function deleteSelectedData(input: { groupIds: string[]; backupId: 
       if (!verdict.ok) throw new DataResetError(verdict.reason);
       const removed: Record<string, number> = {};
       for (const t of plan.tables) {
-        const where = t === 'mis_employees' ? ` WHERE ${EMPLOYEE_KEEP_WHERE}` : '';
-        removed[t] = await tx.$executeRawUnsafe(`DELETE FROM ${q(t)}${where}`);
+        if (TRUNCATE_TABLES.includes(t)) {
+          await tx.$executeRawUnsafe(`TRUNCATE ${q(t)}`);
+          removed[t] = current[t];
+        } else {
+          removed[t] = await tx.$executeRawUnsafe(`DELETE FROM ${q(t)}${keepWhere(t)}`);
+        }
+      }
+      for (const l of SOURCE_LINKS) {
+        if (!plan.tables.includes(l.parent) || plan.tables.includes(l.table)) continue;
+        await tx.$executeRawUnsafe(`UPDATE ${q(l.table)} SET source_id = NULL WHERE source = $1 AND source_id IS NOT NULL`, l.source);
       }
       return removed;
     },
@@ -338,12 +366,12 @@ export async function restoreBackup(input: { backupId: string; confirm: string }
       const added: Record<string, number> = {};
       for (const t of orderParentsFirst(tables, fks)) {
         added[t] = await tx.$executeRawUnsafe(
-          `INSERT INTO ${q(t)} SELECT * FROM jsonb_populate_recordset(NULL::${q(t)}, $1::jsonb) ON CONFLICT DO NOTHING`,
+          `INSERT INTO ${q(t)} SELECT * FROM jsonb_populate_recordset(NULL::${q(t)}, $1::jsonb) x${t === 'mis_job_phases' ? PHASE_RESTORE_ORDER : ''} ON CONFLICT DO NOTHING`,
           files[t],
         );
       }
       // Rows that survived the delete but lost a link (for example an order's customer): put the link back.
-      const links = await tx.$queryRawUnsafe<{ child: string; col: string }[]>(
+      const setNullLinks = await tx.$queryRawUnsafe<{ child: string; col: string }[]>(
         `SELECT cl.relname AS child, a.attname AS col
          FROM pg_constraint c
          JOIN pg_class cl ON cl.oid = c.conrelid
@@ -351,6 +379,7 @@ export async function restoreBackup(input: { backupId: string; confirm: string }
          JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
          WHERE c.contype = 'f' AND c.confdeltype = 'n' AND array_length(c.conkey, 1) = 1 AND n.nspname = 'public'`,
       );
+      const links = [...setNullLinks, ...[...new Set(SOURCE_LINKS.map((l) => l.table))].map((child) => ({ child, col: 'source_id' }))];
       const pks = await tx.$queryRawUnsafe<{ t: string; col: string }[]>(
         `SELECT cl.relname AS t, a.attname AS col
          FROM pg_index i

@@ -138,6 +138,12 @@ describe('delete set, derived from prisma/schema.prisma', () => {
     }
   });
 
+  it('an order takes its purchase orders with it: bom_ref has no FK, and a CHECK stops it being blanked', () => {
+    const { tables } = deleteSetFor(['mis_orders'], edges);
+    for (const t of ['mis_purchase_orders', 'mis_po_items', 'mis_grns', 'mis_supplier_invoices']) expect(tables).toContain(t);
+    expect(tables).not.toContain('mis_suppliers');
+  });
+
   it('refuses when the walk reaches a protected or non-MIS table', () => {
     expect(deleteSetFor(['mis_a'], [{ child: 'mis_audit_logs', parent: 'mis_a' }])).toEqual({ tables: [], refused: 'mis_audit_logs' });
     expect(deleteSetFor(['mis_a'], [{ child: 'user_profiles', parent: 'mis_a' }]).refused).toBe('user_profiles');

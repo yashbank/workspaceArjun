@@ -53,7 +53,7 @@ export const RESET_GROUPS: readonly ResetGroup[] = [
   {
     id: 'orders',
     label: 'Orders and production',
-    description: 'Orders, bills of materials, production logs, QC checks, job phases and order documents.',
+    description: 'Orders, bills of materials, production logs, QC checks, job phases, order documents and purchase orders with their receipts and invoices.',
     tables: ['mis_order_stock_allocations', 'mis_qc_checks', 'mis_production_log', 'mis_bom', 'mis_orders'],
     requires: [],
   },
@@ -219,13 +219,33 @@ export type FkEdge = { child: string; parent: string };
 
 /**
  * Links the database cannot see: the column holds a parent's id with no foreign key. Clearing the parent would leave
- * these rows pointing at nothing, so they are walked like real foreign keys. Polymorphic `source_id` / `entity_id`
- * columns are left out on purpose: one parent table does not own them.
+ * these rows pointing at nothing, so they are walked like real foreign keys. Polymorphic `source_id` columns are not
+ * walked: see SOURCE_LINKS.
  */
 export const LOOSE_LINKS: readonly FkEdge[] = [
   { child: 'mis_document_versions', parent: 'mis_orders' }, // ref_id: COA and JOB_CARD both belong to an order
   { child: 'mis_quarantine_stock', parent: 'mis_grn_items' }, // grn_item_id
+  { child: 'mis_purchase_orders', parent: 'mis_orders' }, // bom_ref: a FOR_ORDER PO names the order number, and a CHECK keeps it set
 ];
+
+/**
+ * `source_id` means a different parent per `source`, so no foreign key can hold it. These rows are the stock books and
+ * stay when a parent is cleared: the delete blanks the id instead, and a restore puts it back.
+ */
+export const SOURCE_LINKS: readonly { table: string; source: string; parent: string }[] = [
+  { table: 'mis_inventory_ledger', source: 'STORE_ISSUE', parent: 'mis_orders' },
+  { table: 'mis_inventory_ledger', source: 'GRN', parent: 'mis_grns' },
+  { table: 'mis_inventory_ledger', source: 'GRN_REVERSAL', parent: 'mis_grns' },
+  { table: 'mis_inventory_ledger', source: 'STORE_RETURN', parent: 'mis_store_returns' },
+  { table: 'mis_inventory_ledger', source: 'COUNT_ADJUSTMENT', parent: 'mis_physical_counts' },
+  { table: 'mis_order_stock_allocations', source: 'GRN', parent: 'mis_grns' },
+];
+
+/**
+ * Cleared with TRUNCATE, not DELETE. A row trigger refuses every punch DELETE (K2), and its migration keeps TRUNCATE
+ * open for exactly this. It rolls back with the transaction like any delete.
+ */
+export const TRUNCATE_TABLES: readonly string[] = ['mis_attendance_punches'];
 
 /**
  * What a delete of `roots` really touches: the roots plus every table that points at them, however indirectly.
