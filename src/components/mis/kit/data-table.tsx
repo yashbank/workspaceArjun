@@ -28,6 +28,8 @@ export type DataTableProps<Row> = {
   emptyBody?: string;
   /** Optional leading indicator, e.g. a machine's up/down dot. */
   leading?: (row: Row) => ReactNode;
+  /** The list toggle (`?view=`): force cards or rows; undefined keeps the responsive default. */
+  view?: 'cards' | 'rows';
 };
 
 /**
@@ -45,6 +47,7 @@ export function DataTable<Row>({
   emptyTitle,
   emptyBody,
   leading,
+  view,
 }: DataTableProps<Row>) {
   if (loading) return <SkeletonList />;
   if (rows.length === 0) return <EmptyState title={emptyTitle} body={emptyBody} />;
@@ -55,9 +58,9 @@ export function DataTable<Row>({
   return (
     <>
       {/* Mobile: cards */}
-      <div className="flex flex-col gap-2 md:hidden">
+      <div className={cn('flex flex-col gap-2', view === 'rows' ? 'hidden' : view ? '' : 'md:hidden')}>
         {rows.map((row) => (
-          <Card key={rowKey(row)} onClick={onRowClick ? () => onRowClick(row) : undefined}>
+          <Card key={rowKey(row)} className="hover-lift" onClick={onRowClick ? () => onRowClick(row) : undefined}>
             <div className="flex items-center gap-2">
               {leading?.(row)}
               <span className="text-base font-medium text-slate-900">
@@ -76,7 +79,7 @@ export function DataTable<Row>({
       {/* Desktop: table */}
       {/* `overflow-x-auto`: a table wider than its column (a long e-mail address, many columns) scrolls INSIDE this box.
           Without it the table pushed the whole page sideways — /mis/employees overflowed a 1440px window by 275px (F-26). */}
-      <div className="hidden overflow-x-auto md:block">
+      <div className={cn('overflow-x-auto', view === 'rows' ? '' : view ? 'hidden' : 'hidden md:block')}>
         <table className="w-full border-collapse text-left">
           <thead>
             <tr className="border-b border-slate-200">

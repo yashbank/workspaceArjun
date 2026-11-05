@@ -82,3 +82,11 @@ export function pageHref(basePath: string, params: Params, page: number): string
   const s = qs.toString();
   return s ? `${basePath}?${s}` : basePath;
 }
+
+export type ListView = 'cards' | 'rows';
+
+/** `?view=` for the card/row toggle: anything else is undefined, meaning the responsive default (cards on a phone, rows from md up). */
+export function parseView(raw: string | string[] | null | undefined): ListView | undefined {
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  return v === 'cards' || v === 'rows' ? v : undefined;
+}

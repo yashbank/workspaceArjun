@@ -74,7 +74,7 @@ export async function listEmployees(includeDeleted = false) {
 }
 
 /** R2-83: one page of the caller's visible people (25). The D4 pool scope is applied in the where, so `total` never counts out-of-pool people. */
-export async function listEmployeesPage(opts: { q?: string; page?: number | string } = {}): Promise<Paged<Awaited<ReturnType<typeof listEmployees>>[number]>> {
+export async function listEmployeesPage(opts: { q?: string; page?: number | string; status?: 'active' | 'inactive' } = {}): Promise<Paged<Awaited<ReturnType<typeof listEmployees>>[number]>> {
   const actor = await requirePermission('employees.read');
   const visible = await resolveVisibleEmployeeWhere(actor);
   const q = parseSearch(opts.q);
@@ -82,6 +82,7 @@ export async function listEmployeesPage(opts: { q?: string; page?: number | stri
     AND: [
       visible,
       { deletedAt: null },
+      ...(opts.status ? [{ isActive: opts.status === 'active' }] : []),
       ...(q
         ? [{ OR: [{ name: { contains: q, mode: 'insensitive' as const } }, { employeeCode: { contains: q, mode: 'insensitive' as const } }, { nameHi: { contains: q, mode: 'insensitive' as const } }] }]
         : []),

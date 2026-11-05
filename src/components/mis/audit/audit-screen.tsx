@@ -1,6 +1,9 @@
 'use client';
 
 import { Pagination } from '@/components/mis/kit/pagination';
+import { ListToolbar } from '@/components/mis/kit/list-toolbar';
+import { EmptyState } from '@/components/mis/kit/empty-state';
+import { Combobox } from '@/components/ui/combobox';
 import { fmtDate as fmtFactoryDate, fmtTime as fmtFactoryTime } from '@/lib/mis/client-dates';
 
 type AuditRow = {
@@ -41,7 +44,7 @@ function fmtTime(dt: Date | string) {
 
 export function AuditScreen({ logs, total, page, entities, params }: Props) {
   const filtered = logs;
-  const hasFilter = Boolean(params.q || params.entity || params.from || params.to);
+  const entityOptions = entities.filter(Boolean).map((e) => ({ value: e, label: e.charAt(0).toUpperCase() + e.slice(1) }));
 
   return (
     <div className="max-w-5xl mx-auto space-y-5 py-6">
@@ -50,51 +53,25 @@ export function AuditScreen({ logs, total, page, entities, params }: Props) {
         <span className="text-sm text-gray-400">{total} events</span>
       </div>
 
-      <form method="get" className="flex flex-wrap items-center gap-3">
-        <input
-          type="search"
-          name="q"
-          className="min-h-12 w-full max-w-sm rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          placeholder="Search actions, actors…"
-          defaultValue={params.q}
-        />
-        <select
-          name="entity"
-          className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          defaultValue={params.entity}
-        >
-          <option value="">All entities</option>
-          {entities.filter(Boolean).map(e => (
-            <option key={e} value={e}>{e.charAt(0).toUpperCase() + e.slice(1)}</option>
-          ))}
-        </select>
-        <div className="flex flex-wrap items-center gap-2 text-base text-gray-500">
-          <span>From</span>
-          <input
-            type="date"
-            name="from"
-            defaultValue={params.from}
-            className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <span>To</span>
-          <input
-            type="date"
-            name="to"
-            defaultValue={params.to}
-            className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-        <button type="submit" className="inline-flex min-h-11 items-center rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-900 hover:bg-slate-50">Apply</button>
-        {hasFilter && (
-          <a href="/mis/audit" className="inline-flex min-h-11 items-center text-base text-gray-500 hover:text-gray-700 underline">
-            Clear
-          </a>
+      <ListToolbar basePath="/mis/audit" params={params} searchLabel="Search actions, actors…" showViewToggle={false}>
+        {(go) => (
+          <>
+            <div className="sm:w-48">
+              <Combobox id="audit-entity" label="Entity" hideLabel clearable value={params.entity || null} options={entityOptions} placeholder="All entities" onChange={(v) => go({ entity: v })} />
+            </div>
+            {(['from', 'to'] as const).map((k) => (
+              <label key={k} className="flex flex-col gap-1.5 text-sm font-medium text-slate-700">
+                {k === 'from' ? 'From' : 'To'}
+                <input type="date" value={params[k]} onChange={(e) => go({ [k]: e.target.value })} className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-2 focus:outline-slate-900" />
+              </label>
+            ))}
+          </>
         )}
-      </form>
+      </ListToolbar>
 
       <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-50">
         {filtered.length === 0 ? (
-          <div className="py-12 text-center text-gray-400 text-sm">No audit events found.</div>
+          <EmptyState title="No audit events found" body="Try a wider date range or clear the filters." />
         ) : (
           filtered.map((log) => (
             <details key={log.id} className="group hover:bg-gray-50">
