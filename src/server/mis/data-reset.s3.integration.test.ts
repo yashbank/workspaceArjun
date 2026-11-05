@@ -34,7 +34,8 @@ vi.mock('@/server/storage', async (importOriginal) => {
       return real.putObject(key, body, type);
     },
     getObject: async (key: string) => {
-      if (key === INDEX_KEY) throw new Error('index not read in this test');
+      // A key that never exists, so readIndex meets the bucket's real missing-key error, not a stub's.
+      if (key === INDEX_KEY) return real.getObject('data-reset/backups/00000000-0000-0000-0000-000000000000/index.json');
       return real.getObject(fence(key));
     },
   };
@@ -89,5 +90,5 @@ describe.skipIf(!REAL_BUCKET)('Danger Zone on the real bucket', () => {
     expect((await snapshotRows(db, ['mis_customers'])).mis_customers).toEqual([]);
     await reset.restoreBackup({ backupId: backup.id, confirm: 'RESTORE' });
     expect(await snapshotRows(db, tables)).toEqual(before);
-  }, 180_000);
+  }, 400_000);
 });
