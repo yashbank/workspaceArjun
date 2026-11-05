@@ -2,7 +2,9 @@
 import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/mis/kit/button';
-import { Pagination, HiddenParams } from '@/components/mis/kit/pagination';
+import { Pagination } from '@/components/mis/kit/pagination';
+import { ListToolbar } from '@/components/mis/kit/list-toolbar';
+import { parseView } from '@/lib/mis/pagination';
 import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import { Select } from '@/components/mis/kit/select';
@@ -20,7 +22,7 @@ type Props = { grns: Grn[]; approvedPos: ApprovedPo[]; canWrite: boolean;
 
 export function GrnListScreen({ grns, approvedPos, canWrite, paging }: Props) {
   const router = useRouter();
-  const search = paging?.params.q ?? '';
+  const view = parseView(paging?.params.view);
   const filtered = grns;
 
   function downloadCsv() {
@@ -67,19 +69,9 @@ export function GrnListScreen({ grns, approvedPos, canWrite, paging }: Props) {
         <h1 className="text-xl font-semibold text-slate-900">Goods Receipt Notes</h1>
         {canWrite && approvedPos.length > 0 && <Button onClick={() => setOpen(true)}>+ New GRN</Button>}
       </div>
-      <form method="get" className="flex items-center gap-3">
-        {paging && <HiddenParams params={paging.params} />}
-        <input
-          type="search"
-          placeholder="Search GRNs…"
-          name="q"
-          defaultValue={search}
-          className="w-full max-w-sm min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500"
-        />
-        <Button type="submit" variant="secondary">Search</Button>
-        <Button type="button" variant="ghost" onClick={downloadCsv}>↓ CSV</Button>
-      </form>
-      <DataTable columns={columns} rows={filtered} rowKey={(r) => r.id} emptyTitle="No GRNs yet" emptyBody="GRNs are created from approved purchase orders." />
+      <ListToolbar basePath="/mis/grn" params={paging?.params ?? {}} searchLabel="Search GRNs…" view={view} />
+      <div className="flex justify-end"><Button type="button" variant="ghost" onClick={downloadCsv}>↓ CSV</Button></div>
+      <DataTable columns={columns} rows={filtered} view={view} rowKey={(r) => r.id} emptyTitle="No GRNs yet" emptyBody="GRNs are created from approved purchase orders." />
       {paging && <Pagination basePath="/mis/grn" params={paging.params} page={paging.page} total={paging.total} />}
       <SlideOver open={open} onClose={() => setOpen(false)} title="New GRN">
         <div className="flex flex-col gap-4 p-4">

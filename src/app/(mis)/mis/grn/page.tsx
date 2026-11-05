@@ -4,9 +4,9 @@ import { checkPermission } from '@/server/mis/auth';
 import { listGRNsPage } from '@/server/mis/grn';
 import { listPOs } from '@/server/mis/po';
 import { GrnListScreen } from '@/components/mis/grn/grn-list-screen';
-import { clampPage, parsePage, parseSearch } from '@/lib/mis/pagination';
+import { clampPage, parsePage, parseSearch, parseView } from '@/lib/mis/pagination';
 
-export default async function GrnPage({ searchParams = Promise.resolve({}) }: { searchParams?: Promise<{ q?: string; page?: string }> } = {}) {
+export default async function GrnPage({ searchParams = Promise.resolve({}) }: { searchParams?: Promise<{ q?: string; page?: string; view?: string }> } = {}) {
   await requireMisAccess();
   const sp = await searchParams;
   const q = parseSearch(sp.q);
@@ -23,7 +23,7 @@ export default async function GrnPage({ searchParams = Promise.resolve({}) }: { 
       grns={toPlain(paged.rows)}
       approvedPos={approvedPos}
       canWrite={canWrite}
-      paging={{ total: paged.total, page: clampPage(parsePage(sp.page), paged.total), params: { q } }}
+      paging={{ total: paged.total, page: clampPage(parsePage(sp.page), paged.total), params: { q, view: parseView(sp.view) } }}
     />
   );
 }

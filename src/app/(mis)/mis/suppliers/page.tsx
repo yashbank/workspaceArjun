@@ -2,9 +2,9 @@ import { requireMisAccess } from '@/server/mis/guard';
 import { checkPermission } from '@/server/mis/auth';
 import { listSuppliersPage } from '@/server/mis/supplier';
 import { SupplierScreen } from '@/components/mis/suppliers/supplier-screen';
-import { clampPage, parsePage, parseSearch } from '@/lib/mis/pagination';
+import { clampPage, parsePage, parseSearch, parseView } from '@/lib/mis/pagination';
 
-export default async function SuppliersPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string }> }) {
+export default async function SuppliersPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string; view?: string }> }) {
   await requireMisAccess();
   const sp = await searchParams;
   const q = parseSearch(sp.q);
@@ -13,7 +13,7 @@ export default async function SuppliersPage({ searchParams }: { searchParams: Pr
     <SupplierScreen
       suppliers={paged.rows}
       canWrite={canWrite}
-      paging={{ total: paged.total, page: clampPage(parsePage(sp.page), paged.total), params: { q } }}
+      paging={{ total: paged.total, page: clampPage(parsePage(sp.page), paged.total), params: { q, view: parseView(sp.view) } }}
     />
   );
 }

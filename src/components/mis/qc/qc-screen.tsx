@@ -6,7 +6,8 @@ import { Input, NumberInput } from '@/components/mis/kit/input';
 import { Select, type SelectOption } from '@/components/mis/kit/select';
 import { Combobox } from '@/components/ui/combobox';
 import { SlideOver } from '@/components/mis/kit/slide-over';
-import { Pagination, HiddenParams } from '@/components/mis/kit/pagination';
+import { Pagination } from '@/components/mis/kit/pagination';
+import { ListToolbar } from '@/components/mis/kit/list-toolbar';
 import { addQcCheckAction } from '@/app/(mis)/mis/qc/actions';
 
 type Order = { id: string; orderNumber: string; status: string; customer: { name: string } | null };
@@ -35,7 +36,6 @@ export function QcScreen({ orders, pickerOrders = orders, canWrite, defectTypes,
   const [defectQty, setDefectQty] = useState('');
   const [notes, setNotes] = useState('');
   const [isPending, startTransition] = useTransition();
-  const search = paging?.params.q ?? '';
   const [error, setError] = useState<string | null>(null);
 
   const filtered = orders;
@@ -80,17 +80,7 @@ export function QcScreen({ orders, pickerOrders = orders, canWrite, defectTypes,
         </div>
       </div>
 
-      <form method="get" className="flex items-center gap-3">
-        {paging && <HiddenParams params={paging.params} />}
-        <input
-          type="search"
-          placeholder="Search orders…"
-          name="q"
-          defaultValue={search}
-          className="w-full max-w-sm min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500"
-        />
-        <Button type="submit" variant="secondary">Search</Button>
-      </form>
+      <ListToolbar basePath="/mis/qc" params={paging?.params ?? {}} searchLabel="Search orders…" showViewToggle={false} />
 
       {filtered.length === 0 ? (
         <div className="rounded-xl border border-gray-200 bg-white py-16 text-center text-gray-400 text-sm">

@@ -5,9 +5,9 @@ import { canOverrideCloseGates, type CloseGate } from '@/lib/mis/order-transitio
 import { getOrderCloseGates, listOrdersPage } from '@/server/mis/orders';
 import { listCustomers } from '@/server/mis/customer';
 import { OrdersScreen } from '@/components/mis/orders/orders-screen';
-import { clampPage, parsePage, parseSearch } from '@/lib/mis/pagination';
+import { clampPage, parsePage, parseSearch, parseView } from '@/lib/mis/pagination';
 
-export default async function OrdersPage({ searchParams }: { searchParams: Promise<{ customerId?: string; q?: string; page?: string }> }) {
+export default async function OrdersPage({ searchParams }: { searchParams: Promise<{ customerId?: string; q?: string; page?: string; view?: string }> }) {
   const user = await requireMisAccess();
   const sp = await searchParams;
   const q = parseSearch(sp.q);
@@ -35,7 +35,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
       gatesByOrder={gatesByOrder}
       canOverride={canOverrideCloseGates(role ?? '')}
       canStartWithoutBom={role === 'OWNER'} // R2-267
-      paging={{ total: paged.total, page: clampPage(parsePage(sp.page), paged.total), params: { q, customerId: sp.customerId } }}
+      paging={{ total: paged.total, page: clampPage(parsePage(sp.page), paged.total), params: { q, customerId: sp.customerId, view: parseView(sp.view) } }}
     />
   );
 }
