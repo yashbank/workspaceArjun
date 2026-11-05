@@ -141,6 +141,11 @@ export function DangerZoneScreen({ overview }: { overview: Overview }) {
                 <li key={t.name} style={{ paddingLeft: `${t.depth}rem` }}>{t.depth > 0 ? '└ ' : ''}{tableLabel(t.name)}: {t.rows}</li>
               ))}
             </ul>
+            {preview.tree.some((t) => t.name === 'mis_inventory_ledger') && (
+              <p className="mt-2 text-sm text-red-800">
+                Stock will read 0 for every item: the whole stock ledger and store transactions go, not only the rows of what you chose.
+              </p>
+            )}
             {dependents > 0 && (
               <p className="mt-2 text-sm text-red-800">
                 {names} cannot be cleared alone: {dependents} other kinds of data depend on it, and leaving them would break their links.

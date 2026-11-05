@@ -150,6 +150,21 @@ describe('delete set, derived from prisma/schema.prisma', () => {
     expect(tables).not.toContain('mis_suppliers');
   });
 
+  it('whatever clears what the stock books recorded clears every book, and the item list stays unless asked for', () => {
+    const books = ['mis_inventory_ledger', 'mis_store_transactions', 'mis_store_returns', 'mis_physical_counts', 'mis_order_stock_allocations', 'mis_quarantine_stock', 'mis_material_requests', 'mis_pick_lists'];
+    for (const id of ['customers', 'orders', 'purchasing', 'inventory'] as const) {
+      const { tables } = deleteSetFor(tablesForGroups([id]), edges);
+      for (const t of books) expect(tables, `${id}: ${t}`).toContain(t);
+      expect(tables.includes('mis_items'), id).toBe(id === 'inventory');
+    }
+  });
+
+  it('a clear with no stock in it leaves the books', () => {
+    for (const id of ['production', 'stages', 'machine_allocation', 'attendance', 'finance', 'employees'] as const) {
+      expect(deleteSetFor(tablesForGroups([id]), edges).tables, id).not.toContain('mis_inventory_ledger');
+    }
+  });
+
   it('refuses when the walk reaches a protected or non-MIS table', () => {
     expect(deleteSetFor(['mis_a'], [{ child: 'mis_audit_logs', parent: 'mis_a' }])).toEqual({ tables: [], refused: 'mis_audit_logs' });
     expect(deleteSetFor(['mis_a'], [{ child: 'user_profiles', parent: 'mis_a' }]).refused).toBe('user_profiles');

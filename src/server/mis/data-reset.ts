@@ -13,6 +13,7 @@ import {
   RESET_GROUPS,
   SOURCE_LINKS,
   TRUNCATE_TABLES,
+  WORKER_ALLOCATION_KEEP_WHERE,
   backupName,
   blankedTables,
   cascadeRows,
@@ -44,8 +45,8 @@ import { requirePermission } from './auth';
  *      nothing is deleted if any table the delete changes differs from the backup: more rows, or a row hash that moved.
  *   3. The delete walks every foreign key from the selected tables, set-null links included, so nothing is orphaned. It
  *      runs children first in ONE transaction with the tables locked. If any step is refused, nothing is deleted.
- *      A surviving row's `source_id` into a cleared table is blanked (SOURCE_LINKS), so no id is left dangling. A set-null
- *      child of partly cleared mis_employees stays too, and the database blanks its link to each cleared row.
+ *      The stock books go whole with what they recorded (LOOSE_LINKS), so stock reads 0 and no `source_id` is left dangling.
+ *      A set-null child of partly cleared mis_employees stays, and the database blanks its link to each cleared row.
  *   4. Sign-in accounts, Owner/Admin employees, the audit log, paired tablets and settings/masters are never deleted.
  *   5. A restore only ADDS back rows that are missing (ON CONFLICT DO NOTHING) and refills blank links to the parents it
  *      just brought back, the only way a delete's blanking can be told from a link cleared on purpose. It never overwrites
@@ -115,7 +116,11 @@ async function foreignKeys(tx: Tx): Promise<FkEdge[]> {
   );
 }
 
-const keepWhere = (t: string) => (t === 'mis_employees' ? ` WHERE ${EMPLOYEE_KEEP_WHERE}` : '');
+/** The WHERE of a table a clear only partly empties. `keepAllocations`: nothing but Employees reaches mis_worker_allocations. */
+function keepWhere(t: string, keepAllocations = false) {
+  if (t === 'mis_employees') return ` WHERE ${EMPLOYEE_KEEP_WHERE}`;
+  return keepAllocations && t === 'mis_worker_allocations' ? ` WHERE ${WORKER_ALLOCATION_KEEP_WHERE}` : '';
+}
 
 async function count(tx: Tx, table: string, where = ''): Promise<number> {
   const rows = await tx.$queryRawUnsafe<{ n: number }[]>(`SELECT count(*)::int AS n FROM ${q(table)}${where}`);
@@ -135,9 +140,9 @@ async function tableStates(tx: Tx, tables: readonly string[]) {
 }
 
 /** What a clear would really remove, which is what the Owner must be shown: the kept Owner and Admin rows do not count. */
-async function clearableCountsFor(tx: Tx, tables: readonly string[]): Promise<Record<string, number>> {
+async function clearableCountsFor(tx: Tx, tables: readonly string[], keepAllocations = false): Promise<Record<string, number>> {
   const out: Record<string, number> = {};
-  for (const t of tables) out[t] = await count(tx, t, keepWhere(t));
+  for (const t of tables) out[t] = await count(tx, t, keepWhere(t, keepAllocations));
   return out;
 }
 
@@ -152,11 +157,12 @@ async function planDelete(tx: Tx, groupIds: readonly ResetGroupId[]) {
   const fks = await foreignKeys(tx);
   const { tables, refused } = deleteSetFor(roots, fks);
   if (refused) throw new DataResetError(`Clearing this would also touch ${refused}, which is protected. Nothing was changed.`);
-  const sourceBlanked = SOURCE_LINKS.filter((l) => tables.includes(l.parent) && !tables.includes(l.table)).map((l) => l.table);
+  const withoutEmployees = tablesForGroups(groupIds.filter((id) => id !== 'employees')).filter((t) => present.has(t));
   return {
     tables: tables.filter((t) => present.has(t)),
     /** Not cleared, but the delete still blanks links in them, so the backup must cover them too. */
-    blanked: [...new Set([...blankedTables(tables, fks), ...sourceBlanked])].filter((t) => present.has(t)),
+    blanked: blankedTables(tables, fks).filter((t) => present.has(t)),
+    keepAllocations: !deleteSetFor(withoutEmployees, fks).tables.includes('mis_worker_allocations'),
     roots,
     fks,
   };
@@ -249,7 +255,7 @@ export async function previewDelete(input: { groupIds: string[] }) {
   if (ids.length === 0) throw new DataResetError('Choose at least one kind of data.');
   return db.$transaction(async (tx) => {
     const plan = await planDelete(tx, expandGroups(ids));
-    const counts = await clearableCountsFor(tx, plan.tables);
+    const counts = await clearableCountsFor(tx, plan.tables, plan.keepAllocations);
     return { groups: expandGroups(ids), tree: cascadeRows(plan.roots, plan.fks, counts) };
   });
 }
@@ -353,12 +359,8 @@ export async function deleteSelectedData(input: { groupIds: string[]; backupId: 
           await tx.$executeRawUnsafe(`TRUNCATE ${q(t)}`);
           removed[t] = current[t];
         } else {
-          removed[t] = await tx.$executeRawUnsafe(`DELETE FROM ${q(t)}${keepWhere(t)}`);
+          removed[t] = await tx.$executeRawUnsafe(`DELETE FROM ${q(t)}${keepWhere(t, plan.keepAllocations)}`);
         }
-      }
-      for (const l of SOURCE_LINKS) {
-        if (!plan.tables.includes(l.parent) || plan.tables.includes(l.table)) continue;
-        await tx.$executeRawUnsafe(`UPDATE ${q(l.table)} SET source_id = NULL WHERE source = $1 AND source_id IS NOT NULL`, l.source);
       }
       return removed;
     },
