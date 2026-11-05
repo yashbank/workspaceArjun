@@ -162,10 +162,10 @@ export function MasterDataDesktop({ directory, list, denied = false }: { directo
                     return (
                       <tr key={r.id} aria-current={editing ? 'true' : undefined} className={cn('rounded-xl', editing ? 'bg-indigo-50 outline outline-2 outline-indigo-300' : 'bg-[#f1ebdf]', r.deactivated && 'opacity-70')}>
                         {spec.fields[0].key === 'code'
-                          ? cell(to ? <Link href={to} className="inline-flex min-h-11 items-center font-mono text-xs text-slate-700">{r.code}</Link> : <span className="font-mono text-xs">{r.code}</span>)
+                          ? cell(to ? <Link href={to} className="inline-flex min-h-11 min-w-11 items-center font-mono text-xs text-slate-700">{r.code}</Link> : <span className="font-mono text-xs">{r.code}</span>)
                           : null}
                         {cell(
-                          to ? <Link href={to} className={cn('inline-flex min-h-11 items-center font-bold text-slate-900', r.deactivated && 'line-through')}>{r.name}</Link> : <span className={cn('font-bold', r.deactivated && 'line-through')}>{r.name}</span>,
+                          to ? <Link href={to} className={cn('inline-flex min-h-11 min-w-11 items-center font-bold text-slate-900', r.deactivated && 'line-through')}>{r.name}</Link> : <span className={cn('font-bold', r.deactivated && 'line-through')}>{r.name}</span>,
                         )}
                         {spec.hasHindi ? cell(r.nameHi ? <span>{r.nameHi}</span> : <span className="italic text-slate-500">{t('d10.notSet')}</span>) : null}
                         {columnKeys.map((c) => <td key={c} className="px-3 text-slate-700">{r.cells[c] ?? '—'}</td>)}

@@ -172,7 +172,7 @@ function Detail({ doc }: { doc: DocDetailView }) {
 
       <dl className="grid grid-cols-[8.5rem_minmax(0,1fr)] gap-x-4 gap-y-2 px-5 py-4 text-sm">
         <dt className="text-slate-500">{t('d13.attachedTo')}</dt>
-        <dd className="text-slate-900"><Link href={`/mis/orders/${doc.orderId}`} className="inline-flex min-h-11 items-center font-mono font-semibold underline">{doc.orderNumber}</Link>{doc.orderDescription ? ` · ${doc.orderDescription}` : ''}</dd>
+        <dd className="text-slate-900"><Link href={`/mis/orders/${doc.orderId}`} className="inline-flex min-h-11 min-w-11 items-center font-mono font-semibold underline">{doc.orderNumber}</Link>{doc.orderDescription ? ` · ${doc.orderDescription}` : ''}</dd>
         <dt className="text-slate-500">{t('d13.addedLabel')}</dt>
         <dd className="text-slate-900">{doc.addedFull} · {doc.addedBy ?? <span className="text-slate-500">{t('d13.personNotRecorded')}</span>}</dd>
         <dt className="text-slate-500">{t('d13.type')}</dt>

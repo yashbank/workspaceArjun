@@ -60,6 +60,8 @@ type Props = {
   rangeLabel: string;
   /** R8 T4: the shared day/week/month/quarter/year range; without it the screen keeps the old month arrows. */
   range?: KeyRange;
+  /** The other URL params the range tabs keep, so a desktop on `?view=classic` stays on this screen. */
+  rangeParams?: Record<string, string | undefined>;
   year: number;
   month: number;
 };
@@ -88,7 +90,7 @@ function downloadCsv(filename: string, rows: string[][], headers: string[]) {
   URL.revokeObjectURL(url);
 }
 
-export function ReportsScreen({ production, attendance, qc, orders, store, machines, canSeeWages: _canSeeWages, isOwner, rangeLabel, range, year, month, failed = {}, legacyIssuesHref }: Props) {
+export function ReportsScreen({ production, attendance, qc, orders, store, machines, canSeeWages: _canSeeWages, isOwner, rangeLabel, range, rangeParams, year, month, failed = {}, legacyIssuesHref }: Props) {
   const [tab, setTab] = useState<Tab>('production');
   const router = useRouter();
 
@@ -251,9 +253,9 @@ export function ReportsScreen({ production, attendance, qc, orders, store, machi
         {/* `flex-wrap`: prev/label/next + CSV/Print don't fit a 390px phone screen in one row
             (5 controls, min-w-[120px] label alone) — wraps onto a second row instead of
             pushing the page wider. */}
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex min-w-0 max-w-full flex-wrap items-center gap-3">
           {range ? (
-            <RangeTabs basePath="/mis/reports" range={range} />
+            <RangeTabs basePath="/mis/reports" range={range} params={rangeParams} />
           ) : (
             <>
               <button onClick={prevMonth} aria-label="Previous month" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500 text-lg">←</button>

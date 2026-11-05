@@ -195,7 +195,7 @@ export function DangerZoneScreen({ overview }: { overview: Overview }) {
         <select aria-label="Backup to restore" className={field} value={restoreId} onChange={(e) => setRestoreId(e.target.value)}>
           {overview.backups.length === 0 && !backup && <option value="">No backups yet</option>}
           {backup && <option value={backup.id}>{new Date(backup.createdAt).toLocaleString()} ({backup.totalRows} records)</option>}
-          {overview.backups.map((b) => <option key={b.id} value={b.id}>{new Date(b.createdAt).toLocaleString()} ({b.totalRows} records)</option>)}
+          {overview.backups.filter((b) => b.id !== backup?.id).map((b) => <option key={b.id} value={b.id}>{new Date(b.createdAt).toLocaleString()} ({b.totalRows} records)</option>)}
         </select>
         <label className="mt-3 block text-sm text-slate-700">
           Type {CONFIRM_RESTORE_WORD} to confirm

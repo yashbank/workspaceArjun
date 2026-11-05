@@ -17,7 +17,7 @@ const ARROW = 'inline-flex min-h-11 min-w-11 items-center justify-center rounded
 export function RangeTabs({ basePath, range, params = {} }: { basePath: string; range: KeyRange; params?: Record<string, string | undefined> }) {
   const go = useListNav(basePath, { ...params, freq: range.freq, at: range.at });
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex min-w-0 max-w-full flex-col gap-2">
       <Tabs
         label="Range"
         tabs={FREQS.map((f) => ({ id: f, label: LABEL[f] }))}

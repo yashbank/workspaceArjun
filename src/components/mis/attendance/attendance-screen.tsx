@@ -195,13 +195,15 @@ export function AttendanceScreen({ records, unrecorded = [], todayKey, summary, 
   const dailyCols: Column<AttendanceRec>[] = [
     ...(canWrite ? [{
       key: 'select', header: '', render: (r: AttendanceRec) => r.employee ? (
-        <input
-          type="checkbox"
-          checked={selected.has(r.employee.id)}
-          onChange={() => toggleSelected(r.employee!.id)}
-          onClick={(e) => e.stopPropagation()}
-          className="h-4 w-4 rounded border-slate-300"
-        />
+        <label className="inline-flex min-h-11 min-w-11 items-center justify-center" onClick={(e) => e.stopPropagation()}>
+          <input
+            type="checkbox"
+            checked={selected.has(r.employee.id)}
+            onChange={() => toggleSelected(r.employee!.id)}
+            onClick={(e) => e.stopPropagation()}
+            className="h-4 w-4 rounded border-slate-300"
+          />
+        </label>
       ) : null,
     } as Column<AttendanceRec>] : []),
     { key: 'emp', header: 'Employee', render: (r) => <div><div className="font-medium">{r.employee?.name ?? '—'}</div><div className="text-xs text-slate-500">{r.employee?.employeeCode}</div></div> },

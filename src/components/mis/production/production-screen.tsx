@@ -261,7 +261,7 @@ export function ProductionScreen({
                   {order.status.replace(/_/g, ' ')}
                 </span>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 {order._count?.productionLogs !== undefined && (
                   <span className="text-xs text-gray-400">{order._count.productionLogs} entries</span>
                 )}

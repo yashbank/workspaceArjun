@@ -126,7 +126,7 @@ export function SupervisorHome({ header, clearanceBlocker, blocker, machines, si
       <InfoCard>
         <div className="mb-2 flex items-center justify-between gap-2">
           <SectionLabel>My machines</SectionLabel>
-          <Link href="/mis/machine-board" className="text-xs font-semibold text-indigo-600">
+          <Link href="/mis/machine-board" className="inline-flex min-h-11 items-center text-xs font-semibold text-indigo-600">
             All {machines.total} visible
           </Link>
         </div>
@@ -170,7 +170,7 @@ export function SupervisorHome({ header, clearanceBlocker, blocker, machines, si
       <InfoCard>
         <div className="flex items-center justify-between gap-2">
           <SectionLabel>My crew today</SectionLabel>
-          <Link href="/mis/crew" className="text-xs font-semibold text-indigo-600">
+          <Link href="/mis/crew" className="inline-flex min-h-11 items-center text-xs font-semibold text-indigo-600">
             Open crew board
           </Link>
         </div>
@@ -186,7 +186,7 @@ export function SupervisorHome({ header, clearanceBlocker, blocker, machines, si
           ) : (
             <EmptyNote>Nothing has been entered on today’s register yet.</EmptyNote>
           )}
-          <Link href="/mis/crew" className="mt-2 block text-sm text-slate-700">
+          <Link href="/mis/crew" className="mt-2 flex min-h-11 items-center text-sm text-slate-700">
             On machines {crew.onMachines} · Free (in) {crew.free} · Unstaffed bookings {crew.unstaffedBookings}
           </Link>
         </div>

@@ -82,6 +82,7 @@ export default async function ReportsPage({
       isOwner={isOwner}
       rangeLabel={keyRange.label}
       range={keyRange}
+      rangeParams={{ view: sp.view }}
       year={year}
       month={month}
       legacyIssuesHref={canSeeLegacyIssues ? '/mis/reports/legacy-issues' : undefined}

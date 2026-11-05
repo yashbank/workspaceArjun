@@ -140,7 +140,7 @@ export function ApprovalsScreen({ pending, isOwner, canWrite: _canWrite }: Props
               actions={
                 <>
                   <Button onClick={() => approvePO(po.id)} disabled={isPending}>Approve</Button>
-                  <Link href="/mis/po" className="inline-flex min-h-11 items-center text-sm font-medium text-indigo-700 hover:underline">View PO</Link>
+                  <Link href="/mis/po" className="inline-flex min-h-11 items-center whitespace-nowrap text-sm font-medium text-indigo-700 hover:underline">View PO</Link>
                 </>
               }
             />
@@ -203,7 +203,7 @@ function QueueRow({ title, subtitle, badge, actions }: { title: string; subtitle
         <p className="font-medium text-slate-900">{title}</p>
         <p className="text-sm text-slate-500">{subtitle}</p>
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         {badge}
         {actions}
       </div>

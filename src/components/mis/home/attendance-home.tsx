@@ -159,17 +159,16 @@ function WaiveLatenessCard({ lateCount }: { lateCount: number }) {
           aria-checked={on}
           aria-label="Waive today’s lateness"
           onClick={() => setOn((v) => !v)}
-          className={cn(
-            'mt-0.5 h-7 w-12 shrink-0 rounded-full p-0.5 transition-colors',
-            on ? 'bg-indigo-600' : 'bg-slate-300',
-          )}
+          className="flex min-h-11 w-12 shrink-0 items-center"
         >
-          <span
-            className={cn(
-              'block h-6 w-6 rounded-full bg-white shadow-sm transition-transform',
-              on && 'translate-x-5',
-            )}
-          />
+          <span className={cn('block h-7 w-12 rounded-full p-0.5 transition-colors', on ? 'bg-indigo-600' : 'bg-slate-300')}>
+            <span
+              className={cn(
+                'block h-6 w-6 rounded-full bg-white shadow-sm transition-transform',
+                on && 'translate-x-5',
+              )}
+            />
+          </span>
         </button>
       </div>
 
