@@ -16,6 +16,7 @@ export {
   PRESIGN_EXPIRY_SECONDS,
   requiresDirectUpload,
   shouldUseMultipart,
+  createPresignedGetUrl,
   createPresignedPutUrl,
   startMultipartUpload,
   createPresignedPartUrl,

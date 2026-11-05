@@ -40,7 +40,7 @@ export function LangToggle({ onPersist }: { onPersist: (locale: Locale) => Promi
               });
             }}
             className={cn(
-              'min-h-11 rounded-md px-3 text-base',
+              'min-h-11 min-w-11 rounded-md px-3 text-base max-[359px]:px-1.5',
               active ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100',
             )}
           >

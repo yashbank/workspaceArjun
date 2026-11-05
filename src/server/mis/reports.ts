@@ -1,4 +1,5 @@
-import { addDaysToDateKey, dateKeyToDbDate, factoryDateKey, zonedParts } from '@/lib/mis/factory-time';
+import { addDaysToDateKey, dateKeyToDbDate, factoryDateKey } from '@/lib/mis/factory-time';
+import { factoryStartOfDay } from '@/lib/mis/report-range';
 import { normaliseUnit, sumByUnit } from '@/lib/mis/qty-by-unit';
 import { buildMachineUtilisation, type MachineUtilisationReport } from '@/lib/mis/machine-utilisation';
 import { withoutMoneyFields } from '@/lib/mis/money-fields';
@@ -16,21 +17,9 @@ export type ReportRange = { from: Date; to: Date };
  * zone. A log made at 01:00 IST on 1 Oct is 19:00Z on 30 Sep: it belongs to October.
  */
 export function factoryMonthRange(year: number, month: number, timeZone: string): ReportRange {
-  const startOf = (y: number, m: number) => {
-    // Find the instant whose wall-clock in `timeZone` is the 1st of (y, m) 00:00: guess UTC midnight,
-    // measure how far the zone's reading is from it, and shift back (twice, for a DST edge).
-    const wanted = Date.UTC(y, m - 1, 1);
-    let guess = wanted;
-    for (let i = 0; i < 2; i += 1) {
-      const p = zonedParts(new Date(guess), timeZone);
-      const seen = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute);
-      guess += wanted - seen;
-    }
-    return new Date(guess);
-  };
   const nextYear = month === 12 ? year + 1 : year;
   const nextMonth = month === 12 ? 1 : month + 1;
-  return { from: startOf(year, month), to: startOf(nextYear, nextMonth) };
+  return { from: factoryStartOfDay(year, month, 1, timeZone), to: factoryStartOfDay(nextYear, nextMonth, 1, timeZone) };
 }
 
 /**

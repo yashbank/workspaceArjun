@@ -79,7 +79,7 @@ export function WastageDesktop({ report }: { report: WastageReport | null }) {
                   href={href('/mis/reports', q, { weeks })}
                   aria-current={weeks === report.range.weeks ? 'true' : undefined}
                   className={cn(
-                    'inline-flex min-h-11 items-center px-3 text-sm font-medium',
+                    'inline-flex min-h-11 min-w-11 items-center justify-center px-3 text-sm font-medium',
                     weeks === report.range.weeks ? 'bg-[#171310] text-white' : 'text-slate-700 hover:bg-slate-50',
                   )}
                 >
@@ -226,7 +226,7 @@ export function WastageDesktop({ report }: { report: WastageReport | null }) {
                 {report.topOrders.map((o) => (
                   <tr key={o.orderId} className="border-b border-slate-100">
                     <th scope="row" className="py-2 text-left font-mono font-medium">
-                      <Link href={`/mis/orders/${o.orderId}`} className="inline-flex min-h-11 items-center text-indigo-700 hover:underline">{o.orderNumber}</Link>
+                      <Link href={`/mis/orders/${o.orderId}`} className="inline-flex min-h-11 min-w-11 items-center text-indigo-700 hover:underline">{o.orderNumber}</Link>
                     </th>
                     <td className="py-2 text-slate-800">{o.description ?? '—'}</td>
                     <td className="py-2 text-right font-mono">{num(o.waste)} {u}</td>

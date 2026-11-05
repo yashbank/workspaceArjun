@@ -3,8 +3,9 @@
 import Link from 'next/link';
 import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { StatusBadge, type BadgeTone } from '@/components/mis/kit/status-badge';
-import { Pagination, HiddenParams } from '@/components/mis/kit/pagination';
-import { pageHref } from '@/lib/mis/pagination';
+import { Pagination } from '@/components/mis/kit/pagination';
+import { ListToolbar } from '@/components/mis/kit/list-toolbar';
+import { pageHref, parseView } from '@/lib/mis/pagination';
 import type { BomOverviewRow } from '@/server/mis/bom';
 
 const BOM_STATUS_LABEL: Record<BomOverviewRow['bomStatus'], string> = {
@@ -43,8 +44,8 @@ type Paging = { total: number; page: number; params: Record<string, string | und
 
 /** R2-122/123/137/143: a paged (10/page) BOM list with header-level order + BOM lifecycle data, so a role can tell draft from approved without opening each order. */
 export function BomListScreen({ rows, paging, counts }: { rows: BomOverviewRow[]; paging?: Paging; counts?: Counts }) {
-  const search = paging?.params.q ?? '';
   const status = paging?.params.status ?? '';
+  const view = parseView(paging?.params.view);
 
   const columns: Column<BomOverviewRow>[] = [
     {
@@ -97,7 +98,7 @@ export function BomListScreen({ rows, paging, counts }: { rows: BomOverviewRow[]
         </div>
       )}
       {counts && paging && (
-        <nav aria-label="Filter by BOM status" className="mb-4 flex flex-wrap gap-2">
+        <nav aria-label="Filter by BOM status" className="my-4 flex flex-wrap gap-2">
           {TABS.map((t) => {
             const active = (status || 'ALL') === t.key;
             return (
@@ -113,18 +114,8 @@ export function BomListScreen({ rows, paging, counts }: { rows: BomOverviewRow[]
           })}
         </nav>
       )}
-      <form method="get" className="mb-4 flex items-center gap-3">
-        {paging && <HiddenParams params={paging.params} />}
-        <input
-          type="search"
-          placeholder="Search orders or BOM #…"
-          name="q"
-          defaultValue={search}
-          className="w-full max-w-sm min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500"
-        />
-        <button type="submit" className="min-h-12 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">Search</button>
-      </form>
-      <DataTable columns={columns} rows={rows} rowKey={(r) => r.orderId} emptyTitle="No active orders" emptyBody="Active orders will appear here once created." />
+      {paging && <ListToolbar basePath="/mis/bom" params={paging.params} searchLabel="Search orders or BOM #…" view={view} />}
+      <DataTable columns={columns} rows={rows} rowKey={(r) => r.orderId} view={view} emptyTitle="No active orders" emptyBody="Active orders will appear here once created." />
       {paging && <Pagination basePath="/mis/bom" params={paging.params} page={paging.page} total={paging.total} />}
     </div>
   );

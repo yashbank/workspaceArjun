@@ -15,10 +15,16 @@ export { DataTable, type Column, type DataTableProps } from './data-table';
 export { EmptyState } from './empty-state';
 export { DateInput, Input, NumberInput, TimeInput, type InputProps } from './input';
 export { Select, type SelectOption, type SelectProps } from './select';
-export { Skeleton, SkeletonList } from './skeleton';
+export { Skeleton, SkeletonList, SkeletonTable } from './skeleton';
+export { SearchInput, type SearchInputProps } from './search-input';
+export { FilterBar, type FilterBarProps } from './filter-bar';
+export { Tabs, type TabItem } from './tabs';
+export { useDebouncedValue } from './use-debounced-value';
 export { SlideOver, type SlideOverProps } from './slide-over';
 export { StatusBadge, type BadgeTone } from './status-badge';
 
 export { ToastProvider, useToast } from '@/components/ui/toast';
 export { useConfirm, type ConfirmOptions } from '@/components/ui/confirm-dialog';
 export { Pagination, HiddenParams } from './pagination';
+export { ListToolbar, useListNav } from './list-toolbar';
+export { RangeTabs } from './range-tabs';

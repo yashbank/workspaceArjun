@@ -10,7 +10,10 @@ import { getMachineStatusCounts } from '@/server/mis/machines-board';
 import { listOrdersNeedingAction } from '@/server/mis/orders';
 import { getMonthWageBill } from '@/server/mis/payroll';
 import { countPhasesForOrders } from '@/server/mis/job-phases';
-import { getDayProductionSummary, getProductionSeries } from '@/server/mis/production';
+import { getRangeOnTime, getRangeProduction, getRangeQc } from '@/server/mis/range-metrics';
+import { getFactoryTimezone } from '@/server/mis/business-rules';
+import { factoryDateKey } from '@/lib/mis/factory-time';
+import { resolveRange } from '@/lib/mis/report-range';
 import { getMisRole } from '@/server/mis/roles';
 import { can } from '@/lib/mis/permissions';
 import { getCrewSummary } from '@/server/mis/worker-allocation';
@@ -36,7 +39,7 @@ function greeting(now: Date): string {
   return 'Good evening';
 }
 
-export default async function MisDashboardPage() {
+export default async function MisDashboardPage({ searchParams }: { searchParams: Promise<{ freq?: string; at?: string }> }) {
   const user = await requireMisAccess();
   const role = await getMisRole(user.id);
 
@@ -45,30 +48,37 @@ export default async function MisDashboardPage() {
   const needs = (...keys: string[]) => keys.some((key) => shown.has(key));
 
   const now = new Date();
-  const yesterday = new Date(now);
-  yesterday.setDate(yesterday.getDate() - 1);
+  // R8 T4: one range (?freq=&at=) drives the output, wastage, QC and on-time widgets; reports read the same params.
+  const range = resolveRange(await searchParams, factoryDateKey(now, await getFactoryTimezone()));
+  const monthEnd = new Date(`${range.toKey}T00:00:00Z`);
+  monthEnd.setUTCDate(monthEnd.getUTCDate() - 1);
 
-  const [production, series, machines, approvals, attendance, crew, orders, wages] = await Promise.all([
-    needs('output.yesterday', 'wastage.yesterday') ? getDayProductionSummary(yesterday) : null,
-    needs('output.yesterday', 'wastage.yesterday', 'output.againstPlan') ? getProductionSeries(14, yesterday) : [],
+  const [range_, machines, approvals, attendance, crew, orders, onTimeRaw, qcRange, wages] = await Promise.all([
+    needs('output.yesterday', 'wastage.yesterday', 'output.againstPlan', 'wastage.byPhase') ? getRangeProduction(range) : null,
     needs('machines.running', 'machines.board') ? getMachineStatusCounts() : null,
     needs('orders.waitingOnYou') ? getPendingApprovals() : null,
-    needs('people.attendanceToday') ? getDayAttendanceSummary() : null,
+    // A past day shows that day's attendance; any longer range shows today (a head count is a point in time).
+    needs('people.attendanceToday') ? getDayAttendanceSummary(range.freq === 'day' ? range.at : undefined) : null,
     needs('people.crewToday') ? getCrewSummary() : null,
-    needs('orders.inFlight', 'orders.onTime') ? listOrdersNeedingAction(20) : [],
+    needs('orders.inFlight') ? listOrdersNeedingAction(20) : [],
+    needs('orders.onTime') ? getRangeOnTime(range) : null,
+    needs('qc.aqlThisMonth', 'qc.defectsOpen') ? getRangeQc(range) : null,
     // Owner only, by construction: the widget is in the layout only if the role holds
-    // wages.read, and the function refuses anyone else anyway (D24, F-01's fix).
-    shown.has('money.wagesAccrued') ? getMonthWageBill(now.getFullYear(), now.getMonth() + 1) : null,
+    // wages.read, and the function refuses anyone else anyway (D24, F-01's fix). Wages stay a
+    // calendar-month figure: the month the range ends in.
+    shown.has('money.wagesAccrued') ? getMonthWageBill(monthEnd.getUTCFullYear(), monthEnd.getUTCMonth() + 1) : null,
   ]);
 
   const shownOrders = orders.slice(0, 6);
   const phaseCounts = shownOrders.length > 0 && can(role, 'phase.read') ? await countPhasesForOrders(shownOrders.map((o) => o.id)) : new Map();
-  const despatched = orders.filter((o) => o.status === 'DESPATCHED' || o.status === 'COMPLETED').length;
-  const daysInMonth = new Date(Date.UTC(now.getFullYear(), now.getMonth() + 1, 0)).getUTCDate();
+  const elapsed = monthEnd.getUTCFullYear() === now.getFullYear() && monthEnd.getUTCMonth() === now.getMonth();
+  const daysInMonth = new Date(Date.UTC(monthEnd.getUTCFullYear(), monthEnd.getUTCMonth() + 1, 0)).getUTCDate();
 
   const data: DashboardData = {
-    production,
-    series: series.map((d) => ({ date: format(d.date, 'd MMM'), produced: d.produced, waste: d.waste })),
+    production: range_ ? { produced: range_.produced, waste: range_.waste, machinesRun: range_.machinesRun, entries: range_.entries } : null,
+    series: range_?.series ?? [],
+    seriesUnit: range_?.seriesUnit ?? undefined,
+    rangeLabel: range.label,
     // No plan figure is recorded anywhere yet, so the plan line is absent rather than
     // invented. A guessed plan would make the chart lie about whether the factory is behind.
     plan: null,
@@ -110,24 +120,23 @@ export default async function MisDashboardPage() {
         done: phases.done,
         total: phases.total,
         late: Boolean(o.lateRisk),
-        despatched: o.status === 'DESPATCHED' || o.status === 'COMPLETED',
+        despatched: o.status === 'DELIVERED',
       };
     }),
+    // No "on time" timestamp is recorded, so this is delivered over due so far in the range.
     onTime:
-      orders.length > 0
-        ? { pct: Math.round((despatched / orders.length) * 100), target: 95, despatched, total: orders.length }
+      onTimeRaw && onTimeRaw.total > 0
+        ? { pct: Math.round((onTimeRaw.despatched / onTimeRaw.total) * 100), target: 95, despatched: onTimeRaw.despatched, total: onTimeRaw.total }
         : null,
-    // Both need a query that does not exist yet; the widgets show their honest empty state
-    // rather than a zero (D2). 24.4 builds the screens these come from (D14, D9).
-    wastageByPhase: [],
-    qc: null,
-    defectsOpen: null,
+    wastageByPhase: range_?.wastageByPhase ?? [],
+    qc: qcRange?.aql ?? null,
+    defectsOpen: qcRange ? qcRange.defectsOpen : null,
     wages: wages
       ? {
           gross: wages.gross,
           ot: wages.ot,
-          monthLabel: format(now, 'MMMM'),
-          elapsedPct: Math.round((now.getDate() / daysInMonth) * 100),
+          monthLabel: format(new Date(monthEnd.getUTCFullYear(), monthEnd.getUTCMonth(), 1), 'MMMM'),
+          elapsedPct: elapsed ? Math.round((now.getDate() / daysInMonth) * 100) : 100,
         }
       : null,
   };
@@ -140,6 +149,7 @@ export default async function MisDashboardPage() {
       data={data}
       onSave={saveDashboardLayoutAction}
       onReset={resetDashboardLayoutAction}
+      range={range}
       header={{ title: greeting(now), meta: format(now, 'EEEE, d MMMM · HH:mm') }}
     />
   );

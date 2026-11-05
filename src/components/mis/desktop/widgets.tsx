@@ -13,6 +13,7 @@ import {
   valueToY,
 } from '@/lib/mis/chart';
 import type { TranslationKey } from '@/lib/mis/i18n';
+import { NO_UNIT, formatQty, formatQtyByUnit, type QtyByUnit } from '@/lib/mis/qty-by-unit';
 
 import { useT } from '../shell/locale-provider';
 
@@ -31,9 +32,13 @@ import { useT } from '../shell/locale-provider';
  */
 
 export type DashboardData = {
-  production: { produced: number; waste: number; machinesRun: number; entries: number } | null;
+  production: { produced: number | QtyByUnit[]; waste: number | QtyByUnit[]; machinesRun: number; entries: number } | null;
   series: { date: string; produced: number; waste: number }[];
+  /** The one unit `series` is drawn in. */
+  seriesUnit?: string;
   plan: number | null;
+  /** R8 T4: the shared range the output, wastage, QC and on-time widgets cover, e.g. "Q4 2026". */
+  rangeLabel?: string;
   machines: { free: number; running: number; down: number; total: number } | null;
   attendance: { headcount: number; present: number; late: number; onLeave: number; absent: number } | null;
   crew: { present: number; headcount: number; absent: number; onLeave: number; recorded: boolean } | null;
@@ -41,7 +46,8 @@ export type DashboardData = {
   orders: { id: string; orderNumber: string; done: number; total: number; late: boolean; despatched: boolean }[];
   onTime: { pct: number; target: number; despatched: number; total: number } | null;
   wastageByPhase: { phase: string; kg: number }[];
-  qc: { critical: number; major: number; minor: number; ceilings: { critical: number; major: number; minor: number } } | null;
+  /** `ceilings` only for `aql.read`: with no limit there is no over/within verdict, which would give the limit away. */
+  qc: { critical: number; major: number; minor: number; ceilings?: { critical: number; major: number; minor: number } } | null;
   defectsOpen: number | null;
   /** Absent for every role but the Owner — the server never sends it (D24). */
   wages: { gross: number; ot: number; monthLabel: string; elapsedPct: number } | null;
@@ -50,6 +56,13 @@ export type DashboardData = {
 const inr = (n: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n);
 const num = (n: number) => new Intl.NumberFormat('en-IN').format(n);
+
+/** One unit reads `1,200 KG`; mixed units stay apart (`8 KG · 3 PIECE`), so no one label covers both. */
+function qtyStat(qty: number | QtyByUnit[]): { value: string; unit?: string } {
+  if (typeof qty === 'number') return { value: num(qty) };
+  if (qty.length === 1 && qty[0].unit !== NO_UNIT) return { value: formatQty(qty[0].qty), unit: qty[0].unit };
+  return { value: formatQtyByUnit(qty) };
+}
 
 /** The honest empty state (08): says what is missing, never a zero pretending to be data. */
 function Empty({ messageKey }: { messageKey: TranslationKey }) {
@@ -108,7 +121,7 @@ export function WidgetBody({ widgetKey, data }: { widgetKey: string; data: Dashb
       const series = data.series.map((d) => d.produced);
       return (
         <>
-          <Stat value={num(data.production.produced)} unit="Nos" />
+          <Stat {...qtyStat(data.production.produced)} note={data.rangeLabel} />
           <Sparkline values={series} hue={SERIES_HUES[0]} />
         </>
       );
@@ -118,7 +131,7 @@ export function WidgetBody({ widgetKey, data }: { widgetKey: string; data: Dashb
       if (!data.production || data.production.entries === 0) return <Empty messageKey="empty.noProduction" />;
       return (
         <>
-          <Stat value={num(data.production.waste)} unit="Kg" />
+          <Stat {...qtyStat(data.production.waste)} note={data.rangeLabel} />
           <Sparkline values={data.series.map((d) => d.waste)} hue={SERIES_HUES[1]} />
         </>
       );
@@ -144,7 +157,7 @@ export function WidgetBody({ widgetKey, data }: { widgetKey: string; data: Dashb
           value={`${pct}`}
           unit="%"
           chip={<Chip tone={pct >= target ? 'good' : 'warn'}>{`target ${target}%`}</Chip>}
-          note={`${despatched} of ${total} orders · the marker is target`}
+          note={`${despatched} of ${total} orders${data.rangeLabel ? ` due ${data.rangeLabel}` : ''} · the marker is target`}
         />
       );
     }
@@ -268,20 +281,21 @@ export function WidgetBody({ widgetKey, data }: { widgetKey: string; data: Dashb
     case 'qc.aqlThisMonth': {
       if (!data.qc) return <Empty messageKey="empty.noQc" />;
       const rows = [
-        { label: t('qc.critical'), value: data.qc.critical, ceiling: data.qc.ceilings.critical },
-        { label: t('qc.major'), value: data.qc.major, ceiling: data.qc.ceilings.major },
-        { label: t('qc.minor'), value: data.qc.minor, ceiling: data.qc.ceilings.minor },
+        { label: t('qc.critical'), value: data.qc.critical, ceiling: data.qc.ceilings?.critical },
+        { label: t('qc.major'), value: data.qc.major, ceiling: data.qc.ceilings?.major },
+        { label: t('qc.minor'), value: data.qc.minor, ceiling: data.qc.ceilings?.minor },
       ];
       return (
         <div className="flex h-full flex-col justify-center gap-1.5">
+          {data.rangeLabel ? <p className="text-xs text-slate-500">{data.rangeLabel}</p> : null}
           {rows.map((row) => (
             <div key={row.label} className="flex items-center justify-between gap-2 text-sm">
               <span className="text-slate-600">{row.label}</span>
               <span className="font-mono text-slate-900">
                 {row.value}
-                <span className="text-slate-400"> / {row.ceiling}</span>
+                {row.ceiling !== undefined ? <span className="text-slate-400"> / {row.ceiling}</span> : null}
               </span>
-              <Chip tone={row.value > row.ceiling ? 'bad' : 'good'}>{row.value > row.ceiling ? 'over' : 'within'}</Chip>
+              {row.ceiling !== undefined ? <Chip tone={row.value > row.ceiling ? 'bad' : 'good'}>{row.value > row.ceiling ? 'over' : 'within'}</Chip> : null}
             </div>
           ))}
         </div>
@@ -352,8 +366,8 @@ function LockIcon() {
 /**
  * D1's centrepiece: output per day with the plan line.
  *
- * ONE SCALE, ONE AXIS. The plan shares the y-axis because it shares the unit (Nos). Wastage
- * is Kg and therefore a different chart — never a second line here, and never a second axis.
+ * ONE SCALE, ONE AXIS. The plan shares the y-axis because it shares the unit (`seriesUnit`).
+ * Wastage is a different chart — never a second line here, and never a second axis.
  */
 function OutputAgainstPlan({ data }: { data: DashboardData }) {
   const t = useT();
@@ -373,6 +387,7 @@ function OutputAgainstPlan({ data }: { data: DashboardData }) {
         <span className="flex items-center gap-1">
           <span className="size-2 rounded-sm" style={{ backgroundColor: SERIES_HUES[0] }} />
           {t('widget.output.actual')}
+          {data.seriesUnit ? ` (${data.seriesUnit})` : ''}
         </span>
         {plan !== undefined ? (
           <span className="flex items-center gap-1">

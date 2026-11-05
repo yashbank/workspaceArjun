@@ -1,9 +1,9 @@
 import { requireMisAccess } from '@/server/mis/guard';
 import { listBomOverviewPage } from '@/server/mis/bom';
 import { BomListScreen } from '@/components/mis/bom/bom-list-screen';
-import { clampPage, parsePage, parseSearch } from '@/lib/mis/pagination';
+import { clampPage, parsePage, parseSearch, parseView } from '@/lib/mis/pagination';
 
-export default async function BomListPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string; status?: string }> }) {
+export default async function BomListPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string; status?: string; view?: string }> }) {
   await requireMisAccess();
   const sp = await searchParams;
   const q = parseSearch(sp.q);
@@ -12,7 +12,7 @@ export default async function BomListPage({ searchParams }: { searchParams: Prom
     <BomListScreen
       rows={paged.rows}
       counts={paged.counts}
-      paging={{ total: paged.total, page: clampPage(parsePage(sp.page), paged.total), params: { q, status: sp.status } }}
+      paging={{ total: paged.total, page: clampPage(parsePage(sp.page), paged.total), params: { q, status: sp.status, view: parseView(sp.view) } }}
     />
   );
 }

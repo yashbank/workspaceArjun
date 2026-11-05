@@ -2,7 +2,10 @@
 import Link from 'next/link';
 import { useState, useTransition } from 'react';
 import { Button } from '@/components/mis/kit/button';
-import { Pagination, HiddenParams } from '@/components/mis/kit/pagination';
+import { Pagination } from '@/components/mis/kit/pagination';
+import { ListToolbar } from '@/components/mis/kit/list-toolbar';
+import { Combobox } from '@/components/ui/combobox';
+import { parseView } from '@/lib/mis/pagination';
 import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import { Input } from '@/components/mis/kit/input';
@@ -116,6 +119,8 @@ function parseCsv(text: string): string[][] {
   return rows.filter((r) => r.some((c) => c.trim() !== ''));
 }
 
+const STATUS_OPTIONS = [{ value: '', label: 'All statuses' }, { value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }];
+
 export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes, departments = [], shifts = [], initialEditId, allPeople, paging }: Props) {
   const everyone = allPeople ?? employees;
   const { confirm, confirmDialog } = useConfirm();
@@ -206,6 +211,7 @@ export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes
   };
 
   const search = paging?.params.q ?? '';
+  const view = parseView(paging?.params.view);
   const filtered = employees;
 
   function downloadCsv() {
@@ -319,17 +325,11 @@ export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes
         </div>
       </div>
       {rowError && <p role="alert" className="text-sm text-red-600">{rowError}</p>}
-      <form method="get" className="flex items-center gap-3">
-        {paging && <HiddenParams params={paging.params} />}
-        <input
-          type="search"
-          placeholder="Search employees…"
-          name="q"
-          defaultValue={search}
-          className="w-full max-w-sm min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500"
-        />
-        <Button type="submit" variant="secondary">Search</Button>
-      </form>
+      {paging && (
+        <ListToolbar basePath="/mis/employees" params={paging.params} searchLabel="Search employees…" view={view}>
+          {(go) => <Combobox id="emp-status" label="Status" hideLabel value={paging.params.status ?? ''} options={STATUS_OPTIONS} onChange={(v) => go({ status: v })} />}
+        </ListToolbar>
+      )}
       {/*
         Three different empty lists, three different sentences. Telling someone
         to "add employees" when the roll is full and they simply cannot see it
@@ -339,6 +339,7 @@ export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes
         columns={columns}
         rows={filtered}
         rowKey={(r) => r.id}
+        view={view}
         emptyTitle={
           employees.length > 0
             ? 'No match'

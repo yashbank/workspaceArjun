@@ -6,7 +6,6 @@ import { can } from '@/lib/mis/permissions';
 import { factoryDateKey } from '@/lib/mis/factory-time';
 import {
   clampReportMonth,
-  factoryMonthRange,
   getProductionReport,
   getAttendanceReport,
   getQcReport,
@@ -14,18 +13,20 @@ import {
   getStoreReport,
   getMachineUtilisationReport,
 } from '@/server/mis/reports';
+import { factoryRangeFromKeys, resolveRange } from '@/lib/mis/report-range';
 import { getFactoryTimezone } from '@/server/mis/business-rules';
 import { ReportsScreen, type ReportSection } from '@/components/mis/reports/reports-screen';
 import { WastageDesktop } from '@/components/mis/desktop/wastage-desktop';
 import { getWastageReport } from '@/server/mis/reports';
-import { clampWeeks, type WastageReport } from '@/lib/mis/wastage';
+import { WEEK_CHOICES, type WastageReport } from '@/lib/mis/wastage';
 
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+/** The wastage report is a trailing-weeks window, so the shared range picks the nearest offered span that covers it (4, 10, 13 or 26 weeks). */
+const weeksFor = (days: number) => WEEK_CHOICES.find((w) => w * 7 >= days) ?? WEEK_CHOICES[WEEK_CHOICES.length - 1];
 
 export default async function ReportsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ year?: string; month?: string; view?: string; weeks?: string; machine?: string; unit?: string }>;
+  searchParams: Promise<{ year?: string; month?: string; freq?: string; at?: string; view?: string; weeks?: string; machine?: string; unit?: string }>;
 }) {
   const user = await requireMisAccess();
   const role = await getMisRole(user.id);
@@ -36,8 +37,12 @@ export default async function ReportsPage({
   const sp = await searchParams;
   // B77/B78: the month is the FACTORY's, clamped; the range is half-open (gte from, lt to).
   const timeZone = await getFactoryTimezone();
-  const { year, month } = clampReportMonth(sp, factoryDateKey(new Date(), timeZone));
-  const range = factoryMonthRange(year, month, timeZone);
+  const todayKey = factoryDateKey(new Date(), timeZone);
+  const { year, month } = clampReportMonth(sp, todayKey);
+  // R8 T4: the same ?freq=&at= the dashboard uses. An old ?year=&month= link still lands on that month.
+  const legacy = !sp.freq && !sp.at && (sp.year || sp.month);
+  const keyRange = resolveRange(legacy ? { freq: 'month', at: `${year}-${String(month).padStart(2, '0')}-01` } : sp, todayKey);
+  const range = factoryRangeFromKeys(keyRange.fromKey, keyRange.toKey, timeZone);
 
   // B78: each section loads on its own; one failing never blanks the others.
   const failed: Partial<Record<ReportSection, string>> = {};
@@ -75,7 +80,9 @@ export default async function ReportsPage({
       failed={failed}
       canSeeWages={canSeeWages}
       isOwner={isOwner}
-      rangeLabel={`${MONTHS[month - 1]} ${year}`}
+      rangeLabel={keyRange.label}
+      range={keyRange}
+      rangeParams={{ view: sp.view }}
       year={year}
       month={month}
       legacyIssuesHref={canSeeLegacyIssues ? '/mis/reports/legacy-issues' : undefined}
@@ -89,7 +96,7 @@ export default async function ReportsPage({
   // still render, so a failure here is LOGGED (never swallowed) and the desktop half says it could not load.
   let wastage: WastageReport | null = null;
   try {
-    wastage = await getWastageReport({ weeks: clampWeeks(sp.weeks), machineId: sp.machine, unit: sp.unit });
+    wastage = await getWastageReport({ weeks: sp.weeks ?? weeksFor(keyRange.days), machineId: sp.machine, unit: sp.unit });
   } catch (error) {
     console.error('[mis-reports] the wastage report failed to load', error);
   }

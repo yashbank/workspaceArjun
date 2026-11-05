@@ -2,7 +2,9 @@
 import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/mis/kit/button';
-import { Pagination, HiddenParams } from '@/components/mis/kit/pagination';
+import { Pagination } from '@/components/mis/kit/pagination';
+import { ListToolbar } from '@/components/mis/kit/list-toolbar';
+import { parseView } from '@/lib/mis/pagination';
 import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import { Select } from '@/components/mis/kit/select';
@@ -41,7 +43,7 @@ export function PoListScreen({ pos, suppliers, canWrite, approvedBoms = [], pagi
   const router = useRouter();
   const { confirm, confirmDialog } = useConfirm();
   const { toast } = useToast();
-  const search = paging?.params.q ?? '';
+  const view = parseView(paging?.params.view);
   const filtered = pos;
 
   function downloadCsv() {
@@ -104,19 +106,9 @@ export function PoListScreen({ pos, suppliers, canWrite, approvedBoms = [], pagi
         <h1 className="text-xl font-semibold text-slate-900">Purchase Orders</h1>
         {canWrite && <Button onClick={() => setOpen(true)}>+ New PO</Button>}
       </div>
-      <form method="get" className="flex items-center gap-3">
-        {paging && <HiddenParams params={paging.params} />}
-        <input
-          type="search"
-          placeholder="Search POs…"
-          name="q"
-          defaultValue={search}
-          className="w-full max-w-sm min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500"
-        />
-        <Button type="submit" variant="secondary">Search</Button>
-        <Button type="button" variant="ghost" onClick={downloadCsv}>↓ CSV</Button>
-      </form>
-      <DataTable columns={columns} rows={filtered} rowKey={(r) => r.id} emptyTitle="No purchase orders" emptyBody="Create a PO from a BOM requirement, or for buffer stock with no BOM behind it." />
+      <ListToolbar basePath="/mis/po" params={paging?.params ?? {}} searchLabel="Search POs…" view={view} />
+      <div className="flex justify-end"><Button type="button" variant="ghost" onClick={downloadCsv}>↓ CSV</Button></div>
+      <DataTable columns={columns} rows={filtered} view={view} rowKey={(r) => r.id} emptyTitle="No purchase orders" emptyBody="Create a PO from a BOM requirement, or for buffer stock with no BOM behind it." />
       {paging && <Pagination basePath="/mis/po" params={paging.params} page={paging.page} total={paging.total} />}
       <SlideOver open={open} onClose={() => setOpen(false)} title="New Purchase Order">
         <div className="flex flex-col gap-4 p-4">

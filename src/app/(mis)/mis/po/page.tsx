@@ -3,9 +3,9 @@ import { checkPermission } from '@/server/mis/auth';
 import { listPOsPage, listApprovedBomOrders } from '@/server/mis/po';
 import { listSuppliers } from '@/server/mis/supplier';
 import { PoListScreen } from '@/components/mis/po/po-list-screen';
-import { clampPage, parsePage, parseSearch } from '@/lib/mis/pagination';
+import { clampPage, parsePage, parseSearch, parseView } from '@/lib/mis/pagination';
 
-export default async function PoPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string }> }) {
+export default async function PoPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string; view?: string }> }) {
   await requireMisAccess();
   const sp = await searchParams;
   const q = parseSearch(sp.q);
@@ -18,7 +18,7 @@ export default async function PoPage({ searchParams }: { searchParams: Promise<{
       suppliers={suppliers}
       canWrite={canWrite}
       approvedBoms={approvedBoms}
-      paging={{ total: paged.total, page: clampPage(parsePage(sp.page), paged.total), params: { q } }}
+      paging={{ total: paged.total, page: clampPage(parsePage(sp.page), paged.total), params: { q, view: parseView(sp.view) } }}
     />
   );
 }
