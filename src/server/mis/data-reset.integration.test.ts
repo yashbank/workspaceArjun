@@ -26,7 +26,8 @@ const NOT_RESTORED = 'mis_audit_logs'; // written by the reset itself, so it gro
 
 /** The expected delete set, walked here from the live catalog rather than by the code under test. */
 function closure(roots: string[], fks: FkColumn[]): Set<string> {
-  const edges = [...fks, ...LOOSE_LINKS];
+  // Employees are only partly cleared, so a set-null child stays and the database blanks its link.
+  const edges = [...fks.filter((f) => !(f.parent === 'mis_employees' && f.onDelete === 'n')), ...LOOSE_LINKS];
   const set = new Set(roots);
   for (let grew = true; grew; ) {
     grew = false;
@@ -137,13 +138,14 @@ describe.skipIf(!LOCAL_DB)('Danger Zone on a real Postgres', () => {
       expect(allocs, 'mis_order_stock_allocations.source_id').toBe(0);
     }
 
-    /** A table outside the delete set keeps every row; only blanked source_id links may differ. */
+    /** A table outside the delete set keeps every row; only blanked links (source_id, set-null into employees) may differ. */
     async function expectOthersUntouched(before: Record<string, string[]>, after: Record<string, string[]>, deleted: Set<string>) {
+      const blanked = ['mis_inventory_ledger', 'mis_order_stock_allocations', 'mis_job_phases', 'mis_production_log'];
       for (const t of compared()) {
-        if (deleted.has(t) || t === 'mis_inventory_ledger' || t === 'mis_order_stock_allocations') continue;
+        if (deleted.has(t) || blanked.includes(t)) continue;
         expect(after[t], t).toEqual(before[t]);
       }
-      for (const t of ['mis_inventory_ledger', 'mis_order_stock_allocations']) if (!deleted.has(t)) expect(after[t].length, t).toBe(before[t].length);
+      for (const t of blanked) if (!deleted.has(t)) expect(after[t].length, t).toBe(before[t].length);
     }
   });
 
@@ -297,6 +299,87 @@ describe.skipIf(!LOCAL_DB)('Danger Zone on a real Postgres', () => {
       await reset.deleteSelectedData({ groupIds: ['customers'], backupId: backup.id, confirm: 'DELETE' });
       await reset.restoreBackup({ backupId: backup.id, confirm: 'RESTORE' });
       expect((await snapshotRows(db, compared())).mis_document_versions).toEqual(before.mis_document_versions);
+    }, 60_000);
+  });
+
+  describe('R8 review', () => {
+    const log1 = rowId('mis_production_log', 1);
+    const log2 = rowId('mis_production_log', 2);
+    const phase1 = rowId('mis_job_phases', 1);
+    const ownerRow = rowId('mis_employees', 3);
+    const cell = async <T,>(t: string, col: string, id: string) => (await db.$queryRawUnsafe<{ v: T }[]>(`SELECT "${col}" AS v FROM "${t}" WHERE id = $1::uuid`, id))[0].v;
+    const clearEmployees = async () => {
+      const backup = await reset.createBackup({ groupIds: ['employees'] });
+      await reset.deleteSelectedData({ groupIds: ['employees'], backupId: backup.id, confirm: 'DELETE' });
+      return backup;
+    };
+
+    it('3. clearing employees keeps production, job phases and machine allocations; the link blanks and a restore refills it', async () => {
+      await db.$executeRawUnsafe(`UPDATE mis_production_log SET employee_id = $1::uuid WHERE id = $2::uuid`, ownerRow, log2);
+      const before = await snapshotRows(db, compared());
+      const backup = await clearEmployees();
+
+      for (const t of ['mis_production_log', 'mis_job_phases', 'mis_machine_allocations']) expect(await rowCount(t), t).toBe(seeded[t]);
+      expect(await rowCount('mis_employees')).toBe(2);
+      expect(await cell('mis_production_log', 'employee_id', log1)).toBeNull();
+      expect(await cell('mis_job_phases', 'in_charge_employee_id', phase1)).toBeNull();
+      expect(await cell('mis_production_log', 'employee_id', log2), 'a kept person keeps their link').toBe(ownerRow);
+
+      const restored = await reset.restoreBackup({ backupId: backup.id, confirm: 'RESTORE' });
+      expect(restored.linksRestored).toBeGreaterThan(1);
+      expect(await snapshotRows(db, compared())).toEqual(before);
+    }, 60_000);
+
+    it('4. a restored row that clashes on a second unique key is refused by name, and nothing is restored', async () => {
+      const code = await cell<string>('mis_customers', 'code', rowId('mis_customers', 1));
+      const backup = await reset.createBackup({ groupIds: ['customers'] });
+      await reset.deleteSelectedData({ groupIds: ['customers'], backupId: backup.id, confirm: 'DELETE' });
+      await db.$executeRawUnsafe(`INSERT INTO mis_customers (id, code, name, updated_at) VALUES ($1::uuid, $2, 'New after the clear', now())`, rowId('clash', 1), code);
+      const cleared = await snapshotRows(db, compared());
+
+      const attempt = reset.restoreBackup({ backupId: backup.id, confirm: 'RESTORE' });
+      await expect(attempt).rejects.toThrow(reset.DataResetError);
+      await expect(attempt).rejects.toThrow(/mis_customers/);
+      expect(await snapshotRows(db, compared())).toEqual(cleared);
+    }, 60_000);
+
+    describe('5. a delete refuses a backup that no longer matches', () => {
+      const refused = async (ids: ResetGroupId[], edit: string, ...args: unknown[]) => {
+        const backup = await reset.createBackup({ groupIds: ids });
+        await db.$executeRawUnsafe(edit, ...args);
+        const before = await snapshotRows(db, compared());
+        await expect(reset.deleteSelectedData({ groupIds: ids, backupId: backup.id, confirm: 'DELETE' })).rejects.toThrow(/changed since that backup/);
+        expect(await snapshotRows(db, compared())).toEqual(before);
+      };
+
+      it('same-count edit of a table with updated_at', () => refused(['customers'], `UPDATE mis_customers SET name = 'Edited', updated_at = now() WHERE id = $1::uuid`, rowId('mis_customers', 1)), 60_000);
+      it('same-count edit of a table without one', () => refused(['customers'], `UPDATE mis_production_log SET qty_produced = qty_produced + 1 WHERE id = $1::uuid`, log1), 60_000);
+      it('a table only touched by SOURCE_LINKS blanking', () => refused(['customers'], `UPDATE mis_inventory_ledger SET notes = 'late' WHERE id = $1::uuid`, rowId('mis_inventory_ledger', 2)), 60_000);
+      it('a table whose set-null link the delete blanks', () => refused(['employees'], `UPDATE mis_production_log SET qty_produced = qty_produced + 1 WHERE id = $1::uuid`, log1), 60_000);
+    });
+
+    it('6. a link cleared on purpose after the backup stays clear when nothing brought its parent back', async () => {
+      const backup = await reset.createBackup({ groupIds: ['customers'] });
+      const ledger = rowId('mis_inventory_ledger', 2);
+      await db.$executeRawUnsafe(`UPDATE mis_production_log SET employee_id = NULL WHERE id = $1::uuid`, log1);
+      await db.$executeRawUnsafe(`UPDATE mis_inventory_ledger SET source_id = NULL WHERE id = $1::uuid`, ledger);
+      const restored = await reset.restoreBackup({ backupId: backup.id, confirm: 'RESTORE' });
+      expect(restored.linksRestored).toBe(0);
+      expect(await cell('mis_production_log', 'employee_id', log1)).toBeNull();
+      expect(await cell('mis_inventory_ledger', 'source_id', ledger)).toBeNull();
+    }, 60_000);
+
+    it('6. a blanked link whose parent the restore cannot bring back stays blank and does not abort', async () => {
+      const worker = rowId('mis_employees', 2);
+      const [auth, profile] = [rowId('auth.users', 3), rowId('user_profiles', 3)];
+      await db.$executeRawUnsafe(`INSERT INTO auth.users (id, email) VALUES ($1::uuid, 'dummy3@example.test')`, auth);
+      await db.$executeRawUnsafe(`INSERT INTO user_profiles (id, auth_id, email, updated_at) VALUES ($1::uuid, $2::uuid, 'dummy3@example.test', now())`, profile, auth);
+      await db.$executeRawUnsafe(`UPDATE mis_employees SET user_profile_id = $1::uuid WHERE id = $2::uuid`, profile, worker);
+      const backup = await reset.createBackup({ groupIds: ['customers'] });
+      await db.$executeRawUnsafe(`DELETE FROM user_profiles WHERE id = $1::uuid`, profile);
+
+      await expect(reset.restoreBackup({ backupId: backup.id, confirm: 'RESTORE' })).resolves.toMatchObject({ rowsRestored: 0, linksRestored: 0 });
+      expect(await cell('mis_employees', 'user_profile_id', worker)).toBeNull();
     }, 60_000);
   });
 

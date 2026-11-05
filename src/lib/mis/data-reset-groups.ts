@@ -148,7 +148,7 @@ export const RESET_GROUPS: readonly ResetGroup[] = [
     id: 'employees',
     label: 'Employees (workers and staff)',
     description:
-      'Employee records without a sign-in. Owner, Admin and every person who can sign in are kept. Also clears attendance and finance, which depend on employees.',
+      'Employee records without a sign-in. Owner, Admin and every person who can sign in are kept. Also clears attendance and finance, which depend on employees. Production logs and job phases stay, with the cleared person taken off them.',
     tables: ['mis_worker_allocations', 'mis_employees'],
     requires: ['attendance', 'finance'],
   },
@@ -215,7 +215,14 @@ export function isSafeTableName(name: string): boolean {
   return /^mis_[a-z0-9_]+$/.test(name);
 }
 
-export type FkEdge = { child: string; parent: string };
+/** `onDelete` is pg_constraint.confdeltype ('n' = SET NULL). Left out, a link is treated as one the child cannot lose. */
+export type FkEdge = { child: string; parent: string; onDelete?: string };
+
+/** Tables a clear only partly empties (see EMPLOYEE_KEEP_WHERE). */
+export const PARTLY_CLEARED_TABLES: readonly string[] = ['mis_employees'];
+
+/** The parent's kept rows still stand, so the child stays and the database nulls the link to each cleared row. */
+const childStays = (e: FkEdge) => e.onDelete === 'n' && PARTLY_CLEARED_TABLES.includes(e.parent);
 
 /**
  * Links the database cannot see: the column holds a parent's id with no foreign key. Clearing the parent would leave
@@ -249,7 +256,8 @@ export const TRUNCATE_TABLES: readonly string[] = ['mis_attendance_punches'];
 
 /**
  * What a delete of `roots` really touches: the roots plus every table that points at them, however indirectly.
- * ON DELETE SET NULL links count too, because a blanked link is an orphan. Children come first, ready to delete.
+ * ON DELETE SET NULL links count too, because a blanked link is an orphan, except into a partly cleared table: there the
+ * child stays (see blankedTables), so clearing Employees does not wipe production. Children come first, ready to delete.
  * `refused` names the first table the walk reached that must never be cleared; the caller then deletes nothing.
  */
 export function deleteSetFor(roots: readonly string[], edges: readonly FkEdge[]): { tables: string[]; refused: string | null } {
@@ -258,7 +266,7 @@ export function deleteSetFor(roots: readonly string[], edges: readonly FkEdge[])
   for (let grew = true; grew; ) {
     grew = false;
     for (const e of all) {
-      if (set.has(e.parent) && !set.has(e.child)) {
+      if (set.has(e.parent) && !set.has(e.child) && !childStays(e)) {
         set.add(e.child);
         grew = true;
       }
@@ -266,6 +274,11 @@ export function deleteSetFor(roots: readonly string[], edges: readonly FkEdge[])
   }
   const refused = [...set].find((t) => !isSafeTableName(t) || PROTECTED_TABLES.includes(t)) ?? null;
   return { tables: refused ? [] : orderParentsFirst([...set], all).reverse(), refused };
+}
+
+/** Tables outside the delete set that a delete still changes: the database blanks their link into a partly cleared table. */
+export function blankedTables(deleted: readonly string[], edges: readonly FkEdge[]): string[] {
+  return [...new Set(edges.filter((e) => childStays(e) && deleted.includes(e.parent) && !deleted.includes(e.child)).map((e) => e.child))];
 }
 
 export type CascadeRow = { name: string; rows: number; depth: number };
@@ -349,13 +362,16 @@ export type BackupCheck = { ok: true } | { ok: false; reason: string };
 /**
  * May a delete of `tables` go ahead against this backup?
  *   - the backup must be recent;
- *   - no selected table may hold MORE rows now than when the backup was taken (rows added since would not be in it).
+ *   - no table the delete changes may hold MORE rows now than when the backup was taken (rows added since would not be in it);
+ *   - its fingerprint, a hash of every row, must match, so a same-count edit is caught too.
  */
 export function checkBackupCoversDelete(args: {
   backupCreatedAt: Date;
   now: Date;
   backupCounts: Record<string, number>;
   currentCounts: Record<string, number>;
+  backupFingerprints?: Record<string, string>;
+  currentFingerprints?: Record<string, string>;
   tables: readonly string[];
 }): BackupCheck {
   const age = args.now.getTime() - args.backupCreatedAt.getTime();
@@ -364,7 +380,7 @@ export function checkBackupCoversDelete(args: {
   for (const t of args.tables) {
     const now = args.currentCounts[t] ?? 0;
     const then = args.backupCounts[t] ?? 0;
-    if (now > then) {
+    if (now > then || args.currentFingerprints?.[t] !== args.backupFingerprints?.[t]) {
       return { ok: false, reason: 'Data has changed since that backup. Take a fresh backup, then try again.' };
     }
   }

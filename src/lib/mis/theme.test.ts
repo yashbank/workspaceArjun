@@ -27,4 +27,10 @@ describe('Theme Studio allow-lists', () => {
     }
     expect(themeVars({ paletteId: 'teal', fontPairId: 'inter' })['--color-indigo-600']).toBe('#0f766e');
   });
+
+  it('heading font reaches headings under every part of a selector list, and never the list itself', () => {
+    const css = themeCss({ paletteId: 'indigo', fontPairId: 'classic' }, 'html:has(.mis-light),.mis-light');
+    expect(css).toContain(':is(html:has(.mis-light),.mis-light) :is(h1,h2,h3){font-family:var(--mis-font-heading,inherit)}');
+    expect(css).not.toMatch(/,\.mis-light :is\(h1/);
+  });
 });

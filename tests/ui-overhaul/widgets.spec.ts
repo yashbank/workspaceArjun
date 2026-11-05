@@ -41,8 +41,8 @@ test.describe('Owner dashboard', () => {
       expect(want.entries, `seed has production in this ${freq}`).toBeGreaterThan(0);
       await expect(page.getByText(want.label, { exact: true }).first()).toBeVisible();
       const body = page.locator('body');
-      await expect(body).toContainText(new RegExp(`${num(want.produced)}\\s*Nos`));
-      await expect(body).toContainText(new RegExp(`${num(want.waste)}\\s*Kg`));
+      await expect(body).toContainText(new RegExp(`${num(want.produced)}\\s*KG`));
+      await expect(body).toContainText(new RegExp(`${num(want.waste)}\\s*KG`));
     });
   }
 
@@ -68,7 +68,7 @@ test.describe('Owner dashboard', () => {
   test('a range with no production shows the empty state, not a zero', async ({ page }) => {
     await page.goto('/mis/dashboard?freq=day&at=2020-01-01');
     await expect(page.getByText('1 Jan 2020', { exact: true }).first()).toBeVisible();
-    await expect(page.locator('body')).not.toContainText(/\d\s*Nos/);
+    await expect(page.locator('body')).not.toContainText(/\d\s*KG/);
   });
 
   test('a bad frequency falls back to the month', async ({ page }) => {

@@ -88,5 +88,5 @@ export function themeCss(theme: OrgTheme, selector: string): string {
   const vars = Object.entries(themeVars(theme));
   if (vars.length === 0) return '';
   const body = vars.map(([k, v]) => `${k}:${v}`).join(';');
-  return `${selector}{${body}}${selector}{font-family:var(--mis-font-body,inherit)}${selector} :is(h1,h2,h3){font-family:var(--mis-font-heading,inherit)}`;
+  return `${selector}{${body}}${selector}{font-family:var(--mis-font-body,inherit)}:is(${selector}) :is(h1,h2,h3){font-family:var(--mis-font-heading,inherit)}`;
 }

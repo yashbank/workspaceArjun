@@ -295,6 +295,8 @@ async function createRuleRevision(
   /** D12: a change that starts on a chosen day, with the reason it was made. Omitted = starts today, as before. */
   opts: { effectiveFrom?: Date; reason?: string; action?: string } = {},
 ) {
+  // Every generic rule editor ends here. ui.theme has its own allow-listed writer (saveOrgTheme, Owner only).
+  if (HIDDEN_RULE_KEYS.includes(ruleKey)) throw new Error('This rule is not edited here.');
   const existing = await db.misBusinessRule.findFirst({ where: { ruleKey }, orderBy: { effectiveFrom: 'desc' } });
   if (!existing) throw new Error(`Rule ${ruleKey} not found`);
   assertRuleValueValid(ruleKey, ruleValue, existing.valueType);

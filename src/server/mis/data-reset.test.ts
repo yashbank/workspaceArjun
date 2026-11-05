@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const store = new Map<string, Uint8Array>();
+const brokenKeys = new Map<string, Error>();
 const sql: string[] = [];
 const auditLog = vi.fn();
 const requirePermission = vi.fn(async () => ({ userId: 'owner-1' }));
@@ -30,8 +31,10 @@ vi.mock('@/server/storage', () => ({
   createPresignedGetUrl: vi.fn(),
   putObject: async (key: string, bytes: Uint8Array) => void store.set(key, bytes),
   getObject: async (key: string) => {
+    const broken = brokenKeys.get(key);
+    if (broken) throw broken;
     const bytes = store.get(key);
-    if (!bytes) throw new Error('missing');
+    if (!bytes) throw Object.assign(new Error('missing'), { code: 'ENOENT' });
     return { bytes, contentType: 'application/json' };
   },
 }));
@@ -43,6 +46,7 @@ const deletes = () => sql.filter((q) => q.startsWith('DELETE'));
 
 beforeEach(() => {
   store.clear();
+  brokenKeys.clear();
   sql.length = 0;
   vi.clearAllMocks();
 });
@@ -73,6 +77,35 @@ describe('backup', () => {
     expect('fileName' in file && file.fileName).toBe(`${b.name}.csv.zip`);
     expect(auditLog).toHaveBeenLastCalledWith(expect.objectContaining({ action: 'data.backup.download' }));
     await expect(getBackupDownload({ backupId: b.id, kind: '../x' })).rejects.toThrow('not a valid backup');
+  });
+});
+
+describe('the backup index', () => {
+  const INDEX = 'data-reset/index.json';
+  const index = () => JSON.parse(new TextDecoder().decode(store.get(INDEX)));
+
+  it('a missing index, on disk or in a bucket, is an empty list', async () => {
+    await createBackup();
+    expect(index()).toHaveLength(1);
+    store.delete(INDEX);
+    brokenKeys.set(INDEX, Object.assign(new Error('The specified key does not exist.'), { name: 'NoSuchKey', $metadata: { httpStatusCode: 404 } }));
+    await createBackup();
+    expect(index()).toHaveLength(1);
+  });
+
+  it('a storage failure stops the backup and leaves older entries in place', async () => {
+    const first = await createBackup();
+    brokenKeys.set(INDEX, Object.assign(new Error('socket hang up'), { name: 'TimeoutError' }));
+    await expect(createBackup()).rejects.toThrow(/backup list could not be read/);
+    brokenKeys.clear();
+    expect(index().map((b: { id: string }) => b.id)).toEqual([first.id]);
+  });
+
+  it('an unreadable index is not overwritten either', async () => {
+    await createBackup();
+    store.set(INDEX, new TextEncoder().encode('{not json'));
+    await expect(createBackup()).rejects.toThrow(/backup list could not be read/);
+    expect(new TextDecoder().decode(store.get(INDEX))).toBe('{not json');
   });
 });
 

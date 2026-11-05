@@ -9,6 +9,7 @@ import {
   backupName,
   cascadeRows,
   checkBackupCoversDelete,
+  blankedTables,
   deleteSetFor,
   expandGroups,
   isSafeTableName,
@@ -87,6 +88,11 @@ describe('checkBackupCoversDelete', () => {
   it('refuses a backup dated in the future', () => {
     expect(checkBackupCoversDelete({ ...base, backupCreatedAt: new Date(now.getTime() + 60_000) }).ok).toBe(false);
   });
+  it('refuses a same-count edit: the fingerprint moved', () => {
+    const fresh = { ...base, backupCreatedAt: new Date(now.getTime() - 60_000), backupFingerprints: { mis_customers: '111' } };
+    expect(checkBackupCoversDelete({ ...fresh, currentFingerprints: { mis_customers: '111' } }).ok).toBe(true);
+    expect(checkBackupCoversDelete({ ...fresh, currentFingerprints: { mis_customers: '222' } }).ok).toBe(false);
+  });
 });
 
 /** Every foreign key in prisma/schema.prisma, so these tests follow the schema instead of a hand list. */
@@ -156,6 +162,33 @@ describe('delete set, derived from prisma/schema.prisma', () => {
     expect(rows.map((r) => r.name).sort()).toEqual([...tables].sort());
     expect(rows[0]).toEqual({ name: 'mis_customers', rows: 2, depth: 0 });
     expect(rows.find((r) => r.name === 'mis_orders')?.depth).toBe(1);
+  });
+});
+
+describe('set-null links into a partly cleared table', () => {
+  const edges: FkEdge[] = [
+    { child: 'mis_production_log', parent: 'mis_employees', onDelete: 'n' },
+    { child: 'mis_machine_allocations', parent: 'mis_production_log', onDelete: 'n' },
+    { child: 'mis_worker_allocations', parent: 'mis_employees', onDelete: 'a' },
+    { child: 'mis_orders', parent: 'mis_customers', onDelete: 'n' },
+  ];
+
+  it('stay, with whatever hangs off them; a required link is still walked', () => {
+    const { tables } = deleteSetFor(['mis_employees'], edges);
+    expect([...tables].sort()).toEqual(['mis_employees', 'mis_worker_allocations']);
+    expect(blankedTables(tables, edges)).toEqual(['mis_production_log']);
+  });
+
+  it('a fully cleared parent still takes its set-null children', () => {
+    const { tables } = deleteSetFor(['mis_customers'], edges);
+    expect(tables).toContain('mis_orders');
+    expect(blankedTables(tables, edges)).toEqual([]);
+  });
+
+  it('a child cleared for another reason is not reported as blanked', () => {
+    const { tables } = deleteSetFor(['mis_employees', 'mis_production_log'], edges);
+    expect(tables).toContain('mis_production_log');
+    expect(blankedTables(tables, edges)).toEqual([]);
   });
 });
 

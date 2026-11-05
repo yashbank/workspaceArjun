@@ -77,6 +77,7 @@ export default async function MisDashboardPage({ searchParams }: { searchParams:
   const data: DashboardData = {
     production: range_ ? { produced: range_.produced, waste: range_.waste, machinesRun: range_.machinesRun, entries: range_.entries } : null,
     series: range_?.series ?? [],
+    seriesUnit: range_?.seriesUnit ?? undefined,
     rangeLabel: range.label,
     // No plan figure is recorded anywhere yet, so the plan line is absent rather than
     // invented. A guessed plan would make the chart lie about whether the factory is behind.
@@ -119,10 +120,10 @@ export default async function MisDashboardPage({ searchParams }: { searchParams:
         done: phases.done,
         total: phases.total,
         late: Boolean(o.lateRisk),
-        despatched: o.status === 'DESPATCHED' || o.status === 'COMPLETED',
+        despatched: o.status === 'DELIVERED',
       };
     }),
-    // No "on time" timestamp is recorded, so this is delivered-or-completed over due-in-range.
+    // No "on time" timestamp is recorded, so this is delivered over due so far in the range.
     onTime:
       onTimeRaw && onTimeRaw.total > 0
         ? { pct: Math.round((onTimeRaw.despatched / onTimeRaw.total) * 100), target: 95, despatched: onTimeRaw.despatched, total: onTimeRaw.total }

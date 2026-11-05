@@ -14,6 +14,7 @@ import {
   SOURCE_LINKS,
   TRUNCATE_TABLES,
   backupName,
+  blankedTables,
   cascadeRows,
   checkBackupCoversDelete,
   deleteSetFor,
@@ -40,14 +41,17 @@ import { requirePermission } from './auth';
  * SAFETY RULES (each one is pinned by data-reset.test.ts):
  *   1. Every exported function opens with requirePermission('data.reset'), which only OWNER holds.
  *   2. Nothing is deleted without a backup taken in the last hour whose files all still match their checksums, and
- *      nothing is deleted if a selected table has MORE rows now than the backup has (data the backup does not hold).
+ *      nothing is deleted if any table the delete changes differs from the backup: more rows, or a row hash that moved.
  *   3. The delete walks every foreign key from the selected tables, set-null links included, so nothing is orphaned. It
  *      runs children first in ONE transaction with the tables locked. If any step is refused, nothing is deleted.
- *      A surviving row's `source_id` into a cleared table is blanked (SOURCE_LINKS), so no id is left dangling.
+ *      A surviving row's `source_id` into a cleared table is blanked (SOURCE_LINKS), so no id is left dangling. A set-null
+ *      child of partly cleared mis_employees stays too, and the database blanks its link to each cleared row.
  *   4. Sign-in accounts, Owner/Admin employees, the audit log, paired tablets and settings/masters are never deleted.
- *   5. A restore only ADDS back rows that are missing (ON CONFLICT DO NOTHING) and refills links that were blanked by
- *      the delete. It never overwrites or removes anything, so it is safe to run twice. A JSON `null` stored in a jsonb
- *      column comes back as SQL NULL: to_jsonb cannot tell them apart, and the app never writes a JSON null.
+ *   5. A restore only ADDS back rows that are missing (ON CONFLICT DO NOTHING) and refills blank links to the parents it
+ *      just brought back, the only way a delete's blanking can be told from a link cleared on purpose. It never overwrites
+ *      or removes anything, so it is safe to run twice. A row that would clash on a second unique key stops the whole
+ *      restore, by table name. A JSON `null` stored in a jsonb column comes back as SQL NULL: to_jsonb cannot tell them
+ *      apart, and the app never writes a JSON null.
  *   6. In production, backups must go to real object storage; the local-disk driver is refused there.
  */
 
@@ -72,13 +76,15 @@ const PHASE_RESTORE_ORDER = ' WHERE NOT EXISTS (SELECT 1 FROM mis_job_phases p W
 
 export type BackupSummary = { id: string; name: string; createdAt: string; createdBy: string; totalRows: number };
 /** `checksums` maps each file in the backup folder to its SHA-256. */
-type Manifest = BackupSummary & { counts: Record<string, number>; checksums: Record<string, string> };
+type Manifest = BackupSummary & { counts: Record<string, number>; fingerprints: Record<string, string>; checksums: Record<string, string> };
 
 const q = (t: string) => `"${t}"`;
 const enc = (s: string) => new TextEncoder().encode(s);
 const dec = (b: Uint8Array) => new TextDecoder().decode(b);
 const sha256 = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
 const backupKey = (id: string, file: string) => `${PREFIX}/backups/${id}/${file}`;
+/** Order-free hash of every row of the table aliased `backup_row`, so any edit moves it, with or without an updated_at column. */
+const FINGERPRINT = `COALESCE(sum(hashtextextended(backup_row::text, 0)::numeric), 0)::text`;
 
 // ---------------------------------------------------------------------------
 // helpers (not exported: every exported function below is gated)
@@ -100,7 +106,7 @@ async function dataTables(tx: Tx): Promise<string[]> {
 
 async function foreignKeys(tx: Tx): Promise<FkEdge[]> {
   return tx.$queryRawUnsafe<FkEdge[]>(
-    `SELECT cl.relname AS child, pl.relname AS parent
+    `SELECT cl.relname AS child, pl.relname AS parent, c.confdeltype::text AS "onDelete"
      FROM pg_constraint c
      JOIN pg_class cl ON cl.oid = c.conrelid
      JOIN pg_class pl ON pl.oid = c.confrelid
@@ -116,10 +122,16 @@ async function count(tx: Tx, table: string, where = ''): Promise<number> {
   return rows[0]?.n ?? 0;
 }
 
-async function countsFor(tx: Tx, tables: readonly string[]): Promise<Record<string, number>> {
-  const out: Record<string, number> = {};
-  for (const t of tables) out[t] = await count(tx, t);
-  return out;
+/** What a backup is compared against. */
+async function tableStates(tx: Tx, tables: readonly string[]) {
+  const counts: Record<string, number> = {};
+  const fingerprints: Record<string, string> = {};
+  for (const t of tables) {
+    const rows = await tx.$queryRawUnsafe<{ n: number; h: string }[]>(`SELECT count(*)::int AS n, ${FINGERPRINT} AS h FROM ${q(t)} backup_row`);
+    counts[t] = rows[0]?.n ?? 0;
+    fingerprints[t] = rows[0]?.h;
+  }
+  return { counts, fingerprints };
 }
 
 /** What a clear would really remove, which is what the Owner must be shown: the kept Owner and Admin rows do not count. */
@@ -140,15 +152,31 @@ async function planDelete(tx: Tx, groupIds: readonly ResetGroupId[]) {
   const fks = await foreignKeys(tx);
   const { tables, refused } = deleteSetFor(roots, fks);
   if (refused) throw new DataResetError(`Clearing this would also touch ${refused}, which is protected. Nothing was changed.`);
-  return { tables: tables.filter((t) => present.has(t)), roots, fks };
+  const sourceBlanked = SOURCE_LINKS.filter((l) => tables.includes(l.parent) && !tables.includes(l.table)).map((l) => l.table);
+  return {
+    tables: tables.filter((t) => present.has(t)),
+    /** Not cleared, but the delete still blanks links in them, so the backup must cover them too. */
+    blanked: [...new Set([...blankedTables(tables, fks), ...sourceBlanked])].filter((t) => present.has(t)),
+    roots,
+    fks,
+  };
 }
 
+/** A key that is not there: ENOENT from the local driver, NoSuchKey or a 404 from S3. */
+function isMissingKey(error: unknown): boolean {
+  const e = error as { code?: unknown; name?: unknown; $metadata?: { httpStatusCode?: unknown } } | null;
+  return e?.code === 'ENOENT' || e?.name === 'NoSuchKey' || e?.$metadata?.httpStatusCode === 404;
+}
+
+/** Only a missing index is an empty list. Reading anything else as empty would let createBackup overwrite older entries. */
 async function readIndex(): Promise<BackupSummary[]> {
   try {
     const { bytes } = await getObject(INDEX_KEY);
     return JSON.parse(dec(bytes)) as BackupSummary[];
-  } catch {
-    return [];
+  } catch (error) {
+    if (isMissingKey(error)) return [];
+    console.error('data-reset: index read failed', error instanceof Error ? error.message : 'unknown');
+    throw new DataResetError('The backup list could not be read. Nothing was added to it. Try again.');
   }
 }
 
@@ -238,13 +266,13 @@ export async function createBackup(input: { groupIds?: string[] } = {}) {
   // One consistent snapshot: every table is read inside a single repeatable-read transaction.
   const snapshot = await db.$transaction(
     async (tx) => {
-      const out: Record<string, { json: string; n: number }> = {};
+      const out: Record<string, { json: string; n: number; h: string }> = {};
       for (const t of await dataTables(tx)) {
-        const rows = await tx.$queryRawUnsafe<{ j: string; n: number }[]>(
+        const rows = await tx.$queryRawUnsafe<{ j: string; n: number; h: string }[]>(
           // The alias must not match a column: mis_dashboard_widgets has an `x`, and to_jsonb(x) would then copy only that column.
-          `SELECT COALESCE(jsonb_agg(to_jsonb(backup_row)), '[]'::jsonb)::text AS j, count(*)::int AS n FROM ${q(t)} backup_row`,
+          `SELECT COALESCE(jsonb_agg(to_jsonb(backup_row)), '[]'::jsonb)::text AS j, count(*)::int AS n, ${FINGERPRINT} AS h FROM ${q(t)} backup_row`,
         );
-        out[t] = { json: rows[0].j, n: rows[0].n };
+        out[t] = { json: rows[0].j, n: rows[0].n, h: rows[0].h };
       }
       return out;
     },
@@ -264,8 +292,9 @@ export async function createBackup(input: { groupIds?: string[] } = {}) {
   for (const [file, bytes, type] of files) await putObject(backupKey(id, file), bytes, type);
 
   const counts = Object.fromEntries(Object.entries(snapshot).map(([t, v]) => [t, v.n]));
+  const fingerprints = Object.fromEntries(Object.entries(snapshot).map(([t, v]) => [t, v.h]));
   const checksums = Object.fromEntries(files.map(([file, bytes]) => [file, sha256(bytes)]));
-  const manifest: Manifest = { id, name, createdAt, createdBy: actor.userId, totalRows: totalRows(counts), counts, checksums };
+  const manifest: Manifest = { id, name, createdAt, createdBy: actor.userId, totalRows: totalRows(counts), counts, fingerprints, checksums };
   await putObject(backupKey(id, 'manifest.json'), enc(JSON.stringify(manifest)), JSON_TYPE);
 
   // Prove it: read every file back from storage before the backup is offered.
@@ -304,15 +333,18 @@ export async function deleteSelectedData(input: { groupIds: string[]; backupId: 
   const deleted = await db.$transaction(
     async (tx) => {
       const plan = await planDelete(tx, expandGroups(ids));
+      const touched = [...plan.tables, ...plan.blanked];
       // Block writers while we check and delete, so the check below stays true until the delete is done.
-      for (const t of plan.tables) await tx.$executeRawUnsafe(`LOCK TABLE ${q(t)} IN EXCLUSIVE MODE`);
-      const current = await countsFor(tx, plan.tables);
+      for (const t of touched) await tx.$executeRawUnsafe(`LOCK TABLE ${q(t)} IN EXCLUSIVE MODE`);
+      const { counts: current, fingerprints } = await tableStates(tx, touched);
       const verdict = checkBackupCoversDelete({
         backupCreatedAt: new Date(manifest.createdAt),
         now: new Date(),
         backupCounts: manifest.counts,
         currentCounts: current,
-        tables: plan.tables,
+        backupFingerprints: manifest.fingerprints,
+        currentFingerprints: fingerprints,
+        tables: touched,
       });
       if (!verdict.ok) throw new DataResetError(verdict.reason);
       const removed: Record<string, number> = {};
@@ -363,23 +395,6 @@ export async function restoreBackup(input: { backupId: string; confirm: string }
       const present = new Set(await dataTables(tx));
       const tables = Object.keys(files).filter((t) => present.has(t));
       const fks = await foreignKeys(tx);
-      const added: Record<string, number> = {};
-      for (const t of orderParentsFirst(tables, fks)) {
-        added[t] = await tx.$executeRawUnsafe(
-          `INSERT INTO ${q(t)} SELECT * FROM jsonb_populate_recordset(NULL::${q(t)}, $1::jsonb) x${t === 'mis_job_phases' ? PHASE_RESTORE_ORDER : ''} ON CONFLICT DO NOTHING`,
-          files[t],
-        );
-      }
-      // Rows that survived the delete but lost a link (for example an order's customer): put the link back.
-      const setNullLinks = await tx.$queryRawUnsafe<{ child: string; col: string }[]>(
-        `SELECT cl.relname AS child, a.attname AS col
-         FROM pg_constraint c
-         JOIN pg_class cl ON cl.oid = c.conrelid
-         JOIN pg_namespace n ON n.oid = cl.relnamespace
-         JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
-         WHERE c.contype = 'f' AND c.confdeltype = 'n' AND array_length(c.conkey, 1) = 1 AND n.nspname = 'public'`,
-      );
-      const links = [...setNullLinks, ...[...new Set(SOURCE_LINKS.map((l) => l.table))].map((child) => ({ child, col: 'source_id' }))];
       const pks = await tx.$queryRawUnsafe<{ t: string; col: string }[]>(
         `SELECT cl.relname AS t, a.attname AS col
          FROM pg_index i
@@ -387,17 +402,50 @@ export async function restoreBackup(input: { backupId: string; confirm: string }
          JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY (i.indkey)
          WHERE i.indisprimary`,
       );
+      const pkOf = (t: string) => pks.filter((p) => p.t === t).map((p) => p.col);
+      const samePk = (t: string) => pkOf(t).map((c) => `x.${q(c)} = b.${q(c)}`).join(' AND ');
+      const added: Record<string, number> = {};
+      /** The primary keys this restore really put back, per table. */
+      const broughtBack: Record<string, string[]> = {};
+      for (const t of orderParentsFirst(tables, fks)) {
+        const missing = pkOf(t).length === 0 ? [] : await tx.$queryRawUnsafe<{ k: string }[]>(
+          `SELECT ${pkOf(t).map((c) => `b.${q(c)}::text`).join(` || '|' || `)} AS k FROM jsonb_populate_recordset(NULL::${q(t)}, $1::jsonb) b
+           WHERE NOT EXISTS (SELECT 1 FROM ${q(t)} x WHERE ${samePk(t)})`,
+          files[t],
+        );
+        added[t] = await tx.$executeRawUnsafe(
+          `INSERT INTO ${q(t)} SELECT * FROM jsonb_populate_recordset(NULL::${q(t)}, $1::jsonb) x${t === 'mis_job_phases' ? PHASE_RESTORE_ORDER : ''} ON CONFLICT DO NOTHING`,
+          files[t],
+        );
+        // ON CONFLICT also skips a missing row that clashes on a second unique key, and its children would then fail.
+        if (added[t] < missing.length) {
+          throw new DataResetError(`The restore stopped at ${t}: ${missing.length - added[t]} of its rows clash with a newer record that has the same code or number. Nothing was changed. Rename or remove the newer record, then restore again.`);
+        }
+        broughtBack[t] = missing.map((m) => m.k);
+      }
+      // Rows that survived the delete but lost a link: put it back, but only to a parent brought back just now, so a link
+      // cleared on purpose stays clear and no link can point at a parent that is not here.
+      const setNullLinks = await tx.$queryRawUnsafe<{ child: string; col: string; parent: string }[]>(
+        `SELECT cl.relname AS child, a.attname AS col, pl.relname AS parent
+         FROM pg_constraint c
+         JOIN pg_class cl ON cl.oid = c.conrelid
+         JOIN pg_class pl ON pl.oid = c.confrelid
+         JOIN pg_namespace n ON n.oid = cl.relnamespace
+         JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+         WHERE c.contype = 'f' AND c.confdeltype = 'n' AND array_length(c.conkey, 1) = 1 AND n.nspname = 'public'`,
+      );
+      const links: { child: string; col: string; parent: string; source?: string }[] = [
+        ...setNullLinks,
+        ...SOURCE_LINKS.map((l) => ({ child: l.table, col: 'source_id', parent: l.parent, source: l.source })),
+      ];
       let relinked = 0;
       for (const l of links) {
-        if (!files[l.child] || !present.has(l.child) || !isSafeTableName(l.child)) continue;
-        const pk = pks.filter((p) => p.t === l.child).map((p) => p.col);
-        if (pk.length === 0) continue;
-        const join = pk.map((c) => `x.${q(c)} = b.${q(c)}`).join(' AND ');
+        if (!broughtBack[l.parent]?.length || !files[l.child] || !present.has(l.child) || !isSafeTableName(l.child) || pkOf(l.child).length === 0) continue;
         relinked += await tx.$executeRawUnsafe(
           `UPDATE ${q(l.child)} x SET ${q(l.col)} = b.${q(l.col)}
            FROM jsonb_populate_recordset(NULL::${q(l.child)}, $1::jsonb) b
-           WHERE ${join} AND x.${q(l.col)} IS NULL AND b.${q(l.col)} IS NOT NULL`,
-          files[l.child],
+           WHERE ${samePk(l.child)} AND x.${q(l.col)} IS NULL AND b.${q(l.col)}::text = ANY ($2::text[])${l.source ? ' AND x.source = $3' : ''}`,
+          ...[files[l.child], broughtBack[l.parent], ...(l.source ? [l.source] : [])],
         );
       }
       return { added, relinked };
