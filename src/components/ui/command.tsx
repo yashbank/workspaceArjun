@@ -1,6 +1,6 @@
 'use client';
 
-import { Command as CommandPrimitive, useCommandState } from 'cmdk';
+import { Command as CommandPrimitive } from 'cmdk';
 
 import { cn } from '@/lib/utils';
 
@@ -10,7 +10,6 @@ import { cn } from '@/lib/utils';
  * the Combobox's `id` + <label htmlFor> contract, so Combobox drives a plain input inside <Command>.
  */
 export const Command = CommandPrimitive;
-export { useCommandState };
 
 export function CommandList({ className, ...props }: React.ComponentProps<typeof CommandPrimitive.List>) {
   return <CommandPrimitive.List className={cn('max-h-64 overflow-auto', className)} {...props} />;
@@ -19,7 +18,7 @@ export function CommandList({ className, ...props }: React.ComponentProps<typeof
 export function CommandItem({ className, ...props }: React.ComponentProps<typeof CommandPrimitive.Item>) {
   return (
     <CommandPrimitive.Item
-      className={cn('min-h-11 cursor-pointer px-3 py-2.5 text-base text-slate-900 data-[selected=true]:bg-slate-100', className)}
+      className={cn('min-h-11 cursor-pointer px-3 py-2.5 text-base text-slate-900 hover:bg-slate-100 data-[selected=true]:bg-slate-100', className)}
       {...props}
     />
   );

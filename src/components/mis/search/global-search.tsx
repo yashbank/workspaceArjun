@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-import { detectMac, isSearchShortcut, searchHint } from '@/lib/shortcut-platform';
+import { isSearchShortcut, searchHint, useIsMac } from '@/lib/platform';
 import { searchMisAction } from '@/app/(mis)/mis/search/actions';
 import type { MisSearchResult } from '@/server/mis/search';
 import { useT } from '../shell/locale-provider';
@@ -21,8 +21,6 @@ const GROUPS: { type: MisSearchResult['type']; label: string }[] = [
   { type: 'grn', label: 'GRNs' },
   { type: 'employee', label: 'Employees' },
 ];
-
-const noopSubscribe = () => () => {};
 
 const RECENT_KEY = 'mis-recent-searches';
 const RECENT_MAX = 5;
@@ -62,7 +60,7 @@ export function GlobalSearch({ autoFocus = false, onNavigate, shortcuts = false 
   const seq = useRef(0);
   const [recent, setRecent] = useState<string[]>([]);
   const [focused, setFocused] = useState(false);
-  const mac = useSyncExternalStore(noopSubscribe, () => detectMac(), () => false);
+  const mac = useIsMac();
 
   useEffect(() => {
     if (!shortcuts) return;

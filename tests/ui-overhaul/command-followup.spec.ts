@@ -57,7 +57,10 @@ test.describe('Combobox (Command + Popover)', () => {
     await box.fill(label);
     await expect(rows.filter({ hasText: label }).first()).toBeVisible();
     await expect(rows.filter({ hasText: 'None' })).toHaveCount(1);
+    // A search puts the highlight on the first match, so the arrows go down and back to reach it.
+    await expect(rows.filter({ hasText: label }).first()).toHaveAttribute('data-selected', 'true');
     await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('ArrowUp');
     await expect(rows.filter({ hasText: label }).first()).toHaveAttribute('data-selected', 'true');
     await expect(box).toHaveAttribute('aria-activedescendant', /.+/);
     await page.keyboard.press('Enter');
@@ -82,6 +85,42 @@ test.describe('Combobox (Command + Popover)', () => {
     expect(bad).toEqual([]);
   });
 
+  test('Enter after a search picks the first match and zero matches change nothing; the field keeps Home and End', async ({ page }) => {
+    await page.goto('/mis/audit');
+    const entity = () => new URL(page.url()).searchParams.get('entity')?.toLowerCase();
+    const box = page.locator('#audit-entity:visible');
+    await box.click();
+    const rows = page.getByRole('listbox').getByRole('option');
+    const label = (await rows.nth(1).innerText()).trim();
+
+    // What a screen reader is told, and no leftover cmdk label.
+    await expect(page.getByRole('listbox')).toHaveAttribute('aria-label', (await box.evaluate((el: HTMLInputElement) => el.labels![0].textContent))!);
+    expect(await box.getAttribute('aria-controls')).toBe(await page.getByRole('listbox').getAttribute('id'));
+    await expect(page.locator('[cmdk-label]:visible')).toHaveCount(0);
+    expect(await page.locator('[cmdk-label]').first().evaluate((el) => getComputedStyle(el).display)).toBe('none');
+
+    await box.fill(label);
+    await page.keyboard.press('Enter');
+    await expect.poll(entity).toBe(label.toLowerCase());
+
+    const field = page.locator('#audit-entity:visible');
+    await field.click();
+    await field.fill('zzz-no-such-entity');
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('listbox')).toContainText('No matches');
+    expect(entity()).toBe(label.toLowerCase());
+
+    await field.fill('abc');
+    const caret = () => field.evaluate((el: HTMLInputElement) => el.selectionStart);
+    await page.keyboard.press('Home');
+    expect(await caret()).toBe(0);
+    await page.keyboard.press('End');
+    expect(await caret()).toBe(3);
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('listbox')).toBeHidden();
+    await expect(page.locator('#audit-entity:visible')).toHaveValue(label);
+  });
+
   for (const { width, height } of [{ width: 1280, height: 800 }, { width: 375, height: 800 }, { width: 375, height: 560 }]) {
     test(`inside a modal at ${width}x${height}: opens over the panel, unclipped, picks, and the panel stays`, async ({ page }) => {
       await page.setViewportSize({ width, height });
@@ -91,7 +130,7 @@ test.describe('Combobox (Command + Popover)', () => {
       await expect(panel).toBeVisible();
       const field = panel.getByRole('combobox', { name: 'Employee' });
       await field.click();
-      await expect(page.getByRole('listbox')).toBeVisible();
+      await expect(panel.getByRole('listbox')).toBeVisible();
       await expectNotClipped(page);
 
       await field.fill('Fake Worker 17');
@@ -169,6 +208,24 @@ test.describe('Wastage report honours the range tabs', () => {
     await expect(page).toHaveURL(/freq=month/);
     await expect(page).toHaveURL(/at=2026-01-15/);
     await expect(main).toContainText('31/01/2026');
+  });
+
+  test('the report is cut to the range: a year from 1 January, a month inside its month, and the CSV the same days', async ({ page }) => {
+    await page.goto('/mis/reports?freq=year&at=2025-03-15');
+    const main = inMain(page);
+    await expect(main).toContainText('01/01/2025 – 31/12/2025 · 2025');
+    const year = await page.request.get((await main.getByRole('link', { name: 'Export CSV' }).getAttribute('href'))!);
+    expect(year.headers()['content-disposition']).toContain('wastage-weekly-2025-01-01_2025-12-31.csv');
+
+    await page.goto('/mis/reports?freq=month&at=2026-03-15');
+    await expect(main).toContainText('01/03/2026 – 31/03/2026 · Mar 2026');
+    await expect(main.getByRole('navigation', { name: 'Period' }).locator('[aria-current]')).toHaveCount(0);
+
+    // A week button is an explicit pick: it counts back from the range's last day and says so.
+    await main.getByRole('navigation', { name: 'Period' }).getByRole('link', { name: '4', exact: true }).click();
+    await expect(page).toHaveURL(/weeks=4/);
+    await expect(main).toContainText('09/03/2026 – 31/03/2026 · 4 weeks');
+    await expect(main.getByRole('navigation', { name: 'Period' }).getByRole('link', { name: '4', exact: true })).toHaveAttribute('aria-current', 'true');
   });
 
   test('the CSV of a past range is that window: same end day, and its waste is the database total for the window', async ({ page }) => {

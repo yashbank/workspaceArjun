@@ -70,6 +70,26 @@ function downloadCsv(rows: StoreTxnRow[]) {
 const emptyIn = { itemId: '', quantity: '', referenceNo: '', notes: '' };
 const emptyOut = { itemId: '', quantity: '', referenceNo: '', orderId: '', departmentId: '' };
 
+/**
+ * Uncontrolled, and it commits on blur or Enter: while a year is being typed the browser reports partial dates, and
+ * navigating on each would reset the field. A key holding the value at the call site resets it when the URL changes.
+ */
+function DateFilter({ label, value, onCommit }: { label: string; value: string; onCommit: (value: string | undefined) => void }) {
+  const commit = (input: HTMLInputElement) => {
+    if (!input.validity.badInput && input.value !== value) onCommit(input.value || undefined);
+  };
+  return (
+    <input
+      type="date"
+      aria-label={label}
+      defaultValue={value}
+      onBlur={(e) => commit(e.currentTarget)}
+      onKeyDown={(e) => { if (e.key === 'Enter') commit(e.currentTarget); }}
+      className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400"
+    />
+  );
+}
+
 export function StoreTransactionsScreen({ txns, items, canWrite, targets = { orders: [], departments: [] }, paging }: Props) {
   const urlParams = paging?.params ?? {};
   const search = urlParams.q ?? '';
@@ -306,21 +326,9 @@ export function StoreTransactionsScreen({ txns, items, canWrite, targets = { ord
             </select>
             <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500">
               <span>From</span>
-              <input
-                type="date"
-                aria-label="From date"
-                value={fromDate}
-                onChange={(e) => go({ from: e.target.value || undefined })}
-                className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400"
-              />
+              <DateFilter key={`from-${fromDate}`} label="From date" value={fromDate} onCommit={(v) => go({ from: v })} />
               <span>To</span>
-              <input
-                type="date"
-                aria-label="To date"
-                value={toDate}
-                onChange={(e) => go({ to: e.target.value || undefined })}
-                className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400"
-              />
+              <DateFilter key={`to-${toDate}`} label="To date" value={toDate} onCommit={(v) => go({ to: v })} />
             </div>
           </>
         )}

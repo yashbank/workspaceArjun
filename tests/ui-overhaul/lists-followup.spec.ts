@@ -77,6 +77,46 @@ test.describe('the four migrated lists, as the Owner', () => {
     await main.getByRole('link', { name: 'Clear filters' }).click();
     await expect(page).not.toHaveURL(/type=/);
   });
+
+  test('transactions: a typed date stays in the field and commits on Enter or on leaving it, never per keystroke', async ({ page }) => {
+    await page.goto('/mis/store/transactions');
+    const main = page.locator('main:visible');
+    const from = main.getByLabel('From date');
+    await from.focus();
+    // Day and month are equal, so the field's order (it follows the browser locale) does not matter.
+    await page.keyboard.type('01012026');
+    await expect(from).toHaveValue('2026-01-01');
+    await expect(page).not.toHaveURL(/from=/);
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(/from=2026-01-01/);
+
+    const to = main.getByLabel('To date');
+    await to.focus();
+    await page.keyboard.type('02022026');
+    await expect(to).toHaveValue('2026-02-02');
+    await expect(page).not.toHaveURL(/to=/);
+    await to.blur();
+    await expect(page).toHaveURL(/to=2026-02-02/);
+
+    await main.getByRole('link', { name: 'Clear filters' }).click();
+    await expect(page).not.toHaveURL(/from=|to=/);
+    await expect(main.getByLabel('From date')).toHaveValue('');
+  });
+
+  test('store stock: category and status are URL params, and Clear filters shows for and drops either alone', async ({ page }) => {
+    await page.goto('/mis/store/stock');
+    const main = page.locator('main:visible');
+    for (const [label, value, param] of [['Category', 'RAW_MATERIAL', /category=RAW_MATERIAL/], ['Status', 'critical', /status=critical/]] as const) {
+      await expect(main.getByRole('link', { name: 'Clear filters' })).toHaveCount(0);
+      await main.getByLabel(label).selectOption(value);
+      await expect(page).toHaveURL(param);
+      await page.reload();
+      await expect(main.getByLabel(label)).toHaveValue(value);
+      await main.getByRole('link', { name: 'Clear filters' }).click();
+      await expect(page).not.toHaveURL(param);
+      await expect(main.getByLabel(label)).toHaveValue('');
+    }
+  });
 });
 
 test('theme.write is Owner only: the Admin gets no Theme Studio and no link to it', async ({ browser }) => {

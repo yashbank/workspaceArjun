@@ -46,7 +46,7 @@ export const RESET_GROUPS: readonly ResetGroup[] = [
   {
     id: 'customers',
     label: 'Customers',
-    description: 'The customer list, and every order and record that hangs off those orders.',
+    description: 'The customer list, and every order and record that hangs off those orders. Also the whole stock ledger and store books, so stock reads 0.',
     tables: ['mis_customers'],
     requires: [],
   },

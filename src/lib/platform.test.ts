@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { detectMac, isMacPlatform, isSearchShortcut, searchHint } from './shortcut-platform';
+import { detectMac, isSearchShortcut, searchHint } from './platform';
 
 describe('shortcut platform', () => {
   it('detects Mac from userAgentData first, then navigator.platform', () => {
@@ -8,7 +8,6 @@ describe('shortcut platform', () => {
     expect(detectMac({ userAgentData: { platform: 'Windows' }, platform: 'MacIntel' })).toBe(false);
     expect(detectMac({ platform: 'MacIntel' })).toBe(true);
     expect(detectMac({ platform: 'Linux x86_64' })).toBe(false);
-    expect(isMacPlatform(undefined)).toBe(false);
   });
   it('words the hint per platform', () => {
     expect(searchHint(true)).toBe('⌘K');

@@ -8,10 +8,10 @@ export const Popover = PopoverPrimitive.Root;
 export const PopoverAnchor = PopoverPrimitive.Anchor;
 export const PopoverTrigger = PopoverPrimitive.Trigger;
 
-/** shadcn-style content: portalled, the same card look the old list had. */
-export function PopoverContent({ className, align = 'start', sideOffset = 4, ...props }: React.ComponentProps<typeof PopoverPrimitive.Content>) {
+/** shadcn-style content: portalled (to `container`, else <body>), the same card look the old list had. */
+export function PopoverContent({ className, align = 'start', sideOffset = 4, container, ...props }: React.ComponentProps<typeof PopoverPrimitive.Content> & { container?: Element | null }) {
   return (
-    <PopoverPrimitive.Portal>
+    <PopoverPrimitive.Portal container={container}>
       <PopoverPrimitive.Content
         align={align}
         sideOffset={sideOffset}

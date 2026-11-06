@@ -1,5 +1,4 @@
 'use client';
-import { useState } from 'react';
 import Link from 'next/link';
 import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
@@ -67,20 +66,10 @@ function downloadCsv(rows: StockRow[], isOwner: boolean) {
 }
 
 export function StoreStockScreen({ rows, isOwner, totalValueLabel = null, paging }: Props) {
-  const [categoryFilter, setCategoryFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
   const search = paging?.params.q ?? '';
+  const categoryFilter = paging?.params.category ?? '';
+  const statusFilter = paging?.params.status ?? '';
   const view = parseView(paging?.params.view);
-
-  const filtered = rows.filter((r) => {
-    const matchCat = !categoryFilter || r.category === categoryFilter;
-    const matchStatus =
-      !statusFilter ||
-      (statusFilter === 'critical' && r.stockBalance <= 0) ||
-      (statusFilter === 'warning' && r.belowReorder && r.stockBalance > 0) ||
-      (statusFilter === 'ok' && !r.belowReorder && r.stockBalance > 0);
-    return matchCat && matchStatus;
-  });
 
   const criticalCount = rows.filter((r) => r.stockBalance <= 0).length;
   const warnCount = rows.filter((r) => r.belowReorder && r.stockBalance > 0).length;
@@ -179,7 +168,7 @@ export function StoreStockScreen({ rows, isOwner, totalValueLabel = null, paging
           </p>
         </div>
         <button
-          onClick={() => downloadCsv(filtered, isOwner)}
+          onClick={() => downloadCsv(rows, isOwner)}
           className="inline-flex min-h-11 items-center justify-center px-3 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-700"
         >
           ↓ CSV
@@ -201,11 +190,12 @@ export function StoreStockScreen({ rows, isOwner, totalValueLabel = null, paging
 
       {/* Filters */}
       <ListToolbar basePath="/mis/store/stock" params={paging?.params ?? {}} searchLabel="Search by name, code or SKU…" view={view}>
-        {() => (
+        {(go) => (
           <>
         <select
+          aria-label="Category"
           value={categoryFilter}
-          onChange={(e) => setCategoryFilter(e.target.value)}
+          onChange={(e) => go({ category: e.target.value || undefined })}
           className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
         >
           <option value="">All Categories</option>
@@ -215,8 +205,9 @@ export function StoreStockScreen({ rows, isOwner, totalValueLabel = null, paging
           <option value="OTHER">Other</option>
         </select>
         <select
+          aria-label="Status"
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
+          onChange={(e) => go({ status: e.target.value || undefined })}
           className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
         >
           <option value="">All Status</option>
@@ -230,7 +221,7 @@ export function StoreStockScreen({ rows, isOwner, totalValueLabel = null, paging
 
       <DataTable
         columns={columns}
-        rows={filtered}
+        rows={rows}
         view={view}
         rowKey={(r) => r.id}
         emptyTitle="No items"

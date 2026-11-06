@@ -52,7 +52,8 @@ import { requirePermission } from './auth';
  *      just brought back, the only way a delete's blanking can be told from a link cleared on purpose. It never overwrites
  *      or removes anything, so it is safe to run twice. A row that would clash on a second unique key stops the whole
  *      restore, by table name. A JSON `null` stored in a jsonb column comes back as SQL NULL: to_jsonb cannot tell them
- *      apart, and the app never writes a JSON null.
+ *      apart, and the app never writes a JSON null. A stock book that lost rows to a clear and has new rows since is
+ *      refused whole, by table name: its latest row is the balance, and two histories cannot be merged.
  *   6. In production, backups must go to real object storage; the local-disk driver is refused there.
  */
 
@@ -74,6 +75,8 @@ const JSON_TYPE = 'application/json';
  * BEFORE trigger also fires on a row ON CONFLICT would skip, so rows already here are left out by hand.
  */
 const PHASE_RESTORE_ORDER = ' WHERE NOT EXISTS (SELECT 1 FROM mis_job_phases p WHERE p.id = x.id) ORDER BY x.sequence DESC';
+/** Each row's balance follows the row before it, and the latest row by created_at is the balance. */
+const STOCK_BOOKS = ['mis_inventory_ledger', 'mis_store_transactions'];
 
 export type BackupSummary = { id: string; name: string; createdAt: string; createdBy: string; totalRows: number };
 /** `checksums` maps each file in the backup folder to its SHA-256. */
@@ -406,6 +409,20 @@ export async function restoreBackup(input: { backupId: string; confirm: string }
       );
       const pkOf = (t: string) => pks.filter((p) => p.t === t).map((p) => p.col);
       const samePk = (t: string) => pkOf(t).map((c) => `x.${q(c)} = b.${q(c)}`).join(' AND ');
+      for (const t of STOCK_BOOKS) {
+        if (!files[t] || !present.has(t)) continue;
+        // Held until commit, so nothing can be posted between this check and the insert.
+        await tx.$executeRawUnsafe(`LOCK TABLE ${q(t)} IN EXCLUSIVE MODE`);
+        const backedUp = `jsonb_populate_recordset(NULL::${q(t)}, $1::jsonb) b`;
+        const [book] = await tx.$queryRawUnsafe<{ lost: boolean; posted: boolean }[]>(
+          `SELECT EXISTS (SELECT 1 FROM ${backedUp} WHERE NOT EXISTS (SELECT 1 FROM ${q(t)} x WHERE ${samePk(t)})) AS lost,
+                  EXISTS (SELECT 1 FROM ${q(t)} x WHERE NOT EXISTS (SELECT 1 FROM ${backedUp} WHERE ${samePk(t)})) AS posted`,
+          files[t],
+        );
+        if (book.lost && book.posted) {
+          throw new DataResetError(`The restore stopped at ${t}: stock was posted there since the clear, and the old history cannot be merged with the new one. Nothing was changed. Clear the stock books again, then restore.`);
+        }
+      }
       const added: Record<string, number> = {};
       /** The primary keys this restore really put back, per table. */
       const broughtBack: Record<string, string[]> = {};
