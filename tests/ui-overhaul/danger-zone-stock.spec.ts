@@ -28,7 +28,7 @@ const rowCounts = (tables: string[]) =>
     return out;
   });
 
-/** An active item both books hold a balance for, so each screen has a figure to lose. */
+/** An active item both books hold a balance for, so each screen has a figure to lose. The longest code, so searching it finds that item alone. */
 const stockedItem = () =>
   withDb(async (q) => {
     const rows = await q<{ code: string; unit: string; ledger: string; book: string; txn: string }>(
@@ -37,18 +37,21 @@ const stockedItem = () =>
        JOIN LATERAL (SELECT balance_qty FROM mis_inventory_ledger x WHERE x.item_id = i.id ORDER BY created_at DESC LIMIT 1) l ON true
        JOIN LATERAL (SELECT balance_qty, txn_number FROM mis_store_transactions x WHERE x.item_id = i.id ORDER BY created_at DESC LIMIT 1) t ON true
        WHERE i.deleted_at IS NULL AND i.is_active AND l.balance_qty > 0 AND t.balance_qty > 0
-       ORDER BY i.code LIMIT 1`,
+       ORDER BY length(i.code) DESC, i.code LIMIT 1`,
     );
     expect(rows.length, 'seed has an item with stock in both books').toBe(1);
     return rows[0];
   });
 
-const shown = (page: Page, text: string) => page.getByText(text, { exact: true }).filter({ visible: true });
-
 async function expectBalances(page: Page, code: string, ledger: string, book: string) {
-  await page.goto(`/mis/inventory?q=${encodeURIComponent(code)}`);
-  await expect(page.getByText(code).filter({ visible: true }).first()).toBeVisible();
-  await expect(shown(page, ledger).first()).toBeVisible();
+  // The figure in this item's own Balance cell: a bare "0" anywhere on the page would prove nothing.
+  await page.goto(`/mis/inventory?q=${encodeURIComponent(code)}&view=rows`);
+  const table = page.locator('main:visible table:visible');
+  const row = table.locator('tbody tr').filter({ has: page.getByRole('cell', { name: code, exact: true }) });
+  await expect(row).toHaveCount(1);
+  const balance = (await table.locator('thead th').allInnerTexts()).findIndex((h) => /balance/i.test(h));
+  expect(balance, 'the table has a Balance column').toBeGreaterThanOrEqual(0);
+  await expect(row.locator('td').nth(balance)).toHaveText(ledger);
   await page.goto(`/mis/store/stock?q=${encodeURIComponent(code)}`);
   await expect(page.getByText(code).filter({ visible: true }).first()).toBeVisible();
   await expect(page.getByText(new RegExp(`^${book.replace('.', '\\.')}\\b`)).filter({ visible: true }).first()).toBeVisible();
@@ -88,6 +91,8 @@ test.describe.serial('Owner: stock books and kept staff', () => {
 
   test('a Purchasing clear shows the books in the tree, stock reads 0 everywhere, and a restore brings it back', async ({ page }) => {
     test.setTimeout(240_000);
+    // The app writes its default rule rows on first read, so this test's screens are read once before the snapshot.
+    for (const url of ['/mis/inventory', '/mis/store/stock', '/mis/store/transactions', '/mis/store/dashboard', '/mis/settings/danger-zone']) await page.goto(url);
     const tables = await misTables();
     const before = await snapshot(tables);
     const { code, ledger, book, txn } = await stockedItem();

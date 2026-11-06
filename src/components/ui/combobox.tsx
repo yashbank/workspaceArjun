@@ -64,7 +64,8 @@ export function Combobox({ label, value, options, onChange, placeholder = 'Type 
               onClick={() => setOpen(true)}
               // R2-354: Tab (or any focus move) closes the list; the rows never take focus.
               onBlur={close}
-              onKeyDown={(e) => { if (e.key === 'Escape') close(); else if (e.key === 'ArrowDown') setOpen(true); }}
+              // Enter on a closed list stays out of cmdk, which would swallow it: the field's form must still submit.
+              onKeyDown={(e) => { if (e.key === 'Escape') close(); else if (e.key === 'ArrowDown') setOpen(true); else if (e.key === 'Enter' && !open) e.stopPropagation(); }}
               className={cn(
                 'min-h-12 w-full rounded-lg border bg-white px-3 text-base text-slate-900 placeholder:text-slate-500',
                 error ? 'border-red-500' : 'border-slate-300',

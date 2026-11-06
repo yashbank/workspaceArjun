@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useSyncExternalStore, type ComponentProps } from 'react';
 
 import { axisTicks, axisTop, barGeometry, compactTick, seriesHue } from '@/lib/mis/chart';
 import { RangeTabs } from '../kit/range-tabs';
@@ -50,6 +51,17 @@ const href = (base: string, q: Query, over: Partial<Query> = {}) => {
 /** `keyRange` is the shared `?freq=&at=` range; `exportLastKey` is set only for a past range (the CSV export needs it). */
 export type WastageView = WastageReport & { keyRange?: KeyRange; exportLastKey?: string };
 
+const onResize = (change: () => void) => {
+  window.addEventListener('resize', change);
+  return () => window.removeEventListener('resize', change);
+};
+
+/** The phone screen has its own RangeTabs on this page, so this one mounts only from `lg` up: never two range pickers in the DOM. */
+export function DesktopRangeTabs(props: ComponentProps<typeof RangeTabs>) {
+  const wide = useSyncExternalStore(onResize, () => window.innerWidth >= 1024, () => false);
+  return wide ? <RangeTabs {...props} /> : null;
+}
+
 export function WastageDesktop({ report }: { report: WastageView | null }) {
   const t = useT();
   if (!report) {
@@ -83,7 +95,7 @@ export function WastageDesktop({ report }: { report: WastageView | null }) {
         }
         secondary={
           <>
-            {range ? <RangeTabs basePath="/mis/reports" range={range} params={{ machine: report.machineId ?? undefined, unit: unit ?? undefined }} /> : null}
+            {range ? <DesktopRangeTabs basePath="/mis/reports" range={range} params={{ machine: report.machineId ?? undefined, unit: unit ?? undefined }} /> : null}
             <nav aria-label={t('d7.rangeLabel')} className="flex overflow-hidden rounded-lg border border-slate-300 bg-white">
               {WEEK_CHOICES.map((weeks) => (
                 <Link

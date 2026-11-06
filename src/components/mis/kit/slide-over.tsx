@@ -58,6 +58,8 @@ export function SlideOver({
 
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
+        // A popover inside the panel (a Combobox list) already took this Escape: it closes first, the panel stays.
+        if (event.defaultPrevented) return;
         event.preventDefault();
         requestClose();
         return;
