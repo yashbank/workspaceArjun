@@ -1,5 +1,5 @@
 import { addDaysToDateKey, dateKeyToDbDate, factoryDateKey } from '@/lib/mis/factory-time';
-import { factoryStartOfDay } from '@/lib/mis/report-range';
+import { factoryStartOfDay, parseDateKey } from '@/lib/mis/report-range';
 import { normaliseUnit, sumByUnit } from '@/lib/mis/qty-by-unit';
 import { buildMachineUtilisation, type MachineUtilisationReport } from '@/lib/mis/machine-utilisation';
 import { withoutMoneyFields } from '@/lib/mis/money-fields';
@@ -241,14 +241,16 @@ export async function getStoreReport(range: ReportRange) {
  * No money: quantities only.
  */
 export async function getWastageReport(
-  input: { weeks?: unknown; machineId?: unknown; unit?: unknown } = {},
+  input: { weeks?: unknown; machineId?: unknown; unit?: unknown; /** Last factory day of the window (a past range); default today, never later than today. */ lastKey?: unknown } = {},
   now: Date = new Date(),
 ): Promise<WastageReport> {
   await requirePermission('reports.read');
 
   const weeks = clampWeeks(input.weeks);
   const timeZone = await getFactoryTimezone();
-  const lastKey = factoryDateKey(now, timeZone);
+  const today = factoryDateKey(now, timeZone);
+  const asked = parseDateKey(input.lastKey);
+  const lastKey = asked && asked < today ? asked : today;
   const { fromKey } = windowKeys(lastKey, weeks);
 
   const logs = await db.misProductionLog.findMany({

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useRouter } from 'next/navigation';
 
+import { detectMac, isSearchShortcut, searchHint } from '@/lib/shortcut-platform';
 import { searchMisAction } from '@/app/(mis)/mis/search/actions';
 import type { MisSearchResult } from '@/server/mis/search';
 import { useT } from '../shell/locale-provider';
@@ -61,14 +62,14 @@ export function GlobalSearch({ autoFocus = false, onNavigate, shortcuts = false 
   const seq = useRef(0);
   const [recent, setRecent] = useState<string[]>([]);
   const [focused, setFocused] = useState(false);
-  const mac = useSyncExternalStore(noopSubscribe, () => /Mac|iPhone|iPad/i.test(navigator.platform ?? ''), () => false);
+  const mac = useSyncExternalStore(noopSubscribe, () => detectMac(), () => false);
 
   useEffect(() => {
     if (!shortcuts) return;
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
       const typing = !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      if (isSearchShortcut(e, mac)) {
         e.preventDefault();
         inputRef.current?.focus();
       } else if (e.key === '/' && !typing && !e.metaKey && !e.ctrlKey && !e.altKey) {
@@ -78,7 +79,7 @@ export function GlobalSearch({ autoFocus = false, onNavigate, shortcuts = false 
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [shortcuts]);
+  }, [shortcuts, mac]);
 
   useEffect(() => {
     if (autoFocus) inputRef.current?.focus();
@@ -166,7 +167,7 @@ export function GlobalSearch({ autoFocus = false, onNavigate, shortcuts = false 
         />
         {shortcuts && !focused && query === '' && (
           <kbd aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 rounded border border-slate-300 bg-slate-50 px-1.5 py-0.5 font-mono text-xs text-slate-500 sm:block">
-            {mac ? '⌘K' : 'Ctrl K'}
+            {searchHint(mac)}
           </kbd>
         )}
         <svg

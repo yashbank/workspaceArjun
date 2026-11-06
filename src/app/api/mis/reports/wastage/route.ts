@@ -17,6 +17,7 @@ export async function GET(request: Request) {
       weeks: Number(url.searchParams.get('weeks')),
       machineId: url.searchParams.get('machine'),
       unit: url.searchParams.get('unit'),
+      lastKey: url.searchParams.get('last') ?? undefined,
     });
     return new NextResponse(wastageCsv(report, part), {
       headers: {

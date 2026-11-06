@@ -3,6 +3,8 @@
 import Link from 'next/link';
 
 import { axisTicks, axisTop, barGeometry, compactTick, seriesHue } from '@/lib/mis/chart';
+import { RangeTabs } from '../kit/range-tabs';
+import type { KeyRange } from '@/lib/mis/report-range';
 import { WEEK_CHOICES, type WastageReport } from '@/lib/mis/wastage';
 import { cn } from '@/lib/utils';
 
@@ -31,7 +33,7 @@ const W = 900;
 const H = 240;
 const PAD = { left: 40, right: 8, top: 22, bottom: 24 };
 
-type Query = { weeks: number; machine: string | null; unit: string | null };
+type Query = { weeks: number; machine: string | null; unit: string | null; freq?: string; at?: string; last?: string };
 
 const href = (base: string, q: Query, over: Partial<Query> = {}) => {
   const merged = { ...q, ...over };
@@ -39,10 +41,14 @@ const href = (base: string, q: Query, over: Partial<Query> = {}) => {
   params.set('weeks', String(merged.weeks));
   if (merged.machine) params.set('machine', merged.machine);
   if (merged.unit) params.set('unit', merged.unit);
+  if (merged.freq) params.set('freq', merged.freq);
+  if (merged.at) params.set('at', merged.at);
+  if (merged.last) params.set('last', merged.last);
   return `${base}?${params.toString()}`;
 };
 
-export function WastageDesktop({ report }: { report: WastageReport | null }) {
+/** `range` is the shared `?freq=&at=` range; `lastKey` is set only for a past range (the CSV export needs it). */
+export function WastageDesktop({ report, range, lastKey }: { report: WastageReport | null; range?: KeyRange; lastKey?: string }) {
   const t = useT();
   if (!report) {
     return (
@@ -53,7 +59,9 @@ export function WastageDesktop({ report }: { report: WastageReport | null }) {
   }
   const unit = report.unit;
   const u = unit ? unitLabel(unit) : '';
-  const q: Query = { weeks: report.range.weeks, machine: report.machineId, unit };
+  const q: Query = { weeks: report.range.weeks, machine: report.machineId, unit, freq: range?.freq, at: range?.at };
+  // The export is a different URL (the API), so the past end day travels as `last`.
+  const exportQ: Query = { ...q, freq: undefined, at: undefined, last: lastKey };
   const { totals } = report;
   const hasWaste = totals.waste > 0;
 
@@ -72,6 +80,7 @@ export function WastageDesktop({ report }: { report: WastageReport | null }) {
         }
         secondary={
           <>
+            {range ? <RangeTabs basePath="/mis/reports" range={range} params={{ machine: report.machineId ?? undefined, unit: unit ?? undefined }} /> : null}
             <nav aria-label={t('d7.rangeLabel')} className="flex overflow-hidden rounded-lg border border-slate-300 bg-white">
               {WEEK_CHOICES.map((weeks) => (
                 <Link
@@ -92,6 +101,8 @@ export function WastageDesktop({ report }: { report: WastageReport | null }) {
             <form method="get" action="/mis/reports" className="flex items-center gap-2">
               <input type="hidden" name="weeks" value={report.range.weeks} />
               {unit ? <input type="hidden" name="unit" value={unit} /> : null}
+              {range ? <input type="hidden" name="freq" value={range.freq} /> : null}
+              {range ? <input type="hidden" name="at" value={range.at} /> : null}
               <label className="sr-only" htmlFor="d7-machine">{t('d7.machine')}</label>
               <select
                 id="d7-machine"
@@ -112,7 +123,7 @@ export function WastageDesktop({ report }: { report: WastageReport | null }) {
         }
         primary={
           <a
-            href={href('/api/mis/reports/wastage', q)}
+            href={href('/api/mis/reports/wastage', exportQ)}
             className="inline-flex min-h-11 items-center rounded-lg bg-indigo-600 px-5 text-sm font-semibold text-white hover:bg-indigo-700"
           >
             {t('d7.exportCsv')}
@@ -250,7 +261,7 @@ export function WastageDesktop({ report }: { report: WastageReport | null }) {
             </span>
           </div>
           {report.topOrders.length > 0 ? (
-            <a href={href('/api/mis/reports/wastage', q) + '&part=orders'} className="mt-2 inline-flex min-h-11 items-center text-sm font-medium text-indigo-700 hover:underline">
+            <a href={href('/api/mis/reports/wastage', exportQ) + '&part=orders'} className="mt-2 inline-flex min-h-11 items-center text-sm font-medium text-indigo-700 hover:underline">
               {t('d7.exportOrders')}
             </a>
           ) : null}

@@ -13,6 +13,7 @@ import {
   getStoreReport,
   getMachineUtilisationReport,
 } from '@/server/mis/reports';
+import { addDaysToDateKey } from '@/lib/mis/factory-time';
 import { factoryRangeFromKeys, resolveRange } from '@/lib/mis/report-range';
 import { getFactoryTimezone } from '@/server/mis/business-rules';
 import { ReportsScreen, type ReportSection } from '@/components/mis/reports/reports-screen';
@@ -94,9 +95,11 @@ export default async function ReportsPage({
   if (sp.view === 'classic') return phone;
   // The desktop report is a second query on a page the phone also serves. If it fails the phone screen must
   // still render, so a failure here is LOGGED (never swallowed) and the desktop half says it could not load.
+  // The window ends on the range's last day (a past `at` shows that past), never later than today.
+  const lastKey = addDaysToDateKey(keyRange.toKey, -1);
   let wastage: WastageReport | null = null;
   try {
-    wastage = await getWastageReport({ weeks: sp.weeks ?? weeksFor(keyRange.days), machineId: sp.machine, unit: sp.unit });
+    wastage = await getWastageReport({ weeks: sp.weeks ?? weeksFor(keyRange.days), machineId: sp.machine, unit: sp.unit, lastKey });
   } catch (error) {
     console.error('[mis-reports] the wastage report failed to load', error);
   }
@@ -110,7 +113,7 @@ export default async function ReportsPage({
             <Link href="/mis/reports/legacy-issues" className="inline-flex min-h-11 items-center text-indigo-700 hover:underline">Legacy store issues not linked to an order →</Link>
           </div>
         )}
-        <WastageDesktop report={wastage} />
+        <WastageDesktop report={wastage} range={keyRange} lastKey={lastKey < todayKey ? lastKey : undefined} />
       </div>
     </>
   );
