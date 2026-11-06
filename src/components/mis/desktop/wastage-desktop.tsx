@@ -1,8 +1,11 @@
 'use client';
 
 import Link from 'next/link';
+import { useSyncExternalStore, type ComponentProps } from 'react';
 
 import { axisTicks, axisTop, barGeometry, compactTick, seriesHue } from '@/lib/mis/chart';
+import { RangeTabs } from '../kit/range-tabs';
+import type { KeyRange } from '@/lib/mis/report-range';
 import { WEEK_CHOICES, type WastageReport } from '@/lib/mis/wastage';
 import { cn } from '@/lib/utils';
 
@@ -31,18 +34,42 @@ const W = 900;
 const H = 240;
 const PAD = { left: 40, right: 8, top: 22, bottom: 24 };
 
-type Query = { weeks: number; machine: string | null; unit: string | null };
+type Query = { weeks?: number; machine: string | null; unit: string | null; freq?: string; at?: string; from?: string; last?: string };
 
 const href = (base: string, q: Query, over: Partial<Query> = {}) => {
   const merged = { ...q, ...over };
   const params = new URLSearchParams();
-  params.set('weeks', String(merged.weeks));
+  if (merged.weeks) params.set('weeks', String(merged.weeks));
   if (merged.machine) params.set('machine', merged.machine);
   if (merged.unit) params.set('unit', merged.unit);
+  if (merged.freq) params.set('freq', merged.freq);
+  if (merged.at) params.set('at', merged.at);
+  if (merged.from) params.set('from', merged.from);
+  if (merged.last) params.set('last', merged.last);
   return `${base}?${params.toString()}`;
 };
 
-export function WastageDesktop({ report }: { report: WastageReport | null }) {
+/**
+ * `keyRange` is the shared `?freq=&at=` range. `exportFromKey` is set when the report is cut to that range, not to picked
+ * weeks; `exportLastKey` when the window does not end today. The CSV export is another URL, so it needs them both.
+ */
+export type WastageView = WastageReport & { keyRange?: KeyRange; exportFromKey?: string; exportLastKey?: string };
+
+const onResize = (change: () => void) => {
+  window.addEventListener('resize', change);
+  return () => window.removeEventListener('resize', change);
+};
+
+/**
+ * The phone screen has its own RangeTabs on this page, so below `lg` this one does not mount: CSS alone would leave a hidden
+ * twin of the range label, which widgets.spec's getByText counts. From `lg` up both are mounted, the phone's hidden by CSS.
+ */
+export function DesktopRangeTabs(props: ComponentProps<typeof RangeTabs>) {
+  const wide = useSyncExternalStore(onResize, () => window.innerWidth >= 1024, () => false);
+  return wide ? <RangeTabs {...props} /> : null;
+}
+
+export function WastageDesktop({ report }: { report: WastageView | null }) {
   const t = useT();
   if (!report) {
     return (
@@ -51,9 +78,14 @@ export function WastageDesktop({ report }: { report: WastageReport | null }) {
       </p>
     );
   }
+  const { keyRange: range, exportFromKey: fromKey, exportLastKey: lastKey } = report;
   const unit = report.unit;
   const u = unit ? unitLabel(unit) : '';
-  const q: Query = { weeks: report.range.weeks, machine: report.machineId, unit };
+  // `weeks` stays out of the links while the report is cut to the range: in the URL it would mean a week button was picked.
+  const q: Query = { weeks: fromKey ? undefined : report.range.weeks, machine: report.machineId, unit, freq: range?.freq, at: range?.at };
+  // The export is a different URL (the API), so the window's days travel as `from` and `last`.
+  const exportQ: Query = { ...q, freq: undefined, at: undefined, from: fromKey, last: lastKey };
+  const span = fromKey && range ? range.label : `${report.range.weeks} ${t('d7.weeks')}`;
   const { totals } = report;
   const hasWaste = totals.waste > 0;
 
@@ -65,22 +97,23 @@ export function WastageDesktop({ report }: { report: WastageReport | null }) {
         title={t('d7.title')}
         summary={
           unit
-            ? `${dmyFull(report.range.fromKey)} – ${dmyFull(report.range.toKey)} · ${report.range.weeks} ${t('d7.weeks')} · ${num(totals.waste)} ${u} ${t('d7.total')}${
+            ? `${dmyFull(report.range.fromKey)} – ${dmyFull(report.range.toKey)} · ${span} · ${num(totals.waste)} ${u} ${t('d7.total')}${
                 totals.percent !== null ? ` · ${num(totals.percent)}% ${t('d7.ofOutput')}` : ''
               }`
-            : `${dmyFull(report.range.fromKey)} – ${dmyFull(report.range.toKey)} · ${report.range.weeks} ${t('d7.weeks')}`
+            : `${dmyFull(report.range.fromKey)} – ${dmyFull(report.range.toKey)} · ${span}`
         }
         secondary={
           <>
+            {range ? <DesktopRangeTabs basePath="/mis/reports" range={range} params={{ machine: report.machineId ?? undefined, unit: unit ?? undefined }} /> : null}
             <nav aria-label={t('d7.rangeLabel')} className="flex overflow-hidden rounded-lg border border-slate-300 bg-white">
               {WEEK_CHOICES.map((weeks) => (
                 <Link
                   key={weeks}
                   href={href('/mis/reports', q, { weeks })}
-                  aria-current={weeks === report.range.weeks ? 'true' : undefined}
+                  aria-current={weeks === q.weeks ? 'true' : undefined}
                   className={cn(
                     'inline-flex min-h-11 min-w-11 items-center justify-center px-3 text-sm font-medium',
-                    weeks === report.range.weeks ? 'bg-[#171310] text-white' : 'text-slate-700 hover:bg-slate-50',
+                    weeks === q.weeks ? 'bg-[#171310] text-white' : 'text-slate-700 hover:bg-slate-50',
                   )}
                 >
                   {weeks}
@@ -90,8 +123,10 @@ export function WastageDesktop({ report }: { report: WastageReport | null }) {
             </nav>
             {/* A plain GET form: no script decides which machine is shown. */}
             <form method="get" action="/mis/reports" className="flex items-center gap-2">
-              <input type="hidden" name="weeks" value={report.range.weeks} />
+              {q.weeks ? <input type="hidden" name="weeks" value={q.weeks} /> : null}
               {unit ? <input type="hidden" name="unit" value={unit} /> : null}
+              {range ? <input type="hidden" name="freq" value={range.freq} /> : null}
+              {range ? <input type="hidden" name="at" value={range.at} /> : null}
               <label className="sr-only" htmlFor="d7-machine">{t('d7.machine')}</label>
               <select
                 id="d7-machine"
@@ -112,7 +147,7 @@ export function WastageDesktop({ report }: { report: WastageReport | null }) {
         }
         primary={
           <a
-            href={href('/api/mis/reports/wastage', q)}
+            href={href('/api/mis/reports/wastage', exportQ)}
             className="inline-flex min-h-11 items-center rounded-lg bg-indigo-600 px-5 text-sm font-semibold text-white hover:bg-indigo-700"
           >
             {t('d7.exportCsv')}
@@ -162,7 +197,7 @@ export function WastageDesktop({ report }: { report: WastageReport | null }) {
       ) : null}
 
       <Card>
-        <CardTitle right={unit ? `${u} · ${report.range.weeks} ${t('d7.weeks')}` : t('d7.chartNote')}>{t('d7.chartTitle')}</CardTitle>
+        <CardTitle right={unit ? `${u} · ${span}` : t('d7.chartNote')}>{t('d7.chartTitle')}</CardTitle>
         {hasWaste ? (
           <>
             <ul className="mb-3 flex flex-wrap gap-x-5 gap-y-1 text-sm text-slate-700">
@@ -250,7 +285,7 @@ export function WastageDesktop({ report }: { report: WastageReport | null }) {
             </span>
           </div>
           {report.topOrders.length > 0 ? (
-            <a href={href('/api/mis/reports/wastage', q) + '&part=orders'} className="mt-2 inline-flex min-h-11 items-center text-sm font-medium text-indigo-700 hover:underline">
+            <a href={href('/api/mis/reports/wastage', exportQ) + '&part=orders'} className="mt-2 inline-flex min-h-11 items-center text-sm font-medium text-indigo-700 hover:underline">
               {t('d7.exportOrders')}
             </a>
           ) : null}

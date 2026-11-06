@@ -18,7 +18,7 @@ import { OrderStockQuotaExceededError } from '@/lib/mis/order-allocation';
 import { isOrderClosed } from '@/lib/mis/order-status';
 import { positiveQty, roundQty } from '@/lib/mis/quantity';
 import { poStatusAfterReceipt, receiptVerdict } from '@/lib/mis/receipt-rules';
-import { isLowStock } from '@/lib/mis/stock-predicates';
+import { isLowStock, parseStockFilters, stockStatus } from '@/lib/mis/stock-predicates';
 import { itemLockKey, poItemLockKey } from '@/lib/mis/stock-lock-keys';
 import { lockStockKeys } from './stock-lock';
 import { notifyGeneralUse } from './store-notices';
@@ -440,18 +440,27 @@ export type StockSummaryRow = {
 };
 
 /** R2-134: the paged store stock summary (10 rows a page). `listStockSummary()` stays unpaginated for callers that need the whole book (totals, CSV). */
-export async function listStockSummaryPage(opts: { q?: string; page?: number | string } = {}): Promise<Paged<StockSummaryRow>> {
+export async function listStockSummaryPage(opts: { q?: string; page?: number | string; category?: string; status?: string } = {}): Promise<Paged<StockSummaryRow>> {
   const actor = await requirePermission('store.read');
   const q = parseSearch(opts.q);
+  const { category, status } = parseStockFilters(opts);
   const where: Prisma.MisItemWhereInput = {
     isActive: true,
     deletedAt: null,
+    ...(category ? { category } : {}),
     ...(q
       ? { OR: [{ name: { contains: q, mode: 'insensitive' } }, { code: { contains: q, mode: 'insensitive' } }, { sku: { contains: q, mode: 'insensitive' } }] }
       : {}),
   };
+  const balances = await getStockBalances();
+  // A status lives on the balance, not the item row, so it narrows the query to ids: the page and the total stay honest.
+  if (status) {
+    const all = await db.misItem.findMany({ where, select: { id: true, reorderLevel: true } });
+    const reorder = (level: unknown) => (level != null ? Number(level) : null);
+    where.id = { in: all.filter((i) => stockStatus(balances.get(i.id) ?? 0, reorder(i.reorderLevel)) === status).map((i) => i.id) };
+  }
   const { skip, take } = pageQuery(opts.page);
-  const [items, total, balances] = await Promise.all([
+  const [items, total] = await Promise.all([
     db.misItem.findMany({
       where,
       orderBy: [{ category: 'asc' }, { code: 'asc' }],
@@ -460,7 +469,6 @@ export async function listStockSummaryPage(opts: { q?: string; page?: number | s
       select: { id: true, code: true, sku: true, name: true, category: true, unit: true, reorderLevel: true, pricePerUnit: true, isDemo: true },
     }),
     db.misItem.count({ where }),
-    getStockBalances(),
   ]);
   const rows = items.map((item) => {
     const balance = balances.get(item.id) ?? 0;

@@ -13,15 +13,12 @@ import {
   getStoreReport,
   getMachineUtilisationReport,
 } from '@/server/mis/reports';
+import { addDaysToDateKey } from '@/lib/mis/factory-time';
 import { factoryRangeFromKeys, resolveRange } from '@/lib/mis/report-range';
 import { getFactoryTimezone } from '@/server/mis/business-rules';
 import { ReportsScreen, type ReportSection } from '@/components/mis/reports/reports-screen';
-import { WastageDesktop } from '@/components/mis/desktop/wastage-desktop';
+import { WastageDesktop, type WastageView } from '@/components/mis/desktop/wastage-desktop';
 import { getWastageReport } from '@/server/mis/reports';
-import { WEEK_CHOICES, type WastageReport } from '@/lib/mis/wastage';
-
-/** The wastage report is a trailing-weeks window, so the shared range picks the nearest offered span that covers it (4, 10, 13 or 26 weeks). */
-const weeksFor = (days: number) => WEEK_CHOICES.find((w) => w * 7 >= days) ?? WEEK_CHOICES[WEEK_CHOICES.length - 1];
 
 export default async function ReportsPage({
   searchParams,
@@ -94,9 +91,14 @@ export default async function ReportsPage({
   if (sp.view === 'classic') return phone;
   // The desktop report is a second query on a page the phone also serves. If it fails the phone screen must
   // still render, so a failure here is LOGGED (never swallowed) and the desktop half says it could not load.
-  let wastage: WastageReport | null = null;
+  // The window ends on the range's last day (a past `at` shows that past), never later than today. It starts on the
+  // range's first day too, unless the user picked a week button: `weeks` then counts back from that last day.
+  const lastKey = addDaysToDateKey(keyRange.toKey, -1);
+  let wastage: WastageView | null = null;
   try {
-    wastage = await getWastageReport({ weeks: sp.weeks ?? weeksFor(keyRange.days), machineId: sp.machine, unit: sp.unit });
+    const fromKey = sp.weeks ? undefined : keyRange.fromKey;
+    const report = await getWastageReport({ weeks: sp.weeks, fromKey, machineId: sp.machine, unit: sp.unit, lastKey });
+    wastage = { ...report, keyRange, exportFromKey: fromKey, exportLastKey: report.range.toKey === todayKey ? undefined : report.range.toKey };
   } catch (error) {
     console.error('[mis-reports] the wastage report failed to load', error);
   }

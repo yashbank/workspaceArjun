@@ -2,8 +2,9 @@
 import { useState, useTransition } from 'react';
 import Link from 'next/link';
 
-import { HiddenParams, Pagination } from '@/components/mis/kit/pagination';
-import { pageHref } from '@/lib/mis/pagination';
+import { Pagination } from '@/components/mis/kit/pagination';
+import { ListToolbar } from '@/components/mis/kit/list-toolbar';
+import { pageHref, type ListView } from '@/lib/mis/pagination';
 
 import { reconcileSupplierInvoiceAction } from '@/app/(mis)/mis/supplier-invoices/actions';
 import { Button } from '@/components/mis/kit/button';
@@ -66,7 +67,7 @@ type Props = {
   rows: SupplierInvoiceRow[];
   canReconcile: boolean;
   /** R2-83: the server-side page — the status filter and search are URL params, `counts` is per status over the search. */
-  paging?: { total: number; page: number; status: InvoiceStatus | ''; q: string; counts: Record<InvoiceStatus, number> };
+  paging?: { total: number; page: number; status: InvoiceStatus | ''; q: string; view?: ListView; counts: Record<InvoiceStatus, number> };
   /** R2-280: the Owner may sign off a discrepancy invoice's variance. */
   canSignOff?: boolean;
 };
@@ -80,7 +81,8 @@ export function SupplierInvoicesScreen({ rows, canReconcile, paging, canSignOff 
   const count = (s: InvoiceStatus) => (paging ? paging.counts[s] : rows.filter((r) => r.status === s).length);
   const allCount = paging ? INVOICE_STATUSES.reduce((n, s) => n + paging.counts[s], 0) : rows.length;
   const q = paging?.q ?? '';
-  const chipHref = (s: InvoiceStatus | '') => pageHref('/mis/supplier-invoices', { q, status: s }, 1);
+  const view = paging?.view;
+  const chipHref = (s: InvoiceStatus | '') => pageHref('/mis/supplier-invoices', { q, status: s, view }, 1);
   const hasFigures = rows.some((r) => r.figures);
   const hasMoney = rows.some((r) => r.money);
 
@@ -119,18 +121,10 @@ export function SupplierInvoicesScreen({ rows, canReconcile, paging, canSignOff 
         ))}
       </div>
 
-      <form method="get" className="flex items-center gap-2">
-        <HiddenParams params={{ status: paging?.status }} />
-        <input
-          type="search"
-          name="q"
-          placeholder="Search invoice, PO or supplier…"
-          defaultValue={q}
-          className="w-full max-w-sm min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500"
-        />
-        <Button type="submit" variant="secondary">Search</Button>
+      <ListToolbar basePath="/mis/supplier-invoices" params={{ q, status: paging?.status, view }} searchLabel="Search invoice, PO or supplier…" view={view} />
+      <div className="flex justify-end">
         <Button type="button" variant="secondary" disabled={shown.length === 0} onClick={() => downloadInvoiceCsv(shown)}>Export CSV</Button>
-      </form>
+      </div>
 
       {error && <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-800">{error}</div>}
 
@@ -139,7 +133,7 @@ export function SupplierInvoicesScreen({ rows, canReconcile, paging, canSignOff 
       ) : (
         <>
           {/* Phone: card stack */}
-          <ul className="flex flex-col gap-3 md:hidden">
+          <ul className={`flex flex-col gap-3 ${view === 'rows' ? 'hidden' : view ? '' : 'md:hidden'}`}>
             {shown.map((r) => (
               <li key={r.id} className={`rounded-2xl border p-4 ${CARD[r.status]}`}>
                 <div className="flex items-start justify-between gap-2">
@@ -170,7 +164,7 @@ export function SupplierInvoicesScreen({ rows, canReconcile, paging, canSignOff 
           </ul>
 
           {/* Desktop: table */}
-          <div className="relative hidden md:block w-full min-w-0 max-w-full overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+          <div className={`relative w-full ${view === 'rows' ? '' : view ? 'hidden' : 'hidden md:block'}  min-w-0 max-w-full overflow-x-auto rounded-2xl border border-slate-200 bg-white`}>
             <table className="w-full text-sm text-left text-slate-900">
               <thead className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 border-b border-slate-200">
                 <tr>
@@ -228,7 +222,7 @@ export function SupplierInvoicesScreen({ rows, canReconcile, paging, canSignOff 
           {voucher.money && <p>Expected {voucher.money.expected} · Invoice {voucher.money.invoiced ?? '—'} · Difference {voucher.money.variance ?? '—'}</p>}
         </div>
       )}
-      {paging && <Pagination basePath="/mis/supplier-invoices" params={{ q, status: paging.status }} page={paging.page} total={paging.total} />}
+      {paging && <Pagination basePath="/mis/supplier-invoices" params={{ q, status: paging.status, view }} page={paging.page} total={paging.total} />}
     </div>
   );
 }

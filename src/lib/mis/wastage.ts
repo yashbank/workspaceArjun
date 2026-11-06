@@ -94,15 +94,23 @@ export function windowKeys(lastKey: string, weeks: number): { fromKey: string; t
   return { fromKey: weekStarts(lastKey, weeks)[0], toKey: lastKey };
 }
 
+/** How many Monday-to-Sunday weeks a span touches. */
+export function weeksSpanned(fromKey: string, lastKey: string): number {
+  const monday = (key: string) => Date.parse(`${weekStartKey(key)}T00:00:00Z`);
+  return Math.round((monday(lastKey) - monday(fromKey)) / (7 * 86_400_000)) + 1;
+}
+
 const isSame = (a: string, b: string) => a.toUpperCase() === b.toUpperCase();
 
 export function buildWastage(
   logs: readonly WastageLog[],
-  options: { timeZone: string; lastKey: string; weeks: number; unit?: string | null; machineId?: string | null },
+  /** `fromKey` cuts the report to the days `fromKey`..`lastKey`, however long; without it the window is the trailing `weeks`. */
+  options: { timeZone: string; lastKey: string; weeks: number; fromKey?: string; unit?: string | null; machineId?: string | null },
 ): WastageReport {
-  const { timeZone, lastKey, weeks } = options;
+  const { timeZone, lastKey } = options;
+  const weeks = options.fromKey ? weeksSpanned(options.fromKey, lastKey) : options.weeks;
   const starts = weekStarts(lastKey, weeks);
-  const { fromKey, toKey } = windowKeys(lastKey, weeks);
+  const { fromKey, toKey } = options.fromKey ? { fromKey: options.fromKey, toKey: lastKey } : windowKeys(lastKey, weeks);
   const weekIndex = new Map(starts.map((key, i) => [key, i]));
 
   // Bucket by FACTORY date; anything outside the window (the caller over-fetches a day either side) is dropped.
@@ -150,7 +158,8 @@ export function buildWastage(
   // --- everything else respects the machine filter ------------------------------------------
   const scoped = machineId ? ofUnit.filter(({ log }) => log.machineId === machineId) : ofUnit;
 
-  const weekRows: WastageWeek[] = starts.map((startKey) => ({ key: startKey, startKey, total: 0, byKey: {} }));
+  // A cut range can start mid-week: the first row is labelled from the range's first day, not the Monday before it.
+  const weekRows: WastageWeek[] = starts.map((key) => ({ key, startKey: key < fromKey ? fromKey : key, total: 0, byKey: {} }));
   const orderAgg = new Map<string, { orderNumber: string; description: string | null; waste: number; produced: number }>();
   let waste = 0;
   let produced = 0;

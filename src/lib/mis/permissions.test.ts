@@ -92,7 +92,7 @@ const EXPECTED: Record<Role, Action[]> = {
 describe('the full matrix — every role × every action, against a hand-written copy', () => {
   it('the copy names every action and every role exactly once (a new action cannot slip past unlisted)', () => {
     expect(Object.keys(EXPECTED).sort()).toEqual([...MIS_ROLES].sort());
-    expect(MIS_ACTIONS.length).toBe(43); // +data.reset (Owner Danger Zone); // R3 B64 added attendance.note; R2-37 added po.view + grn.view; R2-263 added roster.write; R2-311 added qc.acknowledge
+    expect(MIS_ACTIONS.length).toBe(44); // +theme.write (R8 follow-up); +data.reset (Owner Danger Zone); // R3 B64 added attendance.note; R2-37 added po.view + grn.view; R2-263 added roster.write; R2-311 added qc.acknowledge
     expect(new Set(MIS_ACTIONS).size).toBe(MIS_ACTIONS.length);
     for (const role of MIS_ROLES) {
       for (const a of EXPECTED[role]) expect(MIS_ACTIONS, `${role} lists unknown action ${a}`).toContain(a);
@@ -114,7 +114,8 @@ describe('the full matrix — every role × every action, against a hand-written
 });
 
 describe('the actions that only an OWNER may hold — and nothing else does', () => {
-  const OWNER_ONLY: Action[] = ['wages.read', 'aql.read', 'users.invite', 'data.reset']; // R2-331: phase.reopen is now Admin too
+  // theme.write: Theme Studio changes the look for every user, so it is the Owner's alone (R8 follow-up).
+  const OWNER_ONLY: Action[] = ['wages.read', 'aql.read', 'users.invite', 'data.reset', 'theme.write']; // R2-331: phase.reopen is now Admin too
 
   it.each(OWNER_ONLY)('%s is held by OWNER and by no other role', (action) => {
     const holders = MIS_ROLES.filter((r) => can(r, action));

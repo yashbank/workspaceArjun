@@ -3,9 +3,9 @@ import { checkPermission } from '@/server/mis/auth';
 import { requireMisAccess } from '@/server/mis/guard';
 import { listSupplierInvoicesPage } from '@/server/mis/supplier-invoice';
 import { INVOICE_STATUSES, type InvoiceStatus } from '@/lib/mis/invoice-match';
-import { clampPage, parsePage, parseSearch } from '@/lib/mis/pagination';
+import { clampPage, parsePage, parseSearch, parseView } from '@/lib/mis/pagination';
 
-export default async function SupplierInvoicesPage({ searchParams }: { searchParams: Promise<{ q?: string; status?: string; page?: string }> }) {
+export default async function SupplierInvoicesPage({ searchParams }: { searchParams: Promise<{ q?: string; status?: string; page?: string; view?: string }> }) {
   await requireMisAccess();
   const sp = await searchParams;
   const q = parseSearch(sp.q);
@@ -17,7 +17,7 @@ export default async function SupplierInvoicesPage({ searchParams }: { searchPar
       rows={paged.rows}
       canReconcile={canReconcile}
       canSignOff={canSignOff}
-      paging={{ total: paged.total, page: clampPage(parsePage(sp.page), paged.total), status: status ?? '', q, counts: paged.counts }}
+      paging={{ total: paged.total, page: clampPage(parsePage(sp.page), paged.total), status: status ?? '', q, view: parseView(sp.view), counts: paged.counts }}
     />
   );
 }

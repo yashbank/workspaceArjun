@@ -437,6 +437,147 @@ describe.skipIf(!LOCAL_DB)('Danger Zone on a real Postgres', () => {
     }, 60_000);
   });
 
+  // Its own describe, not its own file: two files seeding this one database at once would wipe each other's rows.
+  describe('R8 follow-up: stock books and kept staff', () => {
+    const STOCK_TABLES = [
+      'mis_inventory_ledger', 'mis_store_transactions', 'mis_store_returns', 'mis_physical_counts', 'mis_order_stock_allocations', 'mis_quarantine_stock',
+      'mis_material_requests', 'mis_material_request_lines', 'mis_pick_lists', 'mis_pick_list_lines',
+    ];
+    const EVER = { from: new Date('2020-01-01'), to: new Date('2099-01-01') };
+    const item = rowId('mis_items', 2);
+    let inventory: typeof import('./inventory');
+    let store: typeof import('./store');
+    let reports: typeof import('./reports');
+    let legacy: typeof import('./legacy-issues');
+    let earmarks: typeof import('./order-allocation');
+    let returns: typeof import('./store-return');
+
+    const clear = async (ids: ResetGroupId[]) => {
+      const backup = await reset.createBackup({ groupIds: ids });
+      await reset.deleteSelectedData({ groupIds: ids, backupId: backup.id, confirm: 'DELETE' });
+      return backup;
+    };
+
+    /** Every figure a person can read about stock, by where they read it. */
+    async function stockViews(): Promise<Record<string, number[]>> {
+      const dash = await store.getStoreDashboard();
+      return {
+        'inventory page': (await inventory.getInventoryPage()).rows.map((r) => r.balance),
+        'inventory summary': (await inventory.getInventorySummary()).map((r) => r.balance),
+        'item balance': [(await inventory.getInventoryBalance(item)).balance],
+        'item ledger': (await inventory.listInventoryLedger(item)).map((r) => r.balanceQty.toNumber()),
+        'store items': (await store.listStoreItems()).map((r) => r.stockBalance),
+        'stock list': (await store.listStockSummary()).flatMap((r) => [r.stockBalance, r.stockValue ?? 0]),
+        'stock list page': (await store.listStockSummaryPage()).rows.flatMap((r) => [r.stockBalance, r.stockValue ?? 0]),
+        'item transactions': (await store.listStoreTxns(item)).map((r) => r.balanceQty),
+        'all transactions': (await store.listAllStoreTxns()).map((r) => r.balanceQty),
+        'transactions page': (await store.listAllStoreTxnsPage()).rows.map((r) => r.balanceQty),
+        'physical counts': (await store.listPhysicalCounts()).map((r) => r.systemQty),
+        'picker': (await store.listPickerItems()).map((r) => r.balance),
+        'cart balances': Object.values(await store.listItemBalances()),
+        'store report': (await reports.getStoreReport(EVER)).rows.flatMap((r) => [r.totalIn, r.totalOut]),
+        'legacy issues': (await legacy.listLegacyStoreIssues()).map((r) => r.balanceAfter),
+        'order earmarks': Object.values(await earmarks.listOpenOrderAllocations()).flat().map((r) => r.allocated),
+        'store returns': (await returns.listStoreReturns()).map((r) => r.quantity.toNumber()),
+        'store dashboard': [dash.todayIn, dash.todayOut, dash.totalStockValue ?? 0, ...dash.recentTxns.map((t) => t.balanceQty)],
+      };
+    }
+
+    beforeAll(async () => {
+      inventory = await import('./inventory');
+      store = await import('./store');
+      reports = await import('./reports');
+      legacy = await import('./legacy-issues');
+      earmarks = await import('./order-allocation');
+      returns = await import('./store-return');
+    });
+
+    beforeEach(async () => {
+      // Row 1 of the dummy world fills every column, deleted_at included. Stock must show before it can be proved gone.
+      await db.$executeRawUnsafe(`UPDATE mis_items SET deleted_at = NULL, is_active = true, price_per_unit = 5`);
+      await db.$executeRawUnsafe(`UPDATE mis_orders SET status = 'CONFIRMED'`);
+      await db.$executeRawUnsafe(`UPDATE mis_store_transactions SET type = 'IN', created_at = now()`);
+      await db.$executeRawUnsafe(`UPDATE mis_inventory_ledger SET source = 'STORE_ISSUE', source_id = NULL WHERE source = 'OPENING'`);
+    });
+
+    describe.each<[string, ResetGroupId[]]>([
+      ['customers', ['customers']],
+      ['orders', ['orders']],
+      ['purchasing', ['purchasing']],
+      ['inventory', ['inventory']],
+      ['clear-all', ALL_GROUPS],
+    ])('%s', (_name, ids) => {
+      it('the tree lists the books, every stock figure then reads 0, and a restore brings each one back', async () => {
+        const before = await stockViews();
+        for (const [view, figures] of Object.entries(before)) expect(figures.filter((n) => n !== 0).length, `${view} shows stock first`).toBeGreaterThan(0);
+        const rows = await snapshotRows(db, compared());
+
+        const { tree } = await reset.previewDelete({ groupIds: ids });
+        for (const t of STOCK_TABLES) expect(tree.find((r) => r.name === t)?.rows, t).toBeGreaterThan(0);
+
+        const backup = await clear(ids);
+        for (const t of STOCK_TABLES) expect(await rowCount(t), t).toBe(0);
+        for (const [view, figures] of Object.entries(await stockViews())) expect(figures.filter((n) => n !== 0), view).toEqual([]);
+
+        await reset.restoreBackup({ backupId: backup.id, confirm: 'RESTORE' });
+        expect(await stockViews()).toEqual(before);
+        expect(await snapshotRows(db, compared())).toEqual(rows);
+      }, 60_000);
+    });
+
+    it('the item list stays and shows 0, not blank, when only the books go', async () => {
+      await clear(['purchasing']);
+      expect((await inventory.getInventoryPage()).rows.map((r) => r.balance)).toEqual([0, 0]);
+      expect((await inventory.getInventoryPage()).outOfStock).toBe(2);
+      expect((await store.getStoreDashboard()).outOfStockCount).toBe(2);
+    }, 60_000);
+
+    it('both books start again from 0 after a clear, and agree', async () => {
+      await clear(['purchasing']);
+      await inventory.adjustInventory(item, 7, 'first stock after the clear');
+      expect((await inventory.getInventoryBalance(item)).balance).toBe(7);
+      expect((await store.listStockSummary()).find((r) => r.id === item)?.stockBalance).toBe(7);
+    }, 60_000);
+
+    it.each<ResetGroupId>(['production', 'stages', 'machine_allocation', 'attendance', 'finance', 'employees'])('%s leaves the stock books alone', async (id) => {
+      const before = await snapshotRows(db, STOCK_TABLES);
+      await clear([id]);
+      expect(await snapshotRows(db, STOCK_TABLES)).toEqual(before);
+    }, 60_000);
+
+    describe('Employees and worker allocations', () => {
+      const [cleared, kept] = [rowId('mis_worker_allocations', 1), rowId('mis_worker_allocations', 2)];
+      const allocations = async () => (await db.$queryRawUnsafe<{ id: string }[]>(`SELECT id::text FROM mis_worker_allocations ORDER BY id`)).map((r) => r.id);
+
+      beforeEach(async () => {
+        await db.$executeRawUnsafe(`UPDATE mis_worker_allocations SET employee_id = $1::uuid WHERE id = $2::uuid`, rowId('mis_employees', 3), kept);
+      });
+
+      it("a clear takes only removed people's rows, says so in the tree, and a restore puts them back", async () => {
+        const rows = await snapshotRows(db, compared());
+        const { tree } = await reset.previewDelete({ groupIds: ['employees'] });
+        expect(tree.find((r) => r.name === 'mis_worker_allocations')?.rows).toBe(1);
+
+        const backup = await reset.createBackup({ groupIds: ['employees'] });
+        const { perTable } = await reset.deleteSelectedData({ groupIds: ['employees'], backupId: backup.id, confirm: 'DELETE' });
+        expect(perTable.mis_worker_allocations).toBe(1);
+        expect(await allocations()).toEqual([kept]);
+        expect(await allocations()).not.toContain(cleared);
+
+        await reset.restoreBackup({ backupId: backup.id, confirm: 'RESTORE' });
+        expect(await snapshotRows(db, compared())).toEqual(rows);
+      }, 60_000);
+
+      it.each<[string, ResetGroupId[]]>([
+        ['the allocation group', ['employees', 'machine_allocation']],
+        ['a clear that reaches them through orders', ['employees', 'customers']],
+      ])('with %s selected too, every row goes', async (_name, ids) => {
+        await clear(ids);
+        expect(await allocations()).toEqual([]);
+      }, 60_000);
+    });
+  });
+
   it('the storage layer in use here is the local throwaway folder', () => {
     expect(storage.getStorageDriverName()).toBe('local');
   });

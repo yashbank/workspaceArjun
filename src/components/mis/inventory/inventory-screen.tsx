@@ -4,7 +4,9 @@ import Link from 'next/link';
 import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { Button } from '@/components/mis/kit/button';
-import { Pagination, HiddenParams } from '@/components/mis/kit/pagination';
+import { Pagination } from '@/components/mis/kit/pagination';
+import { ListToolbar } from '@/components/mis/kit/list-toolbar';
+import { parseView } from '@/lib/mis/pagination';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import { NumberInput, Input, Select } from '@/components/mis/kit/input';
 import { adjustInventoryAction, createItemAction, getItemFormOptionsAction, type ItemFormOptions } from '@/app/(mis)/mis/inventory/actions';
@@ -33,7 +35,7 @@ function downloadInventoryCsv(rows: InventoryRow[]) {
 }
 
 export function InventoryScreen({ summary, canWrite = false, canPrice = false, paging }: Props) {
-  const search = paging?.params.q ?? '';
+  const view = parseView(paging?.params.view);
   const [adjustItem, setAdjustItem] = useState<InventoryRow | null>(null);
   const [changeQty, setChangeQty] = useState('');
   const [adjNotes, setAdjNotes] = useState('');
@@ -156,18 +158,8 @@ export function InventoryScreen({ summary, canWrite = false, canPrice = false, p
       {/* Two rows on a phone — search on its own line, then the actions in a
           row that wraps evenly instead of one lonely button next to the search
           box and a stray full-width one below it. */}
+      <ListToolbar basePath="/mis/inventory" params={paging?.params ?? {}} searchLabel="Search items…" view={view} />
       <div className="flex flex-col gap-2">
-        <form method="get" className="flex items-center gap-2">
-          {paging && <HiddenParams params={paging.params} />}
-          <input
-          type="search"
-          placeholder="Search items..."
-            name="q"
-            defaultValue={search}
-          className="w-full min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500 sm:max-w-sm"
-          />
-          <Button type="submit" variant="secondary">Search</Button>
-        </form>
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => downloadInventoryCsv(filtered)}
@@ -196,7 +188,7 @@ export function InventoryScreen({ summary, canWrite = false, canPrice = false, p
         </div>
       </div>
 
-      <DataTable columns={columns} rows={filtered} rowKey={(r) => r.itemId} emptyTitle="Inventory empty" emptyBody="Confirm GRNs to add items to inventory." />
+      <DataTable columns={columns} rows={filtered} view={view} rowKey={(r) => r.itemId} emptyTitle="Inventory empty" emptyBody="Confirm GRNs to add items to inventory." />
       {paging && <Pagination basePath="/mis/inventory" params={paging.params} page={paging.page} total={paging.total} />}
 
       {/* Adjust Stock */}

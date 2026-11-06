@@ -2,14 +2,14 @@ import { requireMisAccess } from '@/server/mis/guard';
 import { checkPermission } from '@/server/mis/auth';
 import { listAllStoreTxnsPage, listIssueTargets, listStoreItems } from '@/server/mis/store';
 import { StoreTransactionsScreen } from '@/components/mis/store/store-transactions-screen';
-import { clampPage, parsePage, parseSearch } from '@/lib/mis/pagination';
+import { clampPage, parsePage, parseSearch, parseView } from '@/lib/mis/pagination';
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 export default async function StoreTransactionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; type?: string; itemId?: string; from?: string; to?: string; page?: string }>;
+  searchParams: Promise<{ q?: string; type?: string; itemId?: string; from?: string; to?: string; page?: string; view?: string }>;
 }) {
   await requireMisAccess();
   const sp = await searchParams;
@@ -32,7 +32,7 @@ export default async function StoreTransactionsPage({
       items={items}
       canWrite={canWrite}
       targets={targets}
-      paging={{ total: paged.total, page: clampPage(parsePage(sp.page), paged.total), params: { q, type, itemId, from, to } }}
+      paging={{ total: paged.total, page: clampPage(parsePage(sp.page), paged.total), params: { q, type, itemId, from, to, view: parseView(sp.view) } }}
     />
   );
 }

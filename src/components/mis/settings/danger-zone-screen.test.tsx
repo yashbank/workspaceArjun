@@ -54,6 +54,20 @@ describe('DangerZoneScreen', () => {
     await waitFor(() => expect(deleteDataAction).toHaveBeenCalledWith(['customers'], 'b1', 'DELETE'));
   });
 
+  it('says stock will read 0 when the tree holds the stock ledger, and only then', async () => {
+    render(<DangerZoneScreen overview={overview} />);
+    fireEvent.click(screen.getByText('I understand, continue'));
+    fireEvent.click(screen.getByRole('checkbox'));
+    await screen.findByText(/orders: 7/);
+    expect(screen.queryByText(/Stock will read 0/)).toBeNull();
+    fireEvent.click(screen.getByText('Cancel'));
+
+    previewDeleteAction.mockResolvedValueOnce({ ok: true, groups: ['customers'], tree: [{ name: 'mis_inventory_ledger', rows: 4, depth: 0 }] });
+    fireEvent.click(screen.getByRole('checkbox'));
+    await screen.findByText(/inventory ledger: 4/);
+    screen.getByText(/Stock will read 0/);
+  });
+
   it('Cancel drops the selection', async () => {
     render(<DangerZoneScreen overview={overview} />);
     fireEvent.click(screen.getByText('I understand, continue'));

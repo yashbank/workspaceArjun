@@ -46,14 +46,14 @@ export const RESET_GROUPS: readonly ResetGroup[] = [
   {
     id: 'customers',
     label: 'Customers',
-    description: 'The customer list, and every order and record that hangs off those orders.',
+    description: 'The customer list, and every order and record that hangs off those orders. Also the whole stock ledger and store books, so stock reads 0.',
     tables: ['mis_customers'],
     requires: [],
   },
   {
     id: 'orders',
     label: 'Orders and production',
-    description: 'Orders, bills of materials, production logs, QC checks, job phases, order documents and purchase orders with their receipts and invoices.',
+    description: 'Orders, bills of materials, production logs, QC checks, job phases, order documents and purchase orders with their receipts and invoices. Also the whole stock ledger and store books, so stock reads 0.',
     tables: ['mis_order_stock_allocations', 'mis_qc_checks', 'mis_production_log', 'mis_bom', 'mis_orders'],
     requires: [],
   },
@@ -81,7 +81,7 @@ export const RESET_GROUPS: readonly ResetGroup[] = [
   {
     id: 'purchasing',
     label: 'Purchasing',
-    description: 'Suppliers, purchase orders, goods received notes and supplier invoices.',
+    description: 'Suppliers, purchase orders, goods received notes and supplier invoices. Also the whole stock ledger and store books, so stock reads 0.',
     tables: [
       'mis_supplier_invoices',
       'mis_quarantine_stock',
@@ -148,8 +148,8 @@ export const RESET_GROUPS: readonly ResetGroup[] = [
     id: 'employees',
     label: 'Employees (workers and staff)',
     description:
-      'Employee records without a sign-in. Owner, Admin and every person who can sign in are kept. Also clears attendance and finance, which depend on employees. Production logs and job phases stay, with the cleared person taken off them.',
-    tables: ['mis_worker_allocations', 'mis_employees'],
+      'Employee records without a sign-in. Owner, Admin and every person who can sign in are kept, with their worker allocations. Also clears attendance and finance, which depend on employees. Production logs and job phases stay, with the cleared person taken off them.',
+    tables: ['mis_employees'],
     requires: ['attendance', 'finance'],
   },
 ] as const;
@@ -210,6 +210,9 @@ export const PROTECTED_TABLES: readonly string[] = [
 /** Rows of mis_employees that a delete must never touch: anyone who can sign in, and every Owner/Admin. */
 export const EMPLOYEE_KEEP_WHERE = `user_profile_id IS NULL AND role::text NOT IN ('OWNER', 'ADMIN')`;
 
+/** When Employees alone reaches mis_worker_allocations, only the removed people's rows go: kept staff keep theirs. */
+export const WORKER_ALLOCATION_KEEP_WHERE = `employee_id IN (SELECT id FROM mis_employees WHERE ${EMPLOYEE_KEEP_WHERE})`;
+
 /** Table names are interpolated into SQL, so only plain lowercase mis_ names are ever accepted. */
 export function isSafeTableName(name: string): boolean {
   return /^mis_[a-z0-9_]+$/.test(name);
@@ -226,18 +229,27 @@ const childStays = (e: FkEdge) => e.onDelete === 'n' && PARTLY_CLEARED_TABLES.in
 
 /**
  * Links the database cannot see: the column holds a parent's id with no foreign key. Clearing the parent would leave
- * these rows pointing at nothing, so they are walked like real foreign keys. Polymorphic `source_id` columns are not
- * walked: see SOURCE_LINKS.
+ * these rows pointing at nothing, so they are walked like real foreign keys.
+ *
+ * The stock books are walked this way too. Their balances run row to row, so they go whole, never by source: anything
+ * that clears what they recorded (orders, GRNs) clears every row, OPENING included, and each record of a past balance
+ * with them. That is what makes stock read 0 on the ledger's screens and the store book's alike. mis_items stays.
  */
 export const LOOSE_LINKS: readonly FkEdge[] = [
   { child: 'mis_document_versions', parent: 'mis_orders' }, // ref_id: COA and JOB_CARD both belong to an order
   { child: 'mis_quarantine_stock', parent: 'mis_grn_items' }, // grn_item_id
   { child: 'mis_purchase_orders', parent: 'mis_orders' }, // bom_ref: a FOR_ORDER PO names the order number, and a CHECK keeps it set
+  { child: 'mis_inventory_ledger', parent: 'mis_orders' }, // source_id: STORE_ISSUE
+  { child: 'mis_inventory_ledger', parent: 'mis_grns' }, // source_id: GRN, GRN_REVERSAL
+  { child: 'mis_store_transactions', parent: 'mis_inventory_ledger' }, // the second book of the same movements
+  { child: 'mis_order_stock_allocations', parent: 'mis_inventory_ledger' }, // earmarks of stock that is gone
+  { child: 'mis_physical_counts', parent: 'mis_inventory_ledger' }, // system_qty: reconciling one would book a stale variance
+  { child: 'mis_material_requests', parent: 'mis_inventory_ledger' }, // issued quantities, and the pick lists holding stock
 ];
 
 /**
- * `source_id` means a different parent per `source`, so no foreign key can hold it. These rows are the stock books and
- * stay when a parent is cleared: the delete blanks the id instead, and a restore puts it back.
+ * `source_id` means a different parent per `source`, so no foreign key can hold it. A clear takes these tables with their
+ * parents (LOOSE_LINKS). A clear from before that blanked the id and kept the row, so a restore still refills it.
  */
 export const SOURCE_LINKS: readonly { table: string; source: string; parent: string }[] = [
   { table: 'mis_inventory_ledger', source: 'STORE_ISSUE', parent: 'mis_orders' },

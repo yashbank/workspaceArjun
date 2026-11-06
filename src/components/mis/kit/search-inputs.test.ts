@@ -20,7 +20,8 @@ const searchInputs = FILES.flatMap((file) => {
 
 describe('search inputs', () => {
   it('found them (a broken scan would pass vacuously)', () => {
-    expect(searchInputs.length).toBeGreaterThanOrEqual(25);
+    // 21, was 25: inventory, store stock, store transactions and supplier invoices now use the shared ListToolbar (one SearchInput) instead of their own <input>.
+    expect(searchInputs.length).toBeGreaterThanOrEqual(21);
   });
 
   it.each(searchInputs.map((s, i) => [`${s.file} #${i}`, s.tag]))('%s is 48px tall, 16px text, on a white ground with a readable border', (_name, tag) => {

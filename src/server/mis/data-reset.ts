@@ -13,6 +13,7 @@ import {
   RESET_GROUPS,
   SOURCE_LINKS,
   TRUNCATE_TABLES,
+  WORKER_ALLOCATION_KEEP_WHERE,
   backupName,
   blankedTables,
   cascadeRows,
@@ -44,14 +45,15 @@ import { requirePermission } from './auth';
  *      nothing is deleted if any table the delete changes differs from the backup: more rows, or a row hash that moved.
  *   3. The delete walks every foreign key from the selected tables, set-null links included, so nothing is orphaned. It
  *      runs children first in ONE transaction with the tables locked. If any step is refused, nothing is deleted.
- *      A surviving row's `source_id` into a cleared table is blanked (SOURCE_LINKS), so no id is left dangling. A set-null
- *      child of partly cleared mis_employees stays too, and the database blanks its link to each cleared row.
+ *      The stock books go whole with what they recorded (LOOSE_LINKS), so stock reads 0 and no `source_id` is left dangling.
+ *      A set-null child of partly cleared mis_employees stays, and the database blanks its link to each cleared row.
  *   4. Sign-in accounts, Owner/Admin employees, the audit log, paired tablets and settings/masters are never deleted.
  *   5. A restore only ADDS back rows that are missing (ON CONFLICT DO NOTHING) and refills blank links to the parents it
  *      just brought back, the only way a delete's blanking can be told from a link cleared on purpose. It never overwrites
  *      or removes anything, so it is safe to run twice. A row that would clash on a second unique key stops the whole
  *      restore, by table name. A JSON `null` stored in a jsonb column comes back as SQL NULL: to_jsonb cannot tell them
- *      apart, and the app never writes a JSON null.
+ *      apart, and the app never writes a JSON null. A stock book that lost rows to a clear and has new rows since is
+ *      refused whole, by table name: its latest row is the balance, and two histories cannot be merged.
  *   6. In production, backups must go to real object storage; the local-disk driver is refused there.
  */
 
@@ -73,6 +75,8 @@ const JSON_TYPE = 'application/json';
  * BEFORE trigger also fires on a row ON CONFLICT would skip, so rows already here are left out by hand.
  */
 const PHASE_RESTORE_ORDER = ' WHERE NOT EXISTS (SELECT 1 FROM mis_job_phases p WHERE p.id = x.id) ORDER BY x.sequence DESC';
+/** Each row's balance follows the row before it, and the latest row by created_at is the balance. */
+const STOCK_BOOKS = ['mis_inventory_ledger', 'mis_store_transactions'];
 
 export type BackupSummary = { id: string; name: string; createdAt: string; createdBy: string; totalRows: number };
 /** `checksums` maps each file in the backup folder to its SHA-256. */
@@ -115,7 +119,11 @@ async function foreignKeys(tx: Tx): Promise<FkEdge[]> {
   );
 }
 
-const keepWhere = (t: string) => (t === 'mis_employees' ? ` WHERE ${EMPLOYEE_KEEP_WHERE}` : '');
+/** The WHERE of a table a clear only partly empties. `keepAllocations`: nothing but Employees reaches mis_worker_allocations. */
+function keepWhere(t: string, keepAllocations = false) {
+  if (t === 'mis_employees') return ` WHERE ${EMPLOYEE_KEEP_WHERE}`;
+  return keepAllocations && t === 'mis_worker_allocations' ? ` WHERE ${WORKER_ALLOCATION_KEEP_WHERE}` : '';
+}
 
 async function count(tx: Tx, table: string, where = ''): Promise<number> {
   const rows = await tx.$queryRawUnsafe<{ n: number }[]>(`SELECT count(*)::int AS n FROM ${q(table)}${where}`);
@@ -135,9 +143,9 @@ async function tableStates(tx: Tx, tables: readonly string[]) {
 }
 
 /** What a clear would really remove, which is what the Owner must be shown: the kept Owner and Admin rows do not count. */
-async function clearableCountsFor(tx: Tx, tables: readonly string[]): Promise<Record<string, number>> {
+async function clearableCountsFor(tx: Tx, tables: readonly string[], keepAllocations = false): Promise<Record<string, number>> {
   const out: Record<string, number> = {};
-  for (const t of tables) out[t] = await count(tx, t, keepWhere(t));
+  for (const t of tables) out[t] = await count(tx, t, keepWhere(t, keepAllocations));
   return out;
 }
 
@@ -152,11 +160,12 @@ async function planDelete(tx: Tx, groupIds: readonly ResetGroupId[]) {
   const fks = await foreignKeys(tx);
   const { tables, refused } = deleteSetFor(roots, fks);
   if (refused) throw new DataResetError(`Clearing this would also touch ${refused}, which is protected. Nothing was changed.`);
-  const sourceBlanked = SOURCE_LINKS.filter((l) => tables.includes(l.parent) && !tables.includes(l.table)).map((l) => l.table);
+  const withoutEmployees = tablesForGroups(groupIds.filter((id) => id !== 'employees')).filter((t) => present.has(t));
   return {
     tables: tables.filter((t) => present.has(t)),
     /** Not cleared, but the delete still blanks links in them, so the backup must cover them too. */
-    blanked: [...new Set([...blankedTables(tables, fks), ...sourceBlanked])].filter((t) => present.has(t)),
+    blanked: blankedTables(tables, fks).filter((t) => present.has(t)),
+    keepAllocations: !deleteSetFor(withoutEmployees, fks).tables.includes('mis_worker_allocations'),
     roots,
     fks,
   };
@@ -249,7 +258,7 @@ export async function previewDelete(input: { groupIds: string[] }) {
   if (ids.length === 0) throw new DataResetError('Choose at least one kind of data.');
   return db.$transaction(async (tx) => {
     const plan = await planDelete(tx, expandGroups(ids));
-    const counts = await clearableCountsFor(tx, plan.tables);
+    const counts = await clearableCountsFor(tx, plan.tables, plan.keepAllocations);
     return { groups: expandGroups(ids), tree: cascadeRows(plan.roots, plan.fks, counts) };
   });
 }
@@ -353,12 +362,8 @@ export async function deleteSelectedData(input: { groupIds: string[]; backupId: 
           await tx.$executeRawUnsafe(`TRUNCATE ${q(t)}`);
           removed[t] = current[t];
         } else {
-          removed[t] = await tx.$executeRawUnsafe(`DELETE FROM ${q(t)}${keepWhere(t)}`);
+          removed[t] = await tx.$executeRawUnsafe(`DELETE FROM ${q(t)}${keepWhere(t, plan.keepAllocations)}`);
         }
-      }
-      for (const l of SOURCE_LINKS) {
-        if (!plan.tables.includes(l.parent) || plan.tables.includes(l.table)) continue;
-        await tx.$executeRawUnsafe(`UPDATE ${q(l.table)} SET source_id = NULL WHERE source = $1 AND source_id IS NOT NULL`, l.source);
       }
       return removed;
     },
@@ -404,6 +409,20 @@ export async function restoreBackup(input: { backupId: string; confirm: string }
       );
       const pkOf = (t: string) => pks.filter((p) => p.t === t).map((p) => p.col);
       const samePk = (t: string) => pkOf(t).map((c) => `x.${q(c)} = b.${q(c)}`).join(' AND ');
+      for (const t of STOCK_BOOKS) {
+        if (!files[t] || !present.has(t)) continue;
+        // Held until commit, so nothing can be posted between this check and the insert.
+        await tx.$executeRawUnsafe(`LOCK TABLE ${q(t)} IN EXCLUSIVE MODE`);
+        const backedUp = `jsonb_populate_recordset(NULL::${q(t)}, $1::jsonb) b`;
+        const [book] = await tx.$queryRawUnsafe<{ lost: boolean; posted: boolean }[]>(
+          `SELECT EXISTS (SELECT 1 FROM ${backedUp} WHERE NOT EXISTS (SELECT 1 FROM ${q(t)} x WHERE ${samePk(t)})) AS lost,
+                  EXISTS (SELECT 1 FROM ${q(t)} x WHERE NOT EXISTS (SELECT 1 FROM ${backedUp} WHERE ${samePk(t)})) AS posted`,
+          files[t],
+        );
+        if (book.lost && book.posted) {
+          throw new DataResetError(`The restore stopped at ${t}: stock was posted there since the clear, and the old history cannot be merged with the new one. Nothing was changed. Clear the stock books again, then restore.`);
+        }
+      }
       const added: Record<string, number> = {};
       /** The primary keys this restore really put back, per table. */
       const broughtBack: Record<string, string[]> = {};

@@ -1,9 +1,10 @@
 'use client';
-import { useState } from 'react';
 import Link from 'next/link';
 import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
-import { Pagination, HiddenParams } from '@/components/mis/kit/pagination';
+import { Pagination } from '@/components/mis/kit/pagination';
+import { ListToolbar } from '@/components/mis/kit/list-toolbar';
+import { parseView } from '@/lib/mis/pagination';
 
 type StockRow = {
   id: string;
@@ -65,19 +66,10 @@ function downloadCsv(rows: StockRow[], isOwner: boolean) {
 }
 
 export function StoreStockScreen({ rows, isOwner, totalValueLabel = null, paging }: Props) {
-  const [categoryFilter, setCategoryFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
   const search = paging?.params.q ?? '';
-
-  const filtered = rows.filter((r) => {
-    const matchCat = !categoryFilter || r.category === categoryFilter;
-    const matchStatus =
-      !statusFilter ||
-      (statusFilter === 'critical' && r.stockBalance <= 0) ||
-      (statusFilter === 'warning' && r.belowReorder && r.stockBalance > 0) ||
-      (statusFilter === 'ok' && !r.belowReorder && r.stockBalance > 0);
-    return matchCat && matchStatus;
-  });
+  const categoryFilter = paging?.params.category ?? '';
+  const statusFilter = paging?.params.status ?? '';
+  const view = parseView(paging?.params.view);
 
   const criticalCount = rows.filter((r) => r.stockBalance <= 0).length;
   const warnCount = rows.filter((r) => r.belowReorder && r.stockBalance > 0).length;
@@ -176,7 +168,7 @@ export function StoreStockScreen({ rows, isOwner, totalValueLabel = null, paging
           </p>
         </div>
         <button
-          onClick={() => downloadCsv(filtered, isOwner)}
+          onClick={() => downloadCsv(rows, isOwner)}
           className="inline-flex min-h-11 items-center justify-center px-3 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-700"
         >
           ↓ CSV
@@ -197,19 +189,13 @@ export function StoreStockScreen({ rows, isOwner, totalValueLabel = null, paging
       )}
 
       {/* Filters */}
-      <form method="get" className="flex flex-wrap gap-3">
-        {paging && <HiddenParams params={paging.params} />}
-        <input
-          type="search"
-          placeholder="Search by name, code or SKU…"
-          name="q"
-          defaultValue={search}
-          className="w-full max-w-xs min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500"
-        />
-        <button type="submit" className="min-h-12 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">Search</button>
+      <ListToolbar basePath="/mis/store/stock" params={paging?.params ?? {}} searchLabel="Search by name, code or SKU…" view={view}>
+        {(go) => (
+          <>
         <select
+          aria-label="Category"
           value={categoryFilter}
-          onChange={(e) => setCategoryFilter(e.target.value)}
+          onChange={(e) => go({ category: e.target.value || undefined })}
           className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
         >
           <option value="">All Categories</option>
@@ -219,8 +205,9 @@ export function StoreStockScreen({ rows, isOwner, totalValueLabel = null, paging
           <option value="OTHER">Other</option>
         </select>
         <select
+          aria-label="Status"
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
+          onChange={(e) => go({ status: e.target.value || undefined })}
           className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
         >
           <option value="">All Status</option>
@@ -228,11 +215,14 @@ export function StoreStockScreen({ rows, isOwner, totalValueLabel = null, paging
           <option value="warning">Low Stock</option>
           <option value="ok">OK</option>
         </select>
-      </form>
+          </>
+        )}
+      </ListToolbar>
 
       <DataTable
         columns={columns}
-        rows={filtered}
+        rows={rows}
+        view={view}
         rowKey={(r) => r.id}
         emptyTitle="No items"
         emptyBody={search || categoryFilter || statusFilter ? 'Try clearing filters.' : 'No items configured.'}
