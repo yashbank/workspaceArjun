@@ -47,8 +47,10 @@ const href = (base: string, q: Query, over: Partial<Query> = {}) => {
   return `${base}?${params.toString()}`;
 };
 
-/** `range` is the shared `?freq=&at=` range; `lastKey` is set only for a past range (the CSV export needs it). */
-export function WastageDesktop({ report, range, lastKey }: { report: WastageReport | null; range?: KeyRange; lastKey?: string }) {
+/** `keyRange` is the shared `?freq=&at=` range; `exportLastKey` is set only for a past range (the CSV export needs it). */
+export type WastageView = WastageReport & { keyRange?: KeyRange; exportLastKey?: string };
+
+export function WastageDesktop({ report }: { report: WastageView | null }) {
   const t = useT();
   if (!report) {
     return (
@@ -57,6 +59,7 @@ export function WastageDesktop({ report, range, lastKey }: { report: WastageRepo
       </p>
     );
   }
+  const { keyRange: range, exportLastKey: lastKey } = report;
   const unit = report.unit;
   const u = unit ? unitLabel(unit) : '';
   const q: Query = { weeks: report.range.weeks, machine: report.machineId, unit, freq: range?.freq, at: range?.at };

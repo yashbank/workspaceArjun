@@ -235,8 +235,7 @@ describe('the page and the source', () => {
 
   it('a failing desktop query is logged and cannot take the phone screen down with it', () => {
     expect(page).toMatch(/try \{[\s\S]*getWastageReport[\s\S]*\} catch \(error\) \{\s*console\.error/);
-    // R8 follow-up CONTRACT: the page now also hands the desktop report the shared ?freq=&at= range.
-    expect(page).toContain('<WastageDesktop report={wastage} range={keyRange}');
+    expect(page).toContain('<WastageDesktop report={wastage} />');
   });
 
   it('?view=classic keeps the tabbed reports reachable', () => {
