@@ -33,7 +33,7 @@ import { logAuditEvent } from '@/server/mis/audit';
 import { requirePermission } from '@/server/mis/auth';
 import { resolveEmployeeShiftId } from '@/server/mis/shift-roster';
 import { employeeCodeCandidates } from '@/lib/mis/employee-code-style';
-import { getCorrectionWindowDays, getEmployeeCodeStyle, getFactoryTimezone, getLunchBreakMinutes, getRuleValue } from '@/server/mis/business-rules';
+import { getCorrectionWindowDays, getFactoryTimezone, getLunchBreakMinutes, getRuleValue } from '@/server/mis/business-rules';
 import { runIdempotent, type IdempotentResult, type MisTx, type RunOptions } from '@/server/mis/idempotency';
 import {
   authenticateDevice,
@@ -185,11 +185,15 @@ async function applyPunch(
   const employeeSelect = { id: true, name: true, isActive: true, deletedAt: true, payType: true } as const;
   let employee = await tx.misEmployee.findFirst({ where: { employeeCode: payload.badgeCode }, select: employeeSelect });
   if (!employee) {
-    // Exact miss: try the code style's normalised forms (stored codes are never rewritten).
-    const style = await getEmployeeCodeStyle();
-    for (const candidate of employeeCodeCandidates(payload.badgeCode, style).filter((c) => c !== payload.badgeCode)) {
-      employee = await tx.misEmployee.findFirst({ where: { employeeCode: candidate }, select: employeeSelect });
-      if (employee) break;
+    // Exact miss: SAFE fallback only (never folds digits-only/partial input). Cleaned exact text wins;
+    // otherwise the well-formed cross-style forms must identify exactly one stored employee, else not found.
+    const [cleaned, ...fallbacks] = employeeCodeCandidates(payload.badgeCode);
+    const toTry = [cleaned, ...fallbacks].filter((c): c is string => !!c && c !== payload.badgeCode);
+    if (toTry.length) {
+      const rows = await tx.misEmployee.findMany({ where: { employeeCode: { in: toTry } }, select: { ...employeeSelect, employeeCode: true } });
+      const direct = rows.filter((r) => r.employeeCode === cleaned);
+      const hits = direct.length ? direct : rows;
+      if (hits.length === 1) employee = hits[0];
     }
   }
   const scanned = `${formatFactoryTime(recordedAt, timeZone)} · code ${payload.badgeCode}`;

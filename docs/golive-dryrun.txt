@@ -4,6 +4,7 @@ shifts=5 users=27 employees=149 dups=[] shifts_used=5 issues=0
 ### pnpm golive:wipe (dry run)
 DB host: aws-1-ap-southeast-1.pooler.supabase.com:5432  db: postgres  project ref: kmaxtksmeabmmlervpjl  expected: kmaxtksmeabmmlervpjl
 MODE: DRY RUN (read-only; no changes)
+
 WOULD delete:
   attendance punches (TRUNCATE)                        259
   attendance breaks                                    0
@@ -98,15 +99,25 @@ Protected employees (67):
   EMP-OP-01 Ramesh Kumar - production log
   EMP0061 Amod sah - linked to user account, production log
   EMP-ABDULBAS-0URW Abdul Basit - linked to user account, production log
+Closed payroll periods: 0; payslip releases: 0
+Unprocessed kiosk punch writes (IN_FLIGHT/PARKED): 1 -> needs ALLOW_QUEUE_WIPE=1
+
 DRY RUN only. Nothing changed.
 
 ### pnpm golive:load (dry run)
 DB host: aws-1-ap-southeast-1.pooler.supabase.com:5432  db: postgres  project ref: kmaxtksmeabmmlervpjl  expected: kmaxtksmeabmmlervpjl
 MODE: DRY RUN (read-only; no changes)
+
 WOULD apply:
   shifts   create 4 (Day Shift, General Shift, General Ladies, House Keeping), update times 1 (Night Shift 22:00-06:00 -> 20:00-05:00), unchanged 0
   departments create 13 (Administration, Notebook production, Notebook QC, Store, Packaging QC, Maintenance, House Keeping, Packaging Production, Pinned Line, Packaging, Binding, Lamination, Packing), existing 3
-  employees create 140, update 9 (of which user-linked, role kept: 0), total in file 149
+  employees create 140, update 3, SKIPPED protected (production-referenced or user-linked) 6, total in file 149
+    skip EMP004 Ranjeeth kumar: production-referenced
+    skip EMP005 Bhumesh: production-referenced
+    skip EMP006 Rajeevi kumar: production-referenced
+    skip EMP007 Y.Srinu: production-referenced
+    skip EMP008 K.Shiva kumar: production-referenced
+    skip EMP009 Sanam yadav: production-referenced
   CODE COLLISIONS (existing code, different person; update would rename history): 9
     EMP001: DB 'Giradharial Dhard' -> file 'Girdharilal Dhard'
     EMP002: DB 'CH.V.Satyanarayana' -> file 'D.Srinivas'
@@ -117,6 +128,48 @@ WOULD apply:
     EMP007: DB 'Y.Srinu' -> file 'G.Prasad'
     EMP008: DB 'K.Shiva kumar' -> file 'M.Praveen Reddy'
     EMP009: DB 'Sanam yadav' -> file 'Kanthi Mallesh'
+  SHIFT TIME CHANGE: Night Shift 22:00-06:00 -> 20:00-05:00 (needs ALLOW_SHIFT_TIME_CHANGE=1 to execute)
   employees with unresolved shift: 0
   existing DB employees NOT in file (untouched): 75
+
 DRY RUN only. Nothing changed.
+
+### create-users (dry run)
+Input: /Users/yashbankar/MIS-ArjunBhaskar/Workspace Arjun - Live Project/Arjun/app/data/golive/cleaned-users.json
+DB host: aws-1-ap-southeast-1.pooler.supabase.com:5432  db: postgres  project ref: kmaxtksmeabmmlervpjl  expected: kmaxtksmeabmmlervpjl
+MODE: DRY RUN (read-only; no changes)
+
+
+DRY RUN - 27 users
+  arjun.bhaskar@bpp-demo.com                     OWNER                      Arjun Bhaskar  [SKIP ambiguous: EMP-001 is already linked to a user]
+  girdharilal.dhard@bpp-demo.com                 ADMIN                      Girdharilal Dhard  [SKIP ambiguous: file code EMP001 belongs to 'Giradharial Dhard', a different name]
+  d.srinivas@bpp-demo.com                        ADMIN                      D.Srinivas  [SKIP ambiguous: name matches EMP0013 but file code EMP002 is 'CH.V.Satyanarayana']
+  kalla.naga.surya.appa.rao@bpp-demo.com         ADMIN                      Kalla Naga Surya Appa Rao  [SKIP ambiguous: file code EMP003 belongs to 'Shankar lal sharma', a different name]
+  chv.satyanarayana@bpp-demo.com                 QC                         CHV.Satyanarayana  [SKIP ambiguous: file code EMP004 belongs to 'Ranjeeth kumar', a different name]
+  kali.charan@bpp-demo.com                       SUPERVISOR                 Kali charan  [SKIP ambiguous: name matches EMP0059 but file code EMP005 is 'Bhumesh']
+  g.s.joshi@bpp-demo.com                         SUPERVISOR                 G.S. Joshi  [SKIP ambiguous: file code EMP006 belongs to 'Rajeevi kumar', a different name]
+  g.prasad@bpp-demo.com                          ADMIN                      G.Prasad  [SKIP ambiguous: name matches EMP0011 but file code EMP007 is 'Y.Srinu']
+  m.praveen.reddy@bpp-demo.com                   ADMIN                      M.Praveen Reddy  [SKIP ambiguous: name matches EMP0060 but file code EMP008 is 'K.Shiva kumar']
+  kanthi.mallesh@bpp-demo.com                    STORE_GUY                  Kanthi Mallesh  [SKIP ambiguous: file code EMP009 belongs to 'Sanam yadav', a different name]
+  janga.suguna@bpp-demo.com                      QC                         Janga Suguna  [NEW employee]
+  b.malathi@bpp-demo.com                         QC                         B.Malathi  [LINK EMP0023]
+  m.rajeswari@bpp-demo.com                       QC                         M.Rajeswari  [NEW employee]
+  g.mahesh.kumar@bpp-demo.com                    QC                         G.Mahesh Kumar  [NEW employee]
+  uma.maheshwari@bpp-demo.com                    QC                         Uma Maheshwari  [NEW employee]
+  b.kumari@bpp-demo.com                          SUPERVISOR                 B.kumari  [LINK EMP0030]
+  prakash.mahapatra@bpp-demo.com                 SUPERVISOR                 Prakash Mahapatra  [LINK EMP0043]
+  madhukar@bpp-demo.com                          STORE_GUY                  Madhukar  [NEW employee]
+  k.kalyani@bpp-demo.com                         SUPER_ATTENDANCE_OPERATOR  K.Kalyani  [NEW employee]
+  chander.kishore@bpp-demo.com                   SUPERVISOR                 chander kishore  [NEW employee]
+  vineet.gothi@bpp-demo.com                      SUPERVISOR                 Vineet gothi  [NEW employee]
+  pravalika@bpp-demo.com                         SUPERVISOR                 Pravalika  [NEW employee]
+  ranjeet.kumar@bpp-demo.com                     SUPERVISOR                 Ranjeet Kumar  [NEW employee]
+  shankarlal.sharma@bpp-demo.com                 STORE_GUY                  Shankarlal Sharma  [LINK EMP003]
+  vali@bpp-demo.com                              SUPERVISOR                 Vali  [NEW employee]
+  dinesh@bpp-demo.com                            SUPERVISOR                 Dinesh  [NEW employee]
+  somnath.biswal@bpp-demo.com                    QC                         Somnath Biswal  [NEW employee]
+
+Kiosk employee: link existing 4, create new 13, skipped ambiguous 10
+Seats: max_users 500; active 14 + pending invites 2 + to create 17 = 33 -> ok
+
+Nothing written. Re-run with --execute to create.

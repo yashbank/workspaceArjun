@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { validatePassword } from '@/lib/password-policy';
 
-import { buildEmails, csvCell, emailLocalPart, generateTempPassword, mapSheetRole } from './golive-users';
+import { buildEmails, csvCell, emailLocalPart, generateTempPassword, mapSheetRole, resolveKioskLink } from './golive-users';
 
 describe('emailLocalPart', () => {
   it.each([
@@ -36,6 +36,8 @@ describe('mapSheetRole', () => {
     ['Supervisor', 'SUPERVISOR'],
     ['QC', 'QC'],
     ['Store', 'STORE_GUY'],
+    ['Store Guy', 'STORE_GUY'],
+    ['store keeper', 'STORE_GUY'],
     ['super Attendance', 'SUPER_ATTENDANCE_OPERATOR'],
     ['Super Attendance Operator', 'SUPER_ATTENDANCE_OPERATOR'],
   ])('%s -> %s', (l, r) => expect(mapSheetRole(l)).toBe(r));
@@ -55,5 +57,26 @@ describe('csvCell', () => {
   it('quotes and neutralises formulas', () => {
     expect(csvCell('a,b')).toBe('"a,b"');
     expect(csvCell('=1+1')).toBe("'=1+1");
+  });
+});
+
+describe('resolveKioskLink', () => {
+  const e = (id: string, employeeCode: string, name: string, userProfileId: string | null = null) => ({ id, employeeCode, name, userProfileId });
+  it('links one unlinked match by normalised name', () => {
+    expect(resolveKioskLink('d.  SRINIVAS', [e('1', 'EMP002', 'D.Srinivas')], null)).toEqual({ kind: 'link', employeeId: '1', employeeCode: 'EMP002' });
+  });
+  it('new when nothing matches', () => expect(resolveKioskLink('Nobody', [e('1', 'EMP002', 'X')], null)).toEqual({ kind: 'new' }));
+  it('code row with a different name is never linked (ambiguous)', () => {
+    expect(resolveKioskLink('Someone', [e('1', 'EMP002', 'Other Name')], 'emp002').kind).toBe('ambiguous');
+  });
+  it('name and code agreeing links', () => {
+    expect(resolveKioskLink('A B', [e('1', 'EMP1', 'a  b')], 'EMP1').kind).toBe('link');
+  });
+  it('ambiguous when name and code hit different people, or two name hits', () => {
+    expect(resolveKioskLink('A B', [e('1', 'EMP1', 'A B'), e('2', 'EMP2', 'Z')], 'EMP2').kind).toBe('ambiguous');
+    expect(resolveKioskLink('A B', [e('1', 'EMP1', 'A B'), e('2', 'EMP2', 'a b')], null).kind).toBe('ambiguous');
+  });
+  it('ambiguous (skip) when the single match is already linked', () => {
+    expect(resolveKioskLink('A B', [e('1', 'EMP1', 'A B', 'u1')], null).kind).toBe('ambiguous');
   });
 });

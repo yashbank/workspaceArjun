@@ -5,6 +5,7 @@ import {
   employeeCodeCandidates,
   generateEmployeeCode,
   normaliseEmployeeCode,
+  pickEmployeeByCode,
   resolveEmployeeCodeStyle,
   validateEmployeeCode,
 } from './employee-code-style';
@@ -74,20 +75,31 @@ describe('normalise', () => {
 });
 
 describe('candidates + scan matching', () => {
-  it('exact comes first, then normalised, and old styles stay reachable', () => {
+  it('exact comes first, then the cross-style form of a COMPLETE code', () => {
     const c = employeeCodeCandidates(' emp001 ', 'HARD');
     expect(c[0]).toBe('EMP001');
     expect(c).toContain('EMP-0001');
+  });
+  it.each(['1', '001', 'EMP-1', 'EMP-01', 'emp-1', 'EMP1'])('partial %s gets no fallback', (t) => {
+    expect(employeeCodeCandidates(t)).toHaveLength(1);
+  });
+  it('pickEmployeeByCode: exact wins, ambiguous fallback refused', () => {
+    const roster = [{ employeeCode: 'EMP-001' }, { employeeCode: 'EMP001' }];
+    expect(pickEmployeeByCode('EMP-001', roster)).toBe(roster[0]);
+    expect(pickEmployeeByCode('EMP-1', roster)).toBeNull();
+    const amb = [{ employeeCode: 'EMP-0001' }, { employeeCode: 'emp-0001 ' }];
+    expect(pickEmployeeByCode('EMP001', amb)).toBeNull();
   });
   it.each(EMPLOYEE_CODE_STYLES)('resolveScan finds a %s code typed sloppily', (style) => {
     const code = generateEmployeeCode(style, 3);
     const roster = [{ employeeCode: code }, { employeeCode: 'EMP099' }];
     expect(resolveScan(` ${code.toLowerCase()}\n`, roster)).toMatchObject({ kind: 'FOUND', employee: roster[0] });
   });
-  it('an existing EMP001 employee is found under every style', () => {
+  it('an existing EMP001 employee is found when typed in full, never from digits-only or partial input', () => {
     const roster = [{ employeeCode: 'EMP001' }];
     expect(resolveScan('emp001', roster).kind).toBe('FOUND');
-    expect(resolveScan('1', roster).kind).toBe('FOUND');
+    expect(resolveScan('1', roster).kind).toBe('UNKNOWN');
+    expect(resolveScan('emp-1', roster).kind).toBe('UNKNOWN');
   });
   it('unknown style falls back to EASY', () => {
     expect(resolveEmployeeCodeStyle('nonsense')).toBe('EASY');

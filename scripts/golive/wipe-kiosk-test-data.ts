@@ -14,22 +14,24 @@
  *   MisProductionLog, MisJobPhase.inCharge (non-kiosk modules). Attendance of protected employees is still
  *   wiped (it is test attendance); their rows survive.
  * Gate: DB project ref must match (see _gate.ts); real run needs CONFIRM_WIPE=1 AND --execute.
+ * Also refuses --execute when a payroll period is CLOSED or a payslip release exists (ALLOW_CLOSED_PAYROLL_WIPE=1),
+ * or when unprocessed kiosk punch writes (IN_FLIGHT/PARKED) exist (ALLOW_QUEUE_WIPE=1). The protected-employee
+ * set is recomputed INSIDE the transaction, so late-arriving references are honoured.
  */
 import { openDb } from './_gate';
 
-async function main() {
-  const { prisma, execute } = openDb();
+type Reader = Pick<ReturnType<typeof openDb>['prisma'], 'misEmployee' | 'misWorkerAllocation' | 'misProductionLog' | 'misJobPhase'>;
 
-  const emps = await prisma.misEmployee.findMany({ select: { id: true, employeeCode: true, name: true, userProfileId: true } });
+async function computeProtected(c: Reader) {
+  const emps = await c.misEmployee.findMany({ select: { id: true, employeeCode: true, name: true, userProfileId: true } });
   const [alloc, prodLog, phase] = await Promise.all([
-    prisma.misWorkerAllocation.findMany({ select: { employeeId: true }, distinct: ['employeeId'] }),
-    prisma.misProductionLog.findMany({ where: { employeeId: { not: null } }, select: { employeeId: true }, distinct: ['employeeId'] }),
-    prisma.misJobPhase.findMany({ where: { inChargeEmployeeId: { not: null } }, select: { inChargeEmployeeId: true }, distinct: ['inChargeEmployeeId'] }),
+    c.misWorkerAllocation.findMany({ select: { employeeId: true }, distinct: ['employeeId'] }),
+    c.misProductionLog.findMany({ where: { employeeId: { not: null } }, select: { employeeId: true }, distinct: ['employeeId'] }),
+    c.misJobPhase.findMany({ where: { inChargeEmployeeId: { not: null } }, select: { inChargeEmployeeId: true }, distinct: ['inChargeEmployeeId'] }),
   ]);
   const byAlloc = new Set(alloc.map((a) => a.employeeId));
   const byLog = new Set(prodLog.map((a) => a.employeeId!));
   const byPhase = new Set(phase.map((a) => a.inChargeEmployeeId!));
-
   const protectedRows: { code: string; name: string; why: string[] }[] = [];
   const deletable: string[] = [];
   for (const e of emps) {
@@ -41,6 +43,12 @@ async function main() {
     if (why.length) protectedRows.push({ code: e.employeeCode, name: e.name, why });
     else deletable.push(e.id);
   }
+  return { emps, protectedRows, deletable };
+}
+
+async function main() {
+  const { prisma, execute } = openDb();
+  const { emps, protectedRows, deletable } = await computeProtected(prisma);
 
   const inIds = { in: deletable };
   const counts = {
@@ -78,14 +86,31 @@ async function main() {
   console.log(`Protected employees (${protectedRows.length}):`);
   for (const p of protectedRows) console.log(`  ${p.code} ${p.name} - ${p.why.join(', ')}`);
 
+  const closed = await prisma.misPayrollPeriod.findMany({ where: { status: 'CLOSED' }, select: { id: true } });
+  const releases = await prisma.misPayslipRelease.findMany({ select: { id: true } });
+  const pending = await prisma.misQueuedWrite.count({ where: { kind: { in: ['attendance.punch_in', 'attendance.punch_out'] }, status: { in: ['IN_FLIGHT', 'PARKED'] } } });
+  console.log(`Closed payroll periods: ${closed.length}${closed.length ? ` (${closed.map((c) => c.id).join(', ')})` : ''}; payslip releases: ${releases.length}${releases.length ? ` (${releases.map((r) => r.id).join(', ')})` : ''}${closed.length || releases.length ? ' -> needs ALLOW_CLOSED_PAYROLL_WIPE=1' : ''}`);
+  console.log(`Unprocessed kiosk punch writes (IN_FLIGHT/PARKED): ${pending}${pending ? ' -> needs ALLOW_QUEUE_WIPE=1' : ''}`);
+
   if (!execute) {
     console.log('\nDRY RUN only. Nothing changed.');
     await prisma.$disconnect();
     return;
   }
 
+  if ((closed.length || releases.length) && process.env.ALLOW_CLOSED_PAYROLL_WIPE !== '1') {
+    console.error('REFUSING: closed payroll period(s) / payslip release(s) exist (ids above). Set ALLOW_CLOSED_PAYROLL_WIPE=1 to wipe them.');
+    process.exit(1);
+  }
+  if (pending && process.env.ALLOW_QUEUE_WIPE !== '1') {
+    console.error(`REFUSING: ${pending} unprocessed kiosk punch write(s) in the queue. Let devices sync first, or set ALLOW_QUEUE_WIPE=1.`);
+    process.exit(1);
+  }
+
   await prisma.$transaction(
     async (tx) => {
+      const { deletable } = await computeProtected(tx as unknown as Reader); // authoritative, inside the transaction
+      const inIds = { in: deletable };
       // TRUNCATE (not DELETE): the immutability trigger refuses row deletes (see prisma/reset-mis-attendance-data.ts).
       await tx.$executeRawUnsafe('TRUNCATE TABLE mis_attendance_punches');
       await tx.misAttendanceBreak.deleteMany();

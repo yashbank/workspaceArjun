@@ -44,7 +44,7 @@ export function mapSheetRole(label: string): MisRoleName | null {
   if (k === 'admin' || k === 'production manager') return 'ADMIN';
   if (/^supervis/.test(k)) return 'SUPERVISOR';
   if (k === 'qc') return 'QC';
-  if (k === 'store') return 'STORE_GUY';
+  if (/^store/.test(k)) return 'STORE_GUY';
   if (/^super\s*attendance/.test(k)) return 'SUPER_ATTENDANCE_OPERATOR';
   return null;
 }
@@ -74,4 +74,34 @@ export function generateTempPassword(length = 14): string {
 export function csvCell(value: string): string {
   const safe = /^[=+\-@]/.test(value) ? `'${value}` : value;
   return /[",\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
+}
+
+export type KioskEmp = { id: string; employeeCode: string; name: string; userProfileId: string | null };
+export type KioskLink =
+  | { kind: 'link'; employeeId: string; employeeCode: string }
+  | { kind: 'new' }
+  | { kind: 'ambiguous'; reason: string };
+
+const nameKey = (s: string | null | undefined) => (s ?? '').normalize('NFKC').replace(/\s+/g, '').toLowerCase();
+
+/**
+ * Find the existing kiosk MisEmployee for a software user. The NAME decides (case/space-normalised); the code
+ * the cleaned employee file gives that name only cross-checks it. Exactly one unlinked name match whose code
+ * does not point at a different person -> link; no name match and no code row -> new. Anything else (several
+ * name matches, name/code disagree, code owned by a differently named person, already linked) -> ambiguous:
+ * skip and report. A code hit on a different name is never trusted (the file may reuse codes of other people).
+ */
+export function resolveKioskLink(name: string, emps: readonly KioskEmp[], fileCodeForName: string | null): KioskLink {
+  const key = nameKey(name);
+  const code = fileCodeForName ? fileCodeForName.trim().toUpperCase() : null;
+  const byName = [...new Map(emps.filter((e) => nameKey(e.name) === key).map((e) => [e.id, e])).values()];
+  const codeRow = code ? emps.find((e) => e.employeeCode.trim().toUpperCase() === code) : undefined;
+  if (byName.length > 1) return { kind: 'ambiguous', reason: `${byName.length} kiosk employees match the name (${byName.map((e) => e.employeeCode).join(', ')})` };
+  if (byName.length === 0) {
+    return codeRow ? { kind: 'ambiguous', reason: `file code ${codeRow.employeeCode} belongs to '${codeRow.name}', a different name` } : { kind: 'new' };
+  }
+  const [one] = byName;
+  if (codeRow && codeRow.id !== one.id) return { kind: 'ambiguous', reason: `name matches ${one.employeeCode} but file code ${codeRow.employeeCode} is '${codeRow.name}'` };
+  if (one.userProfileId) return { kind: 'ambiguous', reason: `${one.employeeCode} is already linked to a user` };
+  return { kind: 'link', employeeId: one.id, employeeCode: one.employeeCode };
 }

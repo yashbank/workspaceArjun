@@ -53,15 +53,43 @@ describe.each(EMPLOYEE_CODE_STYLES)('style %s', (style) => {
     expect(fake.state.punches[0].employeeId).toBe('new');
   });
 
-  it('still finds the legacy EMP001 employee (exact, and loosely typed)', async () => {
+  it('still finds the legacy EMP001 employee (exact, lower-case)', async () => {
     expect(await punch('EMP001')).toMatchObject({ outcome: 'APPLIED' });
     expect(fake.state.punches[0].employeeId).toBe('old');
     fake.state.punches = [];
-    expect(await punch('emp-1')).toMatchObject({ outcome: 'APPLIED' });
+    expect(await punch('emp001')).toMatchObject({ outcome: 'APPLIED' });
+  });
+
+  it.each(['1', 'emp-1', 'EMP-01', '001'])('partial input %s never resolves to EMP001', async (typed) => {
+    expect(await punch(typed)).not.toMatchObject({ outcome: 'APPLIED' });
+    expect(fake.state.punches).toHaveLength(0);
   });
 
   it('an unknown code is still BADGE_UNKNOWN', async () => {
     const out = await punch('ZZZZZZ');
     expect(out).not.toMatchObject({ outcome: 'APPLIED' });
+  });
+});
+
+describe('cross-style fallback safety', () => {
+  beforeEach(() => {
+    fake.state.rules['employee.code_style'] = 'EASY';
+  });
+  it('well-formed EMP001 with no exact row falls back to the single EMP-0001 holder', async () => {
+    fake.state.employees = [{ id: 'm', employeeCode: 'EMP-0001', name: 'Medium', isActive: true, deletedAt: null }];
+    expect(await punch('EMP001')).toMatchObject({ outcome: 'APPLIED' });
+    expect(fake.state.punches[0].employeeId).toBe('m');
+  });
+  it('ambiguous fallback (two employees hold the fallback code, typed EMP001) is not found', async () => {
+    fake.state.employees = [
+      { id: 'a', employeeCode: 'EMP-0001', name: 'A', isActive: true, deletedAt: null },
+      { id: 'b', employeeCode: 'EMP-0001', name: 'B', isActive: true, deletedAt: null },
+    ];
+    expect(await punch('EMP001')).not.toMatchObject({ outcome: 'APPLIED' });
+    expect(fake.state.punches).toHaveLength(0);
+  });
+  it('typed EMP-1 does not punch EMP-001 holder either', async () => {
+    fake.state.employees = [{ id: 'x', employeeCode: 'EMP-001', name: 'X', isActive: true, deletedAt: null }, { id: 'y', employeeCode: 'EMP001', name: 'Y', isActive: true, deletedAt: null }];
+    expect(await punch('EMP-1')).not.toMatchObject({ outcome: 'APPLIED' });
   });
 });

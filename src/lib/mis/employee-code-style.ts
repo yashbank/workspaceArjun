@@ -124,18 +124,46 @@ export function validateEmployeeCode(style: EmployeeCodeStyle, code: string | nu
 }
 
 /**
- * Strings to try, in order, when looking a code up: the typed text as-is (upper-cased), then the
- * normalised form under `style`, then under every other style (so an old EMP001 still resolves
- * after the setting moves). `style` omitted = all styles. Deduplicated; never empty-string.
+ * Strings to try when looking a code up: the typed text as-is (upper-cased) first, then SAFE fallbacks.
+ * A fallback exists only when the typed text is itself a complete, well-formed code in some style
+ * (EASY/MEDIUM: the full EMP001 / EMP-0001 shape; HARD/DIFFICULT: valid after look-alike folding, DIFFICULT
+ * with its check character). Digits-only or partial input ('1', 'EMP-1', 'EMP-01') never gains a fallback.
+ * The fallback is that same code rendered in the other EASY/MEDIUM style, so an old EMP001 still resolves
+ * after the setting moves. Callers must refuse when the candidates match more than one stored employee.
+ * Deduplicated; never empty-string. `style` is accepted for call-site compatibility and does not widen matching.
  */
-export function employeeCodeCandidates(input: string | null | undefined, style?: EmployeeCodeStyle): string[] {
+export function employeeCodeCandidates(input: string | null | undefined, _style?: EmployeeCodeStyle): string[] {
+  void _style;
   const exact = clean(input);
   if (!exact || exact.length > MAX_LEN) return [];
-  const styles = style ? [style, ...EMPLOYEE_CODE_STYLES.filter((s) => s !== style)] : [...EMPLOYEE_CODE_STYLES];
   const out = [exact];
-  for (const s of styles) {
-    const n = normaliseEmployeeCode(s, input);
-    if (n && !out.includes(n)) out.push(n);
+  const add = (c: string) => { if (c && !out.includes(c)) out.push(c); };
+  const num = /^EMP-?(\d+)$/.exec(exact);
+  if (num && (validateEmployeeCode('EASY', exact) || validateEmployeeCode('MEDIUM', exact))) {
+    const n = Number(num[1]);
+    if (Number.isSafeInteger(n) && n >= 1) {
+      add(normaliseEmployeeCode('EASY', exact));
+      add(normaliseEmployeeCode('MEDIUM', exact));
+    }
+  } else {
+    for (const s of ['HARD', 'DIFFICULT'] as const) {
+      const f = normaliseEmployeeCode(s, input);
+      if (validateEmployeeCode(s, f)) add(f);
+    }
   }
   return out;
+}
+
+/**
+ * Pick the one employee a code refers to: exact (case-insensitive) match wins; otherwise the safe
+ * fallbacks, and only when they all point at ONE distinct employee. Zero or several -> null.
+ */
+export function pickEmployeeByCode<T extends { employeeCode: string }>(input: string | null | undefined, employees: readonly T[], key: (e: T) => string = (e) => e.employeeCode): T | null {
+  const [exact, ...fallbacks] = employeeCodeCandidates(input);
+  if (!exact) return null;
+  const norm = (e: T) => key(e).trim().toUpperCase();
+  const direct = employees.filter((e) => norm(e) === exact);
+  if (direct.length) return direct.length === 1 ? direct[0] : null;
+  const hits = [...new Set(employees.filter((e) => fallbacks.includes(norm(e))))];
+  return hits.length === 1 ? hits[0] : null;
 }

@@ -5,7 +5,7 @@
  * hand-typed badge from failing for a cosmetic reason.
  */
 
-import { employeeCodeCandidates } from '@/lib/mis/employee-code-style';
+import { pickEmployeeByCode } from '@/lib/mis/employee-code-style';
 
 const MAX_LEN = 64;
 // eslint-disable-next-line no-control-regex -- scanners can append CR/LF/TAB; strip them
@@ -47,9 +47,7 @@ export type ScanResult<T> =
 export function resolveScan<T extends { employeeCode: string }>(raw: string | null | undefined, employees: readonly T[]): ScanResult<T> {
   const code = parseScannedBadge(raw);
   if (!code) return { kind: 'INVALID' };
-  // Exact first, then the normalised forms of every code style (an old EMP001 still resolves).
-  const employee =
-    employees.find((e) => e.employeeCode.trim().toUpperCase() === code) ??
-    employeeCodeCandidates(raw).map((c) => employees.find((e) => e.employeeCode.trim().toUpperCase() === c)).find(Boolean);
+  // Exact first; else a safe fallback that must identify exactly one employee (never folds partial input).
+  const employee = pickEmployeeByCode(raw, employees);
   return employee ? { kind: 'FOUND', employee, code } : { kind: 'UNKNOWN', code };
 }

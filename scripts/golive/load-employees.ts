@@ -5,10 +5,13 @@
  *   CONFIRM_WIPE=1 pnpm golive:load -- --execute      # real run, one transaction
  *
  * Input: data/golive/cleaned-{shifts,employees}.json (from `pnpm golive:clean`). Idempotent.
- *  - shifts: matched by case-insensitive name; created if missing, times updated if different.
+ *  - shifts: matched by case-insensitive name; created if missing. A time CHANGE to an existing shift is reported and
+ *    refused unless ALLOW_SHIFT_TIME_CHANGE=1 (it re-times every employee on that shift).
  *  - departments: matched by case-insensitive name; created if missing (code = upper snake of name).
- *  - employees: upsert by employeeCode; sets name, department, defaultShift, isActive=true; new rows get role WORKER.
- *    Existing employees linked to a user keep role + userProfileId. Designation has no column: not loaded.
+ *  - employees: new rows (role WORKER, active) are created; existing rows get name, department, defaultShift only -
+ *    role, isActive and deletedAt are never changed. Existing employees referenced by MisProductionLog /
+ *    MisWorkerAllocation / MisJobPhase.inCharge, or linked to a user, are SKIPPED (listed). A code that already
+ *    belongs to a DIFFERENT person refuses --execute outright. Designation has no column: not loaded.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -31,6 +34,13 @@ async function main() {
   const dbShifts = await prisma.misShift.findMany();
   const dbDepts = await prisma.misDepartment.findMany();
   const dbEmps = await prisma.misEmployee.findMany();
+  const [alloc, prodLog, phase] = await Promise.all([
+    prisma.misWorkerAllocation.findMany({ select: { employeeId: true }, distinct: ['employeeId'] }),
+    prisma.misProductionLog.findMany({ where: { employeeId: { not: null } }, select: { employeeId: true }, distinct: ['employeeId'] }),
+    prisma.misJobPhase.findMany({ where: { inChargeEmployeeId: { not: null } }, select: { inChargeEmployeeId: true }, distinct: ['inChargeEmployeeId'] }),
+  ]);
+  const referenced = new Set<string>([...alloc.map((a) => a.employeeId), ...prodLog.map((a) => a.employeeId!), ...phase.map((a) => a.inChargeEmployeeId!)]);
+  const isProtected = (e: { id: string; userProfileId: string | null }) => referenced.has(e.id) || !!e.userProfileId;
   const shiftByKey = new Map(dbShifts.map((s) => [matchKey(s.name), s]));
   const deptByKey = new Map(dbDepts.map((d) => [matchKey(d.name), d]));
   const empByCode = new Map(dbEmps.map((e) => [e.employeeCode, e]));
@@ -42,15 +52,19 @@ async function main() {
   const deptsNew = deptNames.filter(([k]) => !deptByKey.has(k));
   const empsNew = emps.filter((e) => !empByCode.has(normaliseText(e.employeeCode).toUpperCase()));
   const unresolved = emps.filter((e) => e.shift && !resolveShiftName(e.shift, shifts.map((s) => s.name)));
-  const linkedExisting = emps.filter((e) => empByCode.get(normaliseText(e.employeeCode).toUpperCase())?.userProfileId);
+  const existingOf = (e: CEmp) => empByCode.get(normaliseText(e.employeeCode).toUpperCase());
+  const skippedProtected = emps.filter((e) => { const x = existingOf(e); return x && isProtected(x); });
+  const toUpdate = emps.filter((e) => { const x = existingOf(e); return x && !isProtected(x); });
 
   console.log(execute ? 'WILL apply:' : 'WOULD apply:');
   console.log(`  shifts   create ${shiftsNew.length} (${shiftsNew.map((s) => s.name).join(', ') || '-'}), update times ${shiftsChanged.length} (${shiftsChanged.map((s) => `${s.name} ${shiftByKey.get(matchKey(s.name))!.startTime}-${shiftByKey.get(matchKey(s.name))!.endTime} -> ${s.startTime}-${s.endTime}`).join('; ') || '-'}), unchanged ${shifts.length - shiftsNew.length - shiftsChanged.length}`);
   console.log(`  departments create ${deptsNew.length} (${deptsNew.map(([, n]) => n).join(', ') || '-'}), existing ${deptNames.length - deptsNew.length}`);
-  console.log(`  employees create ${empsNew.length}, update ${emps.length - empsNew.length} (of which user-linked, role kept: ${linkedExisting.length}), total in file ${emps.length}`);
+  console.log(`  employees create ${empsNew.length}, update ${toUpdate.length}, SKIPPED protected (production-referenced or user-linked) ${skippedProtected.length}, total in file ${emps.length}`);
   const collisions = emps.filter((e) => { const x = empByCode.get(normaliseText(e.employeeCode).toUpperCase()); return x && matchKey(x.name) !== matchKey(e.name); });
+  for (const e of skippedProtected) { const x = existingOf(e)!; console.log(`    skip ${x.employeeCode} ${x.name}: ${[x.userProfileId && 'user-linked', referenced.has(x.id) && 'production-referenced'].filter(Boolean).join(', ')}`); }
   console.log(`  CODE COLLISIONS (existing code, different person; update would rename history): ${collisions.length}`);
   for (const e of collisions) console.log(`    ${e.employeeCode}: DB '${empByCode.get(normaliseText(e.employeeCode).toUpperCase())!.name}' -> file '${e.name}'`);
+  if (shiftsChanged.length) console.log(`  SHIFT TIME CHANGE: ${shiftsChanged.map((s) => `${s.name} ${shiftByKey.get(matchKey(s.name))!.startTime}-${shiftByKey.get(matchKey(s.name))!.endTime} -> ${s.startTime}-${s.endTime}`).join('; ')} (needs ALLOW_SHIFT_TIME_CHANGE=1 to execute)`);
   console.log(`  employees with unresolved shift: ${unresolved.length}`);
   console.log(`  existing DB employees NOT in file (untouched): ${dbEmps.filter((e) => !codes.includes(e.employeeCode)).length}`);
 
@@ -60,8 +74,12 @@ async function main() {
     return;
   }
 
-  if (collisions.length && process.env.ALLOW_CODE_COLLISION !== '1') {
-    console.error(`REFUSING: ${collisions.length} code collision(s). Run the wipe first, or set ALLOW_CODE_COLLISION=1 to rename those rows.`);
+  if (collisions.length) {
+    console.error(`REFUSING: ${collisions.length} employee code(s) already belong to a different person. Resolve (e.g. run the wipe first); there is no override.`);
+    process.exit(1);
+  }
+  if (shiftsChanged.length && process.env.ALLOW_SHIFT_TIME_CHANGE !== '1') {
+    console.error('REFUSING: shift time change(s) above would re-time existing employees. Set ALLOW_SHIFT_TIME_CHANGE=1 to apply them.');
     process.exit(1);
   }
   await prisma.$transaction(
@@ -91,9 +109,10 @@ async function main() {
         const defaultShiftId = shiftName ? sMap.get(matchKey(shiftName)) ?? null : null;
         const departmentId = e.department ? dMap.get(matchKey(e.department)) ?? null : null;
         const ex = empByCode.get(code);
-        const common = { name: normaliseText(e.name), departmentId, defaultShiftId, isActive: true, deletedAt: null, updatedAt: now };
-        if (ex) await tx.misEmployee.update({ where: { id: ex.id }, data: ex.userProfileId ? common : { ...common, role: 'WORKER' } });
-        else await tx.misEmployee.create({ data: { ...common, employeeCode: code, role: 'WORKER' } });
+        const common = { name: normaliseText(e.name), departmentId, defaultShiftId, updatedAt: now };
+        if (ex) {
+          if (!isProtected(ex)) await tx.misEmployee.update({ where: { id: ex.id }, data: common }); // role / isActive / deletedAt untouched
+        } else await tx.misEmployee.create({ data: { ...common, isActive: true, employeeCode: code, role: 'WORKER' } });
       }
     },
     { timeout: 120_000, maxWait: 20_000 },
