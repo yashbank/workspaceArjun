@@ -64,6 +64,14 @@ export function resolveMonth(requested: unknown, todayKey: string): ResolvedMont
   return { key, running: key === current };
 }
 
+/**
+ * R2-183: a bare `/mis/attendance` is the day register (clock in, mark absent, edit). The D8 month matrix is read-only,
+ * so it shows only when the URL asks for it — every matrix link carries `month` (and `dept` / `emp` / `day`) and no `view`.
+ */
+export function wantsMonthMatrix(sp: { view?: string; month?: string; dept?: string; emp?: string; day?: string }): boolean {
+  return !sp.view && Boolean(sp.month || sp.dept || sp.emp || sp.day);
+}
+
 export type DayColumn = { key: string; day: number; /** S M T W T F S */ weekday: string };
 
 const WEEKDAY_LETTER = ['S', 'M', 'T', 'W', 'T', 'F', 'S'] as const;

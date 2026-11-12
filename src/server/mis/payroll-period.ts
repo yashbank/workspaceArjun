@@ -76,6 +76,47 @@ export async function getPayrollPreflight(year: number, month: number): Promise<
   ];
 }
 
+export type AttendanceReadinessRow = {
+  employeeId: string; employeeName: string; employeeCode: string;
+  present: number; halfDay: number; absent: number; leave: number;
+};
+
+/**
+ * R2-180: what an Admin may see of month-end — the attendance half of "Before export" and a per-person
+ * attendance register. Counts only: no pay code, no rate, no amount (wages stay Owner-only). Needs
+ * `employees.write` (Admin and Owner), so the attendance writers do not gain a payroll door.
+ */
+export async function getAttendanceReadiness(year: number, month: number): Promise<{ checks: PayrollPreflightItem[]; rows: AttendanceReadinessRow[] }> {
+  // employees.write is held by Admin and Owner only, so the attendance operators gain no payroll door.
+  await requirePermission('employees.write');
+  const start = new Date(Date.UTC(year, month - 1, 1));
+  const end = new Date(Date.UTC(year, month, 0));
+  const [unapprovedClockOuts, openLeave, records] = await Promise.all([
+    db.misAttendance.count({ where: { date: { gte: start, lte: end }, clockOut: { not: null }, approvedOut: false } }),
+    db.misLeaveRequest.count({ where: { date: { gte: start, lte: end }, status: 'PENDING' } }),
+    db.misAttendance.findMany({
+      where: { date: { gte: start, lte: end } },
+      select: { employeeId: true, status: true, employee: { select: { name: true, employeeCode: true } } },
+    }),
+  ]);
+  const byEmp = new Map<string, AttendanceReadinessRow>();
+  for (const r of records) {
+    const row = byEmp.get(r.employeeId) ?? { employeeId: r.employeeId, employeeName: r.employee.name, employeeCode: r.employee.employeeCode, present: 0, halfDay: 0, absent: 0, leave: 0 };
+    if (r.status === 'PRESENT' || r.status === 'HALF_DAY') row.present += 1;
+    if (r.status === 'HALF_DAY') row.halfDay += 1;
+    if (r.status === 'ABSENT') row.absent += 1;
+    if (r.status === 'LEAVE') row.leave += 1;
+    byEmp.set(r.employeeId, row);
+  }
+  return {
+    checks: [
+      { id: 'clock-outs', label: 'All clock-outs approved', ok: unapprovedClockOuts === 0, detail: unapprovedClockOuts > 0 ? `${unapprovedClockOuts} unapproved` : undefined },
+      { id: 'open-leave', label: 'No open leave requests', ok: openLeave === 0, detail: openLeave > 0 ? `${openLeave} pending` : undefined },
+    ],
+    rows: [...byEmp.values()].sort((a, b) => a.employeeName.localeCompare(b.employeeName)),
+  };
+}
+
 /**
  * Close the month: freeze the live figures into one snapshot line per employee, then flip the
  * period CLOSED. Re-running a close on an already-closed month is refused — reopening is a

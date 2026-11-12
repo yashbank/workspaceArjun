@@ -94,7 +94,11 @@ const resolveIdsFor = cache(async (userId: string, role: string): Promise<Visibl
   // no place in the tree, so their pool is empty rather than everything.
   if (!self) return [];
 
-  return [self.id, ...(await descendantIdsOf(self.id))];
+  const below = await descendantIdsOf(self.id);
+  // R2-162: an Admin nobody reports to has no branch to be scoped to — "just you" would empty the
+  // directory. They see the plant (like the no-hierarchy case); an Admin WITH a branch stays on D4.
+  if (role === 'ADMIN' && below.length === 0) return null;
+  return [self.id, ...below];
 });
 
 export async function resolveVisibleEmployeeIds(actor: MisActor): Promise<VisibleIds> {

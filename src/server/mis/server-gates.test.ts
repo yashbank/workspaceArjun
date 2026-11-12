@@ -40,6 +40,11 @@ const REVIEWED_UNGATED: Record<string, Reviewed> = {
   'auth.ts#checkPermission': { reason: 'render-only boolean; the server function still gates (documented in auth.ts)' },
   'guard.ts#requireMisAccess': { reason: 'this IS the feature-flag gate' },
   'audit.ts#logAuditEvent': { reason: 'a writer, not a reader; the caller supplies the actor and has already been gated' },
+  // Go-live self-service: the signed-in person acts on their OWN account only (never an id from the client).
+  'account.ts#changeOwnPassword': { reason: 'own account only; resolves the session via getCurrentUser and re-verifies the current password', door: true },
+  'account.ts#changeOwnEmail': { reason: 'own account only; resolves the session via getCurrentUser, Supabase confirms the change', door: true },
+  'account.ts#syncOwnProfileEmail': { reason: 'own account only; copies the caller\'s own confirmed auth email onto their profile' },
+  'account.ts#mustChangePassword': { reason: 'reads only the caller\'s own session flag, returns a boolean' },
   // R2-274
   'po.ts#bomOverOrderWarning': { reason: 'read-only warning helper called from the gated PO line writes; exported for its unit test, returns a sentence or null, never money' },
 
@@ -86,6 +91,7 @@ const REVIEWED_UNGATED: Record<string, Reviewed> = {
   'business-rules.ts#getAqlThresholds': { reason: 'internal; qc.ts calls it after its own qc.write gate' },
   'business-rules.ts#getLineClearanceRule': { reason: 'internal; line-clearance.ts calls it after its own checks (D7)' },
   'business-rules.ts#getOfflineRules': { reason: 'internal; idempotency.ts reads the tolerance (D15)' },
+  'business-rules.ts#getEmployeeCodeStyle': { reason: 'internal; employee code style carries no wage or personal data (Phase 3)' },
   'business-rules.ts#getFactoryTimezone': { reason: 'internal; carries no wage or personal data (D22)' },
   'business-rules.ts#getCorrectionWindowDays': { reason: 'internal; carries no wage or personal data (D21)' },
   'business-rules.ts#getLunchBreakMinutes': { reason: 'internal; minutes allowance, carries no wage or personal data (R2-179)' },

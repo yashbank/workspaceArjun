@@ -264,7 +264,8 @@ describe('the page and the source', () => {
   });
 
   it('ANY explicit ?view (classic, or the register\'s own daily/monthly tabs) is the register at every width — its tabs never bounce back to D8', () => {
-    expect(page).toMatch(/if \(sp\.view\) return phone;/);
+    // R2-183 CONTRACT CHANGE: a bare /mis/attendance is the register too; only matrix links (?month=…, no view) open D8.
+    expect(page).toMatch(/if \(!wantsMonthMatrix\(sp\)\) return phone;/);
     expect(page).not.toMatch(/sp\.view === 'classic'\) return/);
   });
 
