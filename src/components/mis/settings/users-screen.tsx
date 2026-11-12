@@ -15,6 +15,8 @@ import { roleLabelKey, roleTone } from '@/lib/mis/roles';
 import type { MisSeatSummary, MisUserRow, PendingMisGrant } from '@/server/mis/users';
 
 import {
+  adminChangeEmailAction,
+  adminResetPasswordAction,
   grantMisRoleAction,
   inviteMisUserAction,
 } from '@/app/(mis)/mis/settings/users/actions';
@@ -25,12 +27,17 @@ export function UsersScreen({
   pendingGrants,
   canInvite,
   assignableRoles,
+  canReset = false,
+  actorIsOwner = false,
 }: {
   users: MisUserRow[];
   seats: MisSeatSummary;
   pendingGrants: PendingMisGrant[];
   canInvite: boolean;
   assignableRoles: MisRoleName[];
+  /** Admin/Owner: may reset a login's password or email. An Admin never sees this on an Owner row. */
+  canReset?: boolean;
+  actorIsOwner?: boolean;
 }) {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [email, setEmail] = useState('');
@@ -154,6 +161,9 @@ export function UsersScreen({
                     </StatusBadge>
                   }
                 />
+                {canReset && u.userProfileId && (actorIsOwner || u.role !== 'OWNER') && (
+                  <ResetPanel userProfileId={u.userProfileId} />
+                )}
               </Card>
             ))}
           </div>
@@ -219,6 +229,44 @@ function RolePickerInline({
       >
         Grant
       </Button>
+    </div>
+  );
+}
+
+/** Admin/Owner: reset one login. The temporary password is shown once and is never stored or audited. */
+function ResetPanel({ userProfileId }: { userProfileId: string }) {
+  const [msg, setMsg] = useState<string | null>(null);
+  const [emailOpen, setEmailOpen] = useState(false);
+  const [email, setEmail] = useState('');
+  const [pending, start] = useTransition();
+
+  const resetPassword = () => {
+    if (!window.confirm('Reset this password? The old password stops working at once.')) return;
+    start(async () => {
+      const r = await adminResetPasswordAction(userProfileId);
+      setMsg(r.ok ? `Temporary password: ${r.value.temporaryPassword} (shown once - they must change it at first login)` : r.detail);
+    });
+  };
+  const changeEmail = () =>
+    start(async () => {
+      const r = await adminChangeEmailAction(userProfileId, email);
+      setMsg(r.ok ? `Email changed to ${r.value.email}.` : r.detail);
+      if (r.ok) setEmailOpen(false);
+    });
+
+  return (
+    <div className="mt-2 flex flex-col gap-2 border-t border-slate-100 pt-2">
+      <div className="flex gap-2">
+        <Button variant="secondary" disabled={pending} onClick={resetPassword}>Reset password</Button>
+        <Button variant="ghost" disabled={pending} onClick={() => setEmailOpen((o) => !o)}>Change email</Button>
+      </div>
+      {emailOpen && (
+        <div className="flex flex-col gap-2">
+          <Input label="New email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <Button disabled={pending || !email} onClick={changeEmail}>Save email</Button>
+        </div>
+      )}
+      {msg && <p role="status" className="break-all font-mono text-xs text-slate-700">{msg}</p>}
     </div>
   );
 }

@@ -45,3 +45,14 @@ describe('resolveAuthCallbackErrorRedirect', () => {
     );
   });
 });
+
+describe('email change confirmation link', () => {
+  it('is a known OTP type and lands on the account page', () => {
+    expect(mapCallbackOtpType('email_change')).toBe('email_change');
+    expect(resolveAuthCallbackRedirect('email_change', null)).toBe('/mis/me/account');
+  });
+  it('recovery still wins its own page and an open redirect is refused', () => {
+    expect(resolveAuthCallbackRedirect('recovery', '/x')).toBe('/reset-password');
+    expect(resolveAuthCallbackRedirect(null, '//evil.com')).toBe('/');
+  });
+});

@@ -4,6 +4,7 @@ import { Card, CardRow } from '@/components/mis/kit/card';
 import { RoleBadge } from '@/components/mis/roles/role-badge';
 import { requireMisAccess } from '@/server/mis/guard';
 import { getMisEmployee, getMisRole } from '@/server/mis/roles';
+import { mustChangePassword } from '@/server/mis/account';
 
 /**
  * The "Me" tab.
@@ -14,7 +15,11 @@ import { getMisEmployee, getMisRole } from '@/server/mis/roles';
  */
 export default async function MisMePage() {
   const user = await requireMisAccess();
-  const [role, employee] = await Promise.all([getMisRole(user.id), getMisEmployee(user.id)]);
+  const [role, employee, mustChange] = await Promise.all([
+    getMisRole(user.id),
+    getMisEmployee(user.id),
+    mustChangePassword().catch(() => false),
+  ]);
 
   // R2-221: phone stays a narrow single column; desktop gets a wider card grid.
   return (
@@ -42,6 +47,22 @@ export default async function MisMePage() {
           </p>
         </section>
       )}
+
+      {mustChange && (
+        <section role="status" className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 md:col-span-2">
+          <p className="font-semibold">You are using a temporary password.</p>
+          <p className="mt-1">Please set your own password now.</p>
+        </section>
+      )}
+
+      {/* Go-live: change my own email / password. */}
+      <Link
+        href="/mis/me/account"
+        className="flex min-h-11 items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 hover:bg-slate-50"
+      >
+        Change my email or password
+        <span aria-hidden="true" className="text-slate-400">→</span>
+      </Link>
 
       {/* R2-172: my own attendance - days worked, punches, late and overtime. */}
       {employee && (

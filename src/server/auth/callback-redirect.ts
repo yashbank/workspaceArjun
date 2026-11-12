@@ -1,6 +1,6 @@
 export const INVITE_ACCEPT_PATH = '/invite/accept';
 
-export type AuthCallbackOtpType = 'invite' | 'recovery' | 'signup' | 'magiclink' | 'email';
+export type AuthCallbackOtpType = 'invite' | 'recovery' | 'signup' | 'magiclink' | 'email' | 'email_change';
 
 /** Maps URL `type` param to Supabase verifyOtp type. */
 export function mapCallbackOtpType(type: string | null): AuthCallbackOtpType | null {
@@ -11,7 +11,8 @@ export function mapCallbackOtpType(type: string | null): AuthCallbackOtpType | n
     normalized === 'recovery' ||
     normalized === 'signup' ||
     normalized === 'magiclink' ||
-    normalized === 'email'
+    normalized === 'email' ||
+    normalized === 'email_change'
   ) {
     return normalized;
   }
@@ -25,6 +26,8 @@ export function resolveAuthCallbackRedirect(type: string | null, next: string | 
   if (otpType === 'recovery') return '/reset-password';
   if (otpType === 'invite') return INVITE_ACCEPT_PATH;
   if (otpType === 'signup') return INVITE_ACCEPT_PATH;
+  // Go-live: the confirmation link of "change my email" lands back on the account page.
+  if (otpType === 'email_change') return '/mis/me/account';
 
   if (next === INVITE_ACCEPT_PATH || next?.startsWith('/invite/')) {
     return INVITE_ACCEPT_PATH;

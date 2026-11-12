@@ -25,6 +25,8 @@ export default async function MisUsersPage() {
         seats={seats}
         pendingGrants={pendingGrants}
         canInvite={canInvite}
+        canReset={can(role, 'employees.write')}
+        actorIsOwner={role === 'OWNER'}
         assignableRoles={assignableRoles(role)}
       />
     </>
