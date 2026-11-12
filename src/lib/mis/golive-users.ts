@@ -96,6 +96,11 @@ export function resolveKioskLink(name: string, emps: readonly KioskEmp[], fileCo
   const code = fileCodeForName ? fileCodeForName.trim().toUpperCase() : null;
   const byName = [...new Map(emps.filter((e) => nameKey(e.name) === key).map((e) => [e.id, e])).values()];
   const codeRow = code ? emps.find((e) => e.employeeCode.trim().toUpperCase() === code) : undefined;
+  // Several same-name rows (a legacy test row + the freshly loaded client row): the client file's own
+  // code decides, but only when that row has this exact name and no login yet.
+  if (byName.length > 1 && codeRow && byName.some((e) => e.id === codeRow.id) && !codeRow.userProfileId) {
+    return { kind: 'link', employeeId: codeRow.id, employeeCode: codeRow.employeeCode };
+  }
   if (byName.length > 1) return { kind: 'ambiguous', reason: `${byName.length} kiosk employees match the name (${byName.map((e) => e.employeeCode).join(', ')})` };
   if (byName.length === 0) {
     return codeRow ? { kind: 'ambiguous', reason: `file code ${codeRow.employeeCode} belongs to '${codeRow.name}', a different name` } : { kind: 'new' };

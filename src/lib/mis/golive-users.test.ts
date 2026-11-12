@@ -80,3 +80,16 @@ describe('resolveKioskLink', () => {
     expect(resolveKioskLink('A B', [e('1', 'EMP1', 'A B', 'u1')], null).kind).toBe('ambiguous');
   });
 });
+
+describe('resolveKioskLink tie-break by file code', () => {
+  const emps = [
+    { id: 'old', name: 'B.Malathi', employeeCode: 'EMP0023', userProfileId: null },
+    { id: 'new', name: 'B.Malathi', employeeCode: 'EMP111', userProfileId: null },
+  ];
+  it('links the row whose code is the client file code', () => {
+    expect(resolveKioskLink('B.Malathi', emps, 'EMP111')).toMatchObject({ kind: 'link', employeeId: 'new' });
+  });
+  it('stays ambiguous without a matching file code', () => {
+    expect(resolveKioskLink('B.Malathi', emps, null).kind).toBe('ambiguous');
+  });
+});
