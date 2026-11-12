@@ -1,0 +1,122 @@
+### pnpm golive:clean
+shifts=5 users=27 employees=149 dups=[] shifts_used=5 issues=0
+
+### pnpm golive:wipe (dry run)
+DB host: aws-1-ap-southeast-1.pooler.supabase.com:5432  db: postgres  project ref: kmaxtksmeabmmlervpjl  expected: kmaxtksmeabmmlervpjl
+MODE: DRY RUN (read-only; no changes)
+WOULD delete:
+  attendance punches (TRUNCATE)                        259
+  attendance breaks                                    0
+  punch regularizations                                0
+  attendance                                           372
+  leave requests                                       12
+  extra-pay-day employees                              0
+  extra-pay-day departments                            0
+  extra-pay days                                       1
+  payroll snapshot lines                               0
+  payroll periods                                      1
+  payslip releases                                     0
+  shift handovers                                      0
+  queued writes (attendance.punch_in/out)              268
+  salary advances (of deletable employees)             0
+  shift roster rows (cascade, deletable employees)     0
+  pay components (cascade, deletable employees)        0
+  EMPLOYEES deleted                                    17
+Kept (not touched):
+  user profiles                                        14
+  shifts                                               3
+  departments                                          11
+  kiosk devices                                        13
+  employees total                                      84
+  employees protected (kept)                           67
+  employees linked to a user                           14
+Protected employees (67):
+  EMP-003 Sanket Shrikant - linked to user account
+  EMP004 Ranjeeth kumar - production log
+  EMP005 Bhumesh - production log
+  EMP006 Rajeevi kumar - production log
+  EMP007 Y.Srinu - production log
+  EMP008 K.Shiva kumar - production log
+  EMP009 Sanam yadav - production log
+  EMP0010 Mohit kumar - production log
+  EMP0011 G.prasad - production log
+  EMP0012 Ravindra zaware - production log
+  EMP0014 Lallan kumar - production log
+  EMP0017 Mallesh - production log
+  EMP0018 D.Laxmi - production log
+  EMP0019 Padma - production log
+  EMP0020 Suneel kumar - production log
+  EMP0021 Chadan jena - production log
+  EMP0022 J.Suguna - production log
+  EMP0023 B.Malathi - production log
+  EMP0024 Kanu  charan - production log
+  EMP0025 Chukka krishna - production log
+  EMP0026 T.Manjula - production log
+  EMP0027 Goutham kumar - production log
+  EMP0028 M.Rajeshwari - production log
+  EMP0031 Mohit yadav - production log
+  EMP0032 Jitendra - production log
+  EMP0033 Pushependra - production log
+  EMP0034 Heeravati - production log
+  EMP0035 Subham kumar - production log
+  EMP0036 G.Mahesh - production log
+  EMP0037 Surendra kumar - production log
+  EMP0038 Tun tun kumar - production log
+  EMP0039 Nitesh kumar - production log
+  EMP0040 Dilip sharma - production log
+  EMP0041 Naendra Reddy - production log
+  EMP0043 Prakash mahapatra - production log
+  EMP0044 Ramji - production log
+  EMP0045 Shayam kumar - production log
+  EMP0046 Mukesh kumar - production log
+  EMP0048 Sunil kumar - production log
+  EMP0049 Raj kumar - production log
+  EMP0050 Sushil kumar - production log
+  EMP0052 Deeplesh pandey - production log
+  EMP0053 Vikas vishwkarma - production log
+  EMP0054 Bhagchand - production log
+  EMP0055 Shiva kumar - production log
+  EMP0057 k Laxmi - production log
+  EMP0063 CH Narsing - production log
+  EMP0064 Meera bhai - production log
+  EMP0065 Milan sarder - production log
+  EMP0067 Chinapala swapana - production log
+  EMP0069 M. Venkatesh - production log
+  EMP0070 Laxman - production log
+  EMP-ARJUNCR-4ETG Arjun Admin - linked to user account
+  EMP0015 Avijit Neogi - linked to user account
+  EMP0051 Awish - linked to user account, production log
+  EMP0066 Balram - production log
+  EMP0068 Ankam Aswini - linked to user account, production log
+  EMP-001 Arjun Bhaskar - linked to user account
+  EMP0016 Ashish kumar sah - linked to user account, production log
+  E2EOWNER E2E Owner (test) - linked to user account
+  E2EADMIN E2E Admin (test) - linked to user account
+  EMP-002 Yash Bankar - linked to user account
+  EMP-SHOEBKHA-0NC2 Shoeb - linked to user account
+  EMP-ARYAYADA-1TZD Arya - linked to user account
+  EMP-OP-01 Ramesh Kumar - production log
+  EMP0061 Amod sah - linked to user account, production log
+  EMP-ABDULBAS-0URW Abdul Basit - linked to user account, production log
+DRY RUN only. Nothing changed.
+
+### pnpm golive:load (dry run)
+DB host: aws-1-ap-southeast-1.pooler.supabase.com:5432  db: postgres  project ref: kmaxtksmeabmmlervpjl  expected: kmaxtksmeabmmlervpjl
+MODE: DRY RUN (read-only; no changes)
+WOULD apply:
+  shifts   create 4 (Day Shift, General Shift, General Ladies, House Keeping), update times 1 (Night Shift 22:00-06:00 -> 20:00-05:00), unchanged 0
+  departments create 13 (Administration, Notebook production, Notebook QC, Store, Packaging QC, Maintenance, House Keeping, Packaging Production, Pinned Line, Packaging, Binding, Lamination, Packing), existing 3
+  employees create 140, update 9 (of which user-linked, role kept: 0), total in file 149
+  CODE COLLISIONS (existing code, different person; update would rename history): 9
+    EMP001: DB 'Giradharial Dhard' -> file 'Girdharilal Dhard'
+    EMP002: DB 'CH.V.Satyanarayana' -> file 'D.Srinivas'
+    EMP003: DB 'Shankar lal sharma' -> file 'Kalla Naga Surya Appa Rao'
+    EMP004: DB 'Ranjeeth kumar' -> file 'CHV.Satyanarayana'
+    EMP005: DB 'Bhumesh' -> file 'Kali charan'
+    EMP006: DB 'Rajeevi kumar' -> file 'G.S. Joshi'
+    EMP007: DB 'Y.Srinu' -> file 'G.Prasad'
+    EMP008: DB 'K.Shiva kumar' -> file 'M.Praveen Reddy'
+    EMP009: DB 'Sanam yadav' -> file 'Kanthi Mallesh'
+  employees with unresolved shift: 0
+  existing DB employees NOT in file (untouched): 75
+DRY RUN only. Nothing changed.

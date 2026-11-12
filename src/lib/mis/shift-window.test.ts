@@ -116,3 +116,17 @@ describe('shiftWrapsMidnight', () => {
     expect(shiftDurationMinutes({ startTime: '08:00', endTime: '08:00' })).toBe(1440);
   });
 });
+
+describe('go-live shifts: night 20:00-05:00 and the start == end guard', () => {
+  const night = { startTime: '20:00', endTime: '05:00' };
+  it('20:00-05:00 wraps midnight and covers both sides of it', () => {
+    expect(shiftWrapsMidnight(night)).toBe(true);
+    expect(shiftDurationMinutes(night)).toBe(9 * 60);
+    for (const hhmm of ['20:00', '23:59', '00:00', '04:59']) expect(isMinuteInShiftWindow(timeToMinutes(hhmm), night)).toBe(true);
+    for (const hhmm of ['05:00', '12:00', '19:59']) expect(isMinuteInShiftWindow(timeToMinutes(hhmm), night)).toBe(false);
+  });
+  it('a start == end shift matches no minute (mirrors WorkDate.kt R2-384)', () => {
+    const zero = { startTime: '08:00', endTime: '08:00' };
+    for (const m of [0, 480, 1000, 1439]) expect(isMinuteInShiftWindow(m, zero)).toBe(false);
+  });
+});

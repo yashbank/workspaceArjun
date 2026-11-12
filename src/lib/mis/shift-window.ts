@@ -49,6 +49,8 @@ export function shiftWrapsMidnight(shift: ShiftWindow): boolean {
 export function isMinuteInShiftWindow(minuteOfDayValue: number, shift: ShiftWindow): boolean {
   const start = timeToMinutes(shift.startTime);
   const end = timeToMinutes(shift.endTime);
+  // Zero-length window (start == end) matches nothing, as in WorkDate.kt (R2-384) — never all 1440 minutes.
+  if (start === end) return false;
   return end > start
     ? minuteOfDayValue >= start && minuteOfDayValue < end
     : minuteOfDayValue >= start || minuteOfDayValue < end;
