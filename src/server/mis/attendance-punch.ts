@@ -32,7 +32,8 @@ import { getCurrentUser } from '@/server/auth';
 import { logAuditEvent } from '@/server/mis/audit';
 import { requirePermission } from '@/server/mis/auth';
 import { resolveEmployeeShiftId } from '@/server/mis/shift-roster';
-import { getCorrectionWindowDays, getFactoryTimezone, getLunchBreakMinutes, getRuleValue } from '@/server/mis/business-rules';
+import { employeeCodeCandidates } from '@/lib/mis/employee-code-style';
+import { getCorrectionWindowDays, getEmployeeCodeStyle, getFactoryTimezone, getLunchBreakMinutes, getRuleValue } from '@/server/mis/business-rules';
 import { runIdempotent, type IdempotentResult, type MisTx, type RunOptions } from '@/server/mis/idempotency';
 import {
   authenticateDevice,
@@ -181,10 +182,16 @@ async function applyPunch(
 
   // Who was scanned? The employee code is unique; a soft-deleted or inactive
   // person is a different problem from an unknown one, so look without filtering.
-  const employee = await tx.misEmployee.findFirst({
-    where: { employeeCode: payload.badgeCode },
-    select: { id: true, name: true, isActive: true, deletedAt: true, payType: true },
-  });
+  const employeeSelect = { id: true, name: true, isActive: true, deletedAt: true, payType: true } as const;
+  let employee = await tx.misEmployee.findFirst({ where: { employeeCode: payload.badgeCode }, select: employeeSelect });
+  if (!employee) {
+    // Exact miss: try the code style's normalised forms (stored codes are never rewritten).
+    const style = await getEmployeeCodeStyle();
+    for (const candidate of employeeCodeCandidates(payload.badgeCode, style).filter((c) => c !== payload.badgeCode)) {
+      employee = await tx.misEmployee.findFirst({ where: { employeeCode: candidate }, select: employeeSelect });
+      if (employee) break;
+    }
+  }
   const scanned = `${formatFactoryTime(recordedAt, timeZone)} · code ${payload.badgeCode}`;
   if (!employee) throw parkable('BADGE_UNKNOWN', `Badge not recognised. Scanned ${scanned}.`);
   if (!overrideFlags?.skipEmployeeChecks && (!employee.isActive || employee.deletedAt)) {
@@ -496,7 +503,7 @@ function toEnvelope(body: unknown): { envelope: QueuedWriteEnvelope } | { verdic
 export async function ingestDevicePunch(
   authorizationHeader: string | null | undefined,
   body: unknown,
-): Promise<IdempotentResult<PunchResult>> {
+): Promise<IdempotentResult<PunchResult> & { deviceRevoked?: true }> {
   const device = await authenticateDevice(authorizationHeader, { allowRevoked: true });
 
   const parsed = toEnvelope(body);
@@ -515,7 +522,8 @@ export async function ingestDevicePunch(
     await recordDeviceSync(device, parseHealthReport(health));
   }
   await auditApplied(out, null, device.id);
-  return out;
+  // R2-181: the punch is kept (D18) but the tablet is told, on this very contact, that it is retired.
+  return device.revoked ? { ...out, deviceRevoked: true } : out;
 }
 
 /**

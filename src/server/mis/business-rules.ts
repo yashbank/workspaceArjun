@@ -3,6 +3,7 @@ import { can } from '@/lib/mis/permissions';
 import { isWageRuleKey, isPayrollPolicyRuleKey, type WageRuleKey } from '@/lib/mis/rule-keys';
 import { dbDateKey } from '@/lib/mis/attendance-month';
 import { DEFAULT_FACTORY_TIMEZONE, dateKeyToDbDate, factoryDateKey, isValidTimeZone, resolveFactoryTimezone } from '@/lib/mis/factory-time';
+import { EMPLOYEE_CODE_STYLES, EMPLOYEE_CODE_STYLE_HELP, EMPLOYEE_CODE_STYLE_KEY, DEFAULT_EMPLOYEE_CODE_STYLE, resolveEmployeeCodeStyle, type EmployeeCodeStyle } from '@/lib/mis/employee-code-style';
 import { isLateWorkers, LATE_RULE_KEYS } from '@/lib/mis/late-rule';
 import { validateSchedule } from '@/lib/mis/rules-ledger';
 import { db } from '@/server/db';
@@ -232,6 +233,28 @@ export async function getFactoryTimezone(): Promise<string> {
 }
 
 /**
+ * The employee code style in force now (`employee.code_style`: EASY by default). Seeds its rule
+ * row on first read so it shows in Settings. Ungated read; it only governs NEW codes and matching.
+ */
+export async function getEmployeeCodeStyle(): Promise<EmployeeCodeStyle> {
+  const existing = await db.misBusinessRule.findFirst({ where: { ruleKey: EMPLOYEE_CODE_STYLE_KEY } });
+  if (!existing) {
+    await db.misBusinessRule.create({
+      data: {
+        ruleKey: EMPLOYEE_CODE_STYLE_KEY,
+        ruleValue: DEFAULT_EMPLOYEE_CODE_STYLE,
+        valueType: 'string',
+        label: 'Employee code style (EASY / MEDIUM / HARD / DIFFICULT)',
+        description: EMPLOYEE_CODE_STYLE_HELP,
+        effectiveFrom: new Date(),
+      },
+    });
+    return DEFAULT_EMPLOYEE_CODE_STYLE;
+  }
+  return resolveEmployeeCodeStyle(await getRuleValue(EMPLOYEE_CODE_STYLE_KEY));
+}
+
+/**
  * How many days back the register may still be corrected, today included — the
  * `ATTENDANCE_CORRECTION_DAYS` rule, three when unset (Admin/Owner: `attendance.edit_window_days_admin` first). Ungated: the gate that
  * matters is on changing it. Read by punch ingestion (D21) and by the Super
@@ -382,6 +405,9 @@ export async function updateBusinessRule(ruleKey: string, ruleValue: string) {
   if (ruleKey === FACTORY_TIMEZONE_KEY && !isValidTimeZone(ruleValue)) {
     throw new Error('The factory timezone must be a full IANA name such as Asia/Kolkata — not an abbreviation like IST.');
   }
+  if (ruleKey === EMPLOYEE_CODE_STYLE_KEY && !(EMPLOYEE_CODE_STYLES as readonly string[]).includes(ruleValue.trim().toUpperCase())) {
+    throw new Error('Employee code style must be one of EASY, MEDIUM, HARD or DIFFICULT.');
+  }
   try {
     return await createRuleRevision(ruleKey, ruleValue, actor.userId);
   } catch (error) {
@@ -497,6 +523,9 @@ export async function scheduleBusinessRule(input: { ruleKey: string; ruleValue: 
   // A timezone that is not a real IANA name would silently mis-file every punch from then on (D22).
   if (input.ruleKey === FACTORY_TIMEZONE_KEY && !isValidTimeZone(input.ruleValue)) {
     throw new Error('The factory timezone must be a full IANA name such as Asia/Kolkata — not an abbreviation like IST.');
+  }
+  if (input.ruleKey === EMPLOYEE_CODE_STYLE_KEY && !(EMPLOYEE_CODE_STYLES as readonly string[]).includes(input.ruleValue.trim().toUpperCase())) {
+    throw new Error('Employee code style must be one of EASY, MEDIUM, HARD or DIFFICULT.');
   }
   try {
     return await createRuleRevision(input.ruleKey, input.ruleValue.trim(), actor.userId, {

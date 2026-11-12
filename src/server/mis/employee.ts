@@ -6,6 +6,8 @@ import { can } from '@/lib/mis/permissions';
 import { maskAccountNo, normaliseBankDetails } from '@/lib/mis/bank-details';
 import { MisForbiddenError, requirePermission, type MisActor } from './auth';
 import { logAuditEvent } from './audit';
+import { generateEmployeeCode } from '@/lib/mis/employee-code-style';
+import { getEmployeeCodeStyle } from './business-rules';
 import { resolveVisibleEmployeeWhere, wouldCreateManagerCycle } from './visibility';
 
 export type EmployeeInput = {
@@ -224,6 +226,17 @@ async function assertShiftUsable(shiftId: string | null | undefined) {
 const hasBankInput = (i: { bankName?: unknown; bankAccountNo?: unknown; ifsc?: unknown }) =>
   i.bankName !== undefined || i.bankAccountNo !== undefined || i.ifsc !== undefined;
 
+/** Next unused code in the current style (used when the form leaves the code blank). */
+async function nextEmployeeCode(): Promise<string> {
+  const style = await getEmployeeCodeStyle();
+  const base = await db.misEmployee.count();
+  for (let i = 1; i <= 200; i++) {
+    const code = generateEmployeeCode(style, base + i);
+    if (!(await db.misEmployee.findFirst({ where: { employeeCode: code }, select: { id: true } }))) return code;
+  }
+  throw new Error('Could not generate a free employee code; type one in.');
+}
+
 export async function createEmployee(input: EmployeeInput) {
   const actor = await requirePermission('employees.write');
   assertMayAssignRole(actor, input.role);
@@ -234,7 +247,8 @@ export async function createEmployee(input: EmployeeInput) {
   const created = await db.misEmployee.create({
     data: {
       ...(bank ?? {}),
-      employeeCode: input.employeeCode.trim().toUpperCase(),
+      // Typed code kept as typed (upper-cased); blank = generated in the factory's code style.
+      employeeCode: input.employeeCode.trim() ? input.employeeCode.trim().toUpperCase() : await nextEmployeeCode(),
       name: input.name.trim(),
       nameHi: input.nameHi?.trim() || null,
       phone: input.phone?.trim() || null,

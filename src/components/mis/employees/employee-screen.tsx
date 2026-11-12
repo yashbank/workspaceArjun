@@ -358,7 +358,7 @@ export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes
       {paging && <Pagination basePath="/mis/employees" params={paging.params} page={paging.page} total={paging.total} />}
       <SlideOver open={open} onClose={() => setOpen(false)} title={editing ? 'Edit Employee' : 'Add Employee'}>
         <div className="flex flex-col gap-4 p-4">
-          <Input label="Employee Code" value={code} onChange={(e) => setCode(e.target.value)} required />
+          <Input label="Employee Code" value={code} onChange={(e) => setCode(e.target.value)} required={!!editing} hint={editing ? undefined : 'Leave blank to generate the next code in the factory code style (Settings: employee.code_style).'} />
           <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} required />
           <Input label="Name (Hindi)" value={nameHi} onChange={(e) => setNameHi(e.target.value)} />
           <Input label="Phone (emergency contact)" value={phone} onChange={(e) => setPhone(e.target.value)} />
