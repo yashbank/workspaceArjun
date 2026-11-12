@@ -7,7 +7,7 @@ Writes data/golive/cleaned-{users,employees,shifts}.json and CLEANING_REPORT.md.
 The pure normalisation rules are mirrored in src/lib/mis/golive-clean.ts (keep in sync).
 """
 import datetime
-import json
+import json, os
 import re
 import sys
 from collections import Counter, defaultdict
@@ -144,6 +144,14 @@ gaps = sorted(set(range(1, max(seq) + 1)) - set(seq)) if seq else []
 bad_code = [c for c in codes if not re.fullmatch(r"EMP\d{3}", c)]
 depts = Counter(e["department"] for e in emps)
 
+# Codes EMP001..EMP009 already belong to other people in the live DB (production logs point at them).
+# Shift every client code up by CODE_OFFSET (default 100: EMP001 -> EMP101) so none collides.
+CODE_OFFSET = int(os.environ.get("CODE_OFFSET", "100"))
+if CODE_OFFSET:
+    for e in emps:
+        e["sheetCode"] = e["employeeCode"]
+        e["employeeCode"] = "EMP%03d" % (int(e["employeeCode"][3:]) + CODE_OFFSET)
+    (OUT / "code-mapping.csv").write_text("sheet_code,new_code,name\n" + "".join(f'{e["sheetCode"]},{e["employeeCode"]},{e["name"]}\n' for e in emps))
 (OUT / "cleaned-shifts.json").write_text(json.dumps(shifts, indent=2, ensure_ascii=False) + "\n")
 (OUT / "cleaned-users.json").write_text(json.dumps(users, indent=2, ensure_ascii=False) + "\n")
 (OUT / "cleaned-employees.json").write_text(json.dumps(emps, indent=2, ensure_ascii=False) + "\n")

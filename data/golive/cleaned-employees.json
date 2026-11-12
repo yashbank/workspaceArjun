@@ -1,1045 +1,1194 @@
 [
   {
-    "employeeCode": "EMP001",
+    "employeeCode": "EMP101",
     "name": "Girdharilal Dhard",
     "designation": "Plant Manager",
     "department": "Administration",
-    "shift": "General Shift"
-  },
-  {
-    "employeeCode": "EMP002",
-    "name": "D.Srinivas",
-    "designation": "General Manager",
-    "department": "Accounts",
-    "shift": "General Shift"
-  },
-  {
-    "employeeCode": "EMP003",
-    "name": "Kalla Naga Surya Appa Rao",
-    "designation": "Production Manager",
-    "department": "Notebook production",
-    "shift": "General Shift"
-  },
-  {
-    "employeeCode": "EMP004",
-    "name": "CHV.Satyanarayana",
-    "designation": "Quality Manager",
-    "department": "Notebook QC",
-    "shift": "General Shift"
-  },
-  {
-    "employeeCode": "EMP005",
-    "name": "Kali charan",
-    "designation": "Plant Assistant/ Incharge",
-    "department": "Administration",
-    "shift": "General Shift"
-  },
-  {
-    "employeeCode": "EMP006",
-    "name": "G.S. Joshi",
-    "designation": "Plant Assistant/ Incharge",
-    "department": "Administration",
-    "shift": "General Shift"
-  },
-  {
-    "employeeCode": "EMP007",
-    "name": "G.Prasad",
-    "designation": "Jr.Accountant",
-    "department": "Accounts",
-    "shift": "General Shift"
-  },
-  {
-    "employeeCode": "EMP008",
-    "name": "M.Praveen Reddy",
-    "designation": "Accounts",
-    "department": "Accounts",
-    "shift": "General Shift"
-  },
-  {
-    "employeeCode": "EMP009",
-    "name": "Kanthi Mallesh",
-    "designation": "Store",
-    "department": "Store",
-    "shift": "General Shift"
-  },
-  {
-    "employeeCode": "EMP010",
-    "name": "Janga Suguna",
-    "designation": "Quality Supervisor",
-    "department": "Notebook QC",
-    "shift": "General Ladies"
-  },
-  {
-    "employeeCode": "EMP011",
-    "name": "B.Malathi",
-    "designation": "Quality Supervisor",
-    "department": "Notebook QC",
-    "shift": "General Ladies"
-  },
-  {
-    "employeeCode": "EMP012",
-    "name": "M.Rajeswari",
-    "designation": "Quality Supervisor",
-    "department": "Packaging QC",
-    "shift": "General Ladies"
-  },
-  {
-    "employeeCode": "EMP013",
-    "name": "G.Mahesh Kumar",
-    "designation": "Quality Supervisor",
-    "department": "Notebook QC",
-    "shift": "General Shift"
-  },
-  {
-    "employeeCode": "EMP014",
-    "name": "Uma Maheshwari",
-    "designation": "Quality Supervisor",
-    "department": "Notebook QC",
-    "shift": "General Ladies"
-  },
-  {
-    "employeeCode": "EMP015",
-    "name": "Kanu Charan Mohapatra",
-    "designation": "Electrical Maintenance",
-    "department": "Maintenance",
-    "shift": "General Shift"
-  },
-  {
-    "employeeCode": "EMP016",
-    "name": "B.kumari",
-    "designation": "Production Supervisor",
-    "department": "Notebook production",
-    "shift": "General Shift"
-  },
-  {
-    "employeeCode": "EMP017",
-    "name": "Devender singh",
-    "designation": "Production Supervisor",
-    "department": "Notebook production",
-    "shift": "General Shift"
-  },
-  {
-    "employeeCode": "EMP018",
-    "name": "A.Meerabai",
-    "designation": "Kitchen",
-    "department": "House Keeping",
-    "shift": "House Keeping"
-  },
-  {
-    "employeeCode": "EMP019",
-    "name": "Daggu Laxmi",
-    "designation": "Helper-House keeping",
-    "department": "House Keeping",
-    "shift": "House Keeping"
-  },
-  {
-    "employeeCode": "EMP020",
-    "name": "Prakash Mahapatra",
-    "designation": "Production Supervisor",
-    "department": "Notebook production",
-    "shift": "General Shift"
-  },
-  {
-    "employeeCode": "EMP021",
-    "name": "Sai Deep",
-    "designation": "Accounts",
-    "department": "Accounts",
-    "shift": "General Shift"
-  },
-  {
-    "employeeCode": "EMP022",
-    "name": "Madhukar",
-    "designation": "Store",
-    "department": "Store",
-    "shift": "General Shift"
-  },
-  {
-    "employeeCode": "EMP023",
-    "name": "K.Kalyani",
-    "designation": "Reception",
-    "department": "Accounts",
-    "shift": "General Ladies"
-  },
-  {
-    "employeeCode": "EMP024",
-    "name": "T.Jyothi",
-    "designation": "Helper-House keeping",
-    "department": "House Keeping",
-    "shift": "House Keeping"
-  },
-  {
-    "employeeCode": "EMP025",
-    "name": "Padma",
-    "designation": "Helper-House keeping",
-    "department": "House Keeping",
-    "shift": "House Keeping"
-  },
-  {
-    "employeeCode": "EMP026",
-    "name": "chander kishore",
-    "designation": "Production Supervisor",
-    "department": "Notebook production",
-    "shift": "General Shift"
-  },
-  {
-    "employeeCode": "EMP027",
-    "name": "Vineet gothi",
-    "designation": "4th plant",
-    "department": "Packaging Production",
-    "shift": "General Shift"
-  },
-  {
-    "employeeCode": "EMP028",
-    "name": "Ganga (New)",
-    "designation": "Helper-House keeping",
-    "department": "House Keeping",
-    "shift": "House Keeping"
-  },
-  {
-    "employeeCode": "EMP029",
-    "name": "Pravalika",
-    "designation": "Production Supervisor",
-    "department": "Notebook production",
-    "shift": "General Ladies"
-  },
-  {
-    "employeeCode": "EMP030",
-    "name": "Avijit",
-    "designation": "Marketing",
-    "department": "Packaging Production",
-    "shift": "General Shift"
-  },
-  {
-    "employeeCode": "EMP031",
-    "name": "Ravindra Jaysing Zaware",
-    "designation": "Operator",
-    "department": "Pinned Line",
-    "shift": "Night Shift"
-  },
-  {
-    "employeeCode": "EMP032",
-    "name": "Suneel Kumar",
-    "designation": "Operator",
-    "department": "Pinned Line",
-    "shift": "Night Shift"
-  },
-  {
-    "employeeCode": "EMP033",
-    "name": "Rajeev Kumar",
-    "designation": "Operator",
-    "department": "Pinned Line",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP034",
-    "name": "Milan Sarder",
-    "designation": "Semi-Skilled",
-    "department": "Pinned Line",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP035",
-    "name": "K.Shiva kumar",
-    "designation": "Operator",
-    "department": "Pinned Line",
-    "shift": "Night Shift"
-  },
-  {
-    "employeeCode": "EMP036",
-    "name": "Chandan Jena",
-    "designation": "Operator",
-    "department": "Pinned Line",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP037",
-    "name": "Shubham Kumar",
-    "designation": "Semi-Skilled",
-    "department": "Pinned Line",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP038",
-    "name": "Nitesh Kumar",
-    "designation": "Operator",
-    "department": "Pinned Line",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP039",
-    "name": "Surendra Kushwaha",
-    "designation": "Semi-Skilled",
-    "department": "Pinned Line",
-    "shift": "Night Shift"
-  },
-  {
-    "employeeCode": "EMP040",
-    "name": "Pappu Kumar",
-    "designation": "Semi-Skilled",
-    "department": "Packaging",
-    "shift": "Night Shift"
-  },
-  {
-    "employeeCode": "EMP041",
-    "name": "Ranjeet Kumar",
-    "designation": "Production Supervisor",
-    "department": "Notebook production",
-    "shift": "General Shift"
-  },
-  {
-    "employeeCode": "EMP042",
-    "name": "Tuntun Kumar",
-    "designation": "Driver",
-    "department": "Maintenance",
-    "shift": "General Shift"
-  },
-  {
-    "employeeCode": "EMP043",
-    "name": "Raj Kumar",
-    "designation": "Semi-Skilled",
-    "department": "Pinned Line",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP044",
-    "name": "Ravi kumar",
-    "designation": "Semi-Skilled",
-    "department": "Pinned Line",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP045",
-    "name": "Abhishek",
-    "designation": "Semi-Skilled",
-    "department": "Pinned Line",
-    "shift": "Night Shift"
-  },
-  {
-    "employeeCode": "EMP046",
-    "name": "Ch.Krishna",
-    "designation": "Semi-Skilled",
-    "department": "Pinned Line",
-    "shift": "Night Shift"
-  },
-  {
-    "employeeCode": "EMP047",
-    "name": "Ajay (Balram)",
-    "designation": "Semi-Skilled",
-    "department": "Pinned Line",
-    "shift": "Night Shift"
-  },
-  {
-    "employeeCode": "EMP048",
-    "name": "Laxman",
-    "designation": "Semi-Skilled",
-    "department": "Binding",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP049",
-    "name": "Ramji",
-    "designation": "Semi-Skilled",
-    "department": "Binding",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP050",
-    "name": "Rahul Rao",
-    "designation": "Helper",
-    "department": "Pinned Line",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP051",
-    "name": "Kuldeep",
-    "designation": "Helper",
-    "department": "Printing",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP052",
-    "name": "Shankarlal Sharma",
-    "designation": "Plant-2nd Incharge",
-    "department": "Administration",
-    "shift": "General Shift"
-  },
-  {
-    "employeeCode": "EMP053",
-    "name": "Vali",
-    "designation": "Supervisor",
-    "department": "Printing",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP054",
-    "name": "Dinesh",
-    "designation": "4th plant",
-    "department": "Packaging Production",
-    "shift": "General Shift"
-  },
-  {
-    "employeeCode": "EMP055",
-    "name": "Jayparkash patel",
-    "designation": "Prepress",
-    "department": "Prepress",
-    "shift": "General Shift"
-  },
-  {
-    "employeeCode": "EMP056",
-    "name": "K.Pawan kumar",
-    "designation": "Prepress",
-    "department": "Prepress",
-    "shift": "General Shift"
-  },
-  {
-    "employeeCode": "EMP057",
-    "name": "k.Vikas kumar",
-    "designation": "Prepress",
-    "department": "Prepress",
-    "shift": "General Shift"
-  },
-  {
-    "employeeCode": "EMP058",
-    "name": "A.Lakshmi",
-    "designation": "Helper-House keeping",
-    "department": "House Keeping",
-    "shift": "House Keeping"
-  },
-  {
-    "employeeCode": "EMP059",
-    "name": "Mamata",
-    "designation": "Helper-House keeping",
-    "department": "House Keeping",
-    "shift": "House Keeping"
-  },
-  {
-    "employeeCode": "EMP060",
-    "name": "Somnath Biswal",
-    "designation": "Supervisor",
-    "department": "Packaging QC",
-    "shift": "General Shift"
-  },
-  {
-    "employeeCode": "EMP061",
-    "name": "Amod Sah",
-    "designation": "Operator",
-    "department": "Printing",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP062",
-    "name": "Lalan Kumar",
-    "designation": "Operator",
-    "department": "Printing",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP063",
-    "name": "C.H.Narsing Rao",
-    "designation": "Operator",
-    "department": "Printing",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP064",
-    "name": "M.Venkatesh",
-    "designation": "Operator",
-    "department": "Printing",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP065",
-    "name": "K. Laxman",
-    "designation": "Semi-Skilled",
-    "department": "Printing",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP066",
-    "name": "Basupally Narender Reddy",
-    "designation": "Operator",
-    "department": "Lamination",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP067",
-    "name": "Y.Srinu",
-    "designation": "Punching Machine",
-    "department": "Packaging",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP068",
-    "name": "G.Bhumesh",
-    "designation": "Packaging",
-    "department": "Packaging",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP069",
-    "name": "Deeplesh Pandey",
-    "designation": "Semi-Skilled",
-    "department": "Printing",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP070",
-    "name": "Sanam Yadav",
-    "designation": "Operator",
-    "department": "Binding",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP071",
-    "name": "Shyam kumar",
-    "designation": "Semi-Skilled",
-    "department": "Printing",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP072",
-    "name": "Sunil kumar",
-    "designation": "Semi-Skilled",
-    "department": "Printing",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP073",
-    "name": "Awinsh",
-    "designation": "Semi-Skilled",
-    "department": "Printing",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP074",
-    "name": "Puspendra",
-    "designation": "Semi-Skilled",
-    "department": "Lamination",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP075",
-    "name": "Raj Kumar",
-    "designation": "Semi-Skilled",
-    "department": "Packaging",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP076",
-    "name": "Lokesh Sah",
-    "designation": "Helper",
-    "department": "Binding",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP077",
-    "name": "Ashish Sah",
-    "designation": "Operator",
-    "department": "Binding",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP078",
-    "name": "Mukesh Kumar Yadav",
-    "designation": "Operator",
-    "department": "Printing",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP079",
-    "name": "Meghu",
-    "designation": "Helper",
-    "department": "Lamination",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP080",
-    "name": "Niraj kumar",
-    "designation": "Operator",
-    "department": "Packaging",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP081",
-    "name": "K.Ritesh",
-    "designation": "Helper",
-    "department": "Packaging",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP082",
-    "name": "Kalu",
-    "designation": "Helper",
-    "department": "Printing",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP083",
-    "name": "sunil Kumar singh",
-    "designation": "Semi-Skilled",
-    "department": "Lamination",
-    "shift": "Night Shift"
-  },
-  {
-    "employeeCode": "EMP084",
-    "name": "Amir kumar",
-    "designation": "Helper",
-    "department": "Lamination",
-    "shift": "Night Shift"
-  },
-  {
-    "employeeCode": "EMP085",
-    "name": "Gyanranjan",
-    "designation": "Helper",
-    "department": "Printing",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP086",
-    "name": "Sushil kumar",
-    "designation": "Semi-Skilled",
-    "department": "Packaging",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP087",
-    "name": "Sushant(new)",
-    "designation": "4 colour",
-    "department": "Printing",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP088",
-    "name": "CH.Swapna",
-    "designation": "Helper",
-    "department": "Packing",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP089",
-    "name": "A.Ashwani",
-    "designation": "Helper",
-    "department": "Packing",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP090",
-    "name": "Sabita Khariwar",
-    "designation": "Helper",
-    "department": "Binding",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP091",
-    "name": "Sunita Khariwar",
-    "designation": "Helper",
-    "department": "Binding",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP092",
-    "name": "Radhika",
-    "designation": "Helper",
-    "department": "Binding",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP093",
-    "name": "M.Shobha",
-    "designation": "Helper",
-    "department": "Packing",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP094",
-    "name": "Afreen",
-    "designation": "Helper",
-    "department": "Binding",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP095",
-    "name": "Muskan",
-    "designation": "Helper",
-    "department": "Packing",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP096",
-    "name": "T.Manjula",
-    "designation": "Helper",
-    "department": "Pinned Line",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP097",
-    "name": "K.Anusha",
-    "designation": "Helper",
-    "department": "Binding",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP098",
-    "name": "Heera",
-    "designation": "Helper",
-    "department": "Binding",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP099",
-    "name": "Tanu",
-    "designation": "Helper",
-    "department": "Binding",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP100",
-    "name": "Ravlila",
-    "designation": "Helper",
-    "department": "Binding",
-    "shift": "Day Shift"
-  },
-  {
-    "employeeCode": "EMP101",
-    "name": "Nasreen",
-    "designation": "Helper",
-    "department": "Packing",
-    "shift": "Day Shift"
+    "shift": "General Shift",
+    "sheetCode": "EMP001"
   },
   {
     "employeeCode": "EMP102",
-    "name": "Sahina",
-    "designation": "Helper",
-    "department": "Packaging",
-    "shift": "Day Shift"
+    "name": "D.Srinivas",
+    "designation": "General Manager",
+    "department": "Accounts",
+    "shift": "General Shift",
+    "sheetCode": "EMP002"
   },
   {
     "employeeCode": "EMP103",
-    "name": "Nasima",
-    "designation": "Helper",
-    "department": "Packaging",
-    "shift": "Day Shift"
+    "name": "Kalla Naga Surya Appa Rao",
+    "designation": "Production Manager",
+    "department": "Notebook production",
+    "shift": "General Shift",
+    "sheetCode": "EMP003"
   },
   {
     "employeeCode": "EMP104",
-    "name": "Nisha",
-    "designation": "Helper",
-    "department": "Packaging",
-    "shift": "Day Shift"
+    "name": "CHV.Satyanarayana",
+    "designation": "Quality Manager",
+    "department": "Notebook QC",
+    "shift": "General Shift",
+    "sheetCode": "EMP004"
   },
   {
     "employeeCode": "EMP105",
-    "name": "Sabnam",
-    "designation": "Helper",
-    "department": "Packaging",
-    "shift": "Day Shift"
+    "name": "Kali charan",
+    "designation": "Plant Assistant/ Incharge",
+    "department": "Administration",
+    "shift": "General Shift",
+    "sheetCode": "EMP005"
   },
   {
     "employeeCode": "EMP106",
-    "name": "Maheshwari",
-    "designation": "Helper",
-    "department": "Packaging",
-    "shift": "Day Shift"
+    "name": "G.S. Joshi",
+    "designation": "Plant Assistant/ Incharge",
+    "department": "Administration",
+    "shift": "General Shift",
+    "sheetCode": "EMP006"
   },
   {
     "employeeCode": "EMP107",
-    "name": "Chandani",
-    "designation": "Helper",
-    "department": "Packaging",
-    "shift": "Day Shift"
+    "name": "G.Prasad",
+    "designation": "Jr.Accountant",
+    "department": "Accounts",
+    "shift": "General Shift",
+    "sheetCode": "EMP007"
   },
   {
     "employeeCode": "EMP108",
-    "name": "Puja",
-    "designation": "Helper",
-    "department": "Packaging",
-    "shift": "Day Shift"
+    "name": "M.Praveen Reddy",
+    "designation": "Accounts",
+    "department": "Accounts",
+    "shift": "General Shift",
+    "sheetCode": "EMP008"
   },
   {
     "employeeCode": "EMP109",
-    "name": "Sunita Bai",
-    "designation": "Helper",
-    "department": "Packaging",
-    "shift": "Day Shift"
+    "name": "Kanthi Mallesh",
+    "designation": "Store",
+    "department": "Store",
+    "shift": "General Shift",
+    "sheetCode": "EMP009"
   },
   {
     "employeeCode": "EMP110",
-    "name": "Urmila",
-    "designation": "Helper",
-    "department": "Packing",
-    "shift": "Day Shift"
+    "name": "Janga Suguna",
+    "designation": "Quality Supervisor",
+    "department": "Notebook QC",
+    "shift": "General Ladies",
+    "sheetCode": "EMP010"
   },
   {
     "employeeCode": "EMP111",
-    "name": "Ram shaki",
-    "designation": "Helper",
-    "department": "Packaging",
-    "shift": "Day Shift"
+    "name": "B.Malathi",
+    "designation": "Quality Supervisor",
+    "department": "Notebook QC",
+    "shift": "General Ladies",
+    "sheetCode": "EMP011"
   },
   {
     "employeeCode": "EMP112",
-    "name": "Githanjali",
-    "designation": "Helper",
-    "department": "Packaging",
-    "shift": "Day Shift"
+    "name": "M.Rajeswari",
+    "designation": "Quality Supervisor",
+    "department": "Packaging QC",
+    "shift": "General Ladies",
+    "sheetCode": "EMP012"
   },
   {
     "employeeCode": "EMP113",
-    "name": "Laxmi pan",
-    "designation": "Helper",
-    "department": "Packing",
-    "shift": "Day Shift"
+    "name": "G.Mahesh Kumar",
+    "designation": "Quality Supervisor",
+    "department": "Notebook QC",
+    "shift": "General Shift",
+    "sheetCode": "EMP013"
   },
   {
     "employeeCode": "EMP114",
-    "name": "Mena",
-    "designation": "Helper",
-    "department": "Pinned Line",
-    "shift": "Day Shift"
+    "name": "Uma Maheshwari",
+    "designation": "Quality Supervisor",
+    "department": "Notebook QC",
+    "shift": "General Ladies",
+    "sheetCode": "EMP014"
   },
   {
     "employeeCode": "EMP115",
-    "name": "Amin",
-    "designation": "Helper-House keeping",
-    "department": "House Keeping",
-    "shift": "House Keeping"
+    "name": "Kanu Charan Mohapatra",
+    "designation": "Electrical Maintenance",
+    "department": "Maintenance",
+    "shift": "General Shift",
+    "sheetCode": "EMP015"
   },
   {
     "employeeCode": "EMP116",
-    "name": "Bhanu",
-    "designation": "Helper",
-    "department": "Pinned Line",
-    "shift": "Day Shift"
+    "name": "B.kumari",
+    "designation": "Production Supervisor",
+    "department": "Notebook production",
+    "shift": "General Shift",
+    "sheetCode": "EMP016"
   },
   {
     "employeeCode": "EMP117",
-    "name": "Amit Kumar",
-    "designation": "Helper",
-    "department": "Packing",
-    "shift": "Day Shift"
+    "name": "Devender singh",
+    "designation": "Production Supervisor",
+    "department": "Notebook production",
+    "shift": "General Shift",
+    "sheetCode": "EMP017"
   },
   {
     "employeeCode": "EMP118",
-    "name": "Dilip Sharma",
-    "designation": "Helper",
-    "department": "Packing",
-    "shift": "Day Shift"
+    "name": "A.Meerabai",
+    "designation": "Kitchen",
+    "department": "House Keeping",
+    "shift": "House Keeping",
+    "sheetCode": "EMP018"
   },
   {
     "employeeCode": "EMP119",
-    "name": "Bipin Bihari Singh",
-    "designation": "Helper",
-    "department": "Binding",
-    "shift": "Day Shift"
+    "name": "Daggu Laxmi",
+    "designation": "Helper-House keeping",
+    "department": "House Keeping",
+    "shift": "House Keeping",
+    "sheetCode": "EMP019"
   },
   {
     "employeeCode": "EMP120",
-    "name": "Sunny",
-    "designation": "Helper",
-    "department": "Packing",
-    "shift": "Day Shift"
+    "name": "Prakash Mahapatra",
+    "designation": "Production Supervisor",
+    "department": "Notebook production",
+    "shift": "General Shift",
+    "sheetCode": "EMP020"
   },
   {
     "employeeCode": "EMP121",
-    "name": "Nikesh",
-    "designation": "Helper",
-    "department": "Pinned Line",
-    "shift": "Day Shift"
+    "name": "Sai Deep",
+    "designation": "Accounts",
+    "department": "Accounts",
+    "shift": "General Shift",
+    "sheetCode": "EMP021"
   },
   {
     "employeeCode": "EMP122",
-    "name": "Vinod Sah",
-    "designation": "Helper",
-    "department": "Packaging",
-    "shift": "Day Shift"
+    "name": "Madhukar",
+    "designation": "Store",
+    "department": "Store",
+    "shift": "General Shift",
+    "sheetCode": "EMP022"
   },
   {
     "employeeCode": "EMP123",
-    "name": "Hayader Ali",
-    "designation": "Helper",
-    "department": "Packaging",
-    "shift": "Day Shift"
+    "name": "K.Kalyani",
+    "designation": "Reception",
+    "department": "Accounts",
+    "shift": "General Ladies",
+    "sheetCode": "EMP023"
   },
   {
     "employeeCode": "EMP124",
-    "name": "Daorao Khander",
-    "designation": "Helper",
-    "department": "Packaging",
-    "shift": "Day Shift"
+    "name": "T.Jyothi",
+    "designation": "Helper-House keeping",
+    "department": "House Keeping",
+    "shift": "House Keeping",
+    "sheetCode": "EMP024"
   },
   {
     "employeeCode": "EMP125",
-    "name": "Chandan",
-    "designation": "Helper",
-    "department": "Packaging",
-    "shift": "Day Shift"
+    "name": "Padma",
+    "designation": "Helper-House keeping",
+    "department": "House Keeping",
+    "shift": "House Keeping",
+    "sheetCode": "EMP025"
   },
   {
     "employeeCode": "EMP126",
-    "name": "Pardeep",
-    "designation": "Helper",
-    "department": "Packing",
-    "shift": "Day Shift"
+    "name": "chander kishore",
+    "designation": "Production Supervisor",
+    "department": "Notebook production",
+    "shift": "General Shift",
+    "sheetCode": "EMP026"
   },
   {
     "employeeCode": "EMP127",
-    "name": "Ganesh",
-    "designation": "4 colour",
-    "department": "Printing",
-    "shift": "Day Shift"
+    "name": "Vineet gothi",
+    "designation": "4th plant",
+    "department": "Packaging Production",
+    "shift": "General Shift",
+    "sheetCode": "EMP027"
   },
   {
     "employeeCode": "EMP128",
-    "name": "Ritesh Kumar",
-    "designation": "Helper",
-    "department": "Packaging",
-    "shift": "Day Shift"
+    "name": "Ganga (New)",
+    "designation": "Helper-House keeping",
+    "department": "House Keeping",
+    "shift": "House Keeping",
+    "sheetCode": "EMP028"
   },
   {
     "employeeCode": "EMP129",
-    "name": "Sipu",
-    "designation": "Semi-Skilled",
-    "department": "Pinned Line",
-    "shift": "Day Shift"
+    "name": "Pravalika",
+    "designation": "Production Supervisor",
+    "department": "Notebook production",
+    "shift": "General Ladies",
+    "sheetCode": "EMP029"
   },
   {
     "employeeCode": "EMP130",
-    "name": "Shablal",
-    "designation": "Helper",
-    "department": "Printing",
-    "shift": "Day Shift"
+    "name": "Avijit",
+    "designation": "Marketing",
+    "department": "Packaging Production",
+    "shift": "General Shift",
+    "sheetCode": "EMP030"
   },
   {
     "employeeCode": "EMP131",
-    "name": "Sashi Ranjan kumar",
-    "designation": "Helper",
-    "department": "Printing",
-    "shift": "Day Shift"
+    "name": "Ravindra Jaysing Zaware",
+    "designation": "Operator",
+    "department": "Pinned Line",
+    "shift": "Night Shift",
+    "sheetCode": "EMP031"
   },
   {
     "employeeCode": "EMP132",
-    "name": "Sasho (new)",
-    "designation": "Helper",
-    "department": "Packing",
-    "shift": "Night Shift"
+    "name": "Suneel Kumar",
+    "designation": "Operator",
+    "department": "Pinned Line",
+    "shift": "Night Shift",
+    "sheetCode": "EMP032"
   },
   {
     "employeeCode": "EMP133",
-    "name": "Sashi (new)",
-    "designation": "Helper",
-    "department": "Packing",
-    "shift": "Night Shift"
+    "name": "Rajeev Kumar",
+    "designation": "Operator",
+    "department": "Pinned Line",
+    "shift": "Day Shift",
+    "sheetCode": "EMP033"
   },
   {
     "employeeCode": "EMP134",
-    "name": "Ranjan (new)",
-    "designation": "Helper",
-    "department": "Packing",
-    "shift": "Night Shift"
+    "name": "Milan Sarder",
+    "designation": "Semi-Skilled",
+    "department": "Pinned Line",
+    "shift": "Day Shift",
+    "sheetCode": "EMP034"
   },
   {
     "employeeCode": "EMP135",
-    "name": "Devender(new)",
-    "designation": "Helper",
+    "name": "K.Shiva kumar",
+    "designation": "Operator",
     "department": "Pinned Line",
-    "shift": "Day Shift"
+    "shift": "Night Shift",
+    "sheetCode": "EMP035"
   },
   {
     "employeeCode": "EMP136",
-    "name": "Ganesh Sahini",
-    "designation": "Helper",
-    "department": "Printing",
-    "shift": "Day Shift"
+    "name": "Chandan Jena",
+    "designation": "Operator",
+    "department": "Pinned Line",
+    "shift": "Day Shift",
+    "sheetCode": "EMP036"
   },
   {
     "employeeCode": "EMP137",
-    "name": "Ritesh Kumar",
-    "designation": "Helper",
-    "department": "Packing",
-    "shift": "Day Shift"
+    "name": "Shubham Kumar",
+    "designation": "Semi-Skilled",
+    "department": "Pinned Line",
+    "shift": "Day Shift",
+    "sheetCode": "EMP037"
   },
   {
     "employeeCode": "EMP138",
-    "name": "Saroj",
-    "designation": "Helper",
-    "department": "Packing",
-    "shift": "Day Shift"
+    "name": "Nitesh Kumar",
+    "designation": "Operator",
+    "department": "Pinned Line",
+    "shift": "Day Shift",
+    "sheetCode": "EMP038"
   },
   {
     "employeeCode": "EMP139",
-    "name": "Angad (new)",
-    "designation": "Helper",
-    "department": "Packing",
-    "shift": "Night Shift"
+    "name": "Surendra Kushwaha",
+    "designation": "Semi-Skilled",
+    "department": "Pinned Line",
+    "shift": "Night Shift",
+    "sheetCode": "EMP039"
   },
   {
     "employeeCode": "EMP140",
-    "name": "Kailash (new)",
-    "designation": "Helper",
-    "department": "Pinned Line",
-    "shift": "Night Shift"
+    "name": "Pappu Kumar",
+    "designation": "Semi-Skilled",
+    "department": "Packaging",
+    "shift": "Night Shift",
+    "sheetCode": "EMP040"
   },
   {
     "employeeCode": "EMP141",
-    "name": "Biswambar (new)",
-    "designation": "Helper",
-    "department": "Packing",
-    "shift": "Night Shift"
+    "name": "Ranjeet Kumar",
+    "designation": "Production Supervisor",
+    "department": "Notebook production",
+    "shift": "General Shift",
+    "sheetCode": "EMP041"
   },
   {
     "employeeCode": "EMP142",
-    "name": "Dhamodar (new)",
-    "designation": "Helper",
-    "department": "Pinned Line",
-    "shift": "Day Shift"
+    "name": "Tuntun Kumar",
+    "designation": "Driver",
+    "department": "Maintenance",
+    "shift": "General Shift",
+    "sheetCode": "EMP042"
   },
   {
     "employeeCode": "EMP143",
-    "name": "Nirmal sah (new)",
-    "designation": "Helper",
-    "department": "Packaging",
-    "shift": "Night Shift"
+    "name": "Raj Kumar",
+    "designation": "Semi-Skilled",
+    "department": "Pinned Line",
+    "shift": "Day Shift",
+    "sheetCode": "EMP043"
   },
   {
     "employeeCode": "EMP144",
-    "name": "Chature sah(new)",
-    "designation": "3rd plant",
-    "department": "Packaging",
-    "shift": "Day Shift"
+    "name": "Ravi kumar",
+    "designation": "Semi-Skilled",
+    "department": "Pinned Line",
+    "shift": "Day Shift",
+    "sheetCode": "EMP044"
   },
   {
     "employeeCode": "EMP145",
-    "name": "Subash (new)",
-    "designation": "Helper",
-    "department": "Packaging",
-    "shift": "Night Shift"
+    "name": "Abhishek",
+    "designation": "Semi-Skilled",
+    "department": "Pinned Line",
+    "shift": "Night Shift",
+    "sheetCode": "EMP045"
   },
   {
     "employeeCode": "EMP146",
-    "name": "Thayad Hr",
-    "designation": "Helper",
-    "department": "Printing",
-    "shift": "Day Shift"
+    "name": "Ch.Krishna",
+    "designation": "Semi-Skilled",
+    "department": "Pinned Line",
+    "shift": "Night Shift",
+    "sheetCode": "EMP046"
   },
   {
     "employeeCode": "EMP147",
-    "name": "Yogendar",
-    "designation": "Helper",
-    "department": "Packing",
-    "shift": "Day Shift"
+    "name": "Ajay (Balram)",
+    "designation": "Semi-Skilled",
+    "department": "Pinned Line",
+    "shift": "Night Shift",
+    "sheetCode": "EMP047"
   },
   {
     "employeeCode": "EMP148",
-    "name": "Thkara",
-    "designation": "Helper",
-    "department": "Packing",
-    "shift": "Day Shift"
+    "name": "Laxman",
+    "designation": "Semi-Skilled",
+    "department": "Binding",
+    "shift": "Day Shift",
+    "sheetCode": "EMP048"
   },
   {
     "employeeCode": "EMP149",
+    "name": "Ramji",
+    "designation": "Semi-Skilled",
+    "department": "Binding",
+    "shift": "Day Shift",
+    "sheetCode": "EMP049"
+  },
+  {
+    "employeeCode": "EMP150",
+    "name": "Rahul Rao",
+    "designation": "Helper",
+    "department": "Pinned Line",
+    "shift": "Day Shift",
+    "sheetCode": "EMP050"
+  },
+  {
+    "employeeCode": "EMP151",
+    "name": "Kuldeep",
+    "designation": "Helper",
+    "department": "Printing",
+    "shift": "Day Shift",
+    "sheetCode": "EMP051"
+  },
+  {
+    "employeeCode": "EMP152",
+    "name": "Shankarlal Sharma",
+    "designation": "Plant-2nd Incharge",
+    "department": "Administration",
+    "shift": "General Shift",
+    "sheetCode": "EMP052"
+  },
+  {
+    "employeeCode": "EMP153",
+    "name": "Vali",
+    "designation": "Supervisor",
+    "department": "Printing",
+    "shift": "Day Shift",
+    "sheetCode": "EMP053"
+  },
+  {
+    "employeeCode": "EMP154",
+    "name": "Dinesh",
+    "designation": "4th plant",
+    "department": "Packaging Production",
+    "shift": "General Shift",
+    "sheetCode": "EMP054"
+  },
+  {
+    "employeeCode": "EMP155",
+    "name": "Jayparkash patel",
+    "designation": "Prepress",
+    "department": "Prepress",
+    "shift": "General Shift",
+    "sheetCode": "EMP055"
+  },
+  {
+    "employeeCode": "EMP156",
+    "name": "K.Pawan kumar",
+    "designation": "Prepress",
+    "department": "Prepress",
+    "shift": "General Shift",
+    "sheetCode": "EMP056"
+  },
+  {
+    "employeeCode": "EMP157",
+    "name": "k.Vikas kumar",
+    "designation": "Prepress",
+    "department": "Prepress",
+    "shift": "General Shift",
+    "sheetCode": "EMP057"
+  },
+  {
+    "employeeCode": "EMP158",
+    "name": "A.Lakshmi",
+    "designation": "Helper-House keeping",
+    "department": "House Keeping",
+    "shift": "House Keeping",
+    "sheetCode": "EMP058"
+  },
+  {
+    "employeeCode": "EMP159",
+    "name": "Mamata",
+    "designation": "Helper-House keeping",
+    "department": "House Keeping",
+    "shift": "House Keeping",
+    "sheetCode": "EMP059"
+  },
+  {
+    "employeeCode": "EMP160",
+    "name": "Somnath Biswal",
+    "designation": "Supervisor",
+    "department": "Packaging QC",
+    "shift": "General Shift",
+    "sheetCode": "EMP060"
+  },
+  {
+    "employeeCode": "EMP161",
+    "name": "Amod Sah",
+    "designation": "Operator",
+    "department": "Printing",
+    "shift": "Day Shift",
+    "sheetCode": "EMP061"
+  },
+  {
+    "employeeCode": "EMP162",
+    "name": "Lalan Kumar",
+    "designation": "Operator",
+    "department": "Printing",
+    "shift": "Day Shift",
+    "sheetCode": "EMP062"
+  },
+  {
+    "employeeCode": "EMP163",
+    "name": "C.H.Narsing Rao",
+    "designation": "Operator",
+    "department": "Printing",
+    "shift": "Day Shift",
+    "sheetCode": "EMP063"
+  },
+  {
+    "employeeCode": "EMP164",
+    "name": "M.Venkatesh",
+    "designation": "Operator",
+    "department": "Printing",
+    "shift": "Day Shift",
+    "sheetCode": "EMP064"
+  },
+  {
+    "employeeCode": "EMP165",
+    "name": "K. Laxman",
+    "designation": "Semi-Skilled",
+    "department": "Printing",
+    "shift": "Day Shift",
+    "sheetCode": "EMP065"
+  },
+  {
+    "employeeCode": "EMP166",
+    "name": "Basupally Narender Reddy",
+    "designation": "Operator",
+    "department": "Lamination",
+    "shift": "Day Shift",
+    "sheetCode": "EMP066"
+  },
+  {
+    "employeeCode": "EMP167",
+    "name": "Y.Srinu",
+    "designation": "Punching Machine",
+    "department": "Packaging",
+    "shift": "Day Shift",
+    "sheetCode": "EMP067"
+  },
+  {
+    "employeeCode": "EMP168",
+    "name": "G.Bhumesh",
+    "designation": "Packaging",
+    "department": "Packaging",
+    "shift": "Day Shift",
+    "sheetCode": "EMP068"
+  },
+  {
+    "employeeCode": "EMP169",
+    "name": "Deeplesh Pandey",
+    "designation": "Semi-Skilled",
+    "department": "Printing",
+    "shift": "Day Shift",
+    "sheetCode": "EMP069"
+  },
+  {
+    "employeeCode": "EMP170",
+    "name": "Sanam Yadav",
+    "designation": "Operator",
+    "department": "Binding",
+    "shift": "Day Shift",
+    "sheetCode": "EMP070"
+  },
+  {
+    "employeeCode": "EMP171",
+    "name": "Shyam kumar",
+    "designation": "Semi-Skilled",
+    "department": "Printing",
+    "shift": "Day Shift",
+    "sheetCode": "EMP071"
+  },
+  {
+    "employeeCode": "EMP172",
+    "name": "Sunil kumar",
+    "designation": "Semi-Skilled",
+    "department": "Printing",
+    "shift": "Day Shift",
+    "sheetCode": "EMP072"
+  },
+  {
+    "employeeCode": "EMP173",
+    "name": "Awinsh",
+    "designation": "Semi-Skilled",
+    "department": "Printing",
+    "shift": "Day Shift",
+    "sheetCode": "EMP073"
+  },
+  {
+    "employeeCode": "EMP174",
+    "name": "Puspendra",
+    "designation": "Semi-Skilled",
+    "department": "Lamination",
+    "shift": "Day Shift",
+    "sheetCode": "EMP074"
+  },
+  {
+    "employeeCode": "EMP175",
+    "name": "Raj Kumar",
+    "designation": "Semi-Skilled",
+    "department": "Packaging",
+    "shift": "Day Shift",
+    "sheetCode": "EMP075"
+  },
+  {
+    "employeeCode": "EMP176",
+    "name": "Lokesh Sah",
+    "designation": "Helper",
+    "department": "Binding",
+    "shift": "Day Shift",
+    "sheetCode": "EMP076"
+  },
+  {
+    "employeeCode": "EMP177",
+    "name": "Ashish Sah",
+    "designation": "Operator",
+    "department": "Binding",
+    "shift": "Day Shift",
+    "sheetCode": "EMP077"
+  },
+  {
+    "employeeCode": "EMP178",
+    "name": "Mukesh Kumar Yadav",
+    "designation": "Operator",
+    "department": "Printing",
+    "shift": "Day Shift",
+    "sheetCode": "EMP078"
+  },
+  {
+    "employeeCode": "EMP179",
+    "name": "Meghu",
+    "designation": "Helper",
+    "department": "Lamination",
+    "shift": "Day Shift",
+    "sheetCode": "EMP079"
+  },
+  {
+    "employeeCode": "EMP180",
+    "name": "Niraj kumar",
+    "designation": "Operator",
+    "department": "Packaging",
+    "shift": "Day Shift",
+    "sheetCode": "EMP080"
+  },
+  {
+    "employeeCode": "EMP181",
+    "name": "K.Ritesh",
+    "designation": "Helper",
+    "department": "Packaging",
+    "shift": "Day Shift",
+    "sheetCode": "EMP081"
+  },
+  {
+    "employeeCode": "EMP182",
+    "name": "Kalu",
+    "designation": "Helper",
+    "department": "Printing",
+    "shift": "Day Shift",
+    "sheetCode": "EMP082"
+  },
+  {
+    "employeeCode": "EMP183",
+    "name": "sunil Kumar singh",
+    "designation": "Semi-Skilled",
+    "department": "Lamination",
+    "shift": "Night Shift",
+    "sheetCode": "EMP083"
+  },
+  {
+    "employeeCode": "EMP184",
+    "name": "Amir kumar",
+    "designation": "Helper",
+    "department": "Lamination",
+    "shift": "Night Shift",
+    "sheetCode": "EMP084"
+  },
+  {
+    "employeeCode": "EMP185",
+    "name": "Gyanranjan",
+    "designation": "Helper",
+    "department": "Printing",
+    "shift": "Day Shift",
+    "sheetCode": "EMP085"
+  },
+  {
+    "employeeCode": "EMP186",
+    "name": "Sushil kumar",
+    "designation": "Semi-Skilled",
+    "department": "Packaging",
+    "shift": "Day Shift",
+    "sheetCode": "EMP086"
+  },
+  {
+    "employeeCode": "EMP187",
+    "name": "Sushant(new)",
+    "designation": "4 colour",
+    "department": "Printing",
+    "shift": "Day Shift",
+    "sheetCode": "EMP087"
+  },
+  {
+    "employeeCode": "EMP188",
+    "name": "CH.Swapna",
+    "designation": "Helper",
+    "department": "Packing",
+    "shift": "Day Shift",
+    "sheetCode": "EMP088"
+  },
+  {
+    "employeeCode": "EMP189",
+    "name": "A.Ashwani",
+    "designation": "Helper",
+    "department": "Packing",
+    "shift": "Day Shift",
+    "sheetCode": "EMP089"
+  },
+  {
+    "employeeCode": "EMP190",
+    "name": "Sabita Khariwar",
+    "designation": "Helper",
+    "department": "Binding",
+    "shift": "Day Shift",
+    "sheetCode": "EMP090"
+  },
+  {
+    "employeeCode": "EMP191",
+    "name": "Sunita Khariwar",
+    "designation": "Helper",
+    "department": "Binding",
+    "shift": "Day Shift",
+    "sheetCode": "EMP091"
+  },
+  {
+    "employeeCode": "EMP192",
+    "name": "Radhika",
+    "designation": "Helper",
+    "department": "Binding",
+    "shift": "Day Shift",
+    "sheetCode": "EMP092"
+  },
+  {
+    "employeeCode": "EMP193",
+    "name": "M.Shobha",
+    "designation": "Helper",
+    "department": "Packing",
+    "shift": "Day Shift",
+    "sheetCode": "EMP093"
+  },
+  {
+    "employeeCode": "EMP194",
+    "name": "Afreen",
+    "designation": "Helper",
+    "department": "Binding",
+    "shift": "Day Shift",
+    "sheetCode": "EMP094"
+  },
+  {
+    "employeeCode": "EMP195",
+    "name": "Muskan",
+    "designation": "Helper",
+    "department": "Packing",
+    "shift": "Day Shift",
+    "sheetCode": "EMP095"
+  },
+  {
+    "employeeCode": "EMP196",
+    "name": "T.Manjula",
+    "designation": "Helper",
+    "department": "Pinned Line",
+    "shift": "Day Shift",
+    "sheetCode": "EMP096"
+  },
+  {
+    "employeeCode": "EMP197",
+    "name": "K.Anusha",
+    "designation": "Helper",
+    "department": "Binding",
+    "shift": "Day Shift",
+    "sheetCode": "EMP097"
+  },
+  {
+    "employeeCode": "EMP198",
+    "name": "Heera",
+    "designation": "Helper",
+    "department": "Binding",
+    "shift": "Day Shift",
+    "sheetCode": "EMP098"
+  },
+  {
+    "employeeCode": "EMP199",
+    "name": "Tanu",
+    "designation": "Helper",
+    "department": "Binding",
+    "shift": "Day Shift",
+    "sheetCode": "EMP099"
+  },
+  {
+    "employeeCode": "EMP200",
+    "name": "Ravlila",
+    "designation": "Helper",
+    "department": "Binding",
+    "shift": "Day Shift",
+    "sheetCode": "EMP100"
+  },
+  {
+    "employeeCode": "EMP201",
+    "name": "Nasreen",
+    "designation": "Helper",
+    "department": "Packing",
+    "shift": "Day Shift",
+    "sheetCode": "EMP101"
+  },
+  {
+    "employeeCode": "EMP202",
+    "name": "Sahina",
+    "designation": "Helper",
+    "department": "Packaging",
+    "shift": "Day Shift",
+    "sheetCode": "EMP102"
+  },
+  {
+    "employeeCode": "EMP203",
+    "name": "Nasima",
+    "designation": "Helper",
+    "department": "Packaging",
+    "shift": "Day Shift",
+    "sheetCode": "EMP103"
+  },
+  {
+    "employeeCode": "EMP204",
+    "name": "Nisha",
+    "designation": "Helper",
+    "department": "Packaging",
+    "shift": "Day Shift",
+    "sheetCode": "EMP104"
+  },
+  {
+    "employeeCode": "EMP205",
+    "name": "Sabnam",
+    "designation": "Helper",
+    "department": "Packaging",
+    "shift": "Day Shift",
+    "sheetCode": "EMP105"
+  },
+  {
+    "employeeCode": "EMP206",
+    "name": "Maheshwari",
+    "designation": "Helper",
+    "department": "Packaging",
+    "shift": "Day Shift",
+    "sheetCode": "EMP106"
+  },
+  {
+    "employeeCode": "EMP207",
+    "name": "Chandani",
+    "designation": "Helper",
+    "department": "Packaging",
+    "shift": "Day Shift",
+    "sheetCode": "EMP107"
+  },
+  {
+    "employeeCode": "EMP208",
+    "name": "Puja",
+    "designation": "Helper",
+    "department": "Packaging",
+    "shift": "Day Shift",
+    "sheetCode": "EMP108"
+  },
+  {
+    "employeeCode": "EMP209",
+    "name": "Sunita Bai",
+    "designation": "Helper",
+    "department": "Packaging",
+    "shift": "Day Shift",
+    "sheetCode": "EMP109"
+  },
+  {
+    "employeeCode": "EMP210",
+    "name": "Urmila",
+    "designation": "Helper",
+    "department": "Packing",
+    "shift": "Day Shift",
+    "sheetCode": "EMP110"
+  },
+  {
+    "employeeCode": "EMP211",
+    "name": "Ram shaki",
+    "designation": "Helper",
+    "department": "Packaging",
+    "shift": "Day Shift",
+    "sheetCode": "EMP111"
+  },
+  {
+    "employeeCode": "EMP212",
+    "name": "Githanjali",
+    "designation": "Helper",
+    "department": "Packaging",
+    "shift": "Day Shift",
+    "sheetCode": "EMP112"
+  },
+  {
+    "employeeCode": "EMP213",
+    "name": "Laxmi pan",
+    "designation": "Helper",
+    "department": "Packing",
+    "shift": "Day Shift",
+    "sheetCode": "EMP113"
+  },
+  {
+    "employeeCode": "EMP214",
+    "name": "Mena",
+    "designation": "Helper",
+    "department": "Pinned Line",
+    "shift": "Day Shift",
+    "sheetCode": "EMP114"
+  },
+  {
+    "employeeCode": "EMP215",
+    "name": "Amin",
+    "designation": "Helper-House keeping",
+    "department": "House Keeping",
+    "shift": "House Keeping",
+    "sheetCode": "EMP115"
+  },
+  {
+    "employeeCode": "EMP216",
+    "name": "Bhanu",
+    "designation": "Helper",
+    "department": "Pinned Line",
+    "shift": "Day Shift",
+    "sheetCode": "EMP116"
+  },
+  {
+    "employeeCode": "EMP217",
+    "name": "Amit Kumar",
+    "designation": "Helper",
+    "department": "Packing",
+    "shift": "Day Shift",
+    "sheetCode": "EMP117"
+  },
+  {
+    "employeeCode": "EMP218",
+    "name": "Dilip Sharma",
+    "designation": "Helper",
+    "department": "Packing",
+    "shift": "Day Shift",
+    "sheetCode": "EMP118"
+  },
+  {
+    "employeeCode": "EMP219",
+    "name": "Bipin Bihari Singh",
+    "designation": "Helper",
+    "department": "Binding",
+    "shift": "Day Shift",
+    "sheetCode": "EMP119"
+  },
+  {
+    "employeeCode": "EMP220",
+    "name": "Sunny",
+    "designation": "Helper",
+    "department": "Packing",
+    "shift": "Day Shift",
+    "sheetCode": "EMP120"
+  },
+  {
+    "employeeCode": "EMP221",
+    "name": "Nikesh",
+    "designation": "Helper",
+    "department": "Pinned Line",
+    "shift": "Day Shift",
+    "sheetCode": "EMP121"
+  },
+  {
+    "employeeCode": "EMP222",
+    "name": "Vinod Sah",
+    "designation": "Helper",
+    "department": "Packaging",
+    "shift": "Day Shift",
+    "sheetCode": "EMP122"
+  },
+  {
+    "employeeCode": "EMP223",
+    "name": "Hayader Ali",
+    "designation": "Helper",
+    "department": "Packaging",
+    "shift": "Day Shift",
+    "sheetCode": "EMP123"
+  },
+  {
+    "employeeCode": "EMP224",
+    "name": "Daorao Khander",
+    "designation": "Helper",
+    "department": "Packaging",
+    "shift": "Day Shift",
+    "sheetCode": "EMP124"
+  },
+  {
+    "employeeCode": "EMP225",
+    "name": "Chandan",
+    "designation": "Helper",
+    "department": "Packaging",
+    "shift": "Day Shift",
+    "sheetCode": "EMP125"
+  },
+  {
+    "employeeCode": "EMP226",
+    "name": "Pardeep",
+    "designation": "Helper",
+    "department": "Packing",
+    "shift": "Day Shift",
+    "sheetCode": "EMP126"
+  },
+  {
+    "employeeCode": "EMP227",
+    "name": "Ganesh",
+    "designation": "4 colour",
+    "department": "Printing",
+    "shift": "Day Shift",
+    "sheetCode": "EMP127"
+  },
+  {
+    "employeeCode": "EMP228",
+    "name": "Ritesh Kumar",
+    "designation": "Helper",
+    "department": "Packaging",
+    "shift": "Day Shift",
+    "sheetCode": "EMP128"
+  },
+  {
+    "employeeCode": "EMP229",
+    "name": "Sipu",
+    "designation": "Semi-Skilled",
+    "department": "Pinned Line",
+    "shift": "Day Shift",
+    "sheetCode": "EMP129"
+  },
+  {
+    "employeeCode": "EMP230",
+    "name": "Shablal",
+    "designation": "Helper",
+    "department": "Printing",
+    "shift": "Day Shift",
+    "sheetCode": "EMP130"
+  },
+  {
+    "employeeCode": "EMP231",
+    "name": "Sashi Ranjan kumar",
+    "designation": "Helper",
+    "department": "Printing",
+    "shift": "Day Shift",
+    "sheetCode": "EMP131"
+  },
+  {
+    "employeeCode": "EMP232",
+    "name": "Sasho (new)",
+    "designation": "Helper",
+    "department": "Packing",
+    "shift": "Night Shift",
+    "sheetCode": "EMP132"
+  },
+  {
+    "employeeCode": "EMP233",
+    "name": "Sashi (new)",
+    "designation": "Helper",
+    "department": "Packing",
+    "shift": "Night Shift",
+    "sheetCode": "EMP133"
+  },
+  {
+    "employeeCode": "EMP234",
+    "name": "Ranjan (new)",
+    "designation": "Helper",
+    "department": "Packing",
+    "shift": "Night Shift",
+    "sheetCode": "EMP134"
+  },
+  {
+    "employeeCode": "EMP235",
+    "name": "Devender(new)",
+    "designation": "Helper",
+    "department": "Pinned Line",
+    "shift": "Day Shift",
+    "sheetCode": "EMP135"
+  },
+  {
+    "employeeCode": "EMP236",
+    "name": "Ganesh Sahini",
+    "designation": "Helper",
+    "department": "Printing",
+    "shift": "Day Shift",
+    "sheetCode": "EMP136"
+  },
+  {
+    "employeeCode": "EMP237",
+    "name": "Ritesh Kumar",
+    "designation": "Helper",
+    "department": "Packing",
+    "shift": "Day Shift",
+    "sheetCode": "EMP137"
+  },
+  {
+    "employeeCode": "EMP238",
+    "name": "Saroj",
+    "designation": "Helper",
+    "department": "Packing",
+    "shift": "Day Shift",
+    "sheetCode": "EMP138"
+  },
+  {
+    "employeeCode": "EMP239",
+    "name": "Angad (new)",
+    "designation": "Helper",
+    "department": "Packing",
+    "shift": "Night Shift",
+    "sheetCode": "EMP139"
+  },
+  {
+    "employeeCode": "EMP240",
+    "name": "Kailash (new)",
+    "designation": "Helper",
+    "department": "Pinned Line",
+    "shift": "Night Shift",
+    "sheetCode": "EMP140"
+  },
+  {
+    "employeeCode": "EMP241",
+    "name": "Biswambar (new)",
+    "designation": "Helper",
+    "department": "Packing",
+    "shift": "Night Shift",
+    "sheetCode": "EMP141"
+  },
+  {
+    "employeeCode": "EMP242",
+    "name": "Dhamodar (new)",
+    "designation": "Helper",
+    "department": "Pinned Line",
+    "shift": "Day Shift",
+    "sheetCode": "EMP142"
+  },
+  {
+    "employeeCode": "EMP243",
+    "name": "Nirmal sah (new)",
+    "designation": "Helper",
+    "department": "Packaging",
+    "shift": "Night Shift",
+    "sheetCode": "EMP143"
+  },
+  {
+    "employeeCode": "EMP244",
+    "name": "Chature sah(new)",
+    "designation": "3rd plant",
+    "department": "Packaging",
+    "shift": "Day Shift",
+    "sheetCode": "EMP144"
+  },
+  {
+    "employeeCode": "EMP245",
+    "name": "Subash (new)",
+    "designation": "Helper",
+    "department": "Packaging",
+    "shift": "Night Shift",
+    "sheetCode": "EMP145"
+  },
+  {
+    "employeeCode": "EMP246",
+    "name": "Thayad Hr",
+    "designation": "Helper",
+    "department": "Printing",
+    "shift": "Day Shift",
+    "sheetCode": "EMP146"
+  },
+  {
+    "employeeCode": "EMP247",
+    "name": "Yogendar",
+    "designation": "Helper",
+    "department": "Packing",
+    "shift": "Day Shift",
+    "sheetCode": "EMP147"
+  },
+  {
+    "employeeCode": "EMP248",
+    "name": "Thkara",
+    "designation": "Helper",
+    "department": "Packing",
+    "shift": "Day Shift",
+    "sheetCode": "EMP148"
+  },
+  {
+    "employeeCode": "EMP249",
     "name": "Chandan kumar",
     "designation": "Helper",
     "department": "Packaging",
-    "shift": "Day Shift"
+    "shift": "Day Shift",
+    "sheetCode": "EMP149"
   }
 ]
