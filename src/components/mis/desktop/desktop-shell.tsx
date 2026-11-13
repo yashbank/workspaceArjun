@@ -100,7 +100,7 @@ export function DesktopShell({
         className="sticky top-0 flex h-dvh w-[68px] shrink-0 flex-col bg-[#171310] text-slate-200 xl:w-60"
       >
         <div className="flex items-center gap-3 px-3 py-4 xl:px-4">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#f5efe3] text-sm font-bold text-[#171310]">
+          <span data-testid="brand-mark" className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#f5efe3] text-sm font-bold text-[#171310]">
             BP
           </span>
           {/* The wordmark is part of the expanded rail only; at 68px the monogram is the mark. */}

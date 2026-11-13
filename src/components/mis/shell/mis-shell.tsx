@@ -126,6 +126,10 @@ function Header({
   return (
     <>
       <header className="sticky top-0 z-30 flex h-12 shrink-0 items-center gap-2 border-b border-slate-200 bg-white px-4 max-[359px]:gap-1 max-[359px]:px-1">
+        {/* Same BP monogram as the desktop rail; unconditional, so every role sees it. */}
+        <span data-testid="brand-mark" aria-hidden="true" className="flex size-7 shrink-0 items-center justify-center rounded-md bg-[#171310] text-[11px] font-bold text-[#f5efe3]">
+          BP
+        </span>
         <RoleBadge role={role} />
         <p className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900">{userName}</p>
         <div className="flex shrink-0 items-center gap-2 max-[359px]:gap-1">
