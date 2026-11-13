@@ -150,6 +150,14 @@ describe('the D4 view', () => {
     expect(v.daysLeft).toBe(11);
   });
 
+  it.each(['DELIVERED', 'COMPLETED', 'CANCELLED'])('a %s order has no countdown, so it can never read overdue', async (status) => {
+    as('OWNER');
+    fixture.order = { ...fixture.order, status, deliveryDate: new Date('2026-09-01T00:00:00Z') };
+    const v = (await getOrderDesktopView('o1', NOW))!;
+    expect(v.deliveryLabel).toBe('01/09/2026');
+    expect(v.daysLeft).toBeNull();
+  });
+
   it('builds the hourly strip from the shift and the checks: taken, failed, still to come', async () => {
     as('OWNER');
     const q = (await getOrderDesktopView('o1', NOW))!.quality;

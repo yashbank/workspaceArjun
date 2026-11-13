@@ -126,3 +126,5 @@ golive-credentials/
 credentials-*.csv
 data/golive/credentials*
 data/golive/demo-ids*.json
+e2e/golive/results/
+e2e/golive/screenshots/

@@ -84,6 +84,20 @@ describe('getRangeProduction', () => {
   });
 });
 
+describe('getRangeProduction wastage by phase', () => {
+  it('counts PIECE scrap when there is no KG (R2-408), labelled with its unit', async () => {
+    world.logs = [log(100, 5, 'PIECE'), log(50, 3, 'PIECE')];
+    const p = await getRangeProduction(NOV);
+    expect(p.wastageByPhase).toEqual([{ phase: 'No phase', kg: 8, unit: 'PIECE' }]);
+  });
+
+  it('groups by the unit with the most waste, not by KG alone', async () => {
+    world.logs = [log(100, 2, 'KG'), log(40, 9, 'PIECE')];
+    const p = await getRangeProduction(NOV);
+    expect(p.wastageByPhase).toEqual([{ phase: 'No phase', kg: 9, unit: 'PIECE' }]);
+  });
+});
+
 describe('getRangeOnTime', () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ['Date'] });
@@ -104,5 +118,16 @@ describe('getRangeOnTime', () => {
     world.orders = [due('2026-10-31', 'CONFIRMED')];
     expect(await getRangeOnTime(OCT)).toEqual({ despatched: 0, total: 1 });
     expect(await getRangeOnTime({ ...NOV, fromKey: '2026-12-01', toKey: '2027-01-01' })).toEqual({ despatched: 0, total: 0 });
+  });
+
+  it('a future range is clamped before the query: no inverted gte/lt window (R2-410)', async () => {
+    const seen: Where[] = [];
+    const spy = vi.spyOn(world, 'orders', 'get').mockImplementation(() => {
+      seen.push({} as Where);
+      return [];
+    });
+    expect(await getRangeOnTime({ ...NOV, fromKey: '2026-12-01', toKey: '2027-01-01' })).toEqual({ despatched: 0, total: 0 });
+    expect(seen).toHaveLength(0);
+    spy.mockRestore();
   });
 });

@@ -58,6 +58,9 @@ export function Combobox({ label, value, options, onChange, placeholder = 'Type 
     if (open && activeId) document.getElementById(activeId)?.scrollIntoView({ block: 'nearest' });
   }, [open, activeId]);
 
+  // R2-387: on touch the input can blur before the synthesised mousedown of a tap. A pointerdown inside the list marks
+  // "a row is being pressed", and the blur that follows leaves the list open so the tap's click can select.
+  const pressing = useRef(false);
   const close = () => { setOpen(false); setQuery(''); setPicked(''); };
   const pick = (v: string) => { onChange(v); close(); };
   // Rows act on mousedown (not click) with preventDefault, so the input keeps focus and never blurs first (R2-354).
@@ -106,7 +109,7 @@ export function Combobox({ label, value, options, onChange, placeholder = 'Type 
               onFocus={(e) => { setModal(e.target.closest('[aria-modal="true"]')); setOpen(true); }}
               onClick={() => setOpen(true)}
               // R2-354: Tab (or any focus move) closes the list; the rows never take focus.
-              onBlur={close}
+              onBlur={() => { if (!pressing.current) close(); }}
               onKeyDown={onKey}
               className={cn(
                 'min-h-12 w-full rounded-lg border bg-white px-3 text-base text-slate-900 placeholder:text-slate-500',
@@ -122,6 +125,7 @@ export function Combobox({ label, value, options, onChange, placeholder = 'Type 
             container={modal}
             // Radix calls this a dialog; here it only holds the listbox.
             role="presentation"
+            onPointerDown={() => { pressing.current = true; setTimeout(() => { pressing.current = false; }, 600); }}
             className="w-(--radix-popover-trigger-width) p-0"
             onOpenAutoFocus={(e) => e.preventDefault()}
             onCloseAutoFocus={(e) => e.preventDefault()}

@@ -265,7 +265,7 @@ export function DesktopPageHeader({
         <h1 className="text-2xl font-bold text-slate-900">{title}</h1>
         {summary ? <p className="mt-0.5 font-mono text-xs text-slate-500">{summary}</p> : null}
       </div>
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="flex max-w-full shrink-0 flex-wrap items-center gap-2">
         {secondary}
         {primary}
       </div>

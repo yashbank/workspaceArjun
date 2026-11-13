@@ -26,6 +26,7 @@ import {
   type PhaseStatus,
 } from '@/lib/mis/order-timeline';
 import { can } from '@/lib/mis/permissions';
+import { isOrderClosed } from '@/lib/mis/order-status';
 import { formatFactoryTime, factoryDateKey } from '@/lib/mis/factory-time';
 
 import { requirePermission } from './auth';
@@ -140,7 +141,8 @@ export async function getOrderDesktopView(orderId: string, now: Date = new Date(
     status: order.status,
     receivedLabel: dayMonth(order.createdAt, timeZone),
     deliveryLabel: order.deliveryDate ? dayMonth(order.deliveryDate, timeZone) : null,
-    daysLeft: daysUntil(order.deliveryDate, now, timeZone),
+    // A delivered / completed / cancelled order is never overdue: no countdown at all.
+    daysLeft: isOrderClosed(order.status) ? null : daysUntil(order.deliveryDate, now, timeZone),
     progress: phaseProgress(inputs),
     position: position && activeRow ? { ...position, name: activeRow.name } : null,
     phases: rows,

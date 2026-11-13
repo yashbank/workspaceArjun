@@ -55,3 +55,18 @@ describe('R2-354 keyboard: Tab (blur) and Escape both close the list', () => {
     expect(screen.queryByRole('listbox')).toBeNull();
   });
 });
+
+describe('R2-387 touch: a tap on a row selects even when the input blurs first', () => {
+  it('pointerdown in the list, then blur, then click picks the row', () => {
+    const onChange = vi.fn();
+    render(<Combobox label="Machine" value={null} options={options} onChange={onChange} />);
+    const input = screen.getByRole('combobox', { name: 'Machine' });
+    fireEvent.focus(input);
+    const row = screen.getByRole('option', { name: 'Polar Cutter' });
+    fireEvent.pointerDown(row, { pointerType: 'touch' });
+    fireEvent.blur(input);
+    expect(screen.queryByRole('listbox')).not.toBeNull();
+    fireEvent.click(row);
+    expect(onChange).toHaveBeenCalledWith('b');
+  });
+});

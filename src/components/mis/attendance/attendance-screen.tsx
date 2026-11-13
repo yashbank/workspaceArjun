@@ -238,7 +238,7 @@ export function AttendanceScreen({ records, unrecorded = [], todayKey, summary, 
     <div className="mx-auto max-w-6xl flex flex-col gap-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h1 className="text-xl font-semibold text-slate-900">Attendance</h1>
-        <div className="flex gap-2">
+        <div className="flex min-w-0 max-w-full flex-wrap gap-2">
           <Link href="/mis/attendance?view=daily" className={`inline-flex min-h-11 items-center rounded-lg px-3 text-base font-medium ${view === 'daily' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Daily</Link>
           <Link href="/mis/attendance?view=monthly" className={`inline-flex min-h-11 items-center rounded-lg px-3 text-base font-medium ${view === 'monthly' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Monthly ({monthKey})</Link>
           <Link href={`/mis/attendance?month=${monthKey}`} className="hidden min-h-11 items-center rounded-lg bg-slate-100 px-3 text-base font-medium text-slate-700 hover:bg-slate-200 lg:inline-flex">Month matrix</Link>

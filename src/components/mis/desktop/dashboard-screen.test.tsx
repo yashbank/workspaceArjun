@@ -120,7 +120,7 @@ describe('add, remove and reorder', () => {
   it('REMOVES a widget from the layout, and saves the shorter order', async () => {
     const { onSave, layout } = setup();
     customise();
-    fireEvent.click(screen.getByRole('button', { name: /^Remove widget: Output · yesterday/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Remove widget: Output · selected range/ }));
     expect(screen.getAllByRole('region')).toHaveLength(layout.length - 1);
     done();
     await vi.waitFor(() => {
@@ -133,13 +133,13 @@ describe('add, remove and reorder', () => {
   it('ADDS a widget back from the library, and the library marks it placed', async () => {
     const { onSave, layout } = setup();
     customise();
-    fireEvent.click(screen.getByRole('button', { name: /^Remove widget: Output · yesterday/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Remove widget: Output · selected range/ }));
 
     const library = screen.getByRole('complementary', { name: 'Widget library' });
-    fireEvent.click(within(library).getByRole('button', { name: /^Add widget: Output · yesterday/ }));
+    fireEvent.click(within(library).getByRole('button', { name: /^Add widget: Output · selected range/ }));
     expect(screen.getAllByRole('region')).toHaveLength(layout.length);
     // Adding it again is impossible: the button now says it is already placed.
-    expect(within(library).getByRole('button', { name: /^Already on your dashboard: Output · yesterday/ })).toBeTruthy();
+    expect(within(library).getByRole('button', { name: /^Already on your dashboard: Output · selected range/ })).toBeTruthy();
 
     done();
     await vi.waitFor(() => expect((onSave.mock.calls[0][0] as string[])).toContain('output.yesterday'));
@@ -149,7 +149,7 @@ describe('add, remove and reorder', () => {
     const { onSave, layout } = setup();
     const before = layout.map((p) => p.widgetKey);
     customise();
-    fireEvent.click(screen.getByRole('button', { name: /^Move later: Output · yesterday/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Move later: Output · selected range/ }));
     done();
     await vi.waitFor(() => {
       const saved = onSave.mock.calls[0][0] as string[];
@@ -163,7 +163,7 @@ describe('add, remove and reorder', () => {
   it('the first widget cannot move earlier and the last cannot move later', () => {
     const { layout } = setup();
     customise();
-    const firstTitle = /^Move earlier: Output · yesterday/;
+    const firstTitle = /^Move earlier: Output · selected range/;
     expect(screen.getByRole('button', { name: firstTitle })).toHaveProperty('disabled', true);
     const lastKey = layout[layout.length - 1].widgetKey;
     expect(lastKey).toBeTruthy();
