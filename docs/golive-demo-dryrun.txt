@@ -1,0 +1,63 @@
+== pnpm golive:seed-demo (dry run) ==
+$ tsx scripts/golive/seed-demo.ts
+DB host: aws-1-ap-southeast-1.pooler.supabase.com:5432  db: postgres  project ref: kmaxtksmeabmmlervpjl  expected: kmaxtksmeabmmlervpjl
+MODE: DRY RUN (read-only; no changes)
+
+Factory zone Asia/Kolkata; factory today 2026-11-13
+
+Sample employees (read-only, attendance rows only):
+  DAY           Day Shift      EMP133 Rajeev Kumar
+  NIGHT         Night Shift    EMP131 Ravindra Jaysing Zaware
+  GENERAL       General Shift  EMP115 Kanu Charan Mohapatra
+  LADIES        General Ladies EMP110 Janga Suguna (has login)
+  HOUSEKEEPING  House Keeping  EMP118 A.Meerabai
+
+WOULD create:
+  chunk 1-masters
+    misShift                   1
+    misCustomer                2
+    misSupplier                2
+    misItem                    5
+    misMachine                 3
+  chunk 2-stock
+    misInventoryLedger         12
+    misStoreTransaction        12
+  chunk 3-procurement
+    misPurchaseOrder           2
+    misPoItem                  4
+    misGrn                     2
+    misGrnItem                 4
+    misSupplierInvoice         2
+  chunk 4-orders-bom
+    misOrder                   3
+    misOrderStockAllocation    2
+    misBom                     3
+    misBomStage                10
+    misBomMaterial             8
+  chunk 5-production
+    misJobPhase                8
+    misMachineAllocation       5
+    misWorkerAllocation        10
+    misProductionLog           12
+  chunk 6-qc
+    misQcCheck                 8
+  chunk 7-attendance
+    misAttendance              30
+    misPunchRegularization     2
+  chunk 8-payroll-period
+    misPayrollPeriod           1
+  TOTAL rows: 153
+  punches (mis_attendance_punches): 0 by design (immutable table)
+
+DRY RUN only. Nothing changed.
+
+== pnpm golive:cleanup-demo (dry run) ==
+$ tsx scripts/golive/cleanup-demo.ts
+DB host: aws-1-ap-southeast-1.pooler.supabase.com:5432  db: postgres  project ref: kmaxtksmeabmmlervpjl  expected: kmaxtksmeabmmlervpjl
+MODE: DRY RUN (read-only; no changes)
+
+No manifest at /Users/yashbankar/MIS-ArjunBhaskar/Workspace Arjun - Live Project/Arjun/app/data/golive/demo-ids.json: nothing was seeded by this tool, nothing to clean.
+
+Tagged DEMO rows NOT in the manifest (report only, never deleted): none
+
+DRY RUN only. Nothing changed.
