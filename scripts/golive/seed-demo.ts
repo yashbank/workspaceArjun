@@ -22,7 +22,7 @@ import {
 import { addDaysToDateKey, dateKeyToDbDate, factoryDateKey, resolveFactoryTimezone } from '../../src/lib/mis/factory-time';
 import {
   ATTENDANCE_SCRIPT, SAMPLE_SLOT_SHIFT_NAME, buildAttendanceDay, demoLabel, factoryInstant, isSundayKey, lastDateKeys,
-  pickSampleEmployees, runningBalances, type SampleSlot,
+  pickSampleEmployees, planResume, runningBalances, type ResumeFound, type SampleSlot,
 } from '../../src/lib/mis/demo-seed';
 
 type Row = Record<string, unknown>;
@@ -50,8 +50,19 @@ async function main() {
   const monthKey = `${yy}${String(mm).padStart(2, '0')}`;
   console.log(`Factory zone ${zone}; factory today ${today}\n`);
 
+  const resume = process.argv.includes('--resume');
   const existingManifest = readManifest();
-  if (existingManifest) blockers.push(`${MANIFEST_PATH} already exists (run id ${existingManifest.runId}): run golive:cleanup-demo first`);
+  if (existingManifest && !resume) blockers.push(`${MANIFEST_PATH} already exists (run id ${existingManifest.runId}): run golive:cleanup-demo first, or pass --resume to finish pending chunks`);
+  if (resume && !existingManifest) blockers.push('--resume given but no manifest exists: run without --resume');
+
+  // Read-only probe: does the DB know the enum type Prisma casts to? (the schema enum has no @@map; the migration made mis_punch_regularization_status)
+  let regularizationOk = true;
+  try {
+    await prisma.$queryRawUnsafe(`SELECT 'PENDING'::"public"."mis_punch_regularization_status"`);
+  } catch {
+    regularizationOk = false;
+    notes.push('type "public.MisPunchRegularizationStatus" is missing in the DB: mis_punch_regularizations rows are NOT seeded (missed-punch case stays an attendance row only)');
+  }
 
   const shifts = await prisma.misShift.findMany({ select: { id: true, name: true, startTime: true, endTime: true } });
   const shiftByName = new Map(shifts.map((s) => [s.name, s]));
@@ -96,7 +107,7 @@ async function main() {
     grns: await prisma.misGrn.count({ where: { grnNumber: { startsWith: 'DEMO-' } } }),
     shifts: await prisma.misShift.count({ where: { name: { startsWith: '[DEMO]' } } }),
   };
-  for (const [k, v] of Object.entries(clash)) if (v) blockers.push(`${v} existing ${k} already carry the DEMO tag / demo numbers`);
+  for (const [k, v] of Object.entries(clash)) if (v && !resume) blockers.push(`${v} existing ${k} already carry the DEMO tag / demo numbers`);
   const periodExists = await prisma.misPayrollPeriod.findUnique({ where: { year_month: { year: yy, month: mm } }, select: { status: true } });
   if (periodExists) notes.push(`payroll period ${yy}-${mm} already exists (${periodExists.status}): NOT created, NOT touched`);
 
@@ -409,7 +420,7 @@ async function main() {
       }
     }
   }
-  const attendance: Chunk = { name: '7-attendance', steps: [{ table: 'misAttendance', rows: attRows }, { table: 'misPunchRegularization', rows: regRows }] };
+  const attendance: Chunk = { name: '7-attendance', steps: [{ table: 'misAttendance', rows: attRows }, { table: 'misPunchRegularization', rows: regularizationOk ? regRows : [] }] };
 
   // ---- chunk 8: payroll period -------------------------------------------------------------------------------
   const payroll: Chunk = {
@@ -417,7 +428,24 @@ async function main() {
     steps: [{ table: 'misPayrollPeriod', rows: periodExists ? [] : [{ id: id(), year: yy, month: mm, status: 'OPEN', updatedAt: now }] }],
   };
 
-  const chunks = [masters, stock, procurement, ordersChunk, production, qcChunk, attendance, payroll];
+  const allChunks = [masters, stock, procurement, ordersChunk, production, qcChunk, attendance, payroll];
+
+  // ---- --resume: verify what the manifest claims, then run only pending / missing chunks ---------------------
+  let chunks = allChunks;
+  if (resume && existingManifest) {
+    const found: Record<string, ResumeFound> = {};
+    for (const mc of existingManifest.chunks) {
+      found[mc.name] = {};
+      for (const [t, ids] of Object.entries(mc.ids)) found[mc.name][t] = ids?.length ? await delegate(prisma, t).count({ where: { id: { in: ids } } }) : 0;
+    }
+    const plan = planResume(allChunks.map((c) => c.name), existingManifest.chunks, found);
+    console.log('Resume plan:');
+    for (const d of plan.decisions) console.log(`  ${d.action.toUpperCase().padEnd(6)} ${d.name.padEnd(18)} ${d.reason}`);
+    console.log('');
+    blockers.push(...plan.blockers);
+    const runNames = new Set(plan.decisions.filter((d) => d.action !== 'skip').map((d) => d.name));
+    chunks = allChunks.filter((c) => runNames.has(c.name));
+  }
 
   // ---- report ------------------------------------------------------------------------------------------------
   console.log('Sample employees (read-only, attendance rows only):');
@@ -448,7 +476,9 @@ async function main() {
 
   // ---- execute: manifest first, then one transaction per chunk -----------------------------------------------
   const ref = new URL(process.env.DATABASE_URL!).username.split('.').slice(1).join('.');
-  const manifest: DemoManifest = { version: 1, runId: randomUUID(), createdAt: new Date().toISOString(), projectRef: ref, chunks: [], stamps: {} };
+  const manifest: DemoManifest = resume && existingManifest
+    ? { ...existingManifest, chunks: existingManifest.chunks.filter((c) => !chunks.some((r) => r.name === c.name)) } // drop never-committed pending entries; they are re-added below
+    : { version: 1, runId: randomUUID(), createdAt: new Date().toISOString(), projectRef: ref, chunks: [], stamps: {} };
   for (const c of chunks) {
     const ids: Partial<Record<DemoTable, string[]>> = {};
     for (const s of c.steps) if (s.rows.length) ids[s.table] = [...(ids[s.table] ?? []), ...s.rows.map((r) => r.id as string)];

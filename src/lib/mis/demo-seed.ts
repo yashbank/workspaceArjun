@@ -158,3 +158,56 @@ export function runningBalances(moves: { itemId: string; change: number }[]): nu
     return next;
   });
 }
+
+// ---- --resume planning (pure) ------------------------------------------------------------------------------
+
+/** Chunks whose rows reference only real, pre-existing rows (employees, shifts), never ids from earlier demo chunks. Only these may be re-built with fresh ids on resume. */
+export const RESUME_SAFE_CHUNKS: readonly string[] = ['7-attendance', '8-payroll-period'];
+
+export type ResumeChunkInput = { name: string; state: 'pending' | 'committed'; ids: Partial<Record<string, string[]>> };
+/** table -> how many of the manifest ids for that table currently exist in the DB. */
+export type ResumeFound = Record<string, number>;
+export type ResumeDecision = { name: string; action: 'skip' | 'run' | 'rerun'; reason: string };
+
+/**
+ * Decide per planned chunk: skip (committed and every id present), run (not in manifest), rerun (pending and no
+ * id exists: it never committed, so its manifest entry is replaced). Anything inconsistent is a blocker.
+ */
+export function planResume(
+  plannedNames: readonly string[],
+  manifestChunks: readonly ResumeChunkInput[],
+  found: Record<string, ResumeFound>,
+): { decisions: ResumeDecision[]; blockers: string[] } {
+  const decisions: ResumeDecision[] = [];
+  const blockers: string[] = [];
+  for (const name of plannedNames) {
+    const mc = manifestChunks.find((c) => c.name === name);
+    if (!mc) {
+      decisions.push({ name, action: 'run', reason: 'not in manifest' });
+      continue;
+    }
+    const f = found[name] ?? {};
+    const expected = Object.values(mc.ids).reduce((a, v) => a + (v?.length ?? 0), 0);
+    const present = Object.keys(mc.ids).reduce((a, t) => a + (f[t] ?? 0), 0);
+    if (mc.state === 'committed') {
+      if (present === expected) decisions.push({ name, action: 'skip', reason: `committed, ${present}/${expected} rows verified` });
+      else {
+        decisions.push({ name, action: 'skip', reason: `committed but only ${present}/${expected} rows found` });
+        blockers.push(`chunk ${name} is marked committed but only ${present}/${expected} manifest rows exist: investigate, do not resume`);
+      }
+    } else if (present === 0) {
+      if (RESUME_SAFE_CHUNKS.includes(name)) decisions.push({ name, action: 'rerun', reason: `pending, 0/${expected} rows exist (never committed)` });
+      else {
+        decisions.push({ name, action: 'rerun', reason: 'pending, never committed' });
+        blockers.push(`chunk ${name} is pending but not resume-safe (it references ids from earlier chunks): cannot rebuild with fresh ids`);
+      }
+    } else {
+      decisions.push({ name, action: 'rerun', reason: `pending with ${present}/${expected} rows present` });
+      blockers.push(`chunk ${name} is pending but ${present}/${expected} of its rows exist (partial): clean up manually, do not resume`);
+    }
+  }
+  for (const mc of manifestChunks) {
+    if (!plannedNames.includes(mc.name)) blockers.push(`manifest chunk ${mc.name} is not in this seeder's chunk list`);
+  }
+  return { decisions, blockers };
+}

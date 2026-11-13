@@ -89,3 +89,30 @@ describe('demo-seed helpers', () => {
     ).toEqual([100, 5, 69.5, 79.5]);
   });
 });
+
+import { planResume } from './demo-seed';
+
+describe('planResume', () => {
+  const names = ['1-masters', '7-attendance', '8-payroll-period'];
+  const m = [
+    { name: '1-masters', state: 'committed' as const, ids: { misShift: ['a'], misItem: ['b', 'c'] } },
+    { name: '7-attendance', state: 'pending' as const, ids: { misAttendance: ['x', 'y'] } },
+  ];
+  it('skips verified committed, reruns untouched pending, runs missing', () => {
+    const r = planResume(names, m, { '1-masters': { misShift: 1, misItem: 2 }, '7-attendance': { misAttendance: 0 } });
+    expect(r.blockers).toEqual([]);
+    expect(r.decisions.map((d) => d.action)).toEqual(['skip', 'rerun', 'run']);
+  });
+  it('blocks committed chunk with missing rows', () => {
+    const r = planResume(names, m, { '1-masters': { misShift: 1, misItem: 1 }, '7-attendance': { misAttendance: 0 } });
+    expect(r.blockers.join()).toContain('1-masters');
+  });
+  it('blocks partially present pending chunk', () => {
+    const r = planResume(names, m, { '1-masters': { misShift: 1, misItem: 2 }, '7-attendance': { misAttendance: 1 } });
+    expect(r.blockers.join()).toContain('partial');
+  });
+  it('blocks non-resume-safe pending chunk', () => {
+    const r = planResume(['5-production'], [{ name: '5-production', state: 'pending', ids: { misJobPhase: ['p'] } }], { '5-production': { misJobPhase: 0 } });
+    expect(r.blockers.join()).toContain('not resume-safe');
+  });
+});
