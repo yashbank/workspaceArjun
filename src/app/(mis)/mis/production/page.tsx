@@ -1,3 +1,4 @@
+import { toJsonPlain } from '@/lib/mis/plain';
 import { requireMisAccess } from '@/server/mis/guard';
 import { getMisRole } from '@/server/mis/roles';
 import { CLOSED_ORDER_STATUSES } from '@/lib/mis/order-status';
@@ -58,8 +59,8 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
 
   return (
     <ProductionScreen
-      orders={orders}
-      pickerOrders={pickerOrders}
+      orders={toJsonPlain(orders)}
+      pickerOrders={toJsonPlain(pickerOrders)}
       machines={machines}
       units={unitOptions(unitMaster)}
       canWrite={canWrite}

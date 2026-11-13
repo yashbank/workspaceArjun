@@ -2160,6 +2160,8 @@ enum MisBreakKind {
   MEAL
   TEA
   OTHER
+
+  @@map("mis_break_kind")
 }
 
 /// R2-216. One row per break; inAt NULL while the break is open. breakOutAt/breakInAt on MisAttendance are kept.
@@ -2181,6 +2183,8 @@ enum MisPunchRegularizationStatus {
   PENDING
   APPROVED
   REJECTED
+
+  @@map("mis_punch_regularization_status")
 }
 
 model MisPunchRegularization {

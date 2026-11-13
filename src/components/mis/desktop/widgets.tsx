@@ -45,7 +45,7 @@ export type DashboardData = {
   approvals: { total: number; rows: { id: string; title: string; detail: string; age?: string }[] } | null;
   orders: { id: string; orderNumber: string; done: number; total: number; late: boolean; despatched: boolean }[];
   onTime: { pct: number; target: number; despatched: number; total: number } | null;
-  wastageByPhase: { phase: string; kg: number }[];
+  wastageByPhase: { phase: string; kg: number; unit?: string }[];
   /** `ceilings` only for `aql.read`: with no limit there is no over/within verdict, which would give the limit away. */
   qc: { critical: number; major: number; minor: number; ceilings?: { critical: number; major: number; minor: number } } | null;
   defectsOpen: number | null;
@@ -176,7 +176,7 @@ export function WidgetBody({ widgetKey, data }: { widgetKey: string; data: Dashb
             <div key={phase.phase} className="flex items-center gap-2">
               <span className="w-24 shrink-0 truncate text-xs text-slate-600">{phase.phase}</span>
               <span className="h-2.5 min-w-1 rounded-full" style={{ width: `${(phase.kg / top) * 100}%`, backgroundColor: SERIES_HUES[0] }} />
-              <span className="font-mono text-[11px] text-slate-500">{num(phase.kg)}</span>
+              <span className="font-mono text-[11px] text-slate-500">{num(phase.kg)}{phase.unit && phase.unit !== 'KG' ? ` ${phase.unit}` : ''}</span>
             </div>
           ))}
           {total > 0 ? (

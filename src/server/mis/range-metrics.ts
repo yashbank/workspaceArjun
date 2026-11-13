@@ -24,8 +24,8 @@ export type RangeProduction = {
   /** A chart has one axis, so it draws one unit: the one with the most output. */
   seriesUnit: string | null;
   series: { date: string; produced: number; waste: number }[];
-  /** Waste in KG only, by the process the entry was booked to; "No phase" when none. */
-  wastageByPhase: { phase: string; kg: number }[];
+  /** Waste by the process the entry was booked to ("No phase" when none), in the unit with the most waste; `kg` is that quantity, whatever the unit. */
+  wastageByPhase: { phase: string; kg: number; unit: string }[];
 };
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -63,6 +63,7 @@ export async function getRangeProduction(range: KeyRange): Promise<RangeProducti
   const produced = sumByUnit(logs.map((l) => ({ qty: Number(l.qtyProduced ?? 0), unit: l.unit })));
   const waste = sumByUnit(logs.map((l) => ({ qty: Number(l.qtyWaste ?? 0), unit: l.unit })));
   const seriesUnit = produced.reduce<QtyByUnit | null>((top, u) => (!top || u.qty > top.qty ? u : top), null)?.unit ?? null;
+  const wasteUnit = waste.reduce<QtyByUnit | null>((top, u) => (!top || u.qty > top.qty ? u : top), null)?.unit ?? 'KG';
   for (const l of logs) {
     const p = Number(l.qtyProduced ?? 0);
     const w = Number(l.qtyWaste ?? 0);
@@ -72,7 +73,7 @@ export async function getRangeProduction(range: KeyRange): Promise<RangeProducti
       b.produced += p;
       b.waste += w;
     }
-    if (normaliseUnit(l.unit) === 'KG' && w > 0) {
+    if (normaliseUnit(l.unit) === wasteUnit && w > 0) {
       const phase = l.jobPhase?.process?.name ?? 'No phase';
       byPhase.set(phase, (byPhase.get(phase) ?? 0) + w);
     }
@@ -85,7 +86,7 @@ export async function getRangeProduction(range: KeyRange): Promise<RangeProducti
     entries: logs.length,
     seriesUnit,
     series: [...buckets].map(([b, v]) => ({ date: labelOf(b), ...v })),
-    wastageByPhase: [...byPhase].map(([phase, kg]) => ({ phase, kg })).sort((a, b) => b.kg - a.kg),
+    wastageByPhase: [...byPhase].map(([phase, kg]) => ({ phase, kg, unit: wasteUnit })).sort((a, b) => b.kg - a.kg),
   };
 }
 
@@ -157,6 +158,8 @@ export async function getRangeOnTime(range: KeyRange): Promise<RangeOnTime> {
   const today = factoryDateKey(new Date(), await getFactoryTimezone());
   const tomorrow = new Date(Date.parse(`${today}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
   const end = tomorrow < range.toKey ? tomorrow : range.toKey;
+  // A range wholly in the future has nothing due yet; gte > lt would be an inverted query.
+  if (end <= range.fromKey) return { despatched: 0, total: 0 };
   const orders = await db.misOrder.findMany({
     where: {
       status: { not: 'CANCELLED' },

@@ -26,6 +26,8 @@
     "golive:clean": "python3 scripts/golive/clean-client-data.py",
     "golive:wipe": "tsx scripts/golive/wipe-kiosk-test-data.ts",
     "golive:load": "tsx scripts/golive/load-employees.ts",
+    "golive:seed-demo": "tsx scripts/golive/seed-demo.ts",
+    "golive:cleanup-demo": "tsx scripts/golive/cleanup-demo.ts",
     "prepare": "husky",
     "db:deploy": "prisma migrate deploy",
     "db:migrate:dev": "echo \"REFUSED: migrate dev uses a shadow DB with no Supabase auth schema and always fails (P3006/3F000). This project hand-writes migrations in prisma/migrations-pending/. Use pnpm db:deploy. See docs/MIS_UI_SPEC.md 7.\" && exit 1"

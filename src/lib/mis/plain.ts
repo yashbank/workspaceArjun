@@ -40,3 +40,25 @@ export function toPlain<T>(value: T): Plain<T> {
   }
   return value as Plain<T>;
 }
+
+/** `toPlain`, and every Date becomes an ISO string too: the result survives `JSON.parse(JSON.stringify(x))` unchanged. */
+export type JsonPlain<T> = T extends DecimalLike
+  ? number
+  : T extends Date
+    ? string
+    : T extends readonly (infer U)[]
+      ? JsonPlain<U>[]
+      : T extends object
+        ? { [K in keyof T]: JsonPlain<T[K]> }
+        : T;
+
+export function toJsonPlain<T>(value: T): JsonPlain<T> {
+  const plain: unknown = toPlain(value);
+  const walk = (v: unknown): unknown => {
+    if (v instanceof Date) return v.toISOString();
+    if (Array.isArray(v)) return v.map(walk);
+    if (isPlainObject(v)) return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x)]));
+    return v;
+  };
+  return walk(plain) as JsonPlain<T>;
+}

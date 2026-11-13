@@ -100,7 +100,7 @@ export function DesktopShell({
         className="sticky top-0 flex h-dvh w-[68px] shrink-0 flex-col bg-[#171310] text-slate-200 xl:w-60"
       >
         <div className="flex items-center gap-3 px-3 py-4 xl:px-4">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#f5efe3] text-sm font-bold text-[#171310]">
+          <span data-testid="brand-mark" className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#f5efe3] text-sm font-bold text-[#171310]">
             BP
           </span>
           {/* The wordmark is part of the expanded rail only; at 68px the monogram is the mark. */}
@@ -265,7 +265,7 @@ export function DesktopPageHeader({
         <h1 className="text-2xl font-bold text-slate-900">{title}</h1>
         {summary ? <p className="mt-0.5 font-mono text-xs text-slate-500">{summary}</p> : null}
       </div>
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="flex max-w-full shrink-0 flex-wrap items-center gap-2">
         {secondary}
         {primary}
       </div>

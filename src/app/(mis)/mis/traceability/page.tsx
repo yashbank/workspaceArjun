@@ -1,3 +1,4 @@
+import { toJsonPlain } from '@/lib/mis/plain';
 import { requireMisAccess } from '@/server/mis/guard';
 import { listOrders } from '@/server/mis/orders';
 import { TraceabilityScreen } from '@/components/mis/traceability/traceability-screen';
@@ -7,7 +8,7 @@ export default async function TraceabilityPage({ searchParams }: { searchParams:
   const sp = await searchParams;
   await requireMisAccess();
   const orders = (await listOrders()).filter((o) => !['DRAFT'].includes(o.status));
-  const phone = <TraceabilityScreen orders={orders} />;
+  const phone = <TraceabilityScreen orders={toJsonPlain(orders)} />;
 
   // D11 from 1024px up; the existing screen below it. ANY explicit `?view` is the existing screen at every width.
   if (sp.view) return phone;

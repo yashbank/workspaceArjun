@@ -1,3 +1,4 @@
+import { toJsonPlain } from '@/lib/mis/plain';
 import { requireMisAccess } from '@/server/mis/guard';
 import { listOrders, listQcOrdersPage } from '@/server/mis/orders';
 import { getMisRole } from '@/server/mis/roles';
@@ -20,8 +21,8 @@ export default async function QcPage({ searchParams }: { searchParams: Promise<{
   ]);
   return (
     <QcScreen
-      orders={paged.rows}
-      pickerOrders={pickerOrders}
+      orders={toJsonPlain(paged.rows)}
+      pickerOrders={toJsonPlain(pickerOrders)}
       canWrite={canWrite}
       defectTypes={defectTypes.map((dt) => ({ id: dt.id, code: dt.code, name: dt.name, severity: dt.severity }))}
       paging={{ total: paged.total, page: clampPage(parsePage(sp.page), paged.total), params: { q } }}
