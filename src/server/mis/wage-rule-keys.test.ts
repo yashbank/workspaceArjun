@@ -39,6 +39,7 @@ describe('WAGE_RULE_KEYS', () => {
     const NON_WAGE_READS = new Set([
       "'ATTENDANCE_CORRECTION_DAYS'", // D21
       'ADMIN_EDIT_WINDOW_KEY', // R2-227 — Admin/Owner attendance edit window in days, not a wage rate
+      'EMPLOYEE_CODE_STYLE_KEY', // Phase 3 — employee code style (EASY..DIFFICULT), not a wage rate
       'FACTORY_TIMEZONE_KEY', // D22
       'LINE_CLEARANCE_MAX_MINUTES_KEY', // D7
       'LUNCH_BREAK_KEY', // R2-179 — paid lunch allowance in minutes, not a wage rate

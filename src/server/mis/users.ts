@@ -20,6 +20,7 @@ import { logAuditEvent } from './audit';
 
 export type MisUserRow = {
   id: string;
+  userProfileId: string | null;
   employeeCode: string;
   name: string;
   role: MisRoleName;
@@ -38,6 +39,7 @@ export async function listMisUsers(): Promise<MisUserRow[]> {
   });
   return rows.map((r) => ({
     id: r.id,
+    userProfileId: r.userProfileId,
     employeeCode: r.employeeCode,
     name: r.name,
     role: r.role as MisRoleName,

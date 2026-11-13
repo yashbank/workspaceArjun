@@ -1,0 +1,218 @@
+[
+  {
+    "fullName": "Arjun Bhaskar",
+    "sheetRole": "Owner",
+    "role": "Owner",
+    "systemRole": "OWNER",
+    "mobile": null,
+    "email": null
+  },
+  {
+    "fullName": "Girdharilal Dhard",
+    "sheetRole": "Admin",
+    "role": "Admin",
+    "systemRole": "ADMIN",
+    "mobile": null,
+    "email": null
+  },
+  {
+    "fullName": "D.Srinivas",
+    "sheetRole": "Admin",
+    "role": "Admin",
+    "systemRole": "ADMIN",
+    "mobile": null,
+    "email": null
+  },
+  {
+    "fullName": "Kalla Naga Surya Appa Rao",
+    "sheetRole": "Production Manager",
+    "role": "Admin",
+    "systemRole": "ADMIN",
+    "mobile": null,
+    "email": null
+  },
+  {
+    "fullName": "CHV.Satyanarayana",
+    "sheetRole": "QC",
+    "role": "QC",
+    "systemRole": "QC",
+    "mobile": null,
+    "email": null
+  },
+  {
+    "fullName": "Kali charan",
+    "sheetRole": "supervisior",
+    "role": "Supervisor",
+    "systemRole": "SUPERVISOR",
+    "mobile": null,
+    "email": null
+  },
+  {
+    "fullName": "G.S. Joshi",
+    "sheetRole": "supervisior",
+    "role": "Supervisor",
+    "systemRole": "SUPERVISOR",
+    "mobile": null,
+    "email": null
+  },
+  {
+    "fullName": "G.Prasad",
+    "sheetRole": "Admin",
+    "role": "Admin",
+    "systemRole": "ADMIN",
+    "mobile": null,
+    "email": null
+  },
+  {
+    "fullName": "M.Praveen Reddy",
+    "sheetRole": "Admin",
+    "role": "Admin",
+    "systemRole": "ADMIN",
+    "mobile": null,
+    "email": null
+  },
+  {
+    "fullName": "Kanthi Mallesh",
+    "sheetRole": "Store",
+    "role": "Store Guy",
+    "systemRole": "STORE_GUY",
+    "mobile": null,
+    "email": null
+  },
+  {
+    "fullName": "Janga Suguna",
+    "sheetRole": "QC",
+    "role": "QC",
+    "systemRole": "QC",
+    "mobile": null,
+    "email": null
+  },
+  {
+    "fullName": "B.Malathi",
+    "sheetRole": "QC",
+    "role": "QC",
+    "systemRole": "QC",
+    "mobile": null,
+    "email": null
+  },
+  {
+    "fullName": "M.Rajeswari",
+    "sheetRole": "QC",
+    "role": "QC",
+    "systemRole": "QC",
+    "mobile": null,
+    "email": null
+  },
+  {
+    "fullName": "G.Mahesh Kumar",
+    "sheetRole": "QC",
+    "role": "QC",
+    "systemRole": "QC",
+    "mobile": null,
+    "email": null
+  },
+  {
+    "fullName": "Uma Maheshwari",
+    "sheetRole": "QC",
+    "role": "QC",
+    "systemRole": "QC",
+    "mobile": null,
+    "email": null
+  },
+  {
+    "fullName": "B.kumari",
+    "sheetRole": "supervisior",
+    "role": "Supervisor",
+    "systemRole": "SUPERVISOR",
+    "mobile": null,
+    "email": null
+  },
+  {
+    "fullName": "Prakash Mahapatra",
+    "sheetRole": "supervisior",
+    "role": "Supervisor",
+    "systemRole": "SUPERVISOR",
+    "mobile": null,
+    "email": null
+  },
+  {
+    "fullName": "Madhukar",
+    "sheetRole": "Store",
+    "role": "Store Guy",
+    "systemRole": "STORE_GUY",
+    "mobile": null,
+    "email": null
+  },
+  {
+    "fullName": "K.Kalyani",
+    "sheetRole": "super Attendance",
+    "role": "Super Attendance Operator",
+    "systemRole": "SUPER_ATTENDANCE_OPERATOR",
+    "mobile": null,
+    "email": null
+  },
+  {
+    "fullName": "chander kishore",
+    "sheetRole": "supervisior",
+    "role": "Supervisor",
+    "systemRole": "SUPERVISOR",
+    "mobile": null,
+    "email": null
+  },
+  {
+    "fullName": "Vineet gothi",
+    "sheetRole": "supervisior",
+    "role": "Supervisor",
+    "systemRole": "SUPERVISOR",
+    "mobile": null,
+    "email": null
+  },
+  {
+    "fullName": "Pravalika",
+    "sheetRole": "Supervisior",
+    "role": "Supervisor",
+    "systemRole": "SUPERVISOR",
+    "mobile": null,
+    "email": null
+  },
+  {
+    "fullName": "Ranjeet Kumar",
+    "sheetRole": "Supervisior",
+    "role": "Supervisor",
+    "systemRole": "SUPERVISOR",
+    "mobile": null,
+    "email": null
+  },
+  {
+    "fullName": "Shankarlal Sharma",
+    "sheetRole": "Store",
+    "role": "Store Guy",
+    "systemRole": "STORE_GUY",
+    "mobile": null,
+    "email": null
+  },
+  {
+    "fullName": "Vali",
+    "sheetRole": "Supervisior",
+    "role": "Supervisor",
+    "systemRole": "SUPERVISOR",
+    "mobile": null,
+    "email": null
+  },
+  {
+    "fullName": "Dinesh",
+    "sheetRole": "Supervisior",
+    "role": "Supervisor",
+    "systemRole": "SUPERVISOR",
+    "mobile": null,
+    "email": null
+  },
+  {
+    "fullName": "Somnath Biswal",
+    "sheetRole": "QC",
+    "role": "QC",
+    "systemRole": "QC",
+    "mobile": null,
+    "email": null
+  }
+]

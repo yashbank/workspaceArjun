@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils';
 export type SearchInputProps = {
   /** Already translated by the caller. */
   label: string;
-  /** Initial text; remount via key to reset it from outside. */
+  /** The committed text. A change that did not come from typing here (e.g. "Clear filters") resets the field (R2-386). */
   value: string;
   /** Fires `delay` ms after the last keystroke, and immediately on clear. */
   onSearch: (q: string) => void;
@@ -23,10 +23,24 @@ export function SearchInput({ label, value, onSearch, placeholder, delay = 300, 
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
 
+  // R2-386: `lastSent` is what this field itself last reported. A `value` that differs from it was set from
+  // outside, so it replaces the typed text; the echo of our own search never does (no fighting a slow round trip).
+  const lastSent = useRef(value);
+  useEffect(() => {
+    if (value !== lastSent.current) {
+      lastSent.current = value;
+      clearTimeout(timer.current);
+      setText(value);
+    }
+  }, [value]);
+
   const change = (q: string) => {
     setText(q);
     clearTimeout(timer.current);
-    timer.current = setTimeout(() => onSearch(q), delay);
+    timer.current = setTimeout(() => {
+      lastSent.current = q;
+      onSearch(q);
+    }, delay);
   };
 
   return (
@@ -47,6 +61,7 @@ export function SearchInput({ label, value, onSearch, placeholder, delay = 300, 
           onClick={() => {
             clearTimeout(timer.current);
             setText('');
+            lastSent.current = '';
             onSearch('');
           }}
           className="absolute right-0 top-1/2 inline-flex size-11 -translate-y-1/2 items-center justify-center text-slate-500 hover:text-slate-900"

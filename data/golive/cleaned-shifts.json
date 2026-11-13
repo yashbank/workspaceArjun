@@ -1,0 +1,32 @@
+[
+  {
+    "name": "Day Shift",
+    "startTime": "09:00",
+    "endTime": "18:00",
+    "crossesMidnight": false
+  },
+  {
+    "name": "Night Shift",
+    "startTime": "20:00",
+    "endTime": "05:00",
+    "crossesMidnight": true
+  },
+  {
+    "name": "General Shift",
+    "startTime": "09:00",
+    "endTime": "19:00",
+    "crossesMidnight": false
+  },
+  {
+    "name": "General Ladies",
+    "startTime": "09:00",
+    "endTime": "18:00",
+    "crossesMidnight": false
+  },
+  {
+    "name": "House Keeping",
+    "startTime": "09:00",
+    "endTime": "17:30",
+    "crossesMidnight": false
+  }
+]

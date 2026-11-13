@@ -266,3 +266,24 @@ describe('THE FACTORY ZONE DECIDES THE DAY, NOT THE SERVER (D22)', () => {
     expect(isWithinCorrectionWindow('2026-09-20', now, 1, TZ)).toBe(false);
   });
 });
+
+describe('go-live night shift 20:00-05:00 (client data)', () => {
+  const GL: ShiftDef[] = [
+    { id: 'day', name: 'Day Shift', startTime: '09:00', endTime: '18:00' },
+    { id: 'gen', name: 'General Shift', startTime: '09:00', endTime: '19:00' },
+    { id: 'ng', name: 'Night Shift', startTime: '20:00', endTime: '05:00' },
+  ];
+  it('IN 20:05, OUT 04:55 next morning is ONE day, filed under the evening it started', () => {
+    const days = deriveDays([punch('IN', at(10, 20, 5)), punch('OUT', at(11, 4, 55))], GL, TZ);
+    expect([...days.keys()]).toEqual(['2026-09-10']);
+    expect(days.get('2026-09-10')!.shiftId).toBe('ng');
+  });
+  it('a 00:30 punch belongs to the previous day; overtime out at 05:20 stays on it (cutoff 12:00)', () => {
+    expect(workDateFor(at(11, 0, 30), GL, TZ).workDate).toBe('2026-09-10');
+    expect(workDateFor(at(11, 5, 20), GL, TZ, 'ng').workDate).toBe('2026-09-10');
+  });
+  it('a start == end shift never captures a punch', () => {
+    const zero: ShiftDef = { id: 'z', startTime: '08:00', endTime: '08:00' };
+    expect(workDateFor(at(10, 12, 0), [zero], TZ).shiftId).toBeNull();
+  });
+});

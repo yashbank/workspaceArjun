@@ -118,6 +118,18 @@ describe('before any org chart is entered', () => {
   });
 });
 
+describe('R2-162 — an Admin nobody reports to', () => {
+  it('is unscoped (sees the plant), not narrowed to their own record', async () => {
+    levels(); // the org chart exists, but no one has this Admin as manager
+    expect(await resolveVisibleEmployeeIds(actor('ADMIN', 'u-lonely-admin'))).toBeNull();
+  });
+
+  it('a Supervisor with no crew is still scoped to themselves (only Admin is relaxed)', async () => {
+    levels();
+    expect(await resolveVisibleEmployeeIds(actor('SUPERVISOR', 'u-lonely-sup'))).toEqual(['e-actor']);
+  });
+});
+
 describe('bad data', () => {
   it('terminates on a managerId cycle instead of hanging', async () => {
     // Every level hands back a row already seen — a loop in the data.

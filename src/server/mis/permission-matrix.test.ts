@@ -140,6 +140,7 @@ const TABLE: Entry[] = [
 
   // Phase 25 (D27's missing half) — the period-close/snapshot flow. Every door is wages.read.
   { module: 'payroll-period.ts', name: 'getPayrollPeriod', requires: 'wages.read', call: () => payrollPeriod.getPayrollPeriod(2026, 1) },
+  { module: 'payroll-period.ts', name: 'getAttendanceReadiness', requires: 'employees.write', call: () => payrollPeriod.getAttendanceReadiness(2026, 1) },
   { module: 'payroll-period.ts', name: 'getPayrollPreflight', requires: 'wages.read', call: () => payrollPeriod.getPayrollPreflight(2026, 1) },
   { module: 'payroll-period.ts', name: 'closePayrollPeriod', requires: 'wages.read', call: () => payrollPeriod.closePayrollPeriod(2026, 1) },
   { module: 'payroll-period.ts', name: 'reopenPayrollPeriod', requires: 'wages.read', call: () => payrollPeriod.reopenPayrollPeriod(2026, 1, 'test') },
@@ -200,7 +201,7 @@ const NOT_A_DOOR: Record<string, string[]> = {
   'employee.ts': [],
   'users.ts': [],
   'wage-type.ts': [],
-  'business-rules.ts': ['getOfflineRules', 'getFactoryTimezone', 'getCorrectionWindowDays', 'getLunchBreakMinutes', 'getRuleValue', 'getLineClearanceRule', 'getAqlThresholds', 'getPoApprovalThreshold'],
+  'business-rules.ts': ['getOfflineRules', 'getFactoryTimezone', 'getEmployeeCodeStyle', 'getCorrectionWindowDays', 'getLunchBreakMinutes', 'getRuleValue', 'getLineClearanceRule', 'getAqlThresholds', 'getPoApprovalThreshold'],
   'payroll.ts': [],
   'reports.ts': [],
   'pay-components.ts': [],

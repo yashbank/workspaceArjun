@@ -120,3 +120,8 @@ public/assets/bpp/references/bpp-ambient-motion-reference.gif
 
 .claude/settings.local.json
 .claude/worktrees/
+
+# Go-live credentials (never commit)
+golive-credentials/
+credentials-*.csv
+data/golive/credentials*

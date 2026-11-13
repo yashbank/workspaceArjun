@@ -11,6 +11,7 @@ import {
   parseMonthKey,
   resolveMonth,
   shiftMonth,
+  wantsMonthMatrix,
   type MatrixEmployee,
   type MatrixRecord,
 } from './attendance-month';
@@ -243,5 +244,18 @@ describe('the working, shown', () => {
     expect(hoursLabel(720)).toBe('12.0');
     expect(hoursLabel(90)).toBe('1.5');
     expect(hoursLabel(0)).toBe('0.0');
+  });
+});
+
+describe('R2-183 wantsMonthMatrix — a bare /mis/attendance is the register', () => {
+  it('bare URL and any explicit view are the register', () => {
+    expect(wantsMonthMatrix({})).toBe(false);
+    expect(wantsMonthMatrix({ view: 'classic' })).toBe(false);
+    expect(wantsMonthMatrix({ view: 'daily', month: '2026-08' })).toBe(false);
+  });
+  it('matrix links (month / dept / emp / day, no view) open the matrix', () => {
+    expect(wantsMonthMatrix({ month: '2026-08' })).toBe(true);
+    expect(wantsMonthMatrix({ dept: 'd1' })).toBe(true);
+    expect(wantsMonthMatrix({ emp: 'e1', day: '2026-08-03' })).toBe(true);
   });
 });

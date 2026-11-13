@@ -161,9 +161,19 @@ describe('F-01 (fixed in 14F) · the payroll and payslip pages REFUSE all seven 
     ['payslip print page', () => PayslipPage({ params: Promise.resolve({ employeeId: EMP.id }), searchParams: { year: '2026', month: '1' } })],
   ];
   describe.each(PAGES)('%s', (_n, render) => {
+    // R2-180: ADMIN may open /mis/payroll for the attendance-only readiness view (counts, no money).
+    // That page is held to the stricter rule below: it must carry no wage figure.
+    const ADMIN_READINESS = _n === 'payroll page';
     it.each(NON_OWNER)('%s is refused (a MisForbiddenError, not a page)', async (role) => {
       as(role);
-      expect(await outcome(render)).toBe('denied');
+      const res = await outcome(render);
+      if (role === 'ADMIN' && ADMIN_READINESS) {
+        if (res === 'denied') return;
+        const f = await figures();
+        expect(findLeaks(payload(res.value), WAGE_DETECTOR(f))).toEqual([]);
+        return;
+      }
+      expect(res).toBe('denied');
     });
   });
 });

@@ -214,6 +214,8 @@ export function createFakeDb() {
       const row = get().employees.find((e) => e.employeeCode === where.employeeCode);
       return row ? { ...row } : null;
     },
+    findMany: async ({ where }: { where: { employeeCode: { in: string[] } } }) =>
+      get().employees.filter((e) => where.employeeCode.in.includes(e.employeeCode as string)).map((e) => ({ ...e })),
     // R2-214: shift resolution reads the employee's default shift; the fake has none.
     findUnique: async ({ where }: { where: { id: string } }) => {
       const row = get().employees.find((e) => e.id === where.id) as { defaultShiftId?: string | null } | undefined;

@@ -241,6 +241,7 @@ export function AttendanceScreen({ records, unrecorded = [], todayKey, summary, 
         <div className="flex gap-2">
           <Link href="/mis/attendance?view=daily" className={`inline-flex min-h-11 items-center rounded-lg px-3 text-base font-medium ${view === 'daily' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Daily</Link>
           <Link href="/mis/attendance?view=monthly" className={`inline-flex min-h-11 items-center rounded-lg px-3 text-base font-medium ${view === 'monthly' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Monthly ({monthKey})</Link>
+          <Link href={`/mis/attendance?month=${monthKey}`} className="hidden min-h-11 items-center rounded-lg bg-slate-100 px-3 text-base font-medium text-slate-700 hover:bg-slate-200 lg:inline-flex">Month matrix</Link>
           <Link href="/mis/attendance/leave" className="inline-flex min-h-11 items-center rounded-lg bg-slate-100 px-3 text-base font-medium text-slate-700 hover:bg-slate-200">Leave requests</Link>
           {/* R2-222: missed-punch requests, for Supervisor / Admin / Owner. */}
           {canRegularize && <Link href="/mis/attendance/regularization" className="inline-flex min-h-11 items-center rounded-lg bg-slate-100 px-3 text-base font-medium text-slate-700 hover:bg-slate-200">Regularization</Link>}

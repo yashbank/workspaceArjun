@@ -4,7 +4,7 @@ import { getAttendanceMonthView, resolveRegisterQuery } from '@/server/mis/atten
 import { AttendanceScreen } from '@/components/mis/attendance/attendance-screen';
 import { AttendanceMonthDesktop } from '@/components/mis/desktop/attendance-month-desktop';
 import { can } from '@/lib/mis/permissions';
-import type { AttendanceMonthView } from '@/lib/mis/attendance-month';
+import { wantsMonthMatrix, type AttendanceMonthView } from '@/lib/mis/attendance-month';
 import { getMisRole } from '@/server/mis/roles';
 import { REVIEW_ACTION } from '@/server/mis/punch-regularization';
 import { getFactoryTimezone } from '@/server/mis/business-rules';
@@ -21,7 +21,7 @@ export default async function AttendancePage({
   const canNote = can(role, 'attendance.note');
   const canRegularize = can(role, REVIEW_ACTION); // R2-222/R2-252: the register's writers review missed-punch requests
   const sp = await searchParams;
-  // D8 is the reading view at `/mis/attendance` with no `view`. ANY explicit `view` — `classic`, or the register's
+  // D8 is the reading view at `/mis/attendance?month=…` (R2-183: a bare URL is the register). ANY explicit `view` — `classic`, or the register's
   // own `daily` / `monthly` tabs — is the register (clock-in, mark absent, edit) at every width, so its tabs
   // never throw a desktop user back to D8. On a phone the register is the only layout anyway.
   const view = !sp.view || sp.view === 'classic' ? 'daily' : sp.view;
@@ -38,7 +38,8 @@ export default async function AttendancePage({
   ]);
   const phone = <AttendanceScreen records={records} unrecorded={unrecorded} todayKey={todayKey} summary={summary} shifts={shifts} canWrite={canWrite} canNote={canNote} canRegularize={canRegularize} view={view} monthKey={q.month} date={date} timeZone={timeZone} />;
 
-  if (sp.view) return phone;
+  // R2-183: the register (actions) is the default; the matrix opens from its own links (they carry ?month=).
+  if (!wantsMonthMatrix(sp)) return phone;
 
   // D8 from 1024px up. It is a second query on a page the phone also serves: a failure is LOGGED (never
   // swallowed) and the desktop half says it could not load, so the phone screen still renders.

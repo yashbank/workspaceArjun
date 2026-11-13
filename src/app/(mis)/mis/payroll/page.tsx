@@ -3,10 +3,11 @@ import { getMisRole } from '@/server/mis/roles';
 import { can } from '@/lib/mis/permissions';
 import { MisForbiddenError } from '@/server/mis/auth';
 import { calculateMonthlyPayroll } from '@/server/mis/payroll';
-import { getPayrollPeriod, getPayrollPreflight } from '@/server/mis/payroll-period';
+import { getAttendanceReadiness, getPayrollPeriod, getPayrollPreflight } from '@/server/mis/payroll-period';
 import { listBankDetailGaps } from '@/server/mis/payroll-ledger';
 import { listPayslipReleases } from '@/server/mis/payslips';
 import { getComplianceFlags } from '@/server/mis/attendance-compliance';
+import { AttendanceReadinessScreen } from '@/components/mis/payroll/attendance-readiness-screen';
 import { PayrollScreen } from '@/components/mis/payroll/payroll-screen';
 import { DEFAULT_FACTORY_TIMEZONE, zonedParts } from '@/lib/mis/factory-time';
 
@@ -15,8 +16,10 @@ type Props = { searchParams: Promise<{ year?: string; month?: string }> };
 export default async function PayrollPage({ searchParams }: Props) {
   const user = await requireMisAccess();
   const role = await getMisRole(user.id);
+  const isAdmin = role === 'ADMIN';
   // Pay figures are wages: Owner only (S9 / D24). The server function refuses too; this is the page's own line.
-  if (!can(role, 'wages.read')) throw new MisForbiddenError('wages.read');
+  // R2-180: the Admin gets the attendance checks and register only — no wage figure is computed for them.
+  if (!can(role, 'wages.read') && !isAdmin) throw new MisForbiddenError('wages.read');
 
   const sp = await searchParams;
   // R3 B46: today is the factory's; a hand-typed ?year / ?month is clamped, never trusted.
@@ -25,6 +28,11 @@ export default async function PayrollPage({ searchParams }: Props) {
   const parsedMonth = Number.parseInt(sp.month ?? '', 10);
   const year = Number.isFinite(parsedYear) ? Math.min(Math.max(parsedYear, 2000), 2100) : today.year;
   const month = Number.isFinite(parsedMonth) ? Math.min(Math.max(parsedMonth, 1), 12) : today.month;
+
+  if (!can(role, 'wages.read')) {
+    const { checks, rows } = await getAttendanceReadiness(year, month);
+    return <AttendanceReadinessScreen year={year} month={month} checks={checks} rows={rows} />;
+  }
 
   const [payroll, period, preflight] = await Promise.all([
     calculateMonthlyPayroll(year, month),

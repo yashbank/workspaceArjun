@@ -23,7 +23,7 @@ export async function POST(request: Request) {
     }
     const out = await ingestDevicePunch(authorization, body);
     return ok(
-      { outcome: out.outcome, reason: out.reason, detail: out.detail, result: out.result },
+      { outcome: out.outcome, reason: out.reason, detail: out.detail, result: out.result, ...(out.deviceRevoked ? { error: 'REVOKED', wipe: true } : {}) },
       out.outcome === 'RETRY' ? 503 : 200,
     );
   } catch (error) {
