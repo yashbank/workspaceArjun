@@ -57,10 +57,13 @@ const materialRequest = await import('./material-request');
 const pickList = await import('./pick-list');
 const storeReturn = await import('./store-return');
 const leavePay = await import('./leave-pay');
+const dashboardWidgets = await import('./dashboard-widgets'); // R2-411..414
+const rangeMetrics = await import('./range-metrics');
 
 type Entry = { module: string; name: string; requires: MisAction; call: () => Promise<unknown> };
 
 const RANGE = { from: new Date('2026-01-01'), to: new Date('2026-01-31') };
+const DASH_RANGE = { freq: 'month', at: '2026-11-01', fromKey: '2026-11-01', toKey: '2026-12-01', label: 'Nov 2026', days: 30, prevAt: '', nextAt: '' } as never;
 const EMPLOYEE_INPUT = { employeeCode: 'E-9', name: 'X', role: 'WORKER' } as never;
 
 const TABLE: Entry[] = [
@@ -194,6 +197,14 @@ const TABLE: Entry[] = [
   { module: 'supplier-invoice.ts', name: 'reconcileSupplierInvoice', requires: 'supplier_invoice.write', call: () => supplierInvoice.reconcileSupplierInvoice('i1') },
   // R2-280: the variance sign-off is the Owner's (wages.read is the Owner's money gate, D24).
   { module: 'supplier-invoice.ts', name: 'signOffInvoiceVariance', requires: 'wages.read', call: () => supplierInvoice.signOffInvoiceVariance('i1', 'ok') },
+  // R2-411..414 — the opt-in dashboard widgets: counts and quantities only, each behind its own read action.
+  { module: 'dashboard-widgets.ts', name: 'getLowStockAlerts', requires: 'inventory.read', call: () => dashboardWidgets.getLowStockAlerts() },
+  { module: 'dashboard-widgets.ts', name: 'getPoFulfilment', requires: 'po.read', call: () => dashboardWidgets.getPoFulfilment() },
+  { module: 'dashboard-widgets.ts', name: 'getBomPipeline', requires: 'orders.read', call: () => dashboardWidgets.getBomPipeline() },
+  { module: 'range-metrics.ts', name: 'getRangeProduction', requires: 'production.read', call: () => rangeMetrics.getRangeProduction(DASH_RANGE) },
+  { module: 'range-metrics.ts', name: 'getRangeQc', requires: 'qc.read', call: () => rangeMetrics.getRangeQc(DASH_RANGE) },
+  { module: 'range-metrics.ts', name: 'getRangeOnTime', requires: 'orders.read', call: () => rangeMetrics.getRangeOnTime(DASH_RANGE) },
+  { module: 'range-metrics.ts', name: 'getRangeScrapRate', requires: 'production.read', call: () => rangeMetrics.getRangeScrapRate(DASH_RANGE) },
 ];
 
 /** Functions in these modules deliberately not in TABLE: ungated internals (see server-gates.test.ts). */
@@ -213,6 +224,9 @@ const NOT_A_DOOR: Record<string, string[]> = {
   // R2 batch 2 — the Store flow modules are fully tabled (every async export is a door).
   'pick-list.ts': [],
   'store-return.ts': [],
+  // R2-411..414 — the dashboard widget readers are fully tabled.
+  'dashboard-widgets.ts': [],
+  'range-metrics.ts': [],
 };
 
 async function refused(call: () => Promise<unknown>): Promise<boolean> {

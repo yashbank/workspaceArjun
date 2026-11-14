@@ -51,6 +51,17 @@ export type DashboardData = {
   defectsOpen: number | null;
   /** Absent for every role but the Owner — the server never sends it (D24). */
   wages: { gross: number; ot: number; monthLabel: string; elapsedPct: number } | null;
+  /** R2-411..414: opt-in widgets. Optional, so a screen that places none passes nothing. Counts and quantities only, no money. */
+  lowStock?: { count: number; top: { id: string; code: string; name: string; unit: string; balance: number; reorderLevel: number }[] } | null;
+  poFulfilment?: { pending: number; overdue: number; receivedThisMonth: number; grnsThisMonth: number; monthLabel: string } | null;
+  bomPipeline?: { noBom: number; draft: number; pendingApproval: number } | null;
+  scrapTrend?: {
+    unit: string | null;
+    bucket: 'day' | 'week' | 'month';
+    points: { label: string; ratePct: number | null; produced: number; waste: number }[];
+    overallPct: number | null;
+    otherUnits: string[];
+  } | null;
 };
 
 const inr = (n: number) =>
@@ -322,6 +333,69 @@ export function WidgetBody({ widgetKey, data }: { widgetKey: string; data: Dashb
       if (!data.crew || !data.crew.recorded) return <Empty messageKey="empty.noAttendance" />;
       const c = data.crew;
       return <Stat value={`${c.present}/${c.headcount}`} note={`${c.absent} absent · ${c.onLeave} on leave`} />;
+    }
+
+    case 'stock.lowAlerts': {
+      if (!data.lowStock || data.lowStock.count === 0) return <Empty messageKey="empty.noLowStock" />;
+      const { count, top } = data.lowStock;
+      return (
+        <div className="flex h-full flex-col gap-1.5">
+          <Stat value={num(count)} chip={<Chip tone="warn">{t('widget.stock.lowAlerts')}</Chip>} />
+          {top.map((item) => (
+            <div key={item.id} className="flex items-center justify-between gap-2 text-sm">
+              <span className="min-w-0 truncate text-slate-700">{item.name}</span>
+              <span className="shrink-0 font-mono text-[11px] text-slate-500">
+                {num(item.balance)} / {num(item.reorderLevel)} {item.unit}
+              </span>
+            </div>
+          ))}
+          {count > top.length ? <p className="mt-auto text-xs text-slate-500">{`+${count - top.length} ${t('widget.stock.lowAlerts.more')}`}</p> : null}
+        </div>
+      );
+    }
+
+    case 'po.fulfilment': {
+      const po = data.poFulfilment;
+      if (!po || (po.pending === 0 && po.receivedThisMonth === 0)) return <Empty messageKey="empty.noPoActivity" />;
+      return (
+        <div className="flex h-full items-center justify-around gap-3">
+          <Stat value={num(po.pending)} note={po.overdue > 0 ? `${t('widget.po.pending')} · ${po.overdue} ${t('widget.po.overdue')}` : t('widget.po.pending')} chip={po.overdue > 0 ? <Chip tone="warn">{po.overdue}</Chip> : undefined} />
+          <Stat value={num(po.receivedThisMonth)} note={`${t('widget.po.received')} (${po.monthLabel})`} />
+        </div>
+      );
+    }
+
+    case 'bom.pipeline': {
+      const b = data.bomPipeline;
+      if (!b || b.noBom + b.draft + b.pendingApproval === 0) return <Empty messageKey="empty.noBomPipeline" />;
+      const cells = [
+        { label: t('widget.bom.noBom'), value: b.noBom, tone: 'bad' as const },
+        { label: t('widget.bom.draft'), value: b.draft, tone: 'flat' as const },
+        { label: t('widget.bom.pending'), value: b.pendingApproval, tone: 'warn' as const },
+      ];
+      return (
+        <div className="flex h-full items-center justify-around gap-2">
+          {cells.map((c) => (
+            <div key={c.label} className="text-center">
+              <p className="font-mono text-2xl font-bold text-slate-900">{num(c.value)}</p>
+              <Chip tone={c.value > 0 ? c.tone : 'flat'}>{c.label}</Chip>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    case 'wastage.scrapTrend': {
+      const trend = data.scrapTrend;
+      if (!trend || trend.unit === null || trend.points.every((p) => p.ratePct === null)) return <Empty messageKey="empty.noScrap" />;
+      const rates = trend.points.map((p) => p.ratePct ?? 0);
+      return (
+        <div className="flex h-full flex-col">
+          <Stat value={trend.overallPct === null ? '-' : `${trend.overallPct}`} unit="%" note={`${t('widget.wastage.scrapTrend.overall')} · ${trend.unit}${data.rangeLabel ? ` · ${data.rangeLabel}` : ''}`} />
+          <Sparkline values={rates} hue={SERIES_HUES[1]} />
+          {trend.otherUnits.length > 0 ? <p className="mt-auto pt-1 text-xs text-slate-500">{t('widget.wastage.scrapTrend.otherUnits')}</p> : null}
+        </div>
+      );
     }
 
     case 'money.wagesAccrued': {

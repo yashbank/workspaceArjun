@@ -8,16 +8,18 @@ import { Combobox } from '@/components/ui/combobox';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import { Pagination } from '@/components/mis/kit/pagination';
 import { ListToolbar } from '@/components/mis/kit/list-toolbar';
+import { DataTable, type Column } from '@/components/mis/kit/data-table';
+import { StatusBadge, type BadgeTone } from '@/components/mis/kit/status-badge';
+import { IconAction } from '@/components/mis/kit/icon-action';
+import { ListKpiCards } from '@/components/mis/common/list-kpi-cards';
+import { ClipboardCheck } from 'lucide-react';
 import { addQcCheckAction } from '@/app/(mis)/mis/qc/actions';
 
 type Order = { id: string; orderNumber: string; status: string; customer: { name: string } | null };
 type DefectTypeOption = { id: string; code: string; name: string; severity: string };
 
 // Orders reaching QC are always CONFIRMED or IN_PRODUCTION — QC_PENDING is not a status this schema has.
-const statusColors: Record<string, string> = {
-  CONFIRMED: 'bg-sky-50 text-sky-800',
-  IN_PRODUCTION: 'bg-amber-50 text-amber-900',
-};
+const statusTone = (st: string): BadgeTone => (st === 'CONFIRMED' ? 'info' : st === 'IN_PRODUCTION' ? 'warning' : 'neutral');
 
 /** '' is the sentinel for "not in the master" — QC holds masters.read, not masters.write, so a
  * defect that is not yet classified must still be recordable, as free text (F-19/D14: "severity
@@ -38,7 +40,17 @@ export function QcScreen({ orders, pickerOrders = orders, canWrite, defectTypes,
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
-  const filtered = orders;
+  // R2-393: the list query takes no status, so the filter narrows the rows already loaded on this page.
+  const [statusFilter, setStatusFilter] = useState('');
+  const filtered = statusFilter ? orders.filter((o) => o.status === statusFilter) : orders;
+  const countStatus = (st: string) => orders.filter((o) => o.status === st).length;
+
+  const columns: Column<Order>[] = [
+    { key: 'orderNumber', header: 'Order #', render: (o) => <span className="font-mono text-sm">{o.orderNumber}</span> },
+    { key: 'customer', header: 'Customer', render: (o) => o.customer?.name ?? 'No customer' },
+    { key: 'status', header: 'Status', render: (o) => <StatusBadge tone={statusTone(o.status)}>{o.status.replace(/_/g, ' ')}</StatusBadge> },
+    { key: 'actions', header: '', render: (o) => <div className="flex justify-end"><IconAction label="View Checks →" href={`/mis/qc/${o.id}`} icon={<ClipboardCheck aria-hidden="true" className="size-5" />} /></div> },
+  ];
 
   const orderOptions: SelectOption[] = [
     { value: '', label: '— Select Order —' },
@@ -69,9 +81,9 @@ export function QcScreen({ orders, pickerOrders = orders, canWrite, defectTypes,
   });
 
   return (
-    <div className="max-w-4xl mx-auto space-y-5 py-6">
+    <div className="flex w-full flex-col gap-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-gray-900">Quality Control</h1>
+        <h1 className="text-xl font-semibold text-slate-900">Quality Control</h1>
         <div className="flex gap-2">
           <Link href="/mis/qc/grid">
             <Button variant="ghost">Hourly Grid →</Button>
@@ -80,32 +92,25 @@ export function QcScreen({ orders, pickerOrders = orders, canWrite, defectTypes,
         </div>
       </div>
 
-      <ListToolbar basePath="/mis/qc" params={paging?.params ?? {}} searchLabel="Search orders…" showViewToggle={false} />
+      <ListKpiCards ariaLabel="Quality summary" items={[
+        { label: 'Orders in QC on this page', value: orders.length },
+        { label: 'Confirmed', value: countStatus('CONFIRMED') },
+        { label: 'In production', value: countStatus('IN_PRODUCTION') },
+        { label: 'Orders shown', value: filtered.length },
+      ]} />
 
-      {filtered.length === 0 ? (
-        <div className="rounded-xl border border-gray-200 bg-white py-16 text-center text-gray-400 text-sm">
-          No active orders for QC.
-        </div>
-      ) : (
-        <div className="rounded-xl border border-gray-200 bg-white divide-y divide-gray-100">
-          {filtered.map((order) => (
-            <div key={order.id} className="flex items-center justify-between px-5 py-4 hover:bg-gray-50">
-              <div className="flex items-center gap-4">
-                <div>
-                  <div className="font-medium text-gray-900 text-sm">{order.orderNumber}</div>
-                  <div className="text-xs text-gray-500">{order.customer?.name ?? 'No customer'}</div>
-                </div>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusColors[order.status] ?? 'bg-gray-100 text-gray-600'}`}>
-                  {order.status.replace(/_/g, ' ')}
-                </span>
-              </div>
-              <Link href={`/mis/qc/${order.id}`}>
-                <Button variant="ghost">View Checks →</Button>
-              </Link>
-            </div>
-          ))}
-        </div>
-      )}
+      <ListToolbar basePath="/mis/qc" params={paging?.params ?? {}} searchLabel="Search orders…" showViewToggle={false}>
+        {() => (
+          <Select
+            label="Status"
+            value={statusFilter}
+            onChange={setStatusFilter}
+            options={[{ value: '', label: 'All statuses' }, ...['CONFIRMED', 'IN_PRODUCTION'].map((v) => ({ value: v, label: v.replace(/_/g, ' ') }))]}
+          />
+        )}
+      </ListToolbar>
+
+      <DataTable columns={columns} rows={filtered} rowKey={(o) => o.id} emptyTitle="No active orders for QC." />
       {paging && <Pagination basePath="/mis/qc" params={paging.params} page={paging.page} total={paging.total} />}
 
       <SlideOver open={open} onClose={() => setOpen(false)} title="Add QC Check">

@@ -7,10 +7,11 @@ import { getDayAttendanceSummary } from '@/server/mis/attendance';
 import { getDashboardCatalogue, getDashboardLayout } from '@/server/mis/dashboard';
 import { requireMisAccess } from '@/server/mis/guard';
 import { getMachineStatusCounts } from '@/server/mis/machines-board';
-import { listOrdersNeedingAction } from '@/server/mis/orders';
+import { listOrdersNeedingAction, listRecentlyDespatchedOrders } from '@/server/mis/orders';
 import { getMonthWageBill } from '@/server/mis/payroll';
 import { countPhasesForOrders } from '@/server/mis/job-phases';
-import { getRangeOnTime, getRangeProduction, getRangeQc } from '@/server/mis/range-metrics';
+import { getBomPipeline, getLowStockAlerts, getPoFulfilment } from '@/server/mis/dashboard-widgets';
+import { getRangeOnTime, getRangeProduction, getRangeQc, getRangeScrapRate } from '@/server/mis/range-metrics';
 import { getFactoryTimezone } from '@/server/mis/business-rules';
 import { factoryDateKey } from '@/lib/mis/factory-time';
 import { resolveRange } from '@/lib/mis/report-range';
@@ -53,7 +54,7 @@ export default async function MisDashboardPage({ searchParams }: { searchParams:
   const monthEnd = new Date(`${range.toKey}T00:00:00Z`);
   monthEnd.setUTCDate(monthEnd.getUTCDate() - 1);
 
-  const [range_, machines, approvals, attendance, crew, orders, onTimeRaw, qcRange, wages] = await Promise.all([
+  const [range_, machines, approvals, attendance, crew, orders, onTimeRaw, qcRange, wages, lowStock, poFulfilment, bomPipeline, scrapTrend] = await Promise.all([
     needs('output.yesterday', 'wastage.yesterday', 'output.againstPlan', 'wastage.byPhase') ? getRangeProduction(range) : null,
     needs('machines.running', 'machines.board') ? getMachineStatusCounts() : null,
     needs('orders.waitingOnYou') ? getPendingApprovals() : null,
@@ -67,9 +68,19 @@ export default async function MisDashboardPage({ searchParams }: { searchParams:
     // wages.read, and the function refuses anyone else anyway (D24, F-01's fix). Wages stay a
     // calendar-month figure: the month the range ends in.
     shown.has('money.wagesAccrued') ? getMonthWageBill(monthEnd.getUTCFullYear(), monthEnd.getUTCMonth() + 1) : null,
+    // R2-411..414: opt-in widgets, fetched only when placed (and only placeable by a role holding their permission).
+    shown.has('stock.lowAlerts') ? getLowStockAlerts() : null,
+    shown.has('po.fulfilment') ? getPoFulfilment() : null,
+    shown.has('bom.pipeline') ? getBomPipeline() : null,
+    shown.has('wastage.scrapTrend') ? getRangeScrapRate(range) : null,
   ]);
 
-  const shownOrders = orders.slice(0, 6);
+  // R2-409: in-flight orders stay exactly as before; recently despatched ones only fill spare
+  // slots of the widget's five rows, so the green "Despatched" state is reachable.
+  const inFlight = orders.slice(0, 6);
+  const spare = needs('orders.inFlight') ? Math.max(0, 5 - inFlight.length) : 0;
+  const despatched = spare > 0 ? await listRecentlyDespatchedOrders(spare) : [];
+  const shownOrders = [...inFlight, ...despatched];
   const phaseCounts = shownOrders.length > 0 && can(role, 'phase.read') ? await countPhasesForOrders(shownOrders.map((o) => o.id)) : new Map();
   const elapsed = monthEnd.getUTCFullYear() === now.getFullYear() && monthEnd.getUTCMonth() === now.getMonth();
   const daysInMonth = new Date(Date.UTC(monthEnd.getUTCFullYear(), monthEnd.getUTCMonth() + 1, 0)).getUTCDate();
@@ -131,6 +142,10 @@ export default async function MisDashboardPage({ searchParams }: { searchParams:
     wastageByPhase: range_?.wastageByPhase ?? [],
     qc: qcRange?.aql ?? null,
     defectsOpen: qcRange ? qcRange.defectsOpen : null,
+    lowStock,
+    poFulfilment,
+    bomPipeline,
+    scrapTrend,
     wages: wages
       ? {
           gross: wages.gross,

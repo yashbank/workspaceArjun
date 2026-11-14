@@ -7,6 +7,7 @@ import { Button } from '@/components/mis/kit/button';
 import { EmptyState } from '@/components/mis/kit/empty-state';
 import { Input } from '@/components/mis/kit/input';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import { isRetryablePark } from '@/lib/mis/offline/idempotency';
 
 export type ParkedWriteRow = {
@@ -137,6 +138,7 @@ function ParkedWriteCard({
   const [isPending, startTransition] = useTransition();
   const [note, setNote] = useState('');
   const [message, setMessage] = useState<string | null>(null);
+  const { confirm, confirmDialog } = useConfirm();
 
   const resolve = () => {
     if (note.trim().length < 3) {
@@ -158,11 +160,18 @@ function ParkedWriteCard({
     });
   };
 
-  const discard = () => {
+  const discard = async () => {
     if (note.trim().length < 3) {
       setMessage('Write a reason of at least three characters first.');
       return;
     }
+    const ok = await confirm({
+      title: 'Discard this write?',
+      message: 'It is removed from the parked list and will not be applied. This cannot be undone.',
+      confirmLabel: 'Discard',
+      destructive: true,
+    });
+    if (!ok) return;
     startTransition(async () => {
       const result = await discardParkedWriteAction(row.key, note);
       if (!result.ok) setMessage(result.detail);
@@ -218,6 +227,7 @@ function ParkedWriteCard({
         </div>
       </div>
       {message && <p className="mt-2 text-sm text-amber-700">{message}</p>}
+      {confirmDialog}
     </div>
   );
 }

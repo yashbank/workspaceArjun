@@ -17,6 +17,7 @@ import {
   WIDGET_GROUPS,
   catalogueFor,
   defaultLayoutFor,
+  flowLayout,
   mayUseWidget,
   sanitiseLayout,
   widgetByKey,
@@ -26,11 +27,15 @@ import {
 
 const NON_OWNER = MIS_ROLES.filter((r) => r !== 'OWNER');
 const MONEY = 'money.wagesAccrued';
+// R2-411..414: opt-in widgets, offered in Customise but on no default layout.
+const OPT_IN = ['stock.lowAlerts', 'po.fulfilment', 'bom.pipeline', 'wastage.scrapTrend'];
+const baseFor = (role: Parameters<typeof widgetsFor>[0]) => widgetsFor(role).filter((w) => !OPT_IN.includes(w.key));
 
 describe('the library itself', () => {
   it('offers an Owner the fourteen widgets D2 counts', () => {
-    expect(widgetsFor('OWNER')).toHaveLength(14);
-    expect(WIDGETS).toHaveLength(14);
+    expect(baseFor('OWNER')).toHaveLength(14);
+    expect(WIDGETS.filter((w) => !OPT_IN.includes(w.key))).toHaveLength(14);
+    expect(WIDGETS).toHaveLength(18);
   });
 
   it('every key is unique, and every widget belongs to a known group', () => {
@@ -131,13 +136,14 @@ describe('the catalogue per role', () => {
   // A STORE_GUY holds none of production/orders/qc/attendance.read, so today the desktop
   // dashboard has nothing to offer them. That is the permission matrix being honest, not a
   // bug — but it IS an open product question, recorded as D29.
-  it('a STORE_GUY has only the two order-count widgets (D29; R3 B64 gave them orders.read)', () => {
-    expect(widgetsFor('STORE_GUY').map((w) => w.key).sort()).toEqual(['orders.inFlight', 'orders.onTime']);
+  it('a STORE_GUY has only the two order-count widgets by default (D29; R3 B64 gave them orders.read)', () => {
+    expect(baseFor('STORE_GUY').map((w) => w.key).sort()).toEqual(['orders.inFlight', 'orders.onTime']);
+    expect(defaultLayoutFor('STORE_GUY').map((p) => p.widgetKey).sort()).toEqual(['orders.inFlight', 'orders.onTime']);
   });
 
   it('an ADMIN gets the thirteen non-money widgets; a SUPERVISOR twelve — "Waiting on you" reads the approvals inbox (approvals.read, F-13) and a layout that carried it refused the whole dashboard', () => {
-    expect(widgetsFor('ADMIN')).toHaveLength(13);
-    expect(widgetsFor('SUPERVISOR')).toHaveLength(12);
+    expect(baseFor('ADMIN')).toHaveLength(13);
+    expect(baseFor('SUPERVISOR')).toHaveLength(12);
     expect(widgetsFor('SUPERVISOR').map((w) => w.key)).not.toContain('orders.waitingOnYou');
     expect(widgetsFor('QC').map((w) => w.key)).not.toContain('orders.waitingOnYou');
   });
@@ -220,7 +226,7 @@ describe('defaultLayoutFor', () => {
     for (const role of MIS_ROLES) {
       const keys = defaultLayoutFor(role).map((p) => p.widgetKey);
       expect(new Set(keys).size).toBe(keys.length);
-      expect(keys.sort()).toEqual(widgetsFor(role).map((w) => w.key).sort());
+      expect(keys.sort()).toEqual(baseFor(role).map((w) => w.key).sort());
     }
   });
 
@@ -242,5 +248,60 @@ describe('defaultLayoutFor', () => {
   it("the Owner's default is the only one carrying money, and it fills more than one screenful of slots", () => {
     expect(defaultLayoutFor('OWNER').map((p) => p.widgetKey)).toContain(MONEY);
     expect(GRID_SLOTS).toBe(12);
+  });
+});
+
+describe('R2-411..414 — the four opt-in widgets', () => {
+  const REQUIRES: Record<string, string> = {
+    'stock.lowAlerts': 'inventory.read',
+    'po.fulfilment': 'po.read',
+    'bom.pipeline': 'orders.read',
+    'wastage.scrapTrend': 'production.read',
+  };
+
+  it.each(OPT_IN)('%s has a catalogue row with the right permission, no MONEY group, and a grid-legal size', (key) => {
+    const w = widgetByKey(key)!;
+    expect(w).not.toBeNull();
+    expect(w.requires).toBe(REQUIRES[key]);
+    expect(w.group).not.toBe('MONEY');
+    expect(w.w).toBeLessThanOrEqual(GRID_COLUMNS);
+    expect(w.h).toBeLessThanOrEqual(MAX_WIDGET_HEIGHT);
+  });
+
+  it.each(OPT_IN)('%s has a title and description in English and Hindi', (key) => {
+    const w = widgetByKey(key)!;
+    for (const locale of ['en', 'hi'] as const) {
+      expect(DICTIONARIES[locale][w.titleKey], `${key} ${locale}`).toBeTruthy();
+      expect(DICTIONARIES[locale][w.descriptionKey], `${key} ${locale}`).toBeTruthy();
+    }
+    expect(DICTIONARIES.hi[w.titleKey]).not.toBe(DICTIONARIES.en[w.titleKey]);
+  });
+
+  it.each(MIS_ROLES)('%s: on no default layout, so no existing dashboard changes', (role) => {
+    const keys = defaultLayoutFor(role).map((p) => p.widgetKey);
+    for (const k of OPT_IN) expect(keys).not.toContain(k);
+  });
+
+  it.each(MIS_ROLES)('%s is offered exactly the opt-in widgets whose permission it holds, and a stored layout is re-checked on read', (role) => {
+    for (const k of OPT_IN) {
+      const may = can(role, REQUIRES[k] as never);
+      expect(mayUseWidget(role, k), `${role}/${k}`).toBe(may);
+      const kept = sanitiseLayout([{ widgetKey: k, x: 0, y: 0, w: 1, h: 1 }], role).map((p) => p.widgetKey);
+      expect(kept.includes(k)).toBe(may);
+    }
+  });
+
+  it.each(NON_OWNER)('%s: still no MONEY group in the catalogue after the new widgets', (role) => {
+    expect(catalogueFor(role).map((g) => g.group)).not.toContain('MONEY');
+  });
+
+  it('an Owner can place them by hand (Customise) and they flow onto the grid', () => {
+    const flowed = flowLayout(OPT_IN, 'OWNER').map((p) => p.widgetKey);
+    expect(flowed).toEqual(OPT_IN);
+  });
+
+  it('a WORKER and a role-less login are still offered nothing', () => {
+    expect(widgetsFor('WORKER')).toEqual([]);
+    expect(widgetsFor(null)).toEqual([]);
   });
 });

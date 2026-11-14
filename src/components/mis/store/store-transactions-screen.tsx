@@ -1,5 +1,5 @@
 'use client';
-import { useState, useMemo, useTransition } from 'react';
+import { useState, useMemo, useRef, useTransition } from 'react';
 import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { Button } from '@/components/mis/kit/button';
@@ -71,18 +71,30 @@ const emptyIn = { itemId: '', quantity: '', referenceNo: '', notes: '' };
 const emptyOut = { itemId: '', quantity: '', referenceNo: '', orderId: '', departmentId: '' };
 
 /**
- * Uncontrolled, and it commits on blur or Enter: while a year is being typed the browser reports partial dates, and
- * navigating on each would reset the field. A key holding the value at the call site resets it when the URL changes.
+ * Uncontrolled. It commits on change when the value is a complete, plausible date (or cleared), so a date chosen from
+ * the native picker applies at once (R2-388, Export CSV used to run before the blur), and on blur or Enter as before.
+ * While a year is being typed the browser reports partial dates (badInput, or a year like 0202), and navigating on
+ * each would reset the field, so those never commit. A ref holds the last committed value so blur or Enter right after
+ * a change commit does not commit twice. A key holding the value at the call site resets it when the URL changes.
  */
+const COMPLETE_DATE = /^(\d{4})-\d{2}-\d{2}$/;
 function DateFilter({ label, value, onCommit }: { label: string; value: string; onCommit: (value: string | undefined) => void }) {
-  const commit = (input: HTMLInputElement) => {
-    if (!input.validity.badInput && input.value !== value) onCommit(input.value || undefined);
+  const lastCommitted = useRef(value);
+  const commit = (input: HTMLInputElement, fromChange = false) => {
+    if (input.validity.badInput || input.value === lastCommitted.current) return;
+    if (fromChange && input.value !== '') {
+      const m = COMPLETE_DATE.exec(input.value);
+      if (!m || Number(m[1]) < 1900) return;
+    }
+    lastCommitted.current = input.value;
+    onCommit(input.value || undefined);
   };
   return (
     <input
       type="date"
       aria-label={label}
       defaultValue={value}
+      onChange={(e) => commit(e.currentTarget, true)}
       onBlur={(e) => commit(e.currentTarget)}
       onKeyDown={(e) => { if (e.key === 'Enter') commit(e.currentTarget); }}
       className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400"
@@ -255,7 +267,7 @@ export function StoreTransactionsScreen({ txns, items, canWrite, targets = { ord
   ];
 
   return (
-    <div className="mx-auto max-w-6xl flex flex-col gap-4">
+    <div className="w-full flex flex-col gap-4">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
@@ -281,6 +293,20 @@ export function StoreTransactionsScreen({ txns, items, canWrite, targets = { ord
             ↓ CSV
           </button>
         </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4" aria-label="Transaction summary">
+        {([
+          ['Records', paging ? paging.total : filtered.length],
+          ['IN entries (shown)', filtered.filter((r) => r.type === 'IN').length],
+          ['OUT entries (shown)', filtered.filter((r) => r.type === 'OUT').length],
+          ['Over-issues (shown)', filtered.filter((r) => r.isOverIssue).length],
+        ] as const).map(([label, n]) => (
+          <div key={label} data-testid="txn-kpi-card" className="rounded-lg border border-slate-200 bg-white p-3">
+            <div className="text-sm text-slate-600">{label}</div>
+            <div className="text-2xl font-semibold text-slate-900">{n}</div>
+          </div>
+        ))}
       </div>
 
       {/* Summary chips */}

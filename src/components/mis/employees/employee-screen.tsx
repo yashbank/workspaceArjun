@@ -1,7 +1,10 @@
 'use client';
 import Link from 'next/link';
 import { useState, useTransition } from 'react';
+import { Eye, IdCard, Pencil, Trash2, UserCheck, UserX } from 'lucide-react';
 import { Button } from '@/components/mis/kit/button';
+import { IconAction } from '@/components/mis/kit/icon-action';
+import { ListKpiStrip } from '@/components/mis/kit/list-kpi-strip';
 import { Pagination } from '@/components/mis/kit/pagination';
 import { ListToolbar } from '@/components/mis/kit/list-toolbar';
 import { Combobox } from '@/components/ui/combobox';
@@ -21,14 +24,7 @@ import { unwrap } from '@/lib/mis/action-result';
 import { managerOptionLabel } from '@/lib/mis/employee-labels';
 import { normaliseBankDetails } from '@/lib/mis/bank-details';
 
-// Same visual weight as the kit's `Button` ghost variant, so a navigation
-// link (View, Badge) sits in the same row as an action button (Edit,
-// Delete) without one looking like an afterthought — 24G-01: this row was
-// four different sizes, from 20px text links up to 44px buttons.
-const actionLinkClass =
-  'inline-flex min-h-11 flex-1 items-center justify-center rounded-lg px-3 text-base font-medium text-slate-700 transition-colors hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900';
-
-// Same Button-ghost look as actionLinkClass, without the row's flex-1 — for a nav link
+// Button-ghost look for a nav link
 // sitting beside "↓ CSV" / "+ Add Employee" in the page header instead of a table row.
 const toolbarLinkClass =
   'inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg px-4 text-base font-medium text-slate-700 transition-colors hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900';
@@ -281,25 +277,25 @@ export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes
     { key: 'isActive', header: 'Status', render: (r) => <StatusBadge tone={r.isActive ? 'good' : 'neutral'}>{r.isActive ? 'Active' : 'Inactive'}</StatusBadge> },
     { key: 'actions', header: '', render: (r) => (
       <div className="flex flex-wrap justify-end gap-2">
-        <Link href={`/mis/employees/${r.id}`} className={actionLinkClass}>View</Link>
-        <Link href={`/mis/print/badge/${r.id}`} target="_blank" className={actionLinkClass}>Badge</Link>
-        {!r.deletedAt && canWrite && <Button variant="ghost" onClick={() => openEdit(r)}>Edit</Button>}
-        {!r.deletedAt && canWrite && <Button variant="ghost" onClick={async () => {
+        <IconAction href={`/mis/employees/${r.id}`} label="View" icon={<Eye className="size-5" aria-hidden />} />
+        <IconAction href={`/mis/print/badge/${r.id}`} target="_blank" label="Badge" icon={<IdCard className="size-5" aria-hidden />} />
+        {!r.deletedAt && canWrite && <IconAction label="Edit" icon={<Pencil className="size-5" aria-hidden />} onClick={() => openEdit(r)} />}
+        {!r.deletedAt && canWrite && <IconAction label={r.isActive ? 'Deactivate' : 'Activate'} icon={r.isActive ? <UserX className="size-5" aria-hidden /> : <UserCheck className="size-5" aria-hidden />} onClick={async () => {
           const next = !r.isActive;
           if (!(await confirm({ title: next ? 'Activate employee' : 'Make employee inactive', message: next ? `${r.name} will be back on the roll and can punch again.` : `${r.name} stays on record with all history, but will not be offered for punches or attendance until made active again.`, confirmLabel: next ? 'Activate' : 'Make inactive', destructive: !next }))) return;
           startTransition(async () => { setRowError(null); const res = await setEmployeeActiveAction(r.id, next); if (!res.ok) setRowError(res.detail); });
-        }}>{r.isActive ? 'Deactivate' : 'Activate'}</Button>}
-        {!r.deletedAt && canWrite && <Button variant="ghost" onClick={async () => {
+        }} />}
+        {!r.deletedAt && canWrite && <IconAction danger label="Delete" icon={<Trash2 className="size-5" aria-hidden />} onClick={async () => {
           if (!(await confirm({ title: 'Delete employee', message: `Are you sure you want to delete ${r.name}? They are removed from the roll (it can be undone with Restore) and will no longer be able to log in or punch at the gate. To pause someone temporarily, use Deactivate instead.`, confirmLabel: 'Delete', destructive: true }))) return;
           startTransition(async () => { setRowError(null); const res = await deleteEmployeeAction(r.id); if (!res.ok) setRowError(res.detail); });
-        }}>Delete</Button>}
+        }} />}
         {r.deletedAt && canWrite && <Button variant="ghost" onClick={() => startTransition(async () => { setRowError(null); const res = await restoreEmployeeAction(r.id); if (!res.ok) setRowError(res.detail); })}>Restore</Button>}
       </div>
     )},
   ];
 
   return (
-    <div className="mx-auto max-w-6xl flex flex-col gap-4">
+    <div className="flex flex-col gap-4">
       {confirmDialog}
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-slate-900">Employees</h1>
@@ -325,6 +321,14 @@ export function EmployeeScreen({ employees, canWrite, scoped, isOwner, wageCodes
         </div>
       </div>
       {rowError && <p role="alert" className="text-sm text-red-600">{rowError}</p>}
+      {/* No "On leave": leave is not on the loaded rows (needs a new query), so it is skipped. Counts only - never a wage. */}
+      <ListKpiStrip
+        label="Employee summary"
+        kpis={[
+          { label: 'Total active', value: everyone.filter((e) => e.isActive && !e.deletedAt).length },
+          { label: 'No login', value: everyone.filter((e) => !e.deletedAt && !e.userProfile?.email).length, tone: 'warn' },
+        ]}
+      />
       {paging && (
         <ListToolbar basePath="/mis/employees" params={paging.params} searchLabel="Search employees…" view={view}>
           {(go) => <Combobox id="emp-status" label="Status" hideLabel value={paging.params.status ?? ''} options={STATUS_OPTIONS} onChange={(v) => go({ status: v })} />}

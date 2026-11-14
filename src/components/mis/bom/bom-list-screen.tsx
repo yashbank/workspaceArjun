@@ -5,6 +5,8 @@ import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { StatusBadge, type BadgeTone } from '@/components/mis/kit/status-badge';
 import { Pagination } from '@/components/mis/kit/pagination';
 import { ListToolbar } from '@/components/mis/kit/list-toolbar';
+import { IconAction } from '@/components/mis/kit/icon-action';
+import { ClipboardCheck, Eye, FilePlus2, Pencil } from 'lucide-react';
 import { pageHref, parseView } from '@/lib/mis/pagination';
 import type { BomOverviewRow } from '@/server/mis/bom';
 
@@ -33,11 +35,11 @@ const TABS: { key: 'ALL' | BomOverviewRow['bomStatus']; label: string }[] = [
 ];
 
 /** R2-142: the row action follows the BOM's state. */
-const CTA: Record<BomOverviewRow['bomStatus'], { label: string; edit: boolean; cls: string }> = {
-  NO_BOM: { label: '+ Create BOM', edit: true, cls: 'bg-indigo-600 text-white hover:bg-indigo-700' },
-  DRAFT: { label: 'Continue Editing', edit: true, cls: 'border border-indigo-600 bg-white text-indigo-700 hover:bg-indigo-50' },
-  PENDING_APPROVAL: { label: 'Review & Approve', edit: false, cls: 'bg-indigo-600 text-white hover:bg-indigo-700' },
-  APPROVED: { label: 'View BOM', edit: false, cls: 'border border-slate-300 bg-white text-slate-900 hover:bg-slate-50' },
+const CTA: Record<BomOverviewRow['bomStatus'], { label: string; edit: boolean; icon: typeof Eye }> = {
+  NO_BOM: { label: '+ Create BOM', edit: true, icon: FilePlus2 },
+  DRAFT: { label: 'Continue Editing', edit: true, icon: Pencil },
+  PENDING_APPROVAL: { label: 'Review & Approve', edit: false, icon: ClipboardCheck },
+  APPROVED: { label: 'View BOM', edit: false, icon: Eye },
 };
 
 type Paging = { total: number; page: number; params: Record<string, string | undefined> };
@@ -71,19 +73,17 @@ export function BomListScreen({ rows, paging, counts }: { rows: BomOverviewRow[]
       render: (r) => {
         const cta = CTA[r.bomStatus];
         return (
-          <Link href={`/mis/bom/${r.orderId}${cta.edit ? '?view=edit' : ''}`} className={`inline-flex min-h-11 items-center justify-center rounded-lg px-4 text-sm font-semibold whitespace-nowrap ${cta.cls}`}>
-            {cta.label}
-          </Link>
+          <IconAction label={cta.label} href={`/mis/bom/${r.orderId}${cta.edit ? '?view=edit' : ''}`} icon={<cta.icon aria-hidden="true" className="size-5" />} />
         );
       },
     },
   ];
 
   return (
-    <div className="p-6 max-w-6xl mx-auto text-slate-900">
-      <h1 className="text-2xl font-semibold mb-6 text-slate-900">Bill of Materials</h1>
+    <div className="flex w-full flex-col gap-4 text-slate-900">
+      <h1 className="text-2xl font-semibold text-slate-900">Bill of Materials</h1>
       {counts && (
-        <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4" aria-label="BOM pipeline summary">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4" aria-label="BOM pipeline summary">
           {[
             ['Active orders', counts.ALL, 'text-slate-900'],
             ['Missing BOMs', counts.NO_BOM, counts.NO_BOM > 0 ? 'text-red-700' : 'text-slate-900'],
@@ -98,7 +98,7 @@ export function BomListScreen({ rows, paging, counts }: { rows: BomOverviewRow[]
         </div>
       )}
       {counts && paging && (
-        <nav aria-label="Filter by BOM status" className="my-4 flex flex-wrap gap-2">
+        <nav aria-label="Filter by BOM status" className="flex flex-wrap gap-2">
           {TABS.map((t) => {
             const active = (status || 'ALL') === t.key;
             return (

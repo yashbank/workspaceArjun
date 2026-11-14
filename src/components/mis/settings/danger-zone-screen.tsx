@@ -17,6 +17,7 @@ type Preview = { groups: string[]; tree: { name: string; rows: number; depth: nu
 const btn = 'min-h-11 rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-50';
 const field = 'mt-1 block min-h-12 w-full rounded border border-slate-300 p-2 text-base';
 const tableLabel = (name: string) => name.replace('mis_', '').replaceAll('_', ' ');
+const DOWNLOAD_GAP_MS = 600;
 const downloadUrl = (id: string, kind: 'json' | 'csv') => `/api/mis/danger-zone/backup/${id}/${kind}`;
 
 export function DangerZoneScreen({ overview }: { overview: Overview }) {
@@ -54,12 +55,17 @@ export function DangerZoneScreen({ overview }: { overview: Overview }) {
     if (!r.ok) return setMessage({ ok: false, text: r.detail });
     setBackup(r.backup);
     setRestoreId(r.backup.id);
-    for (const kind of ['json', 'csv'] as const) {
+    // Browsers block a second download fired in the same tick, so space them out (R2-390).
+    const backupId = r.backup.id;
+    const clickDownload = (kind: 'json' | 'csv') => {
       const link = document.createElement('a');
-      link.href = downloadUrl(r.backup.id, kind);
+      link.href = downloadUrl(backupId, kind);
       link.download = '';
       link.click();
-    }
+    };
+    clickDownload('json');
+    setTimeout(() => clickDownload('csv'), DOWNLOAD_GAP_MS);
+    setMessage({ ok: true, text: 'Backup saved. Two files are downloading (JSON and CSV). If your browser asks, allow multiple downloads.' });
   });
 
   const remove = () => run(async () => {

@@ -9,18 +9,22 @@ import { saveThemeAction } from '@/app/(mis)/mis/settings/theme/actions';
 /** Owner-only. Picks a palette and a font pair, previews them live, saves org-wide. The server re-validates the ids. */
 export function ThemeStudioScreen({ saved }: { saved: OrgTheme }) {
   const [theme, setTheme] = useState(saved);
+  // What the server last stored: starts as the prop, moves on a successful save so Save disables again (R2-389).
+  const [savedState, setSavedState] = useState(saved);
   const [pending, start] = useTransition();
   const { toast } = useToast();
   const vars = themeVars(theme);
   const font = FONT_PAIRS.find((f) => f.id === theme.fontPairId);
   const previewStyle = { ...vars, fontFamily: font?.body ?? undefined } as CSSProperties;
-  const dirty = theme.paletteId !== saved.paletteId || theme.fontPairId !== saved.fontPairId;
+  const dirty = theme.paletteId !== savedState.paletteId || theme.fontPairId !== savedState.fontPairId;
 
   const save = () =>
     start(async () => {
       const res = await saveThemeAction(theme.paletteId, theme.fontPairId);
-      if (res.ok) toast('success', 'Theme saved for everyone.');
-      else toast('error', res.detail);
+      if (res.ok) {
+        setSavedState({ ...theme });
+        toast('success', 'Theme saved for everyone.');
+      } else toast('error', res.detail);
     });
 
   return (

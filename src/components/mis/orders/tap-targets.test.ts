@@ -26,7 +26,8 @@ describe('fixed tap targets stay at least 44px tall', () => {
 
   it('/mis/orders — the "View" link', () => {
     const src = readFileSync('src/components/mis/orders/orders-screen.tsx', 'utf8');
-    expect(tagAround(src, '>View</Link>')).toMatch(/min-h-11/);
+    // R2-392: the text link became an IconAction (a fixed 44px h-11 w-11 target).
+    expect(src).toContain('<IconAction label="View"');
   });
 
   it('/mis/reports — the month prev/next buttons and the tab pills', () => {

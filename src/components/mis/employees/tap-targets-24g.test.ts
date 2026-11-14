@@ -18,13 +18,9 @@ describe('24G-01 — the employees action row is an even row of >=44px buttons',
   const src = read('src/components/mis/employees/employee-screen.tsx');
 
   it('View and Badge are styled and sized the same as Edit/Delete, not bare 14px links', () => {
-    expect(src).toMatch(/actionLinkClass\s*=\s*\n?\s*'[^']*min-h-11[^']*'/);
-    expect(src).toMatch(/actionLinkClass\s*=\s*\n?\s*'[^']*text-base[^']*'/);
-    // Both nav links use the shared class rather than a one-off text-sm link.
-    const viewLink = src.match(/<Link href=\{`\/mis\/employees\/\$\{r\.id\}`\}[^>]*>/)?.[0] ?? '';
-    const badgeLink = src.match(/<Link href=\{`\/mis\/print\/badge\/\$\{r\.id\}`\}[^>]*>/)?.[0] ?? '';
-    expect(viewLink).toMatch(/actionLinkClass/);
-    expect(badgeLink).toMatch(/actionLinkClass/);
+    // Row actions are now kit IconActions (h-11 w-11 = 44px, accessible name = the old text).
+    expect(src).toMatch(/<IconAction href=\{`\/mis\/employees\/\$\{r\.id\}`\} label="View"/);
+    expect(src).toMatch(/<IconAction href=\{`\/mis\/print\/badge\/\$\{r\.id\}`\} target="_blank" label="Badge"/);
   });
 });
 

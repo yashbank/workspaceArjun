@@ -47,7 +47,7 @@ export function AuditScreen({ logs, total, page, entities, params }: Props) {
   const entityOptions = entities.filter(Boolean).map((e) => ({ value: e, label: e.charAt(0).toUpperCase() + e.slice(1) }));
 
   return (
-    <div className="max-w-5xl mx-auto space-y-5 py-6">
+    <div className="w-full space-y-5">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-gray-900">Audit Log</h1>
         <span className="text-sm text-gray-400">{total} events</span>

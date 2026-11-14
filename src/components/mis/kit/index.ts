@@ -28,3 +28,4 @@ export { useConfirm, type ConfirmOptions } from '@/components/ui/confirm-dialog'
 export { Pagination, HiddenParams } from './pagination';
 export { ListToolbar, useListNav } from './list-toolbar';
 export { RangeTabs } from './range-tabs';
+export { IconAction } from './icon-action';

@@ -10,7 +10,9 @@ import {
   releaseWorkerAction,
   type AssignWorkersActionResult,
 } from '@/app/(mis)/mis/crew/actions';
+import { UserPlus, LogOut } from 'lucide-react';
 import { Button } from '@/components/mis/kit/button';
+import { IconAction } from '@/components/mis/kit/icon-action';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import { useT } from '@/components/mis/shell/locale-provider';
 import { useConfirm } from '@/components/ui/confirm-dialog';
@@ -148,7 +150,7 @@ export function WorkerBoardScreen({
   };
 
   return (
-    <div className="mx-auto max-w-4xl space-y-5 py-6">
+    <div className="w-full space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold text-gray-900">{t('crew.title')}</h1>
         {shifts.length > 1 && (
@@ -196,6 +198,20 @@ export function WorkerBoardScreen({
         </Link>
       </div>
 
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4" aria-label="Crew summary">
+        {([
+          ['Staffed machines', machines.length],
+          ['Workers', availability.length],
+          ['Available', available.length],
+          ['Blocked', blocked.length],
+        ] as const).map(([label, n]) => (
+          <div key={label} data-testid="crew-kpi-card" className="rounded-lg border border-slate-200 bg-white p-3">
+            <div className="text-sm text-slate-600">{label}</div>
+            <div className="text-2xl font-semibold text-slate-900">{n}</div>
+          </div>
+        ))}
+      </div>
+
       {boardError && <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-900">{boardError}</div>}
 
       <section>
@@ -215,9 +231,7 @@ export function WorkerBoardScreen({
                     </div>
                   </div>
                   {canWrite && (
-                    <Button variant="ghost" onClick={() => setOpenMachine(m)}>
-                      {t('crew.assignCrew')}
-                    </Button>
+                    <IconAction label={t('crew.assignCrew')} icon={<UserPlus className="h-4 w-4" aria-hidden />} onClick={() => setOpenMachine(m)} />
                   )}
                 </div>
               );
@@ -353,9 +367,7 @@ function WorkerRow({
                         ))}
                     </select>
                   )}
-                  <Button variant="ghost" disabled={isPending} onClick={() => release(a)}>
-                    {t('crew.release')}
-                  </Button>
+                  <IconAction label={t('crew.release')} icon={<LogOut className="h-4 w-4" aria-hidden />} disabled={isPending} onClick={() => release(a)} />
                 </span>
               )}
             </li>

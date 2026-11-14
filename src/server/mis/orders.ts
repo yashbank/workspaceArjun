@@ -509,3 +509,28 @@ export async function listOrdersNeedingAction(limit = 5): Promise<OrderNeedingAc
 
   return rows.slice(0, limit);
 }
+
+/**
+ * R2-409: DELIVERED orders from the last `days` days, so the dashboard progress bar can reach its
+ * green "Despatched" state. Kept apart from listOrdersNeedingAction, which stays a worklist of open orders.
+ */
+export async function listRecentlyDespatchedOrders(limit = 5, days = 7): Promise<OrderNeedingAction[]> {
+  await requirePermission('orders.read');
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const orders = await db.misOrder.findMany({
+    where: { status: 'DELIVERED', updatedAt: { gte: since } },
+    include: { customer: { select: { name: true } } },
+    orderBy: { updatedAt: 'desc' },
+    take: limit,
+  });
+  return orders.map((o) => ({
+    id: o.id,
+    orderNumber: o.orderNumber,
+    customerName: o.customer?.name ?? null,
+    status: o.status,
+    nextAction: 'Despatched',
+    lateRisk: false,
+    deliveryDate: o.deliveryDate,
+    daysToDelivery: null,
+  }));
+}
