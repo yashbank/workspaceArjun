@@ -267,7 +267,7 @@ export function StoreTransactionsScreen({ txns, items, canWrite, targets = { ord
   ];
 
   return (
-    <div className="mx-auto max-w-6xl flex flex-col gap-4">
+    <div className="w-full flex flex-col gap-4">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
@@ -293,6 +293,20 @@ export function StoreTransactionsScreen({ txns, items, canWrite, targets = { ord
             ↓ CSV
           </button>
         </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4" aria-label="Transaction summary">
+        {([
+          ['Records', paging ? paging.total : filtered.length],
+          ['IN entries (shown)', filtered.filter((r) => r.type === 'IN').length],
+          ['OUT entries (shown)', filtered.filter((r) => r.type === 'OUT').length],
+          ['Over-issues (shown)', filtered.filter((r) => r.isOverIssue).length],
+        ] as const).map(([label, n]) => (
+          <div key={label} data-testid="txn-kpi-card" className="rounded-lg border border-slate-200 bg-white p-3">
+            <div className="text-sm text-slate-600">{label}</div>
+            <div className="text-2xl font-semibold text-slate-900">{n}</div>
+          </div>
+        ))}
       </div>
 
       {/* Summary chips */}
