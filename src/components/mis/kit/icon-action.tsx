@@ -18,7 +18,7 @@ type Common = {
 };
 
 type ButtonProps = Common & Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children' | 'className' | 'title'> & { href?: undefined };
-type LinkProps = Common & { href: string; onClick?: undefined; disabled?: undefined };
+type LinkProps = Common & { href: string; target?: string; rel?: string; onClick?: undefined; disabled?: undefined };
 
 /**
  * A compact row action (view / edit / delete ...) for list tables: one 44px icon with a tooltip
@@ -30,7 +30,7 @@ export const IconAction = forwardRef<HTMLButtonElement, ButtonProps | LinkProps>
   const cls = cn(BASE, danger && DANGER, className);
   if (typeof props.href === 'string') {
     return (
-      <Link href={props.href} aria-label={label} title={label} className={cls}>
+      <Link href={props.href} target={props.target} rel={props.target === '_blank' ? 'noopener noreferrer' : props.rel} aria-label={label} title={label} className={cls}>
         {icon}
       </Link>
     );

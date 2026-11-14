@@ -1,5 +1,7 @@
 'use client';
-import Link from 'next/link';
+import { Eye, Pencil, Trash2 } from 'lucide-react';
+import { IconAction } from '@/components/mis/kit/icon-action';
+import { ListKpiStrip } from '@/components/mis/kit/list-kpi-strip';
 import { useState, useTransition } from 'react';
 import { Button } from '@/components/mis/kit/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
@@ -66,16 +68,16 @@ export function SupplierScreen({ suppliers, canWrite, paging }: Props) {
     { key: 'isActive', header: 'Active', render: (r) => <StatusBadge tone={r.isActive ? 'good' : 'neutral'}>{r.isActive ? 'Active' : 'Inactive'}</StatusBadge> },
     { key: 'actions', header: '', render: (r) => (
       <div className="flex gap-2 justify-end">
-        <Link href={`/mis/suppliers/${r.id}`}><Button variant="ghost">View</Button></Link>
-        {!r.deletedAt && canWrite && <Button variant="ghost" onClick={() => openEdit(r)}>Edit</Button>}
-        {!r.deletedAt && canWrite && <Button variant="ghost" onClick={() => removeRow(r)}>Delete</Button>}
+        <IconAction href={`/mis/suppliers/${r.id}`} label="View" icon={<Eye className="size-5" aria-hidden />} />
+        {!r.deletedAt && canWrite && <IconAction label="Edit" icon={<Pencil className="size-5" aria-hidden />} onClick={() => openEdit(r)} />}
+        {!r.deletedAt && canWrite && <IconAction danger label="Delete" icon={<Trash2 className="size-5" aria-hidden />} onClick={() => removeRow(r)} />}
         {r.deletedAt && canWrite && <Button variant="ghost" onClick={() => restoreRow(r)}>Restore</Button>}
       </div>
     )},
   ];
 
   return (
-    <div className="mx-auto max-w-5xl flex flex-col gap-4">
+    <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-slate-900">Suppliers</h1>
         <div className="flex gap-2">
@@ -83,6 +85,15 @@ export function SupplierScreen({ suppliers, canWrite, paging }: Props) {
           {canWrite && <Button onClick={openAdd}>+ Add Supplier</Button>}
         </div>
       </div>
+      <ListKpiStrip
+        label="Supplier summary"
+        kpis={[
+          { label: 'Total suppliers', value: paging?.total ?? suppliers.length },
+          { label: 'Active suppliers', value: suppliers.filter((s) => s.isActive && !s.deletedAt).length, hint: 'on this page', tone: 'good' },
+          { label: 'Inactive suppliers', value: suppliers.filter((s) => !s.isActive && !s.deletedAt).length, hint: 'on this page' },
+          { label: 'Removed suppliers', value: suppliers.filter((s) => s.deletedAt).length, hint: 'on this page', tone: 'warn' },
+        ]}
+      />
       <ListToolbar basePath="/mis/suppliers" params={paging?.params ?? {}} searchLabel="Search suppliers…" view={view} />
       {listError && <p role="alert" className="text-sm text-red-600">{listError}</p>}
       {confirmDialog}
