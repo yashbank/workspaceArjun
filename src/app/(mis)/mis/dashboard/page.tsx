@@ -7,7 +7,7 @@ import { getDayAttendanceSummary } from '@/server/mis/attendance';
 import { getDashboardCatalogue, getDashboardLayout } from '@/server/mis/dashboard';
 import { requireMisAccess } from '@/server/mis/guard';
 import { getMachineStatusCounts } from '@/server/mis/machines-board';
-import { listOrdersNeedingAction } from '@/server/mis/orders';
+import { listOrdersNeedingAction, listRecentlyDespatchedOrders } from '@/server/mis/orders';
 import { getMonthWageBill } from '@/server/mis/payroll';
 import { countPhasesForOrders } from '@/server/mis/job-phases';
 import { getRangeOnTime, getRangeProduction, getRangeQc } from '@/server/mis/range-metrics';
@@ -69,7 +69,12 @@ export default async function MisDashboardPage({ searchParams }: { searchParams:
     shown.has('money.wagesAccrued') ? getMonthWageBill(monthEnd.getUTCFullYear(), monthEnd.getUTCMonth() + 1) : null,
   ]);
 
-  const shownOrders = orders.slice(0, 6);
+  // R2-409: in-flight orders stay exactly as before; recently despatched ones only fill spare
+  // slots of the widget's five rows, so the green "Despatched" state is reachable.
+  const inFlight = orders.slice(0, 6);
+  const spare = needs('orders.inFlight') ? Math.max(0, 5 - inFlight.length) : 0;
+  const despatched = spare > 0 ? await listRecentlyDespatchedOrders(spare) : [];
+  const shownOrders = [...inFlight, ...despatched];
   const phaseCounts = shownOrders.length > 0 && can(role, 'phase.read') ? await countPhasesForOrders(shownOrders.map((o) => o.id)) : new Map();
   const elapsed = monthEnd.getUTCFullYear() === now.getFullYear() && monthEnd.getUTCMonth() === now.getMonth();
   const daysInMonth = new Date(Date.UTC(monthEnd.getUTCFullYear(), monthEnd.getUTCMonth() + 1, 0)).getUTCDate();

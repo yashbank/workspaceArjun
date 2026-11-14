@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const previewDeleteAction = vi.fn(async (_ids: string[]) => ({
   ok: true as const,
@@ -77,4 +77,28 @@ describe('DangerZoneScreen', () => {
     expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(false);
     expect(screen.queryByText(/orders: 7/)).toBeNull();
   });
+
+  it('downloads JSON then CSV sequentially with one toast (R2-390)', async () => {
+    const clicked: string[] = [];
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      clicked.push(this.getAttribute('href') ?? '');
+    });
+    render(<DangerZoneScreen overview={overview} />);
+    fireEvent.click(screen.getByText('I understand, continue'));
+    fireEvent.click(screen.getByRole('checkbox'));
+    await screen.findByText(/orders: 7/);
+    fireEvent.click(screen.getByText('Delete Customers + ALL related data'));
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByText('Take backup now'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(clicked).toEqual(['/api/mis/danger-zone/backup/b1/json']);
+    await vi.advanceTimersByTimeAsync(599);
+    expect(clicked).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(clicked).toEqual(['/api/mis/danger-zone/backup/b1/json', '/api/mis/danger-zone/backup/b1/csv']);
+    expect(screen.getAllByText(/Two files are downloading/)).toHaveLength(1);
+    click.mockRestore();
+  });
+
+  afterEach(() => { vi.useRealTimers(); });
 });

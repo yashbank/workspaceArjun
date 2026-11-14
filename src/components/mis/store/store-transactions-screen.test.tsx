@@ -14,28 +14,41 @@ const setup = (params: Record<string, string> = {}) => {
 };
 
 describe('the date filters commit once', () => {
-  it('typing never navigates, and the typed value stays in the field', () => {
+  it('partial typing never navigates, and the typed value stays in the field', () => {
     const from = setup();
     fireEvent.change(from, { target: { value: '0002-03-01' } });
-    fireEvent.change(from, { target: { value: '2026-03-01' } });
+    fireEvent.change(from, { target: { value: '0202-03-01' } });
     expect(replace).not.toHaveBeenCalled();
-    expect(from.value).toBe('2026-03-01');
+    expect(from.value).toBe('0202-03-01');
+  });
+
+  it('a complete date commits on change (picker), and the later blur or Enter does not commit again (R2-388)', () => {
+    const from = setup();
+    fireEvent.change(from, { target: { value: '2026-03-01' } });
+    expect(replace).toHaveBeenCalledOnce();
+    expect(replace.mock.calls[0][0]).toContain('from=2026-03-01');
+    fireEvent.keyDown(from, { key: 'Enter' });
+    fireEvent.blur(from);
+    expect(replace).toHaveBeenCalledOnce();
   });
 
   it('blur commits the date to the URL', () => {
     const from = setup();
-    fireEvent.change(from, { target: { value: '2026-03-01' } });
+    fireEvent.change(from, { target: { value: '0202-03-01' } });
+    expect(replace).not.toHaveBeenCalled();
     fireEvent.blur(from);
     expect(replace).toHaveBeenCalledOnce();
-    expect(replace.mock.calls[0][0]).toContain('from=2026-03-01');
+    expect(replace.mock.calls[0][0]).toContain('from=0202-03-01');
   });
 
   it('Enter commits the date to the URL, and the blur after it does not commit again', () => {
     const to = (setup(), screen.getByLabelText('To date') as HTMLInputElement);
-    fireEvent.change(to, { target: { value: '2026-03-31' } });
+    fireEvent.change(to, { target: { value: '0202-03-31' } });
     fireEvent.keyDown(to, { key: 'Enter' });
     expect(replace).toHaveBeenCalledOnce();
-    expect(replace.mock.calls[0][0]).toContain('to=2026-03-31');
+    expect(replace.mock.calls[0][0]).toContain('to=0202-03-31');
+    fireEvent.blur(to);
+    expect(replace).toHaveBeenCalledOnce();
   });
 
   it('leaving an unchanged field does nothing; emptying a set one clears it', () => {

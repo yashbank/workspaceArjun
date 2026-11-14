@@ -27,12 +27,13 @@ const s = {
 };
 const snapshot = () => JSON.parse(JSON.stringify({ status: s.status, bookings: s.bookings, workers: s.workers, reservations: s.reservations, bom: s.bom, requests: s.requests }));
 
+const findManyArgs: Row[] = [];
 const tx: Row = {
   misOrder: {
     findUnique: async () => ({ id: 'o1', orderNumber: 'ORD-1', status: s.status }),
     updateMany: async ({ where, data }: Row) => { if (where.status !== s.status) return { count: 0 }; s.status = data.status; return { count: 1 }; },
     update: async () => ({ id: 'o1', orderNumber: 'ORD-1', status: s.status }),
-    findMany: async () => s.orders,
+    findMany: async (arg: Row) => { findManyArgs.push(arg); return s.orders; },
   },
   misJobPhase: { findMany: async () => [] },
   misQcCheck: { findMany: async () => [] },
@@ -76,7 +77,7 @@ const globalDb: Row = Object.fromEntries(Object.entries(tx).map(([k, v]) => [
 ]));
 vi.mock('@/server/db', () => ({ get db() { return globalDb; } }));
 
-const { updateOrderStatus, updateOrder, listOrdersNeedingAction } = await import('./orders');
+const { updateOrderStatus, updateOrder, listOrdersNeedingAction, listRecentlyDespatchedOrders } = await import('./orders');
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -163,5 +164,22 @@ describe('B111 — days to delivery use the factory day', () => {
     const [row] = await listOrdersNeedingAction();
     vi.useRealTimers();
     expect(row.daysToDelivery).toBe(0);
+  });
+});
+
+describe('R2-409 — recently despatched orders', () => {
+  it('returns DELIVERED orders from the last 7 days, newest first, and never feeds the open worklist', async () => {
+    s.orders = [{ id: 'o9', orderNumber: 'ORD-9', status: 'DELIVERED', deliveryDate: null, customer: { name: 'Acme' } }];
+    findManyArgs.length = 0;
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-14T00:00:00Z'));
+    const rows = await listRecentlyDespatchedOrders(3);
+    vi.useRealTimers();
+    expect(rows).toEqual([expect.objectContaining({ id: 'o9', status: 'DELIVERED', customerName: 'Acme', lateRisk: false })]);
+    const arg = findManyArgs[0];
+    expect(arg.where.status).toBe('DELIVERED');
+    expect(arg.where.updatedAt.gte).toEqual(new Date('2026-10-07T00:00:00Z'));
+    expect(arg.take).toBe(3);
+    expect(arg.orderBy).toEqual({ updatedAt: 'desc' });
   });
 });

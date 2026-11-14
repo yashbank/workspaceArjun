@@ -1,5 +1,6 @@
 'use server';
 import { revalidatePath } from 'next/cache';
+import { revalidateDashboard } from '@/server/mis/revalidate-dashboard';
 
 import { asResult, type ActionResult, type PrismaErrorContext } from '@/lib/mis/action-result';
 
@@ -35,6 +36,7 @@ export async function storeInAction(input: StoreInInput) {
     revalidatePath('/mis/store/dashboard');
     revalidatePath('/mis/store/transactions');
     revalidatePath(`/mis/store/ledger/${input.itemId}`);
+    revalidateDashboard();
     return result;
   });
 }
@@ -109,6 +111,7 @@ function revalidateStock(): void {
   revalidatePath('/mis/store/issue');
   revalidatePath('/mis/inventory');
   revalidatePath('/mis/grn');
+  revalidateDashboard();
 }
 
 /** GRN receive: STORE_GUY, ADMIN, OWNER — gated on `grn.write` inside commitReceipt. */

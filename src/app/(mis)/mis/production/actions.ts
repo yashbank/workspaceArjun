@@ -5,6 +5,7 @@ import { editProductionLog, getProductionFormContext, submitProductionLog, type 
 import { isMisForbiddenError } from '@/server/mis/auth';
 import { clearLine, listClearanceHistory } from '@/server/mis/line-clearance';
 import { revalidatePath } from 'next/cache';
+import { revalidateDashboard } from '@/server/mis/revalidate-dashboard';
 
 /**
  * Both entry points return an outcome; neither throws one. In a production build
@@ -18,6 +19,7 @@ function revalidateFor(orderId: string) {
   revalidatePath('/mis/production');
   revalidatePath(`/mis/production/${orderId}`);
   revalidatePath(`/mis/orders/${orderId}`);
+  revalidateDashboard();
 }
 
 /**
@@ -57,6 +59,7 @@ export async function clearLineAction(data: { machineId: string; orderId?: strin
     }
     revalidatePath('/mis/production');
     revalidatePath('/mis');
+    revalidateDashboard();
   });
 }
 

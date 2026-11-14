@@ -1,5 +1,6 @@
 'use server';
 import { revalidatePath } from 'next/cache';
+import { revalidateDashboard } from '@/server/mis/revalidate-dashboard';
 import { isMisForbiddenError } from '@/server/mis/auth';
 import { createOrder, isOrderStatusError, OrderReopenError, reopenOrder, updateOrder, updateOrderStatus, type OrderStatusRefusal } from '@/server/mis/orders';
 import type { CloseGate } from '@/lib/mis/order-transitions';
@@ -10,6 +11,7 @@ export async function saveOrderAction(id: string | null, values: { customerId?: 
   return asResult(async () => {
     if (id) { await updateOrder(id, values); } else { await createOrder(values); }
     revalidatePath('/mis/orders');
+    revalidateDashboard();
     if (id) revalidatePath(`/mis/orders/${id}`);
   });
 }
@@ -32,6 +34,7 @@ export async function updateOrderStatusAction(id: string, status: string, reason
   revalidatePath('/mis/orders');
   revalidatePath(`/mis/orders/${id}`);
   revalidatePath('/mis/production');
+  revalidateDashboard();
   return { ok: true };
 }
 
@@ -69,5 +72,6 @@ export async function reopenOrderAction(id: string, reason: string) {
   revalidatePath('/mis/orders');
   revalidatePath(`/mis/orders/${id}`);
   revalidatePath('/mis/production');
+  revalidateDashboard();
   return { ok: true as const, warning };
 }

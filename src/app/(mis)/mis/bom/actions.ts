@@ -14,6 +14,7 @@ import {
   updateBomMaterial,
 } from '@/server/mis/bom';
 import { revalidatePath } from 'next/cache';
+import { revalidateDashboard } from '@/server/mis/revalidate-dashboard';
 import { asResult, type ActionResult } from '@/lib/mis/action-result';
 
 export async function createBomAction(orderId: string): Promise<ActionResult> {
@@ -21,6 +22,7 @@ export async function createBomAction(orderId: string): Promise<ActionResult> {
     await createBom(orderId);
     revalidatePath('/mis/orders');
     revalidatePath('/mis/bom', 'layout');
+    revalidateDashboard();
   });
 }
 export async function addStageAction(bomId: string, data: { stageName: string; processId?: string; seq: number }): Promise<ActionResult> {
@@ -51,18 +53,21 @@ export async function submitBomAction(bomId: string): Promise<ActionResult> {
   return asResult(async () => {
     await submitBomForApproval(bomId);
     revalidatePath('/mis/bom', 'layout');
+    revalidateDashboard();
   });
 }
 export async function approveBomAction(bomId: string): Promise<ActionResult> {
   return asResult(async () => {
     await approveBom(bomId);
     revalidatePath('/mis/bom', 'layout');
+    revalidateDashboard();
   });
 }
 export async function rejectBomAction(orderId: string, reason: string): Promise<ActionResult> {
   return asResult(async () => {
     await rejectBom(orderId, reason);
     revalidatePath('/mis/bom', 'layout');
+    revalidateDashboard();
     revalidatePath('/mis/approvals');
   });
 }
@@ -71,6 +76,7 @@ export async function deleteBomAction(orderId: string): Promise<ActionResult> {
     await deleteBom(orderId);
     revalidatePath('/mis/orders');
     revalidatePath('/mis/bom', 'layout');
+    revalidateDashboard();
   });
 }
 export async function deleteStageAction(stageId: string): Promise<ActionResult> {

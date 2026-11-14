@@ -1,5 +1,6 @@
 'use server';
 import { revalidatePath } from 'next/cache';
+import { revalidateDashboard } from '@/server/mis/revalidate-dashboard';
 
 import { asResult } from '@/lib/mis/action-result';
 import { createGRN, addGRNItem, updateGRNItem, updateGRNHeader, confirmGRN, removeGRNItem, discardGRN, reverseGRN, returnQuarantineToSupplier, type GrnHeaderInput, type GrnItemInput } from '@/server/mis/grn';
@@ -60,6 +61,7 @@ export async function confirmGrnAction(grnId: string, overReceiptReason?: string
     revalidatePath('/mis/inventory');
     revalidatePath('/mis/store/stock');
     revalidatePath('/mis/store/transactions');
+    revalidateDashboard();
     // B12: an advisory note (e.g. the invoice is already on another PO); nothing at all when there is none.
     const warnings = confirmed?.warnings;
     return warnings && warnings.length > 0 ? { warnings } : undefined;
@@ -71,6 +73,7 @@ export async function reverseGrnAction(grnId: string, reason: string) {
   return asResult(async () => {
     const result = await reverseGRN(grnId, reason);
     for (const path of [`/mis/grn/${grnId}`, '/mis/grn', '/mis/po', '/mis/inventory', '/mis/store/stock', '/mis/store/transactions', '/mis/supplier-invoices']) revalidatePath(path);
+    revalidateDashboard();
     return result;
   });
 }
