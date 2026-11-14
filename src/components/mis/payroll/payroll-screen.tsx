@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
 import { Button } from '@/components/mis/kit/button';
+import { Tabs } from '@/components/mis/kit/tabs';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { DesktopPageHeader } from '@/components/mis/desktop/desktop-shell';
 import { useConfirm } from '@/components/ui/confirm-dialog';
@@ -70,6 +71,13 @@ type Props = {
   bankGaps?: BankGap[];
 };
 
+const PAYROLL_TABS = [
+  { id: 'register', label: 'Register' },
+  { id: 'overview', label: 'Overview' },
+  { id: 'preflight', label: 'Preflight' },
+  { id: 'exports', label: 'Exports & Banking' },
+];
+
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 function fmtMin(m: number) {
@@ -102,6 +110,8 @@ export function PayrollScreen({ rows: payroll, year, month, period, preflight, r
   const [isPending, startTransition] = useTransition();
   const { confirm, confirmDialog } = useConfirm();
   const [search, setSearch] = useState('');
+  // R2-406: all panels stay in the DOM; the tab only toggles visibility (no new fetch).
+  const [tab, setTab] = useState<string>('register');
   const [closeError, setCloseError] = useState<string | null>(null);
   const [overrideReason, setOverrideReason] = useState('');
   const [reopenOpen, setReopenOpen] = useState(false);
@@ -204,12 +214,6 @@ export function PayrollScreen({ rows: payroll, year, month, period, preflight, r
           </div>
           <StatusBadge tone={period.status === 'CLOSED' ? 'good' : 'neutral'}>{period.status === 'CLOSED' ? 'Closed' : 'Open'}</StatusBadge>
         </div>
-        <dl className="divide-y divide-slate-100 text-sm">
-          <div className="flex justify-between py-2"><dt className="text-slate-500">Employees</dt><dd className="font-semibold text-slate-900">{payroll.length}</dd></div>
-          <div className="flex justify-between py-2"><dt className="text-slate-500">Working days</dt><dd className="font-semibold text-slate-900">{payroll[0]?.workingDays ?? '—'}</dd></div>
-          <div className="flex justify-between py-2"><dt className="text-slate-500">Attendance rows</dt><dd className="font-semibold text-slate-900">{String(attendanceRows)}</dd></div>
-          <div className="flex justify-between py-2"><dt className="text-slate-500">Corrections after close</dt><dd className="font-semibold text-slate-900">{period.correctionsAfterClose}</dd></div>
-        </dl>
         {/* R2-256: the Owner may correct attendance in a closed month (with a reason); the figures stay frozen until a reopen. */}
         {isClosed && period.correctionsAfterClose > 0 && (
           <p role="status" className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
@@ -218,6 +222,23 @@ export function PayrollScreen({ rows: payroll, year, month, period, preflight, r
         )}
       </div>
 
+      <div className="lg:col-span-2">
+        <Tabs label="Payroll sections" active={tab} onChange={setTab} tabs={PAYROLL_TABS} />
+      </div>
+
+      {/* R2-406 Overview tab: the month summary figures (as-is). */}
+      <div id="panel-overview" role="tabpanel" aria-labelledby="tab-overview" hidden={tab !== 'overview'} className="flex flex-col gap-4 lg:col-span-2">
+      <div className="rounded-2xl border border-slate-200 bg-white p-4">
+        <dl className="divide-y divide-slate-100 text-sm">
+          <div className="flex justify-between py-2"><dt className="text-slate-500">Employees</dt><dd className="font-semibold text-slate-900">{payroll.length}</dd></div>
+          <div className="flex justify-between py-2"><dt className="text-slate-500">Working days</dt><dd className="font-semibold text-slate-900">{payroll[0]?.workingDays ?? '—'}</dd></div>
+          <div className="flex justify-between py-2"><dt className="text-slate-500">Attendance rows</dt><dd className="font-semibold text-slate-900">{String(attendanceRows)}</dd></div>
+          <div className="flex justify-between py-2"><dt className="text-slate-500">Corrections after close</dt><dd className="font-semibold text-slate-900">{period.correctionsAfterClose}</dd></div>
+        </dl>
+      </div>
+      </div>
+
+      <div id="panel-preflight" role="tabpanel" aria-labelledby="tab-preflight" hidden={tab !== 'preflight'} className="flex flex-col gap-4 lg:col-span-2">
       {/* Before export */}
       <div className="rounded-2xl border border-slate-200 bg-white p-4">
         <h2 className="mb-3 text-base font-semibold text-slate-900">Before export</h2>
@@ -234,6 +255,9 @@ export function PayrollScreen({ rows: payroll, year, month, period, preflight, r
         </ul>
       </div>
 
+      </div>
+
+      <div id="panel-exports" role="tabpanel" aria-labelledby="tab-exports" hidden={tab !== 'exports'} className="flex flex-col gap-4 lg:col-span-2">
       {/* Export contains */}
       <div className="rounded-2xl border border-slate-200 bg-white p-4">
         <h2 className="mb-2 text-base font-semibold text-slate-900">Export contains</h2>
@@ -365,6 +389,9 @@ export function PayrollScreen({ rows: payroll, year, month, period, preflight, r
       )}
       </div>
 
+      </div>
+
+      <div id="panel-register" role="tabpanel" aria-labelledby="tab-register" hidden={tab !== 'register'} className="lg:col-span-2">
       {/* Attendance-only table — no money columns, ever, on this screen. Full width on desktop (R2-237). */}
       <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white lg:col-span-2">
         <input
@@ -428,6 +455,7 @@ export function PayrollScreen({ rows: payroll, year, month, period, preflight, r
             )}
           </tbody>
         </table>
+      </div>
       </div>
     </>
   );
