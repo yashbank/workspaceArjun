@@ -1,4 +1,6 @@
 'use client';
+import { Printer, RefreshCw } from 'lucide-react';
+import { IconAction } from '@/components/mis/kit/icon-action';
 import { useState, useTransition } from 'react';
 import Link from 'next/link';
 
@@ -106,7 +108,7 @@ export function SupplierInvoicesScreen({ rows, canReconcile, paging, canSignOff 
     });
 
   return (
-    <div className="w-full p-4 md:p-6 flex flex-col gap-3 pb-24">
+    <div className="w-full flex flex-col gap-3 pb-24">
       <div className="rounded-2xl border border-slate-200 bg-white p-4">
         <h1 className="text-2xl font-bold text-slate-900">Supplier invoices</h1>
         <p className="text-sm text-slate-600 mt-1">Each invoice checked against the purchase order rate and what the store actually received.</p>
@@ -199,8 +201,8 @@ export function SupplierInvoicesScreen({ rows, canReconcile, paging, canSignOff 
                     <td className="p-3 text-right">
                       <span className="inline-flex flex-wrap justify-end gap-2">
                         {hasInvoiceActions(r, canReconcile, canSignOff) && <InvoiceActionDialog row={r} canReconcile={canReconcile} canSignOff={canSignOff} />}
-                        {canReconcile && !isPaymentStatus(r.status) && <Button variant="secondary" disabled={busy} onClick={() => reconcile(r.id)}>Re-check</Button>}
-                        <Button variant="secondary" onClick={() => printVoucher(r)}>Print Voucher</Button>
+                        {canReconcile && !isPaymentStatus(r.status) && <IconAction label="Re-check" icon={<RefreshCw className="size-5" aria-hidden />} disabled={busy} onClick={() => reconcile(r.id)} />}
+                        <IconAction label="Print Voucher" icon={<Printer className="size-5" aria-hidden />} onClick={() => printVoucher(r)} />
                       </span>
                     </td>
                   </tr>

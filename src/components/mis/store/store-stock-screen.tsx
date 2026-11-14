@@ -2,6 +2,8 @@
 import Link from 'next/link';
 import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
+import { ArrowRight } from 'lucide-react';
+import { IconAction } from '@/components/mis/kit/icon-action';
 import { Pagination } from '@/components/mis/kit/pagination';
 import { ListToolbar } from '@/components/mis/kit/list-toolbar';
 import { parseView } from '@/lib/mis/pagination';
@@ -141,18 +143,13 @@ export function StoreStockScreen({ rows, isOwner, totalValueLabel = null, paging
       key: 'ledger',
       header: '',
       render: (r) => (
-        <Link
-          href={`/mis/store/ledger/${r.id}`}
-          className="text-xs text-blue-600 hover:underline whitespace-nowrap"
-        >
-          Ledger →
-        </Link>
+        <IconAction href={`/mis/store/ledger/${r.id}`} label="Ledger →" icon={<ArrowRight className="h-4 w-4" aria-hidden />} />
       ),
     },
   ];
 
   return (
-    <div className="mx-auto max-w-5xl flex flex-col gap-4">
+    <div className="w-full flex flex-col gap-4">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
@@ -173,6 +170,20 @@ export function StoreStockScreen({ rows, isOwner, totalValueLabel = null, paging
         >
           ↓ CSV
         </button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4" aria-label="Stock summary">
+        {([
+          ['Items', paging ? paging.total : rows.length],
+          ['Shown', rows.length],
+          ['Out of stock (shown)', criticalCount],
+          ['Below reorder (shown)', warnCount],
+        ] as const).map(([label, n]) => (
+          <div key={label} data-testid="stock-kpi-card" className="rounded-lg border border-slate-200 bg-white p-3">
+            <div className="text-sm text-slate-600">{label}</div>
+            <div className="text-2xl font-semibold text-slate-900">{n}</div>
+          </div>
+        ))}
       </div>
 
       {/* Owner total value card */}

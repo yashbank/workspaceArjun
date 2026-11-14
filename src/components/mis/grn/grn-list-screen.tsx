@@ -1,6 +1,9 @@
 'use client';
 import { useState, useTransition } from 'react';
 import Link from 'next/link';
+import { Eye } from 'lucide-react';
+import { IconAction } from '@/components/mis/kit/icon-action';
+import { ListKpiStrip } from '@/components/mis/kit/list-kpi-strip';
 import { Button } from '@/components/mis/kit/button';
 import { Pagination } from '@/components/mis/kit/pagination';
 import { ListToolbar } from '@/components/mis/kit/list-toolbar';
@@ -60,15 +63,24 @@ export function GrnListScreen({ grns, approvedPos, canWrite, paging }: Props) {
     { key: 'supplier', header: 'Supplier', render: (r) => r.po?.supplier?.name ?? '—' },
     { key: 'status', header: 'Status', render: (r) => <StatusBadge tone={r.status === 'CONFIRMED' ? 'good' : r.status === 'REVERSED' ? 'critical' : 'neutral'}>{r.status}</StatusBadge> }, // R2-277
     { key: 'createdAt', header: 'Date', render: (r) => new Date(r.createdAt).toLocaleDateString('en-IN') },
-    { key: 'actions', header: '', render: (r) => <Link href={`/mis/grn/${r.id}`} className="text-sm text-blue-600 hover:underline">View</Link> },
+    { key: 'actions', header: '', render: (r) => <IconAction href={`/mis/grn/${r.id}`} label="View" icon={<Eye className="size-5" aria-hidden />} /> },
   ];
 
   return (
-    <div className="mx-auto max-w-5xl flex flex-col gap-4">
+    <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-slate-900">Goods Receipt Notes</h1>
         {canWrite && approvedPos.length > 0 && <Button onClick={() => setOpen(true)}>+ New GRN</Button>}
       </div>
+      <ListKpiStrip
+        label="Goods receipt summary"
+        kpis={[
+          { label: 'Total GRNs', value: paging?.total ?? grns.length },
+          { label: 'Confirmed GRNs', value: grns.filter((g) => g.status === 'CONFIRMED').length, hint: 'on this page', tone: 'good' },
+          { label: 'Draft GRNs', value: grns.filter((g) => g.status === 'DRAFT').length, hint: 'on this page', tone: 'warn' },
+          { label: 'Reversed GRNs', value: grns.filter((g) => g.status === 'REVERSED').length, hint: 'on this page', tone: 'bad' },
+        ]}
+      />
       <ListToolbar basePath="/mis/grn" params={paging?.params ?? {}} searchLabel="Search GRNs…" view={view} />
       <div className="flex justify-end"><Button type="button" variant="ghost" onClick={downloadCsv}>↓ CSV</Button></div>
       <DataTable columns={columns} rows={filtered} view={view} rowKey={(r) => r.id} emptyTitle="No GRNs yet" emptyBody="GRNs are created from approved purchase orders." />

@@ -1,6 +1,9 @@
 'use client';
 import { useState, useTransition, useRef, useEffect } from 'react';
 import Link from 'next/link';
+import { SlidersHorizontal } from 'lucide-react';
+import { IconAction } from '@/components/mis/kit/icon-action';
+import { ListKpiStrip } from '@/components/mis/kit/list-kpi-strip';
 import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { StatusBadge } from '@/components/mis/kit/status-badge';
 import { Button } from '@/components/mis/kit/button';
@@ -121,7 +124,7 @@ export function InventoryScreen({ summary, canWrite = false, canPrice = false, p
   const adjustBtn: Column<InventoryRow> = {
     key: 'actions', header: '',
     render: (r: InventoryRow) => (
-      <Button variant="ghost" onClick={() => { setAdjustItem(r); setChangeQty(''); setAdjNotes(''); setError(''); }}>Adjust</Button>
+      <IconAction label="Adjust" icon={<SlidersHorizontal className="size-5" aria-hidden />} onClick={() => { setAdjustItem(r); setChangeQty(''); setAdjNotes(''); setError(''); }} />
     ),
   };
 
@@ -139,7 +142,7 @@ export function InventoryScreen({ summary, canWrite = false, canPrice = false, p
   ];
 
   return (
-    <div className="mx-auto max-w-4xl flex flex-col gap-4">
+    <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h1 className="text-xl font-semibold text-slate-900">Inventory</h1>
         <div className="flex gap-2 items-center text-sm text-slate-500">
@@ -158,6 +161,15 @@ export function InventoryScreen({ summary, canWrite = false, canPrice = false, p
       {/* Two rows on a phone — search on its own line, then the actions in a
           row that wraps evenly instead of one lonely button next to the search
           box and a stray full-width one below it. */}
+      <ListKpiStrip
+        label="Inventory summary"
+        kpis={[
+          { label: 'Total items', value: totalItems },
+          { label: 'Zero balance', value: lowStock, tone: lowStock > 0 ? 'bad' : 'default' },
+          { label: 'Running low', value: summary.filter((r) => r.balance > 0 && r.balance < 10).length, hint: 'on this page', tone: 'warn' },
+          { label: 'Healthy stock', value: summary.filter((r) => r.balance >= 10).length, hint: 'on this page', tone: 'good' },
+        ]}
+      />
       <ListToolbar basePath="/mis/inventory" params={paging?.params ?? {}} searchLabel="Search items…" view={view} />
       <div className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center gap-2">

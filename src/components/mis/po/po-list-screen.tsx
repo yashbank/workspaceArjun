@@ -1,6 +1,8 @@
 'use client';
 import { useState, useTransition } from 'react';
-import Link from 'next/link';
+import { Eye } from 'lucide-react';
+import { IconAction } from '@/components/mis/kit/icon-action';
+import { ListKpiStrip } from '@/components/mis/kit/list-kpi-strip';
 import { Button } from '@/components/mis/kit/button';
 import { Pagination } from '@/components/mis/kit/pagination';
 import { ListToolbar } from '@/components/mis/kit/list-toolbar';
@@ -97,15 +99,24 @@ export function PoListScreen({ pos, suppliers, canWrite, approvedBoms = [], pagi
     { key: 'status', header: 'Status', render: (r) => <StatusBadge tone={statusTone(r.status)}>{r.status.replace(/_/g, ' ')}</StatusBadge> },
     { key: 'items', header: 'Items', render: (r) => r._count.items },
     { key: 'createdAt', header: 'Created', render: (r) => new Date(r.createdAt).toLocaleDateString('en-IN') },
-    { key: 'actions', header: '', render: (r) => <Link href={`/mis/po/${r.id}`} className="text-sm text-blue-600 hover:underline">View</Link> },
+    { key: 'actions', header: '', render: (r) => <IconAction href={`/mis/po/${r.id}`} label="View" icon={<Eye className="size-5" aria-hidden />} /> },
   ];
 
   return (
-    <div className="mx-auto max-w-5xl flex flex-col gap-4">
+    <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-slate-900">Purchase Orders</h1>
         {canWrite && <Button onClick={() => setOpen(true)}>+ New PO</Button>}
       </div>
+      <ListKpiStrip
+        label="Purchase order summary"
+        kpis={[
+          { label: 'Total POs', value: paging?.total ?? pos.length },
+          { label: 'Draft POs', value: pos.filter((p) => p.status === 'DRAFT').length, hint: 'on this page' },
+          { label: 'Approved POs', value: pos.filter((p) => p.status === 'APPROVED').length, hint: 'on this page', tone: 'good' },
+          { label: 'Receiving POs', value: pos.filter((p) => p.status === 'RECEIVING' || p.status === 'PARTIAL').length, hint: 'on this page', tone: 'warn' },
+        ]}
+      />
       <ListToolbar basePath="/mis/po" params={paging?.params ?? {}} searchLabel="Search POs…" view={view} />
       <div className="flex justify-end"><Button type="button" variant="ghost" onClick={downloadCsv}>↓ CSV</Button></div>
       <DataTable columns={columns} rows={filtered} view={view} rowKey={(r) => r.id} emptyTitle="No purchase orders" emptyBody="Create a PO from a BOM requirement, or for buffer stock with no BOM behind it." />

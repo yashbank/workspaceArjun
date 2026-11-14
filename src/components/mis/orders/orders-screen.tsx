@@ -1,5 +1,4 @@
 'use client';
-import Link from 'next/link';
 import { useState, useTransition } from 'react';
 import { Button } from '@/components/mis/kit/button';
 import { Pagination } from '@/components/mis/kit/pagination';
@@ -9,6 +8,9 @@ import { DataTable, type Column } from '@/components/mis/kit/data-table';
 import { SlideOver } from '@/components/mis/kit/slide-over';
 import { Input, DateInput, NumberInput } from '@/components/mis/kit/input';
 import { Select } from '@/components/mis/kit/select';
+import { IconAction } from '@/components/mis/kit/icon-action';
+import { ListKpiCards } from '@/components/mis/common/list-kpi-cards';
+import { CheckCircle2, Eye, Pencil } from 'lucide-react';
 import { formatOrderQuantity, ORDER_UNIT_LABEL, ORDER_UNITS } from '@/lib/mis/order-quantity';
 import { StatusBadge, type BadgeTone } from '@/components/mis/kit/status-badge';
 import { saveOrderAction, updateOrderStatusAction } from '@/app/(mis)/mis/orders/actions';
@@ -77,7 +79,10 @@ export function OrdersScreen({ orders, customers, canWrite, initialCustomerId, g
   };
 
   const view = parseView(paging?.params.view);
-  const filtered = orders;
+  // R2-393: the list query takes no status, so the filter narrows the rows already loaded on this page.
+  const [statusFilter, setStatusFilter] = useState('');
+  const filtered = statusFilter ? orders.filter((o) => o.status === statusFilter) : orders;
+  const count = (s: string) => orders.filter((o) => o.status === s).length;
 
   function downloadCsv() {
     const headers = ['Order #', 'Customer', 'Customer PO #', 'Description', 'Quantity', 'Status', 'Delivery Date', 'Created'];
@@ -110,15 +115,15 @@ export function OrdersScreen({ orders, customers, canWrite, initialCustomerId, g
     { key: 'createdAt', header: 'Created', render: (r) => new Date(r.createdAt).toLocaleDateString('en-IN') },
     { key: 'actions', header: '', render: (r) => (
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <Link href={`/mis/orders/${r.id}`} className="inline-flex min-h-11 items-center px-3 text-sm font-medium text-indigo-700 hover:underline">View</Link>
-        {canWrite && <Button variant="ghost" onClick={() => openEdit(r)}>Edit</Button>}
+        <IconAction label="View" href={`/mis/orders/${r.id}`} icon={<Eye aria-hidden="true" className="size-5" />} />
+        {canWrite && <IconAction label="Edit" onClick={() => openEdit(r)} icon={<Pencil aria-hidden="true" className="size-5" />} />}
         {canWrite && r.status === 'DRAFT' && (
-          <Button variant="ghost" onClick={() => startTransition(async () => {
+          <IconAction label="Confirm" icon={<CheckCircle2 aria-hidden="true" className="size-5" />} onClick={() => startTransition(async () => {
             try {
               const res = await updateOrderStatusAction(r.id, 'CONFIRMED');
               if (!res.ok) toast('error', res.detail);
             } catch { toast('error', 'That did not save. Try again.'); }
-          })}>Confirm</Button>
+          })} />
         )}
         {canWrite && r.status !== 'DRAFT' && (
           <OrderStatusActions orderId={r.id} orderNumber={r.orderNumber} status={r.status} gates={gatesByOrder[r.id] ?? []} canOverride={canOverride} canStartWithoutBom={canStartWithoutBom} override={null} />
@@ -128,12 +133,27 @@ export function OrdersScreen({ orders, customers, canWrite, initialCustomerId, g
   ];
 
   return (
-    <div className="mx-auto max-w-5xl flex flex-col gap-4">
+    <div className="flex w-full flex-col gap-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-slate-900">Orders</h1>
         {canWrite && <Button onClick={openAdd}>+ New Order</Button>}
       </div>
-      <ListToolbar basePath="/mis/orders" params={paging?.params ?? {}} searchLabel="Search orders…" view={view} />
+      <ListKpiCards ariaLabel="Orders summary" items={[
+        { label: 'Orders on this page', value: orders.length },
+        { label: 'Confirmed', value: count('CONFIRMED') },
+        { label: 'In production', value: count('IN_PRODUCTION') },
+        { label: 'Completed', value: count('COMPLETED') + count('DELIVERED') },
+      ]} />
+      <ListToolbar basePath="/mis/orders" params={paging?.params ?? {}} searchLabel="Search orders…" view={view}>
+        {() => (
+          <Select
+            label="Status"
+            value={statusFilter}
+            onChange={setStatusFilter}
+            options={[{ value: '', label: 'All statuses' }, ...['DRAFT', 'CONFIRMED', 'IN_PRODUCTION', 'COMPLETED', 'DELIVERED', 'CANCELLED'].map((v) => ({ value: v, label: v.replace(/_/g, ' ') }))]}
+          />
+        )}
+      </ListToolbar>
       <div className="flex justify-end"><Button type="button" variant="ghost" onClick={downloadCsv}>↓ CSV</Button></div>
       <DataTable columns={columns} rows={filtered} view={view} rowKey={(r) => r.id} emptyTitle="No orders yet" emptyBody="Create an order for a customer." />
       {paging && <Pagination basePath="/mis/orders" params={paging.params} page={paging.page} total={paging.total} />}
