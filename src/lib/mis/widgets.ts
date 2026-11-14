@@ -47,6 +47,11 @@ export type WidgetDefinition = {
   h: number;
   /** The permission that decides whether this widget is offered at all. */
   requires: MisAction;
+  /**
+   * R2-411..414: false = offered in the catalogue (Customise) but NOT placed on anyone's default
+   * layout, so adding a widget never changes an existing dashboard. Absent = on the default, as before.
+   */
+  inDefaultLayout?: false;
 };
 
 /**
@@ -80,6 +85,13 @@ export const WIDGETS: readonly WidgetDefinition[] = [
   // --- Money ---
   // The one widget no other role can add. D1: "the API never sends it to them."
   { key: 'money.wagesAccrued', group: 'MONEY', titleKey: 'widget.money.wagesAccrued', descriptionKey: 'widget.money.wagesAccrued.about', w: 1, h: 2, requires: 'wages.read' },
+
+  // --- R2-411..414: opt-in widgets (Customise only; on no role's default layout). Quantities and counts, no money. ---
+  // `bom.pipeline` needs orders.read: that is the action bom.ts gates every BOM read on (there is no bom.read).
+  { key: 'stock.lowAlerts', group: 'PRODUCTION', titleKey: 'widget.stock.lowAlerts', descriptionKey: 'widget.stock.lowAlerts.about', w: 2, h: 2, requires: 'inventory.read', inDefaultLayout: false },
+  { key: 'po.fulfilment', group: 'PRODUCTION', titleKey: 'widget.po.fulfilment', descriptionKey: 'widget.po.fulfilment.about', w: 2, h: 1, requires: 'po.read', inDefaultLayout: false },
+  { key: 'bom.pipeline', group: 'PRODUCTION', titleKey: 'widget.bom.pipeline', descriptionKey: 'widget.bom.pipeline.about', w: 2, h: 1, requires: 'orders.read', inDefaultLayout: false },
+  { key: 'wastage.scrapTrend', group: 'PRODUCTION', titleKey: 'widget.wastage.scrapTrend', descriptionKey: 'widget.wastage.scrapTrend.about', w: 2, h: 2, requires: 'production.read', inDefaultLayout: false },
 ] as const;
 
 const BY_KEY = new Map(WIDGETS.map((w) => [w.key, w]));
@@ -204,5 +216,5 @@ export function flowLayout(keys: readonly string[], role: MisRoleName | null | u
  * to be maintained by hand.
  */
 export function defaultLayoutFor(role: MisRoleName | null | undefined): PlacedWidget[] {
-  return flowLayout(WIDGETS.map((w) => w.key), role);
+  return flowLayout(WIDGETS.filter((w) => w.inDefaultLayout !== false).map((w) => w.key), role);
 }

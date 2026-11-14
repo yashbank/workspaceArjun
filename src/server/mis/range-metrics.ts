@@ -7,6 +7,7 @@
 import { factoryDateKey } from '@/lib/mis/factory-time';
 import { can } from '@/lib/mis/permissions';
 import { normaliseUnit, sumByUnit, type QtyByUnit } from '@/lib/mis/qty-by-unit';
+import { weekStartKey } from '@/lib/mis/machine-timeline';
 import { factoryRangeFromKeys, type KeyRange } from '@/lib/mis/report-range';
 import { db } from '@/server/db';
 import { requirePermission } from '@/server/mis/auth';
@@ -171,5 +172,73 @@ export async function getRangeOnTime(range: KeyRange): Promise<RangeOnTime> {
   return {
     despatched: orders.filter((o) => o.status === 'DELIVERED').length,
     total: orders.length,
+  };
+}
+
+export type ScrapRateTrend = {
+  /** Scrap is only a ratio inside ONE unit, so the trend is drawn in the unit with the most output (as the output chart is). */
+  unit: string | null;
+  bucket: 'day' | 'week' | 'month';
+  /** `ratePct` is null for a bucket with no production, so a quiet day is a gap, never a fake 0%. */
+  points: { label: string; ratePct: number | null; produced: number; waste: number }[];
+  overallPct: number | null;
+  /** Units present in the range but left out of the ratio, never added in. */
+  otherUnits: string[];
+};
+
+const WEEKLY_MAX_DAYS = 120;
+const pct = (waste: number, produced: number): number | null => {
+  const all = produced + waste;
+  return all > 0 ? Math.round((waste / all) * 1000) / 10 : null;
+};
+
+/** Scrap rate = waste / (produced + waste), per day (<= 31 days), week (<= 120) or month bucket over the range. Counts and quantities only. */
+export async function getRangeScrapRate(range: KeyRange): Promise<ScrapRateTrend> {
+  await requirePermission('production.read');
+  const timeZone = await getFactoryTimezone();
+  const { from, to } = factoryRangeFromKeys(range.fromKey, range.toKey, timeZone);
+
+  const logs = await db.misProductionLog.findMany({
+    where: { loggedAt: { gte: from, lt: to }, voidedAt: null },
+    select: { loggedAt: true, qtyProduced: true, qtyWaste: true, unit: true },
+  });
+
+  const bucket: ScrapRateTrend['bucket'] = range.days <= DAILY_MAX_DAYS ? 'day' : range.days <= WEEKLY_MAX_DAYS ? 'week' : 'month';
+  const bucketOf = (key: string) => (bucket === 'month' ? key.slice(0, 7) : bucket === 'week' ? (weekStartKey(key) < range.fromKey ? range.fromKey : weekStartKey(key)) : key);
+  const labelOf = (b: string) =>
+    bucket === 'month' ? `${MONTHS[Number(b.slice(5, 7)) - 1]} ${b.slice(2, 4)}` : `${Number(b.slice(8, 10))} ${MONTHS[Number(b.slice(5, 7)) - 1]}`;
+
+  const produced = sumByUnit(logs.map((l) => ({ qty: Number(l.qtyProduced ?? 0), unit: l.unit })));
+  const waste = sumByUnit(logs.map((l) => ({ qty: Number(l.qtyWaste ?? 0), unit: l.unit })));
+  // Most output wins; a range with waste but no output still picks the unit with the most waste.
+  const pick = (list: QtyByUnit[]) => list.reduce<QtyByUnit | null>((top, u) => (!top || u.qty > top.qty ? u : top), null)?.unit ?? null;
+  const unit = pick(produced) ?? pick(waste);
+
+  const buckets = new Map<string, { produced: number; waste: number }>();
+  for (let t = Date.parse(`${range.fromKey}T00:00:00Z`); t < Date.parse(`${range.toKey}T00:00:00Z`); t += 86_400_000) {
+    buckets.set(bucketOf(new Date(t).toISOString().slice(0, 10)), { produced: 0, waste: 0 });
+  }
+  let totalProduced = 0;
+  let totalWaste = 0;
+  for (const l of logs) {
+    if (normaliseUnit(l.unit) !== unit) continue;
+    const p = Number(l.qtyProduced ?? 0);
+    const w = Number(l.qtyWaste ?? 0);
+    totalProduced += p;
+    totalWaste += w;
+    const b = buckets.get(bucketOf(factoryDateKey(l.loggedAt, timeZone)));
+    if (b) {
+      b.produced += p;
+      b.waste += w;
+    }
+  }
+
+  const present = new Set([...produced, ...waste].map((u) => u.unit));
+  return {
+    unit,
+    bucket,
+    points: [...buckets].map(([b, v]) => ({ label: labelOf(b), ratePct: pct(v.waste, v.produced), produced: v.produced, waste: v.waste })),
+    overallPct: pct(totalWaste, totalProduced),
+    otherUnits: [...present].filter((u) => u !== unit),
   };
 }
